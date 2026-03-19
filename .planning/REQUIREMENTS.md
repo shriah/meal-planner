@@ -102,9 +102,9 @@
 | PLAN-04 | Phase 3 | Pending |
 | PLAN-05 | Phase 4 | Pending |
 | RULE-01 | Phase 5 | Pending |
-| RULE-02 | Phase 5 | Pending |
-| RULE-03 | Phase 5 | Pending |
-| RULE-04 | Phase 5 | Pending |
+| RULE-02 | Phase 3 | Pending |
+| RULE-03 | Phase 3 | Pending |
+| RULE-04 | Phase 3 | Pending |
 | RULE-05 | Phase 5 | Pending |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
@@ -121,4 +121,4 @@
 
 ---
 *Requirements defined: 2026-03-19*
-*Last updated: 2026-03-19 after initial definition*
+*Last updated: 2026-03-19 after roadmap creation*
