@@ -31,7 +31,11 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The tag catalog (dietary, protein type, regional cuisine, occasion) is fully defined as a fixed enumeration that can be applied to any meal component
   4. The Dexie database schema is initialized with all required tables (components, meals, meal_extras, rules, saved_plans) and can be read and written without error
   5. The Food DB Service exposes typed CRUD functions for meals and components that are callable from any UI layer
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Scaffold Next.js project, define TypeScript domain types, create Dexie database client, set up test infrastructure
+- [ ] 01-02-PLAN.md — Implement Food DB Service CRUD layer with TDD (tests first, then implementation proving DATA-01 through DATA-05)
 
 ### Phase 2: Meal Library UI
 **Goal**: Users can build and maintain their personal Indian meal library with full CRUD, mandatory categorical tags, and a pre-loaded seed dataset to make the generator immediately useful
@@ -72,7 +76,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Phase 3
 **Requirements**: RULE-01, RULE-05
 **Success Criteria** (what must be TRUE):
-  1. User can type a scheduling rule in plain English, submit it, and see a "Compiling…" state while the LLM processes it
+  1. User can type a scheduling rule in plain English, submit it, and see a "Compiling..." state while the LLM processes it
   2. After compilation, the UI shows a human-readable summary of what the rule will do (e.g., "This rule affects 6 of your 34 meals") before the rule is saved
   3. User can view all saved rules in a list, toggle any rule active or inactive, and delete a rule — changes take effect on the next generation
   4. When a newly saved rule matches zero available meals, the UI surfaces a warning at save time without blocking the save
@@ -95,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Data Foundation | 0/TBD | Not started | - |
+| 1. Data Foundation | 0/2 | Planning complete | - |
 | 2. Meal Library UI | 0/TBD | Not started | - |
 | 3. Plan Generator + Rule Engine | 0/TBD | Not started | - |
 | 4. Plan Board UI | 0/TBD | Not started | - |
