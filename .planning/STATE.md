@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Completed 01-data-foundation/01-01-PLAN.md
-last_updated: "2026-03-20T00:36:07.911Z"
+stopped_at: Completed 01-data-foundation/01-02-PLAN.md
+last_updated: "2026-03-20T00:39:16.812Z"
 last_activity: 2026-03-19 — Roadmap created; all 27 v1 requirements mapped to 6 phases
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -53,6 +53,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 01-data-foundation P01 | 2 | 2 tasks | 8 files |
+| Phase 01-data-foundation P02 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,9 @@ Recent decisions affecting current work:
 - [Phase 01-data-foundation]: Single components table with componentType discriminator (not separate tables per type)
 - [Phase 01-data-foundation]: String literal unions for all tag enumerations (not TypeScript enums) for clean JSON serialization and Zod compatibility
 - [Phase 01-data-foundation]: UserPreferences uses fixed string primary key 'prefs' for singleton pattern in Dexie
+- [Phase 01-data-foundation]: No React in service layer — pure async TypeScript functions in food-db.ts callable from any context
+- [Phase 01-data-foundation]: getExtrasByBaseType uses in-memory filter after Dexie query for array-contains semantics
+- [Phase 01-data-foundation]: addMeal and deleteMeal wrapped in db.transaction('rw') for atomicity
 
 ### Pending Todos
 
@@ -80,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T00:36:07.910Z
-Stopped at: Completed 01-data-foundation/01-01-PLAN.md
+Last session: 2026-03-20T00:39:16.810Z
+Stopped at: Completed 01-data-foundation/01-02-PLAN.md
 Resume file: None
