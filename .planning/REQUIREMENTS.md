@@ -7,11 +7,11 @@
 
 ### Data Model
 
-- [ ] **DATA-01**: System supports typed meal components — Base, Curry, Subzi, Extra — where all except Base are optional
-- [ ] **DATA-02**: Each Base has a type tag: `rice-based` | `bread-based` | `other` (e.g., idli/dosa = other)
-- [ ] **DATA-03**: Extras are categorized into fixed types: Liquid, Crunchy, Condiment, Dairy, Sweet
-- [ ] **DATA-04**: Each Extra has a `compatible_with` list of Base types (e.g., Rasam = `rice-based` only; Curd = `rice-based`, `bread-based`)
-- [ ] **DATA-05**: Tag catalog covers: dietary (veg / non-veg / vegan / Jain), protein type, regional cuisine, occasion
+- [x] **DATA-01**: System supports typed meal components — Base, Curry, Subzi, Extra — where all except Base are optional
+- [x] **DATA-02**: Each Base has a type tag: `rice-based` | `bread-based` | `other` (e.g., idli/dosa = other)
+- [x] **DATA-03**: Extras are categorized into fixed types: Liquid, Crunchy, Condiment, Dairy, Sweet
+- [x] **DATA-04**: Each Extra has a `compatible_with` list of Base types (e.g., Rasam = `rice-based` only; Curd = `rice-based`, `bread-based`)
+- [x] **DATA-05**: Tag catalog covers: dietary (veg / non-veg / vegan / Jain), protein type, regional cuisine, occasion
 - [ ] **DATA-06**: App ships with a seed dataset of 50–100 pre-loaded Indian meals covering breakfast, lunch, and dinner slots
 
 ### Meal Library
@@ -85,11 +85,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| DATA-01 | Phase 1 | Pending |
-| DATA-02 | Phase 1 | Pending |
-| DATA-03 | Phase 1 | Pending |
-| DATA-04 | Phase 1 | Pending |
-| DATA-05 | Phase 1 | Pending |
+| DATA-01 | Phase 1 | Complete |
+| DATA-02 | Phase 1 | Complete |
+| DATA-03 | Phase 1 | Complete |
+| DATA-04 | Phase 1 | Complete |
+| DATA-05 | Phase 1 | Complete |
 | DATA-06 | Phase 2 | Pending |
 | MEAL-01 | Phase 2 | Pending |
 | MEAL-02 | Phase 2 | Pending |

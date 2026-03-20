@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-03-19T03:52:49.755Z"
+stopped_at: Completed 01-data-foundation/01-01-PLAN.md
+last_updated: "2026-03-20T00:36:07.911Z"
 last_activity: 2026-03-19 — Roadmap created; all 27 v1 requirements mapped to 6 phases
 progress:
   total_phases: 6
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01-data-foundation P01 | 2 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -63,6 +64,9 @@ Recent decisions affecting current work:
 - [Init]: Stack confirmed — Next.js 16 + Dexie.js (IndexedDB) + Zustand + Claude Haiku 4.5 via Vercel AI SDK
 - [Init]: Rules compile once at save time (LLM); generation is synchronous and LLM-free — this is an architectural gate
 - [Init]: Meal data model is compositional (Base + Curry + Subzi + Extras), not flat name strings — tags required from day one
+- [Phase 01-data-foundation]: Single components table with componentType discriminator (not separate tables per type)
+- [Phase 01-data-foundation]: String literal unions for all tag enumerations (not TypeScript enums) for clean JSON serialization and Zod compatibility
+- [Phase 01-data-foundation]: UserPreferences uses fixed string primary key 'prefs' for singleton pattern in Dexie
 
 ### Pending Todos
 
@@ -76,6 +80,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T03:52:49.749Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-data-foundation/01-CONTEXT.md
+Last session: 2026-03-20T00:36:07.910Z
+Stopped at: Completed 01-data-foundation/01-01-PLAN.md
+Resume file: None

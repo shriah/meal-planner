@@ -99,7 +99,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Data Foundation | 0/2 | Planning complete | - |
+| 1. Data Foundation | 1/2 | In Progress|  |
 | 2. Meal Library UI | 0/TBD | Not started | - |
 | 3. Plan Generator + Rule Engine | 0/TBD | Not started | - |
 | 4. Plan Board UI | 0/TBD | Not started | - |
