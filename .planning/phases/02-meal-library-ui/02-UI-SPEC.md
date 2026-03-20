@@ -108,6 +108,12 @@ Source: shadcn preset provides exact hex values; roles derived from CONTEXT.md l
 
 ---
 
+## Focal Point
+
+The primary focal point on the component library screen is the **tab bar + search input pair** at the top of the content area. This row anchors the user's eye immediately on arrival: the active tab communicates which component type is in view, and the search input invites immediate filtering. The list below it is secondary; the empty state is tertiary. No decorative hero imagery or illustration is used — the focal point is purely structural.
+
+---
+
 ## Component Inventory
 
 The following shadcn components are required for this phase. Add each with `npx shadcn add <name>` after init.
@@ -142,6 +148,11 @@ No third-party registry blocks are used in this phase. All components come from 
 - Clicking anywhere on the row except the delete button expands it inline.
 - Only one row can be expanded at a time — opening a new row collapses the previously open one.
 
+### Delete icon button visibility
+- The delete button is **icon-only on all viewports** (trash icon, lucide-react `Trash2`). A visible text label is not shown on any breakpoint — the row is too dense to accommodate it.
+- **Desktop:** A tooltip ("Delete [name]") appears on hover via shadcn `tooltip`. The tooltip is the sole affordance for users who are not familiar with the trash icon.
+- **Mobile:** No hover state. The `aria-label="Delete [name]"` attribute covers screen-reader accessibility. The 44px minimum touch target (achieved via padding) covers motor accessibility.
+
 ### Expanded row (inline editor)
 - Expands below the collapsed row in the same list position without navigation.
 - Fields shown depend on `componentType`:
@@ -149,8 +160,8 @@ No third-party registry blocks are used in this phase. All components come from 
   - **Curry:** name (text), dietary tags, protein tags, regional tags, occasion tags. No base_type field.
   - **Subzi:** same as Curry.
   - **Extra:** name (text), extra_category (select: Liquid / Crunchy / Condiment / Dairy / Sweet), compatible_base_types (checkbox group: rice-based / bread-based / other), dietary tags, regional tags, occasion tags.
-- Action buttons: `[ Save ]` (primary, filled) and `[ Cancel ]` (ghost) side by side at the bottom of the expanded form.
-- Save calls `updateComponent`. Cancel collapses the row discarding changes.
+- Action buttons: `[ Save [ComponentType] ]` (primary, filled — label is dynamic, e.g. "Save Base", "Save Curry", "Save Subzi", "Save Extra") and `[ Discard changes ]` (ghost) side by side at the bottom of the expanded form.
+- "Save [ComponentType]" calls `updateComponent`. "Discard changes" collapses the row discarding all edits.
 
 ### Search and filter
 - Text search input at the top of each tab content area, below the tab bar.
@@ -165,10 +176,10 @@ No third-party registry blocks are used in this phase. All components come from 
 - Save calls `addComponent`. Cancel removes the blank form without creating a record.
 
 ### Delete component
-- Delete icon button (trash icon, 44px hit target) on the far right of each collapsed row.
-- Clicking the delete button does NOT immediately delete. It reveals an inline confirmation strip below the row: "Delete [name]? This cannot be undone. [ Delete ] [ Cancel ]".
+- Delete icon button (trash icon, 44px hit target, aria-label: "Delete [name]") on the far right of each collapsed row.
+- Clicking the delete button does NOT immediately delete. It reveals an inline confirmation strip below the row: "Delete [name]? This cannot be undone. [ Delete ] [ Keep [name] ]".
 - "Delete" in the confirmation strip calls `deleteComponent` and removes the row.
-- "Cancel" collapses the confirmation strip and the row returns to normal state.
+- "Keep [name]" collapses the confirmation strip and the row returns to normal state.
 - If the component has been referenced in any saved plan (future-phase concern), the inline strip additionally shows: "This component is used in saved plans. Deleting it will remove it from those plans."
 
 ### Slot assignment settings screen
@@ -196,18 +207,22 @@ No third-party registry blocks are used in this phase. All components come from 
 | Primary CTA — add component | "+ Add [Base / Curry / Subzi / Extra]" (dynamic label per active tab) |
 | Empty state heading — no components | "No [bases / curries / subzis / extras] yet" |
 | Empty state body — no components | "Add your first [component type] to start building your ingredient library." |
-| Empty state heading — no search results | "No results" |
+| Empty state heading — no search results | "Nothing matches those filters" |
 | Empty state body — no search results | "Try a different name or clear your filters." |
 | Error state — save failed | "Couldn't save changes. Check your input and try again." |
 | Error state — delete failed | "Couldn't delete [name]. Try again." |
-| Delete confirmation strip | "Delete [name]? This cannot be undone." with buttons: "Delete" and "Cancel" |
+| Delete confirmation strip | "Delete [name]? This cannot be undone." with buttons: "Delete" and "Keep [name]" |
 | Delete — used in saved plans warning | "This component appears in saved plans. Deleting it will remove it from those plans." |
+| Delete icon button aria-label | "Delete [name]" (dynamic, e.g. "Delete Poori") |
+| Delete icon button tooltip (desktop hover) | "Delete [name]" (dynamic, matches aria-label) |
+| Inline editor save button | "Save [ComponentType]" (dynamic, e.g. "Save Base", "Save Curry", "Save Subzi", "Save Extra") |
+| Inline editor discard button | "Discard changes" |
 | Slot settings save button | "Save slot settings" |
 | Slot settings — changes saved toast | "Slot settings saved." |
 | Slot settings — exception section label | "Component exceptions (optional)" |
 | Slot settings — add exception button | "+ Add exception" |
 
-Source: decisions locked in CONTEXT.md (inline expansion, no modal, delete confirmation approach left to Claude's discretion — resolved above as inline strip with explicit confirmation step).
+Source: decisions locked in CONTEXT.md (inline expansion, no modal, delete confirmation approach left to Claude's discretion — resolved above as inline strip with explicit confirmation step). Inline editor labels fixed per checker revision 2026-03-20 (BLOCK 1). Empty state no-results heading fixed per checker revision 2026-03-20 (BLOCK 2). Delete confirmation dismissal label changed from "Cancel" to "Keep [name]" per checker revision 2026-03-20 (BLOCK 3). Delete icon button visibility contract added per checker revision 2026-03-20 (recommendation).
 
 ---
 
