@@ -2,13 +2,14 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
+import type { CompiledFilter } from '@/types/plan';
 
-// Rule and SavedPlan stubs for future phases
+// Rule record — typed CompiledFilter DSL for Phase 3
 export interface RuleRecord {
   id?: number;
-  text: string;
-  compiled_filter?: unknown;
-  is_active: boolean;
+  name: string;
+  enabled: boolean;
+  compiled_filter: CompiledFilter;
   created_at: string;
 }
 
@@ -35,6 +36,26 @@ db.version(1).stores({
   rules: '++id, is_active',
   saved_plans: '++id',
   preferences: 'id',
+});
+
+db.version(2).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id',
+  preferences: 'id',
+}).upgrade(tx => {
+  return tx.table('rules').toCollection().modify(rule => {
+    if ('is_active' in rule) {
+      rule.enabled = rule.is_active;
+      delete rule.is_active;
+    }
+    if ('text' in rule && !('name' in rule)) {
+      rule.name = rule.text;
+      delete rule.text;
+    }
+  });
 });
 
 export { db };

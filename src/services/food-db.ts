@@ -1,4 +1,5 @@
 import { db } from '@/db/client';
+import type { RuleRecord } from '@/db/client';
 import type { ComponentRecord, ComponentType, BaseType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
@@ -82,4 +83,27 @@ export async function getPreferences(): Promise<UserPreferencesRecord | undefine
 
 export async function putPreferences(prefs: UserPreferencesRecord): Promise<void> {
   await db.preferences.put(prefs);
+}
+
+// ─── Rule CRUD ────────────────────────────────────────────────────────────────
+
+export async function getRules(): Promise<RuleRecord[]> {
+  return db.rules.toArray();
+}
+
+export async function getEnabledRules(): Promise<RuleRecord[]> {
+  const all = await db.rules.toArray();
+  return all.filter(r => r.enabled);
+}
+
+export async function addRule(rule: Omit<RuleRecord, 'id'>): Promise<number> {
+  return db.rules.add(rule as RuleRecord) as Promise<number>;
+}
+
+export async function updateRule(id: number, changes: Partial<RuleRecord>): Promise<void> {
+  await db.rules.update(id, changes);
+}
+
+export async function deleteRule(id: number): Promise<void> {
+  await db.rules.delete(id);
 }

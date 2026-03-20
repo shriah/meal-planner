@@ -13,6 +13,11 @@ import {
   getMealExtras,
   getPreferences,
   putPreferences,
+  addRule,
+  getRules,
+  getEnabledRules,
+  updateRule,
+  deleteRule,
 } from '@/services/food-db';
 
 beforeEach(async () => {
@@ -20,6 +25,7 @@ beforeEach(async () => {
   await db.meals.clear();
   await db.meal_extras.clear();
   await db.preferences.clear();
+  await db.rules.clear();
 });
 
 describe('DATA-01: componentType discriminator', () => {
@@ -284,5 +290,43 @@ describe('Preferences singleton', () => {
     expect(saved).toBeDefined();
     expect(saved!.id).toBe('prefs');
     expect(saved!.extra_quantity_limits.lunch).toBe(3);
+  });
+});
+
+describe('Rule CRUD', () => {
+  it('addRule stores a rule and getRules retrieves it', async () => {
+    const id = await addRule({
+      name: 'Friday fish',
+      enabled: true,
+      compiled_filter: { type: 'day-filter', days: ['friday'], slots: null, filter: { protein_tag: 'fish' } },
+      created_at: new Date().toISOString(),
+    });
+    expect(typeof id).toBe('number');
+    const rules = await getRules();
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe('Friday fish');
+    expect(rules[0].compiled_filter.type).toBe('day-filter');
+  });
+
+  it('getEnabledRules filters out disabled rules', async () => {
+    await addRule({ name: 'Active', enabled: true, compiled_filter: { type: 'no-repeat', component_type: 'subzi', within: 'week' }, created_at: '' });
+    await addRule({ name: 'Inactive', enabled: false, compiled_filter: { type: 'no-repeat', component_type: 'curry', within: 'week' }, created_at: '' });
+    const enabled = await getEnabledRules();
+    expect(enabled).toHaveLength(1);
+    expect(enabled[0].name).toBe('Active');
+  });
+
+  it('updateRule changes enabled flag', async () => {
+    const id = await addRule({ name: 'Test', enabled: true, compiled_filter: { type: 'no-repeat', component_type: 'base', within: 'week' }, created_at: '' });
+    await updateRule(id, { enabled: false });
+    const rules = await getRules();
+    expect(rules[0].enabled).toBe(false);
+  });
+
+  it('deleteRule removes the rule', async () => {
+    const id = await addRule({ name: 'Temp', enabled: true, compiled_filter: { type: 'no-repeat', component_type: 'subzi', within: 'week' }, created_at: '' });
+    await deleteRule(id);
+    const rules = await getRules();
+    expect(rules).toHaveLength(0);
   });
 });
