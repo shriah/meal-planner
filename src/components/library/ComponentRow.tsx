@@ -1,5 +1,17 @@
 'use client'
 
+import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+import { ComponentForm } from './ComponentForm'
+import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
 
 interface ComponentRowProps {
@@ -10,6 +22,117 @@ interface ComponentRowProps {
   onDelete: () => void
 }
 
-export function ComponentRow(_props: ComponentRowProps) {
-  return null
+export function ComponentRow({
+  component,
+  expanded,
+  onExpand,
+  onCollapse,
+  onDelete,
+}: ComponentRowProps) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  function handleRowClick() {
+    if (expanded) {
+      onCollapse()
+    } else {
+      onExpand()
+    }
+  }
+
+  function handleDeleteClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    setConfirmingDelete(true)
+  }
+
+  return (
+    <div>
+      {/* Collapsed row — 48px min height */}
+      <div
+        className="flex min-h-[48px] items-center gap-2 px-4 py-2 cursor-pointer hover:bg-muted/40 transition-colors"
+        onClick={handleRowClick}
+        role="button"
+        tabIndex={0}
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            handleRowClick()
+          }
+        }}
+      >
+        {/* Component name */}
+        <span className="flex-1 text-sm truncate">{component.name}</span>
+
+        {/* Dietary badges */}
+        <div className="flex gap-1 flex-wrap">
+          {component.dietary_tags.map(tag => (
+            <Badge key={tag} variant="secondary" className="shrink-0">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+
+        {/* Regional badges */}
+        <div className="flex gap-1 flex-wrap">
+          {component.regional_tags.map(tag => (
+            <Badge key={tag} variant="outline" className="shrink-0">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+
+        {/* Compatible base types badge (Extras only) */}
+        {component.componentType === 'extra' && component.compatible_base_types && component.compatible_base_types.length > 0 && (
+          <Badge variant="outline" className="shrink-0">
+            {component.compatible_base_types.join(', ')}
+          </Badge>
+        )}
+
+        {/* Delete button with tooltip */}
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="min-w-[44px] min-h-[44px] shrink-0"
+                aria-label={`Delete ${component.name}`}
+                onClick={handleDeleteClick}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Delete {component.name}
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+
+      {/* Delete confirmation strip */}
+      {confirmingDelete && component.id !== undefined && (
+        <DeleteConfirmStrip
+          componentName={component.name}
+          componentId={component.id}
+          onDeleted={() => {
+            setConfirmingDelete(false)
+            onDelete()
+          }}
+          onCancel={() => setConfirmingDelete(false)}
+        />
+      )}
+
+      {/* Expanded inline editor */}
+      {expanded && !confirmingDelete && (
+        <div className="px-4 pb-4 border-t border-border">
+          <ComponentForm
+            component={component}
+            componentType={component.componentType}
+            mode="edit"
+            onSave={onCollapse}
+            onDiscard={onCollapse}
+          />
+        </div>
+      )}
+    </div>
+  )
 }
