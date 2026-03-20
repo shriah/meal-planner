@@ -16,11 +16,11 @@
 
 ### Meal Library
 
-- [ ] **MEAL-01**: User can add a new meal with Base + optional Curry + optional Subzi + 0-N Extras (from compatible Extra pool)
-- [ ] **MEAL-02**: User can edit an existing meal (change components, tags, name)
-- [ ] **MEAL-03**: User can delete a meal from the library
-- [ ] **MEAL-04**: User can tag meals with dietary, protein, regional, and occasion tags
-- [ ] **MEAL-05**: User can browse and search meals by component type and tags
+- [x] **MEAL-01**: User can add a new meal with Base + optional Curry + optional Subzi + 0-N Extras (from compatible Extra pool)
+- [x] **MEAL-02**: User can edit an existing meal (change components, tags, name)
+- [x] **MEAL-03**: User can delete a meal from the library
+- [x] **MEAL-04**: User can tag meals with dietary, protein, regional, and occasion tags
+- [x] **MEAL-05**: User can browse and search meals by component type and tags
 
 ### Plan Generation
 
@@ -91,11 +91,11 @@
 | DATA-04 | Phase 1 | Complete |
 | DATA-05 | Phase 1 | Complete |
 | DATA-06 | Phase 2 | Complete |
-| MEAL-01 | Phase 2 | Pending |
-| MEAL-02 | Phase 2 | Pending |
-| MEAL-03 | Phase 2 | Pending |
-| MEAL-04 | Phase 2 | Pending |
-| MEAL-05 | Phase 2 | Pending |
+| MEAL-01 | Phase 2 | Complete |
+| MEAL-02 | Phase 2 | Complete |
+| MEAL-03 | Phase 2 | Complete |
+| MEAL-04 | Phase 2 | Complete |
+| MEAL-05 | Phase 2 | Complete |
 | PLAN-01 | Phase 3 | Pending |
 | PLAN-02 | Phase 4 | Pending |
 | PLAN-03 | Phase 4 | Pending |
