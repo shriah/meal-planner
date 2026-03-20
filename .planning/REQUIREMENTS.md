@@ -24,18 +24,18 @@
 
 ### Plan Generation
 
-- [ ] **PLAN-01**: User can generate a 7-day (Mon–Sun) plan with breakfast, lunch, and dinner slots
+- [x] **PLAN-01**: User can generate a 7-day (Mon–Sun) plan with breakfast, lunch, and dinner slots
 - [ ] **PLAN-02**: User can lock individual meal slots; locked slots persist across regeneration
 - [ ] **PLAN-03**: User can lock all meals for an entire day at once
-- [ ] **PLAN-04**: Generator only assigns Extras that are compatible with the selected Base type (Rasam never paired with roti-based meals)
+- [x] **PLAN-04**: Generator only assigns Extras that are compatible with the selected Base type (Rasam never paired with roti-based meals)
 - [ ] **PLAN-05**: User can manually swap any individual slot by selecting a replacement from the meal library
 
 ### Rules Engine
 
 - [ ] **RULE-01**: User can write scheduling rules in plain English (e.g., "Fridays are fish days", "Never repeat the same subzi twice in a week")
 - [x] **RULE-02**: LLM compiles rules into a typed JSON filter DSL at rule-save time (not at generation time) — generation is synchronous and LLM-free
-- [ ] **RULE-03**: Day-based rules are supported (target a specific day or days of the week)
-- [ ] **RULE-04**: Rotation/no-repeat rules are supported (within a week or across consecutive weeks)
+- [x] **RULE-03**: Day-based rules are supported (target a specific day or days of the week)
+- [x] **RULE-04**: Rotation/no-repeat rules are supported (within a week or across consecutive weeks)
 - [ ] **RULE-05**: When a compiled rule matches zero available meals, the app surfaces a warning and does not block plan generation
 
 ### Plan Board UI
@@ -96,15 +96,15 @@
 | MEAL-03 | Phase 2 | Complete |
 | MEAL-04 | Phase 2 | Complete |
 | MEAL-05 | Phase 2 | Complete |
-| PLAN-01 | Phase 3 | Pending |
+| PLAN-01 | Phase 3 | Complete |
 | PLAN-02 | Phase 4 | Pending |
 | PLAN-03 | Phase 4 | Pending |
-| PLAN-04 | Phase 3 | Pending |
+| PLAN-04 | Phase 3 | Complete |
 | PLAN-05 | Phase 4 | Pending |
 | RULE-01 | Phase 5 | Pending |
 | RULE-02 | Phase 3 | Complete |
-| RULE-03 | Phase 3 | Pending |
-| RULE-04 | Phase 3 | Pending |
+| RULE-03 | Phase 3 | Complete |
+| RULE-04 | Phase 3 | Complete |
 | RULE-05 | Phase 5 | Pending |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |

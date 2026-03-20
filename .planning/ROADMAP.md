@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Data Foundation** - Establish the typed meal data model, DB schema, and TypeScript domain types that every other phase depends on (completed 2026-03-20)
 - [x] **Phase 2: Meal Library UI** - Build the CRUD interface for managing Indian meals with required categorical tags and a seed dataset (completed 2026-03-20)
-- [ ] **Phase 3: Plan Generator + Rule Engine** - Implement the core generation algorithm and LLM rule compilation back-end, with unit tests, before any UI exists
+- [x] **Phase 3: Plan Generator + Rule Engine** - Implement the core generation algorithm and LLM rule compilation back-end, with unit tests, before any UI exists (completed 2026-03-20)
 - [ ] **Phase 4: Plan Board UI** - Build the interactive 7x3 weekly grid with lock, swap, and regenerate on top of the tested generator
 - [ ] **Phase 5: Rules Manager UI** - Surface the rule engine through a UI for entering, reviewing, and managing natural language scheduling rules
 - [ ] **Phase 6: Save, History, and Export** - Add named plan saving, history browsing, and PNG export for sharing
@@ -111,7 +111,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Data Foundation | 2/2 | Complete   | 2026-03-20 |
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
-| 3. Plan Generator + Rule Engine | 2/3 | In Progress|  |
+| 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 0/TBD | Not started | - |
 | 5. Rules Manager UI | 0/TBD | Not started | - |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
