@@ -51,6 +51,9 @@ export interface ExtraRecord extends BaseComponentFields {
 
 export type MealComponent = BaseRecord | CurryRecord | SubziRecord | ExtraRecord;
 
+// Frequency preference for weighted randomization in the generator
+export type Frequency = 'frequent' | 'normal' | 'rare';
+
 // Flat record type for Dexie storage — all fields merged, type-specific fields optional
 export type ComponentRecord = BaseComponentFields & {
   base_type?: BaseType;
@@ -58,4 +61,5 @@ export type ComponentRecord = BaseComponentFields & {
   compatible_base_types?: BaseType[];
   extra_category?: ExtraCategory;
   incompatible_curry_categories?: string[];
+  frequency?: Frequency; // defaults to 'normal' in generator
 };
