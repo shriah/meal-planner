@@ -38,16 +38,21 @@ Plans:
 - [ ] 01-02-PLAN.md — Implement Food DB Service CRUD layer with TDD (tests first, then implementation proving DATA-01 through DATA-05)
 
 ### Phase 2: Meal Library UI
-**Goal**: Users can build and maintain their personal Indian meal library with full CRUD, mandatory categorical tags, and a pre-loaded seed dataset to make the generator immediately useful
+**Goal**: Users can build and maintain their personal Indian component library with full CRUD, categorical tags, and a pre-loaded seed dataset of 80-100 components so the generator produces useful output from first launch
 **Depends on**: Phase 1
 **Requirements**: DATA-06, MEAL-01, MEAL-02, MEAL-03, MEAL-04, MEAL-05
 **Success Criteria** (what must be TRUE):
-  1. User can add a new meal by specifying a Base and optionally selecting Curry, Subzi, and compatible Extras from the existing component pool
-  2. User can edit any saved meal — change its components, name, or tags — and see the change reflected immediately in the library
-  3. User can delete a meal from the library and it no longer appears in search or generation
-  4. User can filter and search the meal library by component type (Base type, presence of Curry, etc.) and by any combination of tags
-  5. The app starts with 50–100 pre-loaded Indian meals covering breakfast, lunch, and dinner slots so the generator produces useful output from first launch
-**Plans**: TBD
+  1. User can add a new component (Base/Curry/Subzi/Extra) with correct type-specific fields and compatibility metadata
+  2. User can edit an existing component — change its name, tags, or type-specific fields — and see the change reflected immediately in the library
+  3. User can delete a component from the library and it no longer appears in search or generation
+  4. User can filter and search the component library by type tab, name text search, and any combination of dietary/regional tags
+  5. The app starts with 80-100 pre-loaded Indian components covering all four types so the generator produces useful output from first launch
+**Plans**: 3 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — Install dependencies (shadcn/ui, dexie-react-hooks, lucide-react), author 80-100 component seed dataset, create SeedBootstrap with tests
+- [ ] 02-02-PLAN.md — Build Component Library page at /library with four-tab navigation, search/filter, inline edit/add/delete CRUD
+- [ ] 02-03-PLAN.md — Build Slot Assignment Settings page at /settings/slots with checkbox grid and component exceptions, plus end-to-end verification checkpoint
 
 ### Phase 3: Plan Generator + Rule Engine
 **Goal**: A pure synchronous plan generator and a compile-once rule engine exist as tested back-end services, with no LLM involvement at generation time
@@ -100,7 +105,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Data Foundation | 2/2 | Complete   | 2026-03-20 |
-| 2. Meal Library UI | 0/TBD | Not started | - |
+| 2. Meal Library UI | 0/3 | Planning complete | - |
 | 3. Plan Generator + Rule Engine | 0/TBD | Not started | - |
 | 4. Plan Board UI | 0/TBD | Not started | - |
 | 5. Rules Manager UI | 0/TBD | Not started | - |
