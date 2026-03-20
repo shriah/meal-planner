@@ -12,7 +12,7 @@
 - [x] **DATA-03**: Extras are categorized into fixed types: Liquid, Crunchy, Condiment, Dairy, Sweet
 - [x] **DATA-04**: Each Extra has a `compatible_with` list of Base types (e.g., Rasam = `rice-based` only; Curd = `rice-based`, `bread-based`)
 - [x] **DATA-05**: Tag catalog covers: dietary (veg / non-veg / vegan / Jain), protein type, regional cuisine, occasion
-- [ ] **DATA-06**: App ships with a seed dataset of 50–100 pre-loaded Indian meals covering breakfast, lunch, and dinner slots
+- [x] **DATA-06**: App ships with a seed dataset of 50–100 pre-loaded Indian meals covering breakfast, lunch, and dinner slots
 
 ### Meal Library
 
@@ -90,7 +90,7 @@
 | DATA-03 | Phase 1 | Complete |
 | DATA-04 | Phase 1 | Complete |
 | DATA-05 | Phase 1 | Complete |
-| DATA-06 | Phase 2 | Pending |
+| DATA-06 | Phase 2 | Complete |
 | MEAL-01 | Phase 2 | Pending |
 | MEAL-02 | Phase 2 | Pending |
 | MEAL-03 | Phase 2 | Pending |
