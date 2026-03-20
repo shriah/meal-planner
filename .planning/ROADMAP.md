@@ -59,18 +59,23 @@ Plans:
 **Depends on**: Phase 2
 **Requirements**: PLAN-01, PLAN-04, RULE-02, RULE-03, RULE-04
 **Success Criteria** (what must be TRUE):
-  1. Calling the generator produces a full Mon–Sun plan (21 slots) in under 500ms with meals distributed across slots using recency-weighted randomization that avoids perceptual repetition
+  1. Calling the generator produces a full Mon-Sun plan (21 slots) in under 500ms with meals distributed across slots using recency-weighted randomization that avoids perceptual repetition
   2. Extras in a generated plan are only ever paired with compatible Base types — Rasam never appears with a roti-based meal
-  3. A natural language rule is compiled by the LLM into a typed CompiledFilter JSON object at save time; generation reads only the stored filter and never calls the LLM
+  3. A structured rule definition is compiled by a pure local TypeScript function into a typed CompiledFilter JSON object at save time; generation reads only the stored filter and never calls an LLM
   4. Day-based rules (e.g., "Fridays are fish days") and rotation/no-repeat rules (e.g., "Never repeat the same subzi twice in a week") are both correctly enforced by the generator as verified by a unit test suite of 20+ cases
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 03-01-PLAN.md — Define Phase 3 types and Zod schemas in plan.ts, update Dexie to v2 with typed RuleRecord, add rule CRUD to food-db.ts
+- [ ] 03-02-PLAN.md — Implement rule compiler service with TDD (compileRule converts RuleDefinition to CompiledFilter)
+- [ ] 03-03-PLAN.md — Implement plan generator service with TDD (20+ tests covering generation, rule enforcement, weighting, over-constrained handling)
 
 ### Phase 4: Plan Board UI
 **Goal**: Users can view, interact with, and edit the generated weekly plan through an interactive grid with full lock, swap, and regenerate capabilities
 **Depends on**: Phase 3
 **Requirements**: PLAN-02, PLAN-03, PLAN-05, UI-01, UI-02, UI-03, UI-04
 **Success Criteria** (what must be TRUE):
-  1. The weekly plan is displayed as a 7×3 grid (Mon–Sun columns, breakfast/lunch/dinner rows) with each slot showing the meal name and a lock/unlock toggle
+  1. The weekly plan is displayed as a 7x3 grid (Mon-Sun columns, breakfast/lunch/dinner rows) with each slot showing the meal name and a lock/unlock toggle
   2. Locked slots are visually distinct from unlocked slots, and clicking the regenerate button re-randomizes only unlocked slots while locked slots remain unchanged
   3. User can lock all slots for an entire day at once with a single action
   4. Clicking any slot opens a meal picker filtered to the correct slot type (breakfast, lunch, or dinner) from which the user can select a replacement meal
@@ -100,13 +105,13 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
+Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Data Foundation | 2/2 | Complete   | 2026-03-20 |
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
-| 3. Plan Generator + Rule Engine | 0/TBD | Not started | - |
+| 3. Plan Generator + Rule Engine | 0/3 | Not started | - |
 | 4. Plan Board UI | 0/TBD | Not started | - |
 | 5. Rules Manager UI | 0/TBD | Not started | - |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
