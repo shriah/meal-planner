@@ -33,7 +33,7 @@
 ### Rules Engine
 
 - [ ] **RULE-01**: User can write scheduling rules in plain English (e.g., "Fridays are fish days", "Never repeat the same subzi twice in a week")
-- [ ] **RULE-02**: LLM compiles rules into a typed JSON filter DSL at rule-save time (not at generation time) — generation is synchronous and LLM-free
+- [x] **RULE-02**: LLM compiles rules into a typed JSON filter DSL at rule-save time (not at generation time) — generation is synchronous and LLM-free
 - [ ] **RULE-03**: Day-based rules are supported (target a specific day or days of the week)
 - [ ] **RULE-04**: Rotation/no-repeat rules are supported (within a week or across consecutive weeks)
 - [ ] **RULE-05**: When a compiled rule matches zero available meals, the app surfaces a warning and does not block plan generation
@@ -102,7 +102,7 @@
 | PLAN-04 | Phase 3 | Pending |
 | PLAN-05 | Phase 4 | Pending |
 | RULE-01 | Phase 5 | Pending |
-| RULE-02 | Phase 3 | Pending |
+| RULE-02 | Phase 3 | Complete |
 | RULE-03 | Phase 3 | Pending |
 | RULE-04 | Phase 3 | Pending |
 | RULE-05 | Phase 5 | Pending |
