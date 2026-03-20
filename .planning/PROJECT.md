@@ -12,7 +12,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ### Validated
 
-(None yet — ship to validate)
+- [x] Indian food database with meals structured as Base + Curry + Subzi + Extras — Validated in Phase 01: data-foundation (Dexie DB, discriminated union types, 12-function CRUD service, 7/7 tests passing)
 
 ### Active
 
@@ -52,8 +52,8 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | LLM for rule interpretation | English rules are flexible and human-friendly; LLM translates to filters | — Pending |
-| Meal structure as components | Base + Curry + Subzi + Extras matches real Indian meal patterns | — Pending |
+| Meal structure as components | Base + Curry + Subzi + Extras matches real Indian meal patterns | Implemented as discriminated union ComponentRecord in Phase 01 |
 | Personal-use scope for v1 | Simplifies auth, data model, and UX significantly | — Pending |
 
 ---
-*Last updated: 2026-03-19 after initialization*
+*Last updated: 2026-03-20 — Phase 01 complete (data foundation)*
