@@ -531,27 +531,32 @@ describe('RULE-04: No-repeat rules (NoRepeatRule)', () => {
 
 describe('Frequency weighting', () => {
   it('16. frequent components appear significantly more often than rare across 50 generations (statistical)', async () => {
-    // Add one frequent base, one rare base
-    const frequentId = await addComponent({
-      name: 'Popular Rice',
-      componentType: 'base',
-      base_type: 'rice-based',
-      frequency: 'frequent',
-      dietary_tags: ['veg'],
-      regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
-      created_at: '',
-    });
-    const rareId = await addComponent({
-      name: 'Rare Khichdi',
-      componentType: 'base',
-      base_type: 'rice-based',
-      frequency: 'rare',
-      dietary_tags: ['veg'],
-      regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
-      created_at: '',
-    });
+    // Add 10 frequent bases and 10 rare bases — large pool ensures recency halving
+    // doesn't dominate and the frequency signal is clearly visible.
+    const frequentIds: number[] = [];
+    const rareIds: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      frequentIds.push(await addComponent({
+        name: `Popular Rice ${i}`,
+        componentType: 'base',
+        base_type: 'rice-based',
+        frequency: 'frequent',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '',
+      }));
+      rareIds.push(await addComponent({
+        name: `Rare Khichdi ${i}`,
+        componentType: 'base',
+        base_type: 'rice-based',
+        frequency: 'rare',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '',
+      }));
+    }
     await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
     await seedDefaultPreferences();
 
@@ -560,12 +565,13 @@ describe('Frequency weighting', () => {
     for (let i = 0; i < 50; i++) {
       const result = await generate();
       for (const slot of result.plan.slots) {
-        if (slot.base_id === frequentId) frequentCount++;
-        if (slot.base_id === rareId) rareCount++;
+        if (frequentIds.includes(slot.base_id)) frequentCount++;
+        if (rareIds.includes(slot.base_id)) rareCount++;
       }
     }
 
-    // frequent (weight 3) should appear much more than rare (weight 0.3) — roughly 10x
+    // frequent (weight 3) vs rare (weight 0.3) — with 10 of each type, recency halving
+    // affects all equally, so frequency signal dominates: frequentCount >> rareCount
     expect(frequentCount).toBeGreaterThan(rareCount * 3);
   });
 
