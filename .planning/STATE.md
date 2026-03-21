@@ -104,6 +104,12 @@ Recent decisions affecting current work:
 
 None yet.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260321-amx | Enable day of the week in the occasion tag | 2026-03-21 | 671913f | [260321-amx-enable-day-of-the-week-in-the-occasion-t](./quick/260321-amx-enable-day-of-the-week-in-the-occasion-t/) |
+
 ### Blockers/Concerns
 
 - [Phase 3]: CompiledFilter DSL completeness is unvalidated — write 15-20 realistic user rules and verify DSL coverage before building Rule Engine
