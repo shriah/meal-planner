@@ -25,8 +25,8 @@
 ### Plan Generation
 
 - [x] **PLAN-01**: User can generate a 7-day (Mon–Sun) plan with breakfast, lunch, and dinner slots
-- [ ] **PLAN-02**: User can lock individual meal slots; locked slots persist across regeneration
-- [ ] **PLAN-03**: User can lock all meals for an entire day at once
+- [x] **PLAN-02**: User can lock individual meal slots; locked slots persist across regeneration
+- [x] **PLAN-03**: User can lock all meals for an entire day at once
 - [x] **PLAN-04**: Generator only assigns Extras that are compatible with the selected Base type (Rasam never paired with roti-based meals)
 - [ ] **PLAN-05**: User can manually swap any individual slot by selecting a replacement from the meal library
 
@@ -42,7 +42,7 @@
 
 - [ ] **UI-01**: Weekly plan displayed as a 7×3 grid (days × meal slots: breakfast / lunch / dinner)
 - [ ] **UI-02**: Each slot shows lock/unlock control; locked slots are visually distinguished
-- [ ] **UI-03**: Regenerate button re-randomizes all unlocked slots respecting active rules
+- [x] **UI-03**: Regenerate button re-randomizes all unlocked slots respecting active rules
 - [ ] **UI-04**: Tapping/clicking a slot opens a meal picker filtered to that slot type
 
 ### Save & History
@@ -97,8 +97,8 @@
 | MEAL-04 | Phase 2 | Complete |
 | MEAL-05 | Phase 2 | Complete |
 | PLAN-01 | Phase 3 | Complete |
-| PLAN-02 | Phase 4 | Pending |
-| PLAN-03 | Phase 4 | Pending |
+| PLAN-02 | Phase 4 | Complete |
+| PLAN-03 | Phase 4 | Complete |
 | PLAN-04 | Phase 3 | Complete |
 | PLAN-05 | Phase 4 | Pending |
 | RULE-01 | Phase 5 | Pending |
@@ -108,7 +108,7 @@
 | RULE-05 | Phase 5 | Pending |
 | UI-01 | Phase 4 | Pending |
 | UI-02 | Phase 4 | Pending |
-| UI-03 | Phase 4 | Pending |
+| UI-03 | Phase 4 | Complete |
 | UI-04 | Phase 4 | Pending |
 | SAVE-01 | Phase 6 | Pending |
 | SAVE-02 | Phase 6 | Pending |
