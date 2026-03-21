@@ -98,7 +98,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 05-01-PLAN.md — Build /rules list page with describeRule utility, RuleList, RuleRow, RuleEmptyState, AppNav update
+- [x] 05-01-PLAN.md — Build /rules list page with describeRule utility, RuleList, RuleRow, RuleEmptyState, AppNav update
 - [ ] 05-02-PLAN.md — Build /rules/new creation form with useReducer, variant-specific fields, live impact preview, zero-match warning
 
 ### Phase 6: Save, History, and Export
@@ -122,5 +122,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 3/3 | Complete   | 2026-03-21 |
-| 5. Rules Manager UI | 0/2 | Not started | - |
+| 5. Rules Manager UI | 1/2 | In Progress|  |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
