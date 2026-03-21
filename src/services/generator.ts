@@ -13,6 +13,17 @@ import {
   type Warning,
 } from '@/types/plan';
 
+// ─── GenerateOptions ──────────────────────────────────────────────────────────
+
+export interface GenerateOptions {
+  lockedSlots?: Partial<Record<`${DayOfWeek}-${MealSlot}`, {
+    base_id?: number;
+    curry_id?: number;
+    subzi_id?: number;
+    extra_ids?: number[];
+  }>>;
+}
+
 // ─── Weight constants ─────────────────────────────────────────────────────────
 
 const FREQUENCY_WEIGHT: Record<string, number> = {
@@ -178,7 +189,7 @@ function pickFromPool(
 
 // ─── Main generator function ──────────────────────────────────────────────────
 
-export async function generate(): Promise<GeneratorResult> {
+export async function generate(options?: GenerateOptions): Promise<GeneratorResult> {
   // 1. Load data
   const [allComponents, prefs, enabledRules] = await Promise.all([
     getAllComponents(),
@@ -249,6 +260,10 @@ export async function generate(): Promise<GeneratorResult> {
 
   for (const meal_slot of MEAL_SLOTS) {
     for (const day of ALL_DAYS) {
+      // ── Locked slot check ───────────────────────────────────────────────────
+      const lockKey = `${day}-${meal_slot}` as `${DayOfWeek}-${MealSlot}`;
+      const locked = options?.lockedSlots?.[lockKey];
+
       // ── Base selection ──────────────────────────────────────────────────────
 
       // Hard constraint: slot restrictions
@@ -261,7 +276,15 @@ export async function generate(): Promise<GeneratorResult> {
 
       let selectedBase: ComponentRecord | null = null;
 
-      if (applicableRequireRules.length > 0) {
+      // If this slot has a locked base_id, use it directly
+      if (locked?.base_id !== undefined) {
+        const lockedBase = bases.find(b => b.id === locked.base_id);
+        if (lockedBase) {
+          selectedBase = lockedBase;
+        }
+      }
+
+      if (!selectedBase && applicableRequireRules.length > 0) {
         // Try to honor require-component for base
         for (const rule of applicableRequireRules) {
           const required = eligibleBases.find(c => c.id === rule.component_id);
@@ -343,7 +366,14 @@ export async function generate(): Promise<GeneratorResult> {
       // ── Curry selection ─────────────────────────────────────────────────────
 
       let selectedCurry: ComponentRecord | undefined;
-      if (curries.length > 0) {
+      if (locked?.curry_id !== undefined) {
+        // Use locked curry directly
+        const lockedCurry = curries.find(c => c.id === locked.curry_id);
+        if (lockedCurry) {
+          selectedCurry = lockedCurry;
+          usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
+        }
+      } else if (curries.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
         const curryPool = noRepeatCurry
           ? curries.filter(c => !usedCurryIds.has(c.id!))
@@ -372,7 +402,14 @@ export async function generate(): Promise<GeneratorResult> {
       // ── Subzi selection ─────────────────────────────────────────────────────
 
       let selectedSubzi: ComponentRecord | undefined;
-      if (subzis.length > 0) {
+      if (locked?.subzi_id !== undefined) {
+        // Use locked subzi directly
+        const lockedSubzi = subzis.find(s => s.id === locked.subzi_id);
+        if (lockedSubzi) {
+          selectedSubzi = lockedSubzi;
+          usageCount.set(lockedSubzi.id!, (usageCount.get(lockedSubzi.id!) ?? 0) + 1);
+        }
+      } else if (subzis.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
         const subziPool = noRepeatSubzi
           ? subzis.filter(s => !usedSubziIds.has(s.id!))
@@ -415,38 +452,43 @@ export async function generate(): Promise<GeneratorResult> {
         return override.includes(meal_slot);
       });
 
-      // Check mandatory extras from base_type_rules
+      // Check mandatory extras from base_type_rules (skip if extras are locked)
       const selectedExtraIds: number[] = [];
-      if (selectedBaseType) {
-        const baseTypeRule = resolvedPrefs.base_type_rules.find(
-          r => r.base_type === selectedBaseType,
-        );
-        if (baseTypeRule?.required_extra_category) {
-          const requiredCategory = baseTypeRule.required_extra_category;
-          const mandatoryExtras = eligibleExtras.filter(
-            e => e.extra_category === requiredCategory,
+      if (locked?.extra_ids !== undefined) {
+        // Use locked extras directly — preserve the exact array
+        selectedExtraIds.push(...locked.extra_ids);
+      } else {
+        if (selectedBaseType) {
+          const baseTypeRule = resolvedPrefs.base_type_rules.find(
+            r => r.base_type === selectedBaseType,
           );
-          if (mandatoryExtras.length > 0) {
-            const mandatory = weightedRandom(mandatoryExtras, c => effectiveWeight(c, usageCount));
-            selectedExtraIds.push(mandatory.id!);
-            usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
+          if (baseTypeRule?.required_extra_category) {
+            const requiredCategory = baseTypeRule.required_extra_category;
+            const mandatoryExtras = eligibleExtras.filter(
+              e => e.extra_category === requiredCategory,
+            );
+            if (mandatoryExtras.length > 0) {
+              const mandatory = weightedRandom(mandatoryExtras, c => effectiveWeight(c, usageCount));
+              selectedExtraIds.push(mandatory.id!);
+              usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
+            }
           }
         }
-      }
 
-      // Fill remaining extra slots (up to limit)
-      const remainingSlots = maxExtras - selectedExtraIds.length;
-      if (remainingSlots > 0 && eligibleExtras.length > 0) {
-        const availableExtras = eligibleExtras.filter(e => !selectedExtraIds.includes(e.id!));
-        // Use weighted random selection without replacement
-        const tempPool = [...availableExtras];
-        for (let i = 0; i < remainingSlots && tempPool.length > 0; i++) {
-          const picked = weightedRandom(tempPool, c => effectiveWeight(c, usageCount));
-          selectedExtraIds.push(picked.id!);
-          usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-          // Remove from temp pool to avoid duplicate in same slot
-          const idx = tempPool.findIndex(c => c.id === picked.id);
-          if (idx !== -1) tempPool.splice(idx, 1);
+        // Fill remaining extra slots (up to limit)
+        const remainingSlots = maxExtras - selectedExtraIds.length;
+        if (remainingSlots > 0 && eligibleExtras.length > 0) {
+          const availableExtras = eligibleExtras.filter(e => !selectedExtraIds.includes(e.id!));
+          // Use weighted random selection without replacement
+          const tempPool = [...availableExtras];
+          for (let i = 0; i < remainingSlots && tempPool.length > 0; i++) {
+            const picked = weightedRandom(tempPool, c => effectiveWeight(c, usageCount));
+            selectedExtraIds.push(picked.id!);
+            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
+            // Remove from temp pool to avoid duplicate in same slot
+            const idx = tempPool.findIndex(c => c.id === picked.id);
+            if (idx !== -1) tempPool.splice(idx, 1);
+          }
         }
       }
 
