@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Meal Library UI** - Build the CRUD interface for managing Indian meals with required categorical tags and a seed dataset (completed 2026-03-20)
 - [x] **Phase 3: Plan Generator + Rule Engine** - Implement the core generation algorithm and LLM rule compilation back-end, with unit tests, before any UI exists (completed 2026-03-20)
 - [x] **Phase 4: Plan Board UI** - Build the interactive 7x3 weekly grid with lock, swap, and regenerate on top of the tested generator (completed 2026-03-21)
-- [ ] **Phase 5: Rules Manager UI** - Surface the rule engine through a UI for entering, reviewing, and managing natural language scheduling rules
+- [x] **Phase 5: Rules Manager UI** - Surface the rule engine through a UI for entering, reviewing, and managing natural language scheduling rules (completed 2026-03-21)
 - [ ] **Phase 6: Save, History, and Export** - Add named plan saving, history browsing, and PNG export for sharing
 
 ## Phase Details
@@ -99,7 +99,7 @@ Plans:
 
 Plans:
 - [x] 05-01-PLAN.md — Build /rules list page with describeRule utility, RuleList, RuleRow, RuleEmptyState, AppNav update
-- [ ] 05-02-PLAN.md — Build /rules/new creation form with useReducer, variant-specific fields, live impact preview, zero-match warning
+- [x] 05-02-PLAN.md — Build /rules/new creation form with useReducer, variant-specific fields, live impact preview, zero-match warning
 
 ### Phase 6: Save, History, and Export
 **Goal**: Users can save named plans for future reference, load previously saved plans, and export the current plan as a PNG image suitable for sharing on WhatsApp
@@ -122,5 +122,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 3/3 | Complete   | 2026-03-21 |
-| 5. Rules Manager UI | 1/2 | In Progress|  |
+| 5. Rules Manager UI | 2/2 | Complete   | 2026-03-21 |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
