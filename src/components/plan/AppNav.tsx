@@ -12,6 +12,9 @@ export function AppNav() {
         <Link href="/library" className="text-sm text-muted-foreground hover:text-foreground">
           Meal Library
         </Link>
+        <Link href="/rules" className="text-sm text-muted-foreground hover:text-foreground">
+          Rules
+        </Link>
         <Link href="/settings/slots" className="text-sm text-muted-foreground hover:text-foreground">
           Slot Settings
         </Link>
