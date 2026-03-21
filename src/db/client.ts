@@ -2,7 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
-import type { CompiledFilter } from '@/types/plan';
+import type { CompiledFilter, WeeklyPlan } from '@/types/plan';
 
 // Rule record — typed CompiledFilter DSL for Phase 3
 export interface RuleRecord {
@@ -20,6 +20,13 @@ export interface SavedPlanRecord {
   created_at: string;
 }
 
+export interface ActivePlanRecord {
+  id: 'current';
+  plan: WeeklyPlan;
+  locks: Record<string, boolean>;
+  updated_at: string;
+}
+
 const db = new Dexie('FoodPlannerDB') as Dexie & {
   components: EntityTable<ComponentRecord, 'id'>;
   meals: EntityTable<MealRecord, 'id'>;
@@ -27,6 +34,7 @@ const db = new Dexie('FoodPlannerDB') as Dexie & {
   rules: EntityTable<RuleRecord, 'id'>;
   saved_plans: EntityTable<SavedPlanRecord, 'id'>;
   preferences: EntityTable<UserPreferencesRecord, 'id'>;
+  active_plan: EntityTable<ActivePlanRecord, 'id'>;
 };
 
 db.version(1).stores({
@@ -56,6 +64,16 @@ db.version(2).stores({
       delete rule.text;
     }
   });
+});
+
+db.version(3).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id',
+  preferences: 'id',
+  active_plan: 'id',
 });
 
 export { db };
