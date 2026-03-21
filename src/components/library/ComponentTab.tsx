@@ -32,6 +32,7 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
   const [activeDietaryTags, setActiveDietaryTags] = useState<DietaryTag[]>([])
   const [activeRegionalTags, setActiveRegionalTags] = useState<RegionalTag[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [addingNew, setAddingNew] = useState(false)
 
   const components = useLiveQuery(() => getComponentsByType(type), [type], [])
@@ -90,9 +91,9 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
               key={tag}
               variant={isActive ? 'default' : 'outline'}
               className={
-                !hasMatches && !isActive
+                (!hasMatches && !isActive
                   ? 'opacity-50 pointer-events-none cursor-not-allowed'
-                  : 'cursor-pointer'
+                  : 'cursor-pointer') + ' text-sm px-2 py-0.5'
               }
               onClick={() => hasMatches || isActive ? toggleDietaryTag(tag) : undefined}
             >
@@ -108,9 +109,9 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
               key={tag}
               variant={isActive ? 'default' : 'outline'}
               className={
-                !hasMatches && !isActive
+                (!hasMatches && !isActive
                   ? 'opacity-50 pointer-events-none cursor-not-allowed'
-                  : 'cursor-pointer'
+                  : 'cursor-pointer') + ' text-sm px-2 py-0.5'
               }
               onClick={() => hasMatches || isActive ? toggleRegionalTag(tag) : undefined}
             >
@@ -149,10 +150,13 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
               <ComponentRow
                 component={item}
                 expanded={item.id === expandedId}
+                confirmingDelete={item.id === confirmingDeleteId}
                 onExpand={() => setExpandedId(item.id ?? null)}
                 onCollapse={() => setExpandedId(null)}
+                onRequestDelete={() => setConfirmingDeleteId(item.id ?? null)}
+                onCancelDelete={() => setConfirmingDeleteId(null)}
                 onDelete={() => {
-                  // DeleteConfirmStrip is handled inside ComponentRow
+                  setConfirmingDeleteId(null)
                   if (expandedId === item.id) setExpandedId(null)
                 }}
               />

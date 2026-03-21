@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -17,19 +16,24 @@ import type { ComponentRecord } from '@/types/component'
 interface ComponentRowProps {
   component: ComponentRecord
   expanded: boolean
+  confirmingDelete: boolean
   onExpand: () => void
   onCollapse: () => void
+  onRequestDelete: () => void
+  onCancelDelete: () => void
   onDelete: () => void
 }
 
 export function ComponentRow({
   component,
   expanded,
+  confirmingDelete,
   onExpand,
   onCollapse,
+  onRequestDelete,
+  onCancelDelete,
   onDelete,
 }: ComponentRowProps) {
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   function handleRowClick() {
     if (expanded) {
@@ -41,7 +45,7 @@ export function ComponentRow({
 
   function handleDeleteClick(e: React.MouseEvent) {
     e.stopPropagation()
-    setConfirmingDelete(true)
+    onRequestDelete()
   }
 
   return (
@@ -65,7 +69,7 @@ export function ComponentRow({
         {/* Dietary badges */}
         <div className="flex gap-1 flex-wrap">
           {component.dietary_tags.map(tag => (
-            <Badge key={tag} variant="secondary" className="shrink-0">
+            <Badge key={tag} variant="secondary" className="shrink-0 text-sm px-2 py-0.5">
               {tag}
             </Badge>
           ))}
@@ -74,7 +78,7 @@ export function ComponentRow({
         {/* Regional badges */}
         <div className="flex gap-1 flex-wrap">
           {component.regional_tags.map(tag => (
-            <Badge key={tag} variant="outline" className="shrink-0">
+            <Badge key={tag} variant="outline" className="shrink-0 text-sm px-2 py-0.5">
               {tag}
             </Badge>
           ))}
@@ -82,7 +86,7 @@ export function ComponentRow({
 
         {/* Compatible base types badge (Extras only) */}
         {component.componentType === 'extra' && component.compatible_base_types && component.compatible_base_types.length > 0 && (
-          <Badge variant="outline" className="shrink-0">
+          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
             {component.compatible_base_types.join(', ')}
           </Badge>
         )}
@@ -113,11 +117,8 @@ export function ComponentRow({
         <DeleteConfirmStrip
           componentName={component.name}
           componentId={component.id}
-          onDeleted={() => {
-            setConfirmingDelete(false)
-            onDelete()
-          }}
-          onCancel={() => setConfirmingDelete(false)}
+          onDeleted={onDelete}
+          onCancel={onCancelDelete}
         />
       )}
 

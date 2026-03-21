@@ -3,13 +3,7 @@
 import { useState } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Combobox } from '@/components/ui/combobox'
 import type { ComponentRecord } from '@/types/component'
 import type { MealSlot } from '@/types/preferences'
 
@@ -137,18 +131,13 @@ export function ComponentExceptions({
             <div className="flex flex-wrap items-end gap-3 py-2 border border-border rounded-md p-3">
               <div className="flex flex-col gap-1">
                 <span className="text-xs font-medium text-muted-foreground">Component</span>
-                <Select value={newComponentId} onValueChange={setNewComponentId}>
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Select component..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableComponents.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={availableComponents.map(c => ({ value: String(c.id), label: c.name }))}
+                  value={newComponentId}
+                  onValueChange={setNewComponentId}
+                  placeholder="Select component..."
+                  searchPlaceholder="Search components..."
+                />
               </div>
 
               <div className="flex flex-col gap-1">

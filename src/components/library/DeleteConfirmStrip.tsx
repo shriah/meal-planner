@@ -47,6 +47,7 @@ export function DeleteConfirmStrip({
         <Button
           variant="ghost"
           size="sm"
+          className="text-foreground hover:text-foreground"
           onClick={onCancel}
           disabled={deleting}
         >
