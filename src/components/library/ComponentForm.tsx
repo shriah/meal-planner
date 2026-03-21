@@ -26,7 +26,8 @@ import type {
 
 const DIETARY_TAGS: DietaryTag[] = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian']
 const REGIONAL_TAGS: RegionalTag[] = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian']
-const OCCASION_TAGS: OccasionTag[] = ['everyday', 'fasting', 'festive', 'weekend']
+const GENERAL_OCCASION_TAGS: OccasionTag[] = ['everyday', 'weekday', 'weekend', 'fasting', 'festive']
+const DAY_TAGS: OccasionTag[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 const BASE_TYPES: BaseType[] = ['rice-based', 'bread-based', 'other']
 const EXTRA_CATEGORIES: { value: ExtraCategory; label: string }[] = [
   { value: 'liquid', label: 'Liquid' },
@@ -255,20 +256,39 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       </div>
 
       {/* Occasion tags */}
-      <div className="space-y-1">
+      <div className="space-y-2">
         <Label className="text-xs font-semibold">Occasion Tags</Label>
-        <div className="flex flex-wrap gap-3">
-          {OCCASION_TAGS.map(tag => (
-            <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
-              <Checkbox
-                checked={form.occasion_tags.includes(tag)}
-                onCheckedChange={() =>
-                  setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
-                }
-              />
-              {tag}
-            </label>
-          ))}
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground">General</span>
+          <div className="flex flex-wrap gap-3">
+            {GENERAL_OCCASION_TAGS.map(tag => (
+              <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={form.occasion_tags.includes(tag)}
+                  onCheckedChange={() =>
+                    setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
+                  }
+                />
+                {tag}
+              </label>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-1">
+          <span className="text-xs text-muted-foreground">Specific days</span>
+          <div className="flex flex-wrap gap-3">
+            {DAY_TAGS.map(tag => (
+              <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={form.occasion_tags.includes(tag)}
+                  onCheckedChange={() =>
+                    setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
+                  }
+                />
+                {tag}
+              </label>
+            ))}
+          </div>
         </div>
       </div>
 
