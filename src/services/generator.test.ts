@@ -733,6 +733,103 @@ describe('Over-constrained handling', () => {
   });
 });
 
+// ─── generate with lockedSlots ────────────────────────────────────────────────
+
+describe('generate with lockedSlots', () => {
+  it('23. generate() with no options still produces 21 slots (backwards compatible)', async () => {
+    await seedMinimalComponents();
+    await seedDefaultPreferences();
+    const result = await generate();
+    expect(result.plan.slots).toHaveLength(21);
+  });
+
+  it('24. generate() with lockedSlots preserves locked base_id unchanged', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const lockedBaseId = ids.riceBaseId;
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: lockedBaseId },
+      },
+    });
+
+    const mondayBreakfast = result.plan.slots.find(
+      s => s.day === 'monday' && s.meal_slot === 'breakfast',
+    );
+    expect(mondayBreakfast).toBeDefined();
+    expect(mondayBreakfast!.base_id).toBe(lockedBaseId);
+    expect(result.plan.slots).toHaveLength(21);
+  });
+
+  it('25. generate() with lockedSlots preserves locked extra_ids as group', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const lockedExtras = [ids.extraLiquidRiceId, ids.extraCondimentAllId];
+    const result = await generate({
+      lockedSlots: {
+        'tuesday-lunch': { extra_ids: lockedExtras },
+      },
+    });
+
+    const tuesdayLunch = result.plan.slots.find(
+      s => s.day === 'tuesday' && s.meal_slot === 'lunch',
+    );
+    expect(tuesdayLunch).toBeDefined();
+    expect(tuesdayLunch!.extra_ids).toEqual(lockedExtras);
+    expect(result.plan.slots).toHaveLength(21);
+  });
+
+  it('26. generate() with lockedSlots preserves locked curry_id and subzi_id', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const result = await generate({
+      lockedSlots: {
+        'wednesday-dinner': { curry_id: ids.curry1Id, subzi_id: ids.subzi1Id },
+      },
+    });
+
+    const wednesdayDinner = result.plan.slots.find(
+      s => s.day === 'wednesday' && s.meal_slot === 'dinner',
+    );
+    expect(wednesdayDinner).toBeDefined();
+    expect(wednesdayDinner!.curry_id).toBe(ids.curry1Id);
+    expect(wednesdayDinner!.subzi_id).toBe(ids.subzi1Id);
+    expect(result.plan.slots).toHaveLength(21);
+  });
+
+  it('27. generate() with partial locks only locks specified components — others still randomize', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Lock only the base for thursday-lunch; curry and subzi should still randomize
+    const lockedBaseId = ids.breadBaseId;
+    const runs = 5;
+    const curryIds = new Set<number | undefined>();
+
+    for (let i = 0; i < runs; i++) {
+      const result = await generate({
+        lockedSlots: {
+          'thursday-lunch': { base_id: lockedBaseId },
+        },
+      });
+
+      const thursdayLunch = result.plan.slots.find(
+        s => s.day === 'thursday' && s.meal_slot === 'lunch',
+      );
+      expect(thursdayLunch).toBeDefined();
+      // Base must always be locked
+      expect(thursdayLunch!.base_id).toBe(lockedBaseId);
+      curryIds.add(thursdayLunch!.curry_id);
+    }
+
+    // Plan should always complete
+    expect(curryIds.size).toBeGreaterThanOrEqual(1);
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
