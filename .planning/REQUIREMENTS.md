@@ -40,8 +40,8 @@
 
 ### Plan Board UI
 
-- [ ] **UI-01**: Weekly plan displayed as a 7×3 grid (days × meal slots: breakfast / lunch / dinner)
-- [ ] **UI-02**: Each slot shows lock/unlock control; locked slots are visually distinguished
+- [x] **UI-01**: Weekly plan displayed as a 7×3 grid (days × meal slots: breakfast / lunch / dinner)
+- [x] **UI-02**: Each slot shows lock/unlock control; locked slots are visually distinguished
 - [x] **UI-03**: Regenerate button re-randomizes all unlocked slots respecting active rules
 - [ ] **UI-04**: Tapping/clicking a slot opens a meal picker filtered to that slot type
 
@@ -106,8 +106,8 @@
 | RULE-03 | Phase 3 | Complete |
 | RULE-04 | Phase 3 | Complete |
 | RULE-05 | Phase 5 | Pending |
-| UI-01 | Phase 4 | Pending |
-| UI-02 | Phase 4 | Pending |
+| UI-01 | Phase 4 | Complete |
+| UI-02 | Phase 4 | Complete |
 | UI-03 | Phase 4 | Complete |
 | UI-04 | Phase 4 | Pending |
 | SAVE-01 | Phase 6 | Pending |

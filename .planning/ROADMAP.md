@@ -83,7 +83,7 @@ Plans:
 
 Plans:
 - [x] 04-01-PLAN.md — Install Zustand + shadcn Sheet, bump Dexie to v3 with active_plan table, create plan-db service, extend generator with locked slot support, create Zustand store
-- [ ] 04-02-PLAN.md — Build PlanBoard grid at / route with MealCell, PlanComponentRow, DayColumnHeader, SlotRowLabel, AppNav, PlanActionBar, WarningBanner
+- [x] 04-02-PLAN.md — Build PlanBoard grid at / route with MealCell, PlanComponentRow, DayColumnHeader, SlotRowLabel, AppNav, PlanActionBar, WarningBanner
 - [ ] 04-03-PLAN.md — Build MealPickerSheet bottom drawer, wire into PlanBoard, visual verification checkpoint
 
 ### Phase 5: Rules Manager UI
@@ -117,6 +117,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Data Foundation | 2/2 | Complete   | 2026-03-20 |
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
-| 4. Plan Board UI | 1/3 | In Progress|  |
+| 4. Plan Board UI | 2/3 | In Progress|  |
 | 5. Rules Manager UI | 0/TBD | Not started | - |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
