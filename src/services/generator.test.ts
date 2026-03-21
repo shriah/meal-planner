@@ -830,6 +830,156 @@ describe('generate with lockedSlots', () => {
   });
 });
 
+// ─── DAY-LITERAL: Day-of-week occasion tag enforcement ────────────────────────
+
+describe('DAY-LITERAL: isOccasionAllowed day-literal enforcement', () => {
+  /**
+   * isOccasionAllowed is not exported, so we test it through generate():
+   * seed exactly ONE component with specific occasion_tags, then verify
+   * it appears only on allowed days.
+   */
+
+  it('DL-1. component with occasion_tags:[monday] only appears on monday', async () => {
+    // Add a monday-only subzi — should only be eligible on monday
+    const mondaySubziId = await addComponent({
+      name: 'Monday Sabji',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['monday'],
+      created_at: '',
+    });
+    // Add base and a fallback subzi for other days
+    await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    for (let i = 0; i < 5; i++) {
+      await addComponent({ name: `Subzi ${i}`, componentType: 'subzi', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    }
+    await seedDefaultPreferences();
+
+    const result = await generate();
+    // If monday-subzi appears in non-monday slots, it's a bug
+    const nonMondayWithMondaySubzi = result.plan.slots.filter(
+      s => s.day !== 'monday' && s.subzi_id === mondaySubziId,
+    );
+    expect(nonMondayWithMondaySubzi).toHaveLength(0);
+  });
+
+  it('DL-2. component with occasion_tags:[monday] is eligible on monday', async () => {
+    // Only monday-tagged subzi (plus fallback subzis with everyday)
+    const mondaySubziId = await addComponent({
+      name: 'Monday Special',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['monday'],
+      created_at: '',
+    });
+    await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    for (let i = 0; i < 6; i++) {
+      await addComponent({ name: `Subzi ${i}`, componentType: 'subzi', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    }
+    await seedDefaultPreferences();
+
+    // Run multiple times — monday-subzi should appear on monday at least once
+    let appearsOnMonday = false;
+    for (let run = 0; run < 10; run++) {
+      const result = await generate();
+      const mondaySlots = result.plan.slots.filter(s => s.day === 'monday');
+      if (mondaySlots.some(s => s.subzi_id === mondaySubziId)) {
+        appearsOnMonday = true;
+        break;
+      }
+    }
+    expect(appearsOnMonday).toBe(true);
+  });
+
+  it('DL-3. weekday tag fires before day-literal — weekday component appears on monday', async () => {
+    // A component tagged weekday should still appear on monday
+    // (weekday check fires first, day-literal block doesn't apply)
+    const weekdaySubziId = await addComponent({
+      name: 'Weekday Subzi',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['weekday'],
+      created_at: '',
+    });
+    await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    await seedDefaultPreferences();
+
+    // Run multiple times to confirm weekday subzi appears on monday at least once
+    let mondayAppearance = false;
+    for (let run = 0; run < 10; run++) {
+      const result = await generate();
+      const mondaySlots = result.plan.slots.filter(s => s.day === 'monday');
+      if (mondaySlots.some(s => s.subzi_id === weekdaySubziId)) {
+        mondayAppearance = true;
+        break;
+      }
+    }
+    expect(mondayAppearance).toBe(true);
+  });
+
+  it('DL-4. component with occasion_tags:[monday,wednesday] eligible on both days, not others', async () => {
+    const multiDaySubziId = await addComponent({
+      name: 'Mon-Wed Subzi',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['monday', 'wednesday'],
+      created_at: '',
+    });
+    await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    for (let i = 0; i < 5; i++) {
+      await addComponent({ name: `Subzi ${i}`, componentType: 'subzi', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    }
+    await seedDefaultPreferences();
+
+    const result = await generate();
+    // Must not appear on tue, thu, fri, sat, sun
+    const invalidDays = result.plan.slots.filter(
+      s => !['monday', 'wednesday'].includes(s.day) && s.subzi_id === multiDaySubziId,
+    );
+    expect(invalidDays).toHaveLength(0);
+  });
+
+  it('DL-5. component with occasion_tags:[festive] falls through (no calendar meaning) — appears on any day', async () => {
+    // festive has no day-literal meaning, so it falls through to return true
+    const festiveSubziId = await addComponent({
+      name: 'Festive Subzi',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['festive'],
+      created_at: '',
+    });
+    await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    await seedDefaultPreferences();
+
+    // festive subzi should be eligible on saturday (no calendar restriction)
+    let appearsOnSaturday = false;
+    for (let run = 0; run < 10; run++) {
+      const result = await generate();
+      const saturdaySlots = result.plan.slots.filter(s => s.day === 'saturday');
+      if (saturdaySlots.some(s => s.subzi_id === festiveSubziId)) {
+        appearsOnSaturday = true;
+        break;
+      }
+    }
+    expect(appearsOnSaturday).toBe(true);
+  });
+
+  it('DL-6. TagFilterSchema accepts all 12 occasion tag values including day literals', async () => {
+    const { TagFilterSchema } = await import('@/types/plan');
+    const dayLiterals = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    const generalTags = ['everyday', 'weekday', 'weekend', 'fasting', 'festive'];
+    for (const tag of [...dayLiterals, ...generalTags]) {
+      const result = TagFilterSchema.safeParse({ occasion_tag: tag });
+      expect(result.success).toBe(true);
+    }
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
