@@ -11,7 +11,19 @@ export type ComponentType = 'base' | 'curry' | 'subzi' | 'extra';
 export type DietaryTag = 'veg' | 'non-veg' | 'vegan' | 'jain' | 'eggetarian';
 export type ProteinTag = 'fish' | 'chicken' | 'mutton' | 'egg' | 'paneer' | 'dal' | 'none';
 export type RegionalTag = 'south-indian' | 'north-indian' | 'coastal-konkan' | 'pan-indian';
-export type OccasionTag = 'everyday' | 'fasting' | 'festive' | 'weekend';
+export type OccasionTag =
+  | 'everyday'
+  | 'weekday'
+  | 'weekend'
+  | 'fasting'
+  | 'festive'
+  | 'monday'
+  | 'tuesday'
+  | 'wednesday'
+  | 'thursday'
+  | 'friday'
+  | 'saturday'
+  | 'sunday';
 
 // Shared base for all components
 interface BaseComponentFields {

@@ -62,7 +62,11 @@ export const TagFilterSchema = z.object({
     .enum(['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian'])
     .optional(),
   occasion_tag: z
-    .enum(['everyday', 'fasting', 'festive', 'weekend'])
+    .enum([
+      'everyday', 'weekday', 'weekend', 'fasting', 'festive',
+      'monday', 'tuesday', 'wednesday', 'thursday',
+      'friday', 'saturday', 'sunday',
+    ])
     .optional(),
 });
 

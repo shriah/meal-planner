@@ -24,6 +24,39 @@ export interface GenerateOptions {
   }>>;
 }
 
+// ─── Occasion-day enforcement ─────────────────────────────────────────────────
+
+const WEEKEND_DAYS: DayOfWeek[] = ['saturday', 'sunday'];
+const WEEKDAY_DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
+const DAY_LITERALS: DayOfWeek[] = [
+  'monday', 'tuesday', 'wednesday', 'thursday',
+  'friday', 'saturday', 'sunday',
+];
+
+/**
+ * Returns false if the component's occasion_tags restrict it to days that
+ * don't include `day`. Enforces:
+ *   - weekday-only (has 'weekday', lacks 'everyday') → monday–friday only
+ *   - weekend-only (has 'weekend', lacks 'everyday') → saturday/sunday only
+ * Tags like 'festive' and 'fasting' have no calendar mapping and are ignored.
+ */
+function isOccasionAllowed(component: ComponentRecord, day: DayOfWeek): boolean {
+  const tags = component.occasion_tags ?? [];
+  if (tags.length === 0) return true;
+  if (tags.includes('everyday')) return true;
+  if (tags.includes('weekday') && !tags.includes('everyday')) {
+    return WEEKDAY_DAYS.includes(day);
+  }
+  if (tags.includes('weekend') && !tags.includes('everyday')) {
+    return WEEKEND_DAYS.includes(day);
+  }
+  const dayLiteralsInTags = tags.filter(t => DAY_LITERALS.includes(t as DayOfWeek));
+  if (dayLiteralsInTags.length > 0) {
+    return dayLiteralsInTags.includes(day);
+  }
+  return true;
+}
+
 // ─── Weight constants ─────────────────────────────────────────────────────────
 
 const FREQUENCY_WEIGHT: Record<string, number> = {
@@ -266,8 +299,12 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
       // ── Base selection ──────────────────────────────────────────────────────
 
-      // Hard constraint: slot restrictions
-      let eligibleBases = getEligibleBases(meal_slot, resolvedPrefs, bases);
+      // Hard constraint: slot restrictions + component_slot_overrides + occasion
+      let eligibleBases = getEligibleBases(meal_slot, resolvedPrefs, bases).filter(b => {
+        const override = resolvedPrefs.slot_restrictions.component_slot_overrides[b.id!];
+        if (override !== undefined && !override.includes(meal_slot)) return false;
+        return isOccasionAllowed(b, day);
+      });
 
       // Check require-component rules that target this (day, slot)
       const applicableRequireRules = requireRules.filter(r =>
@@ -375,9 +412,14 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         }
       } else if (curries.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
+        const eligibleCurries = curries.filter(c => {
+          const override = resolvedPrefs.slot_restrictions.component_slot_overrides[c.id!];
+          if (override !== undefined && !override.includes(meal_slot)) return false;
+          return isOccasionAllowed(c, day);
+        });
         const curryPool = noRepeatCurry
-          ? curries.filter(c => !usedCurryIds.has(c.id!))
-          : curries;
+          ? eligibleCurries.filter(c => !usedCurryIds.has(c.id!))
+          : eligibleCurries;
 
         if (curryPool.length > 0) {
           const picked = pickFromPool(
@@ -411,9 +453,14 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         }
       } else if (subzis.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
+        const eligibleSubzis = subzis.filter(s => {
+          const override = resolvedPrefs.slot_restrictions.component_slot_overrides[s.id!];
+          if (override !== undefined && !override.includes(meal_slot)) return false;
+          return isOccasionAllowed(s, day);
+        });
         const subziPool = noRepeatSubzi
-          ? subzis.filter(s => !usedSubziIds.has(s.id!))
-          : subzis;
+          ? eligibleSubzis.filter(s => !usedSubziIds.has(s.id!))
+          : eligibleSubzis;
 
         if (subziPool.length > 0) {
           const picked = pickFromPool(
@@ -445,11 +492,11 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         return (e.compatible_base_types ?? []).includes(selectedBaseType);
       });
 
-      // Also filter by component_slot_overrides (hard constraint)
+      // Also filter by component_slot_overrides + occasion (hard constraints)
       eligibleExtras = eligibleExtras.filter(e => {
         const override = resolvedPrefs.slot_restrictions.component_slot_overrides[e.id!];
-        if (override === undefined) return true;
-        return override.includes(meal_slot);
+        if (override !== undefined && !override.includes(meal_slot)) return false;
+        return isOccasionAllowed(e, day);
       });
 
       // Check mandatory extras from base_type_rules (skip if extras are locked)
