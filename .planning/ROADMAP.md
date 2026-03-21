@@ -87,15 +87,19 @@ Plans:
 - [x] 04-03-PLAN.md — Build MealPickerSheet bottom drawer, wire into PlanBoard, visual verification checkpoint
 
 ### Phase 5: Rules Manager UI
-**Goal**: Users can write, review, enable/disable, and delete natural language scheduling rules through a dedicated UI surface backed by the Phase 3 rule engine
+**Goal**: Users can create, review, enable/disable, and delete scheduling rules through a structured form UI backed by the Phase 3 rule engine, with live impact preview and zero-match warnings
 **Depends on**: Phase 3
 **Requirements**: RULE-01, RULE-05
 **Success Criteria** (what must be TRUE):
-  1. User can type a scheduling rule in plain English, submit it, and see a "Compiling..." state while the LLM processes it
-  2. After compilation, the UI shows a human-readable summary of what the rule will do (e.g., "This rule affects 6 of your 34 meals") before the rule is saved
+  1. User can create a scheduling rule via a structured form (pick type, fill fields), submit it, and see it appear in the rule list
+  2. After filling the form, the UI shows a live impact preview of how many components the rule affects before the rule is saved
   3. User can view all saved rules in a list, toggle any rule active or inactive, and delete a rule — changes take effect on the next generation
-  4. When a newly saved rule matches zero available meals, the UI surfaces a warning at save time without blocking the save
-**Plans**: TBD
+  4. When a newly saved rule matches zero available components, the UI surfaces an amber warning at save time without blocking the save
+**Plans**: 2 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Build /rules list page with describeRule utility, RuleList, RuleRow, RuleEmptyState, AppNav update
+- [ ] 05-02-PLAN.md — Build /rules/new creation form with useReducer, variant-specific fields, live impact preview, zero-match warning
 
 ### Phase 6: Save, History, and Export
 **Goal**: Users can save named plans for future reference, load previously saved plans, and export the current plan as a PNG image suitable for sharing on WhatsApp
@@ -118,5 +122,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 3/3 | Complete   | 2026-03-21 |
-| 5. Rules Manager UI | 0/TBD | Not started | - |
+| 5. Rules Manager UI | 0/2 | Not started | - |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
