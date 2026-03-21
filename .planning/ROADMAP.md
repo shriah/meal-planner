@@ -79,7 +79,12 @@ Plans:
   2. Locked slots are visually distinct from unlocked slots, and clicking the regenerate button re-randomizes only unlocked slots while locked slots remain unchanged
   3. User can lock all slots for an entire day at once with a single action
   4. Clicking any slot opens a meal picker filtered to the correct slot type (breakfast, lunch, or dinner) from which the user can select a replacement meal
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Install Zustand + shadcn Sheet, bump Dexie to v3 with active_plan table, create plan-db service, extend generator with locked slot support, create Zustand store
+- [ ] 04-02-PLAN.md — Build PlanBoard grid at / route with MealCell, PlanComponentRow, DayColumnHeader, SlotRowLabel, AppNav, PlanActionBar, WarningBanner
+- [ ] 04-03-PLAN.md — Build MealPickerSheet bottom drawer, wire into PlanBoard, visual verification checkpoint
 
 ### Phase 5: Rules Manager UI
 **Goal**: Users can write, review, enable/disable, and delete natural language scheduling rules through a dedicated UI surface backed by the Phase 3 rule engine
@@ -112,6 +117,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Data Foundation | 2/2 | Complete   | 2026-03-20 |
 | 2. Meal Library UI | 3/3 | Complete   | 2026-03-20 |
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
-| 4. Plan Board UI | 0/TBD | Not started | - |
+| 4. Plan Board UI | 0/3 | Not started | - |
 | 5. Rules Manager UI | 0/TBD | Not started | - |
 | 6. Save, History, and Export | 0/TBD | Not started | - |
