@@ -13,12 +13,13 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 ### Validated
 
 - [x] Indian food database with meals structured as Base + Curry + Subzi + Extras — Validated in Phase 01: data-foundation (Dexie DB, discriminated union types, 12-function CRUD service, 7/7 tests passing)
+- [x] Configurable meal slots: breakfast, lunch, dinner per day — Validated in Phase 02: meal-library-ui
+- [x] Natural language rules to constrain meal randomization (day-based and rotation rules) — Validated in Phase 03: plan-generator-rule-engine (structured form-based compiler, no LLM required)
+- [x] Lock specific meals at the day or meal-slot level; randomize the rest — Validated in Phase 04: plan-board-ui
+- [x] Rules manager UI for writing, reviewing, toggling, and deleting scheduling rules — Validated in Phase 05: rules-manager-ui (RULE-01, RULE-05)
 
 ### Active
 
-- [ ] Indian food database with meals structured as Base + Curry + Subzi + Extras (rasam, pappad, sweets)
-- [ ] Configurable meal slots: breakfast, lunch, dinner per day
-- [ ] Natural language rules (LLM-translated) to constrain meal randomization (day-based and rotation rules)
 - [ ] Lock specific meals at the day or meal-slot level; randomize the rest
 - [ ] Generate a full Mon-Sun meal plan with one action
 - [ ] Edit generated plan (swap individual meals)
@@ -56,4 +57,4 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | Personal-use scope for v1 | Simplifies auth, data model, and UX significantly | — Pending |
 
 ---
-*Last updated: 2026-03-20 — Phase 01 complete (data foundation)*
+*Last updated: 2026-03-21 — Phase 05 complete (rules-manager-ui — /rules list + /rules/new form, 95 tests passing)*
