@@ -54,15 +54,14 @@ Exceptions:
 
 ## Typography
 
-All sizes from the existing codebase pattern (ComponentLibrary uses 28px/semibold heading, ComponentTab uses 14px/12px for body/meta).
+All sizes from the existing codebase pattern (ComponentLibrary uses 28px/semibold heading, ComponentTab uses 14px for body/label text).
 
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Display | 28px | 600 (semibold) | 1.2 | Page heading "Weekly Plan" |
 | Heading | 20px | 600 (semibold) | 1.2 | Day column headers (Mon, Tue, ...), sheet title |
 | Body | 16px | 400 (regular) | 1.5 | Base component name in cell (primary line) |
-| Label | 14px | 400 (regular) | 1.5 | Curry, subzi, extras lines within cell; filter chip text; slot row labels (Breakfast, Lunch, Dinner) |
-| Meta | 12px | 400 (regular) | 1.4 | Tag badges inside meal picker, warning tooltip text |
+| Label | 14px | 400 (regular) | 1.5 | Curry, subzi, extras lines within cell; filter chip text; slot row labels (Breakfast, Lunch, Dinner); tag badges inside meal picker; warning tooltip text |
 
 Two weights only: 400 (regular) and 600 (semibold). Source: established in ComponentLibrary.tsx.
 
@@ -76,13 +75,13 @@ All values from `globals.css` CSS custom properties (olive palette, oklch).
 |------|-------|-------|
 | Dominant (60%) | `--background` oklch(1 0 0) | Page background, grid background |
 | Secondary (30%) | `--card` oklch(1 0 0) / `--muted` oklch(0.966 0.005 106.5) | Cell backgrounds (unlocked: card; muted for row alternation), sheet surface |
-| Accent (10%) | `--primary` oklch(0.852 0.199 91.936) — olive-yellow | Reserved for: Generate Plan button, Regenerate button, active lock icon (filled padlock), selected item in meal picker |
+| Accent (10%) | `--primary` oklch(0.852 0.199 91.936) — olive-yellow | Reserved for: Generate Plan button, Regenerate Plan button, active lock icon (filled padlock), selected item in meal picker |
 | Warning | `--chart-1` oklch(0.845 0.143 164.978) — amber tone | Violated slot border highlight, warning banner background tint |
 | Destructive | `--destructive` oklch(0.577 0.245 27.325) | Not used directly in Phase 4 (no delete actions); reserved for future phases |
 
 **Accent reserved for (explicit list):**
 1. "Generate Plan" button (primary CTA, empty state)
-2. "Regenerate" button (primary CTA, populated state)
+2. "Regenerate Plan" button (primary CTA, populated state)
 3. Filled lock icon — when a component row is locked
 4. Selected row highlight in meal picker sheet
 
@@ -116,6 +115,8 @@ All values from `globals.css` CSS custom properties (olive palette, oklch).
   - Empty slot (before generation): single dash "—" centered in cell
 - **ComponentRow**: horizontal flex row
   - Left: lock icon button (44px touch target, lucide Lock/Unlock)
+    - `aria-label="Lock [ComponentType]"` when unlocked (e.g., `aria-label="Lock Curry"`)
+    - `aria-label="Unlock [ComponentType]"` when locked (e.g., `aria-label="Unlock Curry"`)
   - Right: component name text (clickable if unlocked, triggers meal picker)
   - Locked state: `bg-muted`, filled lock icon in `text-primary`, name in `text-muted-foreground`, not clickable
   - Unlocked state: `bg-card`, outline unlock icon in `text-muted-foreground`, name in `text-foreground`, hover shows `cursor-pointer` and subtle `bg-accent/10` highlight
@@ -132,7 +133,7 @@ All values from `globals.css` CSS custom properties (olive palette, oklch).
 ### Action bar
 
 - **PlanActionBar**: sticky bottom bar (or top, at Claude's discretion — top recommended for desktop)
-  - "Regenerate" button: primary variant, accent color, `RefreshCw` icon prefix
+  - "Regenerate Plan" button: primary variant, accent color, `RefreshCw` icon prefix
   - Generator running state: button shows spinner (`animate-spin` on `RefreshCw`), text "Generating..."
 
 ### Warning banner
@@ -170,7 +171,7 @@ All values from `globals.css` CSS custom properties (olive palette, oklch).
 |---------|------|
 | Page heading | "Weekly Plan" |
 | Primary CTA (empty state) | "Generate Plan" |
-| Primary CTA (populated state) | "Regenerate" |
+| Primary CTA (populated state) | "Regenerate Plan" |
 | Generating state label | "Generating..." |
 | Empty cell value | "—" (em dash, no label) |
 | Empty state heading | "No plan yet" |
@@ -184,6 +185,8 @@ All values from `globals.css` CSS custom properties (olive palette, oklch).
 | Nav: library link | "Meal Library" |
 | Nav: settings link | "Slot Settings" |
 | Slot compatibility label in picker | "Eligible for: Breakfast, Lunch" |
+| Lock icon button (unlocked) | `aria-label="Lock [ComponentType]"` (e.g., "Lock Curry") |
+| Lock icon button (locked) | `aria-label="Unlock [ComponentType]"` (e.g., "Unlock Curry") |
 
 No destructive actions in Phase 4. Lock/unlock is reversible. Swap is reversible (re-pick or regenerate). No delete or confirmation dialogs needed.
 
@@ -221,6 +224,9 @@ No third-party registries. No vetting gate required.
 | Badge chip + AND filter pattern | src/components/library/ComponentTab.tsx |
 | Spacing pattern (px-4 py-8 sm:px-8) | src/components/library/ComponentLibrary.tsx |
 | Plan board as home route `/` | CONTEXT.md — Integration Points |
+| 12px Meta tier removed, usages merged into 14px Label | Checker revision 2026-03-21 — max 4 type sizes |
+| "Regenerate Plan" verb+noun CTA | Checker revision 2026-03-21 — copywriting dimension |
+| aria-label on lock icon button | Checker revision 2026-03-21 — visuals dimension |
 
 ---
 
