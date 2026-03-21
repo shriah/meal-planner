@@ -12,7 +12,9 @@ import { SlotRowLabel } from './SlotRowLabel'
 import { MealCell } from './MealCell'
 import { PlanActionBar } from './PlanActionBar'
 import { WarningBanner } from './WarningBanner'
+import { MealPickerSheet } from './MealPickerSheet'
 import { Button } from '@/components/ui/button'
+import type { BaseType } from '@/types/component'
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
 
@@ -108,8 +110,24 @@ export function PlanBoard() {
         </div>
       )}
 
-      {/* MealPickerSheet will be added in Plan 03 -- pickerState is ready */}
-      {pickerState && null}
+      {pickerState && (
+        <MealPickerSheet
+          open={pickerState !== null}
+          onOpenChange={(open) => { if (!open) setPickerState(null) }}
+          day={pickerState.day}
+          slot={pickerState.slot}
+          componentType={pickerState.componentType}
+          currentBaseType={
+            pickerState.componentType === 'extras'
+              ? (() => {
+                  const ps = plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
+                  const baseComp = ps ? componentsMap.get(ps.base_id) : undefined
+                  return baseComp?.base_type as BaseType | undefined
+                })()
+              : undefined
+          }
+        />
+      )}
     </div>
   )
 }
