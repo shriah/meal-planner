@@ -2,7 +2,9 @@
 import { create } from 'zustand'
 import type { WeeklyPlan, Warning, DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
-import { getActivePlan, saveActivePlan } from '@/services/plan-db'
+import { getActivePlan } from '@/services/plan-db'
+import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
+import { getISOWeekStart, addWeeks } from '@/services/week-utils'
 import { generate } from '@/services/generator'
 import type { GenerateOptions } from '@/services/generator'
 
@@ -16,6 +18,8 @@ interface PlanStore {
   isGenerating: boolean
   hydrated: boolean
   warningBannerDismissed: boolean
+  currentWeekStart: string
+  isReadOnly: boolean
 
   initFromDB: () => Promise<void>
   setLock: (key: LockKey, locked: boolean) => void
@@ -25,6 +29,7 @@ interface PlanStore {
   regenerate: () => Promise<void>
   generateFresh: () => Promise<void>
   dismissWarningBanner: () => void
+  navigateToWeek: (weekStart: string) => Promise<void>
 }
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
@@ -37,21 +42,26 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
   isGenerating: false,
   hydrated: false,
   warningBannerDismissed: false,
+  currentWeekStart: getISOWeekStart(new Date()),
+  isReadOnly: false,
 
   initFromDB: async () => {
     const record = await getActivePlan()
+    const currentWeekStart = getISOWeekStart(new Date())
     set({
       plan: record?.plan ?? null,
       locks: record?.locks ?? {},
       hydrated: true,
+      currentWeekStart,
+      isReadOnly: false,
     })
   },
 
   setLock: (key, locked) => {
     const newLocks = { ...get().locks, [key]: locked }
     set({ locks: newLocks })
-    const { plan } = get()
-    if (plan) saveActivePlan({ plan, locks: newLocks })
+    const { plan, currentWeekStart } = get()
+    if (plan) saveWeekPlan(currentWeekStart, plan, newLocks)
   },
 
   lockDay: (day) => {
@@ -62,8 +72,8 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
       }
     }
     set({ locks: newLocks })
-    const { plan } = get()
-    if (plan) saveActivePlan({ plan, locks: newLocks })
+    const { plan, currentWeekStart } = get()
+    if (plan) saveWeekPlan(currentWeekStart, plan, newLocks)
   },
 
   unlockDay: (day) => {
@@ -74,12 +84,12 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
       }
     }
     set({ locks: newLocks })
-    const { plan } = get()
-    if (plan) saveActivePlan({ plan, locks: newLocks })
+    const { plan, currentWeekStart } = get()
+    if (plan) saveWeekPlan(currentWeekStart, plan, newLocks)
   },
 
   swapComponent: (day, slot, componentType, componentId) => {
-    const { plan, locks } = get()
+    const { plan, locks, currentWeekStart } = get()
     if (!plan) return
     const slotIndex = plan.slots.findIndex(s => s.day === day && s.meal_slot === slot)
     if (slotIndex === -1) return
@@ -95,11 +105,11 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
     updatedSlots[slotIndex] = updatedSlot
     const newPlan = { slots: updatedSlots }
     set({ plan: newPlan })
-    saveActivePlan({ plan: newPlan, locks })
+    saveWeekPlan(currentWeekStart, newPlan, locks)
   },
 
   regenerate: async () => {
-    const { locks, plan } = get()
+    const { locks, plan, currentWeekStart } = get()
     if (!plan) return
     set({ isGenerating: true, warningBannerDismissed: false })
     try {
@@ -127,23 +137,56 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
       }
       const result = await generate({ lockedSlots })
       set({ plan: result.plan, warnings: result.warnings, isGenerating: false })
-      await saveActivePlan({ plan: result.plan, locks })
+      saveWeekPlan(currentWeekStart, result.plan, locks)
     } catch {
       set({ isGenerating: false })
     }
   },
 
   generateFresh: async () => {
+    const currentWeekStart = get().currentWeekStart
     set({ isGenerating: true, warningBannerDismissed: false })
     try {
       const result = await generate()
       const { locks } = get()
       set({ plan: result.plan, warnings: result.warnings, isGenerating: false })
-      await saveActivePlan({ plan: result.plan, locks })
+      saveWeekPlan(currentWeekStart, result.plan, locks)
     } catch {
       set({ isGenerating: false })
     }
   },
 
   dismissWarningBanner: () => set({ warningBannerDismissed: true }),
+
+  navigateToWeek: async (weekStart: string) => {
+    const thisWeek = getISOWeekStart(new Date())
+    const isReadOnly = weekStart < thisWeek
+
+    if (weekStart === thisWeek) {
+      // Load from active_plan for fast current-week hydration (D-09)
+      const record = await getActivePlan()
+      set({
+        plan: record?.plan ?? null,
+        locks: record?.locks ?? {},
+        currentWeekStart: weekStart,
+        isReadOnly: false,
+        warnings: [],
+        warningBannerDismissed: false,
+      })
+    } else {
+      // Load from saved_plans for past/future weeks
+      const saved = await getWeekPlan(weekStart)
+      set({
+        plan: saved?.slots ?? null,
+        locks: saved?.locks ?? {},
+        currentWeekStart: weekStart,
+        isReadOnly,
+        warnings: [],
+        warningBannerDismissed: false,
+      })
+    }
+  },
 }))
+
+// Re-export addWeeks for use in WeekNavigator (imported from week-utils directly is fine too)
+export { addWeeks }

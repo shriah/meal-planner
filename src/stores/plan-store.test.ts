@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { db } from '@/db/client';
 import { usePlanStore } from './plan-store';
 import { saveActivePlan } from '@/services/plan-db';
+import { getISOWeekStart, addWeeks } from '@/services/week-utils';
 import type { WeeklyPlan } from '@/types/plan';
 
 // ─── Helper: make a minimal valid WeeklyPlan ───────────────────────────────────
@@ -25,6 +26,7 @@ function makePlan(): WeeklyPlan {
 
 beforeEach(async () => {
   await db.active_plan.clear();
+  await db.saved_plans.clear();
   // Reset store to initial state
   usePlanStore.setState({
     plan: null,
@@ -33,6 +35,8 @@ beforeEach(async () => {
     isGenerating: false,
     hydrated: false,
     warningBannerDismissed: false,
+    currentWeekStart: getISOWeekStart(new Date()),
+    isReadOnly: false,
   });
 });
 
@@ -47,8 +51,8 @@ describe('plan-store', () => {
 
     expect(usePlanStore.getState().locks['monday-breakfast-base']).toBe(true);
 
-    // Wait for async save to complete (setLock fires saveActivePlan but doesn't await)
-    await new Promise(resolve => setTimeout(resolve, 10));
+    // Wait for async save to complete (setLock fires saveWeekPlan but doesn't await)
+    await new Promise(resolve => setTimeout(resolve, 50));
 
     const record = await db.active_plan.get('current');
     expect(record).toBeDefined();
@@ -115,5 +119,53 @@ describe('plan-store', () => {
     expect(state.hydrated).toBe(true);
     expect(state.plan).toBeNull();
     expect(state.locks).toEqual({});
+  });
+});
+
+// ─── Week navigation tests ────────────────────────────────────────────────────
+
+describe('week navigation', () => {
+  it('navigateToWeek sets currentWeekStart and isReadOnly for past week', async () => {
+    const thisWeek = getISOWeekStart(new Date());
+    const pastWeek = addWeeks(thisWeek, -2);
+
+    await usePlanStore.getState().navigateToWeek(pastWeek);
+
+    const state = usePlanStore.getState();
+    expect(state.currentWeekStart).toBe(pastWeek);
+    expect(state.isReadOnly).toBe(true);
+  });
+
+  it('navigateToWeek to current week sets isReadOnly false and loads from active_plan', async () => {
+    const thisWeek = getISOWeekStart(new Date());
+    const pastWeek = addWeeks(thisWeek, -1);
+    const plan = makePlan();
+    const locks = { 'monday-breakfast-base': true };
+    await saveActivePlan({ plan, locks });
+
+    // Navigate away first
+    await usePlanStore.getState().navigateToWeek(pastWeek);
+    expect(usePlanStore.getState().isReadOnly).toBe(true);
+
+    // Navigate back to current week
+    await usePlanStore.getState().navigateToWeek(thisWeek);
+
+    const state = usePlanStore.getState();
+    expect(state.currentWeekStart).toBe(thisWeek);
+    expect(state.isReadOnly).toBe(false);
+    expect(state.plan).toEqual(plan);
+    expect(state.locks).toEqual(locks);
+  });
+
+  it('navigateToWeek to future week with no saved plan sets plan to null', async () => {
+    const thisWeek = getISOWeekStart(new Date());
+    const futureWeek = addWeeks(thisWeek, 2);
+
+    await usePlanStore.getState().navigateToWeek(futureWeek);
+
+    const state = usePlanStore.getState();
+    expect(state.currentWeekStart).toBe(futureWeek);
+    expect(state.plan).toBeNull();
+    expect(state.isReadOnly).toBe(false);
   });
 });
