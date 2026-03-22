@@ -15,7 +15,6 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 **Target features:**
 - `scheduling-rule` — unified day/slot-scoped rule replacing `day-filter` + `require-component` (filter pool / require / exclude, by tag or specific component)
 - `meal-template` — base-type-scoped composition rule replacing `/settings/slots` and `base_type_rules` prefs (slot assignment, composition exclusions, required extras)
-- Expanded `no-repeat` — configurable window (day/week/N weeks) and optional slot/day scoping
 - Migration: existing rules + prefs → new variants at startup
 
 ## Requirements
@@ -50,11 +49,6 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - [ ] **TMPL-04**: Meal template can require an extra category for the given base type (e.g., bread-based always needs a liquid extra)
 - [ ] **TMPL-05**: `/settings/slots` page removed; AppNav "Slot Settings" link removed; all constraints managed through Rules UI
 - [ ] **TMPL-06**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup
-
-**No Repeat (expanded)**
-- [ ] **NRPT-01**: No-repeat rule window is configurable: within this day / within this week / within N consecutive weeks
-- [ ] **NRPT-02**: No-repeat rule can be scoped to specific meal slots (e.g., "don't repeat subzi at dinner")
-- [ ] **NRPT-03**: No-repeat rule can be scoped to specific days (e.g., "don't repeat base on weekdays")
 
 ### Out of Scope
 
