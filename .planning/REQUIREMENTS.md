@@ -48,11 +48,11 @@
 ### Save & History
 
 - [x] **SAVE-01**: User can save the current plan with a name
-- [ ] **SAVE-02**: User can browse previously saved plans and load any of them
+- [x] **SAVE-02**: User can browse previously saved plans and load any of them
 
 ### Export
 
-- [ ] **EXPORT-01**: User can export the current plan as a PNG image suitable for sharing (WhatsApp, etc.)
+- [x] **EXPORT-01**: User can export the current plan as a PNG image suitable for sharing (WhatsApp, etc.)
 
 ## v2 Requirements
 
@@ -111,8 +111,8 @@
 | UI-03 | Phase 4 | Complete |
 | UI-04 | Phase 4 | Complete |
 | SAVE-01 | Phase 6 | Complete |
-| SAVE-02 | Phase 6 | Pending |
-| EXPORT-01 | Phase 6 | Pending |
+| SAVE-02 | Phase 6 | Complete |
+| EXPORT-01 | Phase 6 | Complete |
 
 **Coverage:**
 - v1 requirements: 27 total
