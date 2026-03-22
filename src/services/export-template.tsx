@@ -35,6 +35,32 @@ export interface ExportPlanPayload {
 
 const DAYS: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
+// Satori requires an explicit height — estimate from content
+const PADDING = 24
+const CONTENT_WIDTH = 390 - PADDING * 2  // 342px
+const CHARS_PER_LINE = Math.floor(CONTENT_WIDTH / 7.5) // ~45 chars at 13px Inter
+const TEXT_LINE_HEIGHT = 18
+
+export function estimateHeight(payload: ExportPlanPayload): number {
+  const HEADER = 80          // title + subtitle + border + margin
+  const DAY_LABEL = 30       // day heading + margin
+  const SLOT_CHROME = 38     // pill padding (12) + label row (16) + label margin (2) + pill margin (4) + gap (4)
+
+  let height = HEADER + PADDING // header + bottom padding
+
+  for (const day of DAYS) {
+    height += DAY_LABEL
+    for (const slot of ALL_SLOTS) {
+      const found = payload.slots.find(s => s.day === day && s.meal_slot === slot)
+      const text = found?.text ?? '—'
+      const lines = Math.max(1, Math.ceil(text.length / CHARS_PER_LINE))
+      height += SLOT_CHROME + lines * TEXT_LINE_HEIGHT
+    }
+  }
+
+  return height + 40 // safety buffer
+}
+
 export function buildPlanElement(payload: ExportPlanPayload) {
   const { slots, weekLabel } = payload
 

@@ -2,7 +2,7 @@ import { Resvg } from '@resvg/resvg-js'
 import satori from 'satori'
 import { readFileSync } from 'fs'
 import { join } from 'path'
-import { buildPlanElement } from '@/services/export-template'
+import { buildPlanElement, estimateHeight } from '@/services/export-template'
 import type { ExportPlanPayload } from '@/services/export-template'
 
 // Load font once at module scope (cached across requests)
@@ -13,9 +13,10 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as ExportPlanPayload
     const element = buildPlanElement(payload)
 
+    const height = estimateHeight(payload)
     const svg = await satori(element, {
       width: 390,
-      height: 1100,
+      height,
       fonts: [{ name: 'Inter', data: fontData, weight: 400, style: 'normal' }],
     })
 
