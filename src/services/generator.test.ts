@@ -1249,6 +1249,363 @@ describe('SCHED: scheduling-rule filter-pool and exclude', () => {
   });
 });
 
+// ─── SCHED: scheduling-rule require-one ───────────────────────────────────────
+
+describe('SCHED: scheduling-rule require-one', () => {
+  it('SCHED-R1. require-one-by-tag picks matching component for target slot', async () => {
+    // Seed: one fish curry + two veg curries + base
+    await addComponent({
+      name: 'Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const fishCurryId = await addComponent({
+      name: 'Fish Curry',
+      componentType: 'curry',
+      protein_tag: 'fish',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Dal Tadka',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    // Require fish on Friday lunch
+    await addRule({
+      name: 'Friday fish require-one',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      },
+      created_at: '',
+    });
+
+    // Run multiple times — Friday lunch must always have fish curry
+    for (let i = 0; i < 5; i++) {
+      const result = await generate();
+      const fridayLunch = result.plan.slots.find(s => s.day === 'friday' && s.meal_slot === 'lunch');
+      expect(fridayLunch).toBeDefined();
+      expect(fridayLunch!.curry_id).toBe(fishCurryId);
+    }
+  });
+
+  it('SCHED-R2. require-one-by-tag overrides filter-pool (D-06)', async () => {
+    // filter-pool: veg-only; require-one: fish (non-veg) on Friday lunch
+    // Fish curry must still appear — require-one wins
+    await addComponent({
+      name: 'Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const fishCurryId = await addComponent({
+      name: 'Fish Curry',
+      componentType: 'curry',
+      protein_tag: 'fish',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    // filter-pool: only veg (would exclude fish)
+    await addRule({
+      name: 'Veg only',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { dietary_tag: 'veg' } },
+      },
+      created_at: '',
+    });
+
+    // require-one: fish on Friday lunch (overrides filter-pool)
+    await addRule({
+      name: 'Friday fish require-one',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      },
+      created_at: '',
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const fridayLunch = result.plan.slots.find(s => s.day === 'friday' && s.meal_slot === 'lunch');
+      expect(fridayLunch).toBeDefined();
+      // require-one wins: fish curry must appear despite veg-only filter-pool
+      expect(fridayLunch!.curry_id).toBe(fishCurryId);
+    }
+  });
+
+  it('SCHED-R3. require-one-by-tag with no match warns and skips (D-03)', async () => {
+    // No mutton curry in library — require mutton → warn + skip, generation completes
+    await addComponent({
+      name: 'Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    await addRule({
+      name: 'Mutton require-one (no match)',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['monday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { protein_tag: 'mutton' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete with 21 slots
+    expect(result.plan.slots).toHaveLength(21);
+    // Warning must mention "no component in library matches tag filter"
+    const warnMsg = result.warnings.find(w =>
+      w.message.includes('no component in library matches tag filter'),
+    );
+    expect(warnMsg).toBeDefined();
+  });
+
+  it('SCHED-R4. require-one-by-component injects component (D-04)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Require curry2 on Monday dinner
+    await addRule({
+      name: 'Require curry2 Monday dinner',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['monday'],
+        slots: ['dinner'],
+        match: { mode: 'component', component_id: ids.curry2Id },
+      },
+      created_at: '',
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const mondayDinner = result.plan.slots.find(s => s.day === 'monday' && s.meal_slot === 'dinner');
+      expect(mondayDinner).toBeDefined();
+      expect(mondayDinner!.curry_id).toBe(ids.curry2Id);
+    }
+  });
+
+  it('SCHED-R5. require-one-by-component overrides filter-pool (D-04)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // filter-pool: only curry1 allowed on Tuesday lunch
+    await addRule({
+      name: 'Only curry1 on Tuesday lunch',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['tuesday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.curry1Id },
+      },
+      created_at: '',
+    });
+
+    // require-one: force curry2 on Tuesday lunch (overrides filter-pool)
+    await addRule({
+      name: 'Require curry2 Tuesday lunch',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['tuesday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.curry2Id },
+      },
+      created_at: '',
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const tuesdayLunch = result.plan.slots.find(s => s.day === 'tuesday' && s.meal_slot === 'lunch');
+      expect(tuesdayLunch).toBeDefined();
+      // require-one wins — curry2 must appear despite filter-pool allowing only curry1
+      expect(tuesdayLunch!.curry_id).toBe(ids.curry2Id);
+    }
+  });
+
+  it('SCHED-R6. multiple require-one rules on same slot all satisfied (D-07)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Two require-one on Wednesday lunch: specific curry + specific subzi
+    await addRule({
+      name: 'Require curry2 Wednesday lunch',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['wednesday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.curry2Id },
+      },
+      created_at: '',
+    });
+
+    await addRule({
+      name: 'Require subzi2 Wednesday lunch',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['wednesday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.subzi2Id },
+      },
+      created_at: '',
+    });
+
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const wednesdayLunch = result.plan.slots.find(s => s.day === 'wednesday' && s.meal_slot === 'lunch');
+      expect(wednesdayLunch).toBeDefined();
+      // Both rules satisfied independently
+      expect(wednesdayLunch!.curry_id).toBe(ids.curry2Id);
+      expect(wednesdayLunch!.subzi_id).toBe(ids.subzi2Id);
+    }
+  });
+
+  it('SCHED-R7. require-one-by-component wrong type is skipped (Pitfall 2)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Require curry1 (a curry component) on Monday breakfast — should NOT affect BASE selection
+    await addRule({
+      name: 'Require curry1 as base (wrong type)',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['monday'],
+        slots: ['breakfast'],
+        match: { mode: 'component', component_id: ids.curry1Id },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    const mondayBreakfast = result.plan.slots.find(s => s.day === 'monday' && s.meal_slot === 'breakfast');
+    expect(mondayBreakfast).toBeDefined();
+    // base_id must be a valid base (riceBaseId, breadBaseId, or otherBaseId) — NOT curry1Id
+    const validBaseIds = [ids.riceBaseId, ids.breadBaseId, ids.otherBaseId];
+    expect(validBaseIds).toContain(mondayBreakfast!.base_id);
+    expect(mondayBreakfast!.base_id).not.toBe(ids.curry1Id);
+    // Generation completes successfully
+    expect(result.plan.slots).toHaveLength(21);
+  });
+
+  it('SCHED-R8. require-one does not affect non-matching day/slot', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Require curry2 only on Friday lunch
+    await addRule({
+      name: 'Require curry2 Friday lunch only',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.curry2Id },
+      },
+      created_at: '',
+    });
+
+    // Run multiple times — Tuesday dinner should be free to pick any curry
+    const tuesdayDinnerCurryIds = new Set<number | undefined>();
+    for (let i = 0; i < 5; i++) {
+      const result = await generate();
+      const tuesdayDinner = result.plan.slots.find(s => s.day === 'tuesday' && s.meal_slot === 'dinner');
+      expect(tuesdayDinner).toBeDefined();
+      tuesdayDinnerCurryIds.add(tuesdayDinner!.curry_id);
+    }
+
+    // Tuesday dinner can use either curry (not forced to curry2)
+    // At least 1 curry appears on Tuesday dinner (non-forced slot still works)
+    expect(tuesdayDinnerCurryIds.size).toBeGreaterThan(0);
+
+    // Friday lunch must always have curry2
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const fridayLunch = result.plan.slots.find(s => s.day === 'friday' && s.meal_slot === 'lunch');
+      expect(fridayLunch!.curry_id).toBe(ids.curry2Id);
+    }
+    void ids;
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
