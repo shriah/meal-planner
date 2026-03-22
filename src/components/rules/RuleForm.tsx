@@ -59,17 +59,19 @@ function formReducer(state: FormState, action: FormAction): FormState {
           return { name, ruleType: 'no-repeat', component_type: '' };
         case 'require-component':
           return { name, ruleType: 'require-component', component_id: null, days: [], slots: [] };
+        case 'scheduling-rule':
+          return { name, ruleType: 'scheduling-rule', effect: '', days: [], slots: [], match: { mode: '' } };
       }
     }
 
     case 'SET_DAYS':
-      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component') {
+      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component' || state.ruleType === 'scheduling-rule') {
         return { ...state, days: action.days };
       }
       return state;
 
     case 'SET_SLOTS':
-      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component') {
+      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component' || state.ruleType === 'scheduling-rule') {
         return { ...state, slots: action.slots };
       }
       return state;
@@ -89,6 +91,22 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'SET_COMPONENT_ID':
       if (state.ruleType === 'require-component') {
         return { ...state, component_id: action.component_id };
+      }
+      return state;
+
+    case 'SET_EFFECT':
+      if (state.ruleType === 'scheduling-rule') {
+        return { ...state, effect: action.effect };
+      }
+      return state;
+
+    case 'SET_MATCH_MODE':
+      if (state.ruleType === 'scheduling-rule') {
+        const match =
+          action.mode === 'tag'
+            ? { mode: 'tag' as const, filter: {} }
+            : { mode: 'component' as const, component_id: null };
+        return { ...state, match };
       }
       return state;
 

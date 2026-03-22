@@ -50,12 +50,72 @@ describe('RULE-02: compileRule', () => {
     });
   });
 
+  describe('scheduling-rule rules', () => {
+    it('compiles filter-pool with tag match and no slots (slots = null)', () => {
+      const result = compileRule({
+        ruleType: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      });
+      expect(result).toEqual({
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        slots: null,
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      });
+    });
+
+    it('compiles require-one with component match and no days (days = null)', () => {
+      const result = compileRule({
+        ruleType: 'scheduling-rule',
+        effect: 'require-one',
+        match: { mode: 'component', component_id: 42 },
+      });
+      expect(result).toEqual({
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: null,
+        slots: null,
+        match: { mode: 'component', component_id: 42 },
+      });
+    });
+
+    it('compiles exclude with both days and slots specified', () => {
+      const result = compileRule({
+        ruleType: 'scheduling-rule',
+        effect: 'exclude',
+        days: ['monday'],
+        slots: ['breakfast', 'lunch'],
+        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+      });
+      expect(result).toEqual({
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: ['monday'],
+        slots: ['breakfast', 'lunch'],
+        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+      });
+    });
+
+    it('converts undefined days and slots to null', () => {
+      const result = compileRule({
+        ruleType: 'scheduling-rule',
+        effect: 'filter-pool',
+        match: { mode: 'tag', filter: {} },
+      });
+      expect(result).toMatchObject({ type: 'scheduling-rule', days: null, slots: null });
+    });
+  });
+
   describe('Zod validation round-trip', () => {
     it('every compiled output passes CompiledFilterSchema.parse()', () => {
       const defs = [
         { ruleType: 'day-filter' as const, days: ['friday' as const], filter: { protein_tag: 'fish' as const } },
         { ruleType: 'no-repeat' as const, component_type: 'subzi' as const },
         { ruleType: 'require-component' as const, component_id: 1, days: ['monday' as const] },
+        { ruleType: 'scheduling-rule' as const, effect: 'filter-pool' as const, days: ['friday' as const], match: { mode: 'tag' as const, filter: { protein_tag: 'fish' as const } } },
       ];
       for (const def of defs) {
         const compiled = compileRule(def);
