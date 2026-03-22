@@ -8,6 +8,7 @@ import {
   type DayOfWeek,
   type CompiledFilter,
   type TagFilter,
+  type SchedulingRule,
   type GeneratorResult,
   type PlanSlot,
   type Warning,
@@ -111,6 +112,11 @@ function isRuleApplicable(
     if (rule.slots !== null && !rule.slots.includes(slot)) return false;
     return true;
   }
+  if (rule.type === 'scheduling-rule') {
+    if (rule.days !== null && !rule.days.includes(day)) return false;
+    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
+    return true;
+  }
   return false;
 }
 
@@ -173,6 +179,60 @@ function applyDayFilterToPool(
   return pool.filter(component =>
     applicableDayFilters.every(rule => matchesTagFilter(component, rule.filter)),
   );
+}
+
+// ─── Helper: applySchedulingFilterPool ───────────────────────────────────────
+
+function applySchedulingFilterPool(
+  pool: ComponentRecord[],
+  applicableRules: SchedulingRule[],
+): ComponentRecord[] {
+  const filterPoolRules = applicableRules.filter(r => r.effect === 'filter-pool');
+  if (filterPoolRules.length === 0) return pool;
+  return pool.filter(component =>
+    filterPoolRules.every(rule => {
+      if (rule.match.mode === 'tag') return matchesTagFilter(component, rule.match.filter);
+      if (rule.match.mode === 'component') return component.id === rule.match.component_id;
+      return true;
+    }),
+  );
+}
+
+// ─── Helper: applySchedulingExclude ──────────────────────────────────────────
+
+function applySchedulingExclude(
+  pool: ComponentRecord[],
+  fullPool: ComponentRecord[],
+  applicableRules: SchedulingRule[],
+  warnings: Warning[],
+  day: DayOfWeek,
+  slot: MealSlot,
+  ruleRecords: RuleRecord[],
+): ComponentRecord[] {
+  const excludeRules = applicableRules.filter(r => r.effect === 'exclude');
+  if (excludeRules.length === 0) return pool;
+  const filtered = pool.filter(component =>
+    excludeRules.every(rule => {
+      if (rule.match.mode === 'tag') return !matchesTagFilter(component, rule.match.filter);
+      if (rule.match.mode === 'component') return component.id !== rule.match.component_id;
+      return true;
+    }),
+  );
+  if (filtered.length === 0 && pool.length > 0) {
+    for (const rule of excludeRules) {
+      const rr = ruleRecords.find(r =>
+        JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
+      );
+      warnings.push({
+        slot: { day, meal_slot: slot },
+        rule_id: rr?.id ?? null,
+        message: `scheduling-rule exclude removed all components from pool on ${day} ${slot} — constraint relaxed`,
+      });
+    }
+    return pool;
+  }
+  void fullPool; // parameter kept for API symmetry with plan spec
+  return filtered;
 }
 
 // ─── Helper: pickFromPool ─────────────────────────────────────────────────────
@@ -297,6 +357,11 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       const lockKey = `${day}-${meal_slot}` as `${DayOfWeek}-${MealSlot}`;
       const locked = options?.lockedSlots?.[lockKey];
 
+      // ── Scheduling-rule applicability for this (day, slot) ─────────────────
+      const applicableSchedulingRules = validRules.filter(
+        r => r.type === 'scheduling-rule' && isRuleApplicable(r, day, meal_slot),
+      ) as SchedulingRule[];
+
       // ── Base selection ──────────────────────────────────────────────────────
 
       // Hard constraint: slot restrictions + component_slot_overrides + occasion
@@ -391,6 +456,19 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           finalBasePool = basePool;
         }
 
+        // Apply scheduling-rule filter-pool and exclude to base pool
+        const schedulingFilteredBases = applySchedulingFilterPool(finalBasePool, applicableSchedulingRules);
+        if (schedulingFilteredBases.length === 0 && finalBasePool.length > 0) {
+          // D-01: relax filter-pool
+          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
+            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
+            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no bases match on ${day} ${meal_slot} — constraint relaxed` });
+          }
+        } else {
+          finalBasePool = schedulingFilteredBases;
+        }
+        finalBasePool = applySchedulingExclude(finalBasePool, basePool, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
+
         selectedBase = weightedRandom(finalBasePool, c => effectiveWeight(c, usageCount));
       }
 
@@ -417,9 +495,21 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           if (override !== undefined && !override.includes(meal_slot)) return false;
           return isOccasionAllowed(c, day);
         });
-        const curryPool = noRepeatCurry
+        const curryPoolBase = noRepeatCurry
           ? eligibleCurries.filter(c => !usedCurryIds.has(c.id!))
           : eligibleCurries;
+
+        // Apply scheduling-rule filter-pool and exclude to curry pool
+        let scheduledCurryPool = applySchedulingFilterPool(curryPoolBase, applicableSchedulingRules);
+        if (scheduledCurryPool.length === 0 && curryPoolBase.length > 0) {
+          // D-01: relax filter-pool
+          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
+            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
+            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no curries match on ${day} ${meal_slot} — constraint relaxed` });
+          }
+          scheduledCurryPool = curryPoolBase;
+        }
+        const curryPool = applySchedulingExclude(scheduledCurryPool, curryPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
 
         if (curryPool.length > 0) {
           const picked = pickFromPool(
@@ -458,9 +548,21 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           if (override !== undefined && !override.includes(meal_slot)) return false;
           return isOccasionAllowed(s, day);
         });
-        const subziPool = noRepeatSubzi
+        const subziPoolBase = noRepeatSubzi
           ? eligibleSubzis.filter(s => !usedSubziIds.has(s.id!))
           : eligibleSubzis;
+
+        // Apply scheduling-rule filter-pool and exclude to subzi pool
+        let scheduledSubziPool = applySchedulingFilterPool(subziPoolBase, applicableSchedulingRules);
+        if (scheduledSubziPool.length === 0 && subziPoolBase.length > 0) {
+          // D-01: relax filter-pool
+          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
+            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
+            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no subzis match on ${day} ${meal_slot} — constraint relaxed` });
+          }
+          scheduledSubziPool = subziPoolBase;
+        }
+        const subziPool = applySchedulingExclude(scheduledSubziPool, subziPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
 
         if (subziPool.length > 0) {
           const picked = pickFromPool(
