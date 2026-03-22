@@ -25,7 +25,7 @@ export async function POST(request: Request) {
 
     // Build filename from weekLabel
     const weekSlug = payload.weekLabel.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-+$/, '')
-    return new Response(pngBuffer, {
+    return new Response(new Uint8Array(pngBuffer), {
       status: 200,
       headers: {
         'Content-Type': 'image/png',
