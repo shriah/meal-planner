@@ -77,16 +77,19 @@ export function buildPlanElement(payload: ExportPlanPayload) {
               <div
                 style={{
                   display: 'flex',
+                  flexDirection: 'column',
                   backgroundColor: colors.bg,
                   borderRadius: 6,
                   padding: '6px 10px',
                   marginBottom: 4,
                 }}
               >
-                <span style={{ fontSize: 13, color: colors.text, fontWeight: 400 }}>
-                  {SLOT_LABELS[slot]}:{' '}
-                </span>
-                <span style={{ fontSize: 14, color: colors.text }}>{text}</span>
+                <div style={{ fontSize: 11, fontWeight: 600, color: colors.text, marginBottom: 2 }}>
+                  {SLOT_LABELS[slot].toUpperCase()}
+                </div>
+                <div style={{ fontSize: 13, color: colors.text }}>
+                  {text}
+                </div>
               </div>
             )
           })}
