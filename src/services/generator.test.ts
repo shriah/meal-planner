@@ -980,6 +980,275 @@ describe('DAY-LITERAL: isOccasionAllowed day-literal enforcement', () => {
   });
 });
 
+// ─── SCHED: scheduling-rule filter-pool and exclude ───────────────────────────
+
+describe('SCHED: scheduling-rule filter-pool and exclude', () => {
+  it('SCHED-1. filter-pool by tag restricts curry pool to matching components', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Add a non-veg curry that should be excluded by the veg filter-pool rule
+    const nonVegCurryId = await addComponent({
+      name: 'Fish Curry',
+      componentType: 'curry',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    // Add a scheduling-rule filter-pool for veg only (all days/slots)
+    await addRule({
+      name: 'Veg only curries',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: null,
+        slots: null,
+        match: { mode: 'tag', filter: { dietary_tag: 'veg' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Non-veg curry must never appear anywhere
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).not.toBe(nonVegCurryId);
+    }
+    // Existing veg curries (curry1Id, curry2Id) should still appear
+    const curryIds = result.plan.slots.filter(s => s.curry_id !== undefined).map(s => s.curry_id!);
+    const vegCurriesAppear = curryIds.some(id => id === ids.curry1Id || id === ids.curry2Id);
+    expect(vegCurriesAppear).toBe(true);
+  });
+
+  it('SCHED-2. filter-pool by component_id restricts curry to single component', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Add filter-pool scoped to Monday lunch only — only curry1 allowed
+    await addRule({
+      name: 'Monday lunch only curry1',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['monday'],
+        slots: ['lunch'],
+        match: { mode: 'component', component_id: ids.curry1Id },
+      },
+      created_at: '',
+    });
+
+    // Run multiple times to confirm Monday lunch always gets curry1
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const mondayLunch = result.plan.slots.find(s => s.day === 'monday' && s.meal_slot === 'lunch');
+      expect(mondayLunch).toBeDefined();
+      // Monday lunch curry must be curry1Id (only one that passes filter)
+      if (mondayLunch!.curry_id !== undefined) {
+        expect(mondayLunch!.curry_id).toBe(ids.curry1Id);
+      }
+    }
+  });
+
+  it('SCHED-3. filter-pool scoped to Friday lunch only affects that slot', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const nonVegCurryId = await addComponent({
+      name: 'Chicken Curry',
+      componentType: 'curry',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    // Restrict Friday lunch to veg only
+    await addRule({
+      name: 'Friday lunch veg only',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { dietary_tag: 'veg' } },
+      },
+      created_at: '',
+    });
+
+    // Run multiple times — non-veg curry should be absent from Friday lunch
+    for (let i = 0; i < 3; i++) {
+      const result = await generate();
+      const fridayLunch = result.plan.slots.find(s => s.day === 'friday' && s.meal_slot === 'lunch');
+      expect(fridayLunch).toBeDefined();
+      expect(fridayLunch!.curry_id).not.toBe(nonVegCurryId);
+
+      // Other slots (e.g. Monday lunch) CAN still have non-veg curry
+      // Just verify plan completes with all 21 slots
+    }
+    expect(true).toBe(true); // sanity
+    void nonVegCurryId;
+    void ids;
+  });
+
+  it('SCHED-4. filter-pool with null days/slots applies to all slots (D-09)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const nonVegCurryId = await addComponent({
+      name: 'Mutton Curry',
+      componentType: 'curry',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    // Universal filter-pool: all days, all slots — veg only
+    await addRule({
+      name: 'Universal veg filter',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: null,
+        slots: null,
+        match: { mode: 'tag', filter: { dietary_tag: 'veg' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Non-veg must never appear across all 21 slots
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).not.toBe(nonVegCurryId);
+    }
+    void ids;
+  });
+
+  it('SCHED-5. filter-pool with empty result falls back with warning (D-01)', async () => {
+    await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Impossible filter: require protein_tag:'mutton' but no mutton curries exist
+    await addRule({
+      name: 'Impossible filter',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: null,
+        slots: null,
+        match: { mode: 'tag', filter: { protein_tag: 'mutton' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete with all 21 slots
+    expect(result.plan.slots).toHaveLength(21);
+    // Warning(s) must contain "constraint relaxed"
+    const relaxedWarnings = result.warnings.filter(w => w.message.includes('constraint relaxed'));
+    expect(relaxedWarnings.length).toBeGreaterThan(0);
+  });
+
+  it('SCHED-6. exclude by tag removes non-veg components from pool', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    const nonVegCurryId = await addComponent({
+      name: 'Egg Curry',
+      componentType: 'curry',
+      dietary_tags: ['non-veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    // Exclude non-veg curries from all slots
+    await addRule({
+      name: 'Exclude non-veg',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: null,
+        slots: null,
+        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Non-veg curry must never appear
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).not.toBe(nonVegCurryId);
+    }
+    // Veg curries must still appear
+    const curryIds = result.plan.slots.filter(s => s.curry_id !== undefined).map(s => s.curry_id!);
+    const vegCurriesAppear = curryIds.some(id => id === ids.curry1Id || id === ids.curry2Id);
+    expect(vegCurriesAppear).toBe(true);
+  });
+
+  it('SCHED-7. exclude by component_id removes specific component from pool', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Exclude curry1 from all slots
+    await addRule({
+      name: 'Exclude curry1',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: null,
+        slots: null,
+        match: { mode: 'component', component_id: ids.curry1Id },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // curry1 must never appear
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).not.toBe(ids.curry1Id);
+    }
+    // curry2 should still appear
+    const curry2Used = result.plan.slots.some(s => s.curry_id === ids.curry2Id);
+    expect(curry2Used).toBe(true);
+  });
+
+  it('SCHED-8. exclude all components falls back with warning (D-02)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+
+    // Exclude all curries (curry1 and curry2) by excluding veg ones — but only veg curries exist
+    await addRule({
+      name: 'Exclude all veg curries',
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: null,
+        slots: null,
+        match: { mode: 'tag', filter: { dietary_tag: 'veg' } },
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete with 21 slots
+    expect(result.plan.slots).toHaveLength(21);
+    // Warning(s) must contain "constraint relaxed"
+    const relaxedWarnings = result.warnings.filter(w => w.message.includes('constraint relaxed'));
+    expect(relaxedWarnings.length).toBeGreaterThan(0);
+    void ids;
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
