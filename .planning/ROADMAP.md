@@ -38,11 +38,11 @@
   3. The generator applies filter-pool rules by restricting the eligible component pool to tag- or component-matching items for the target slot
   4. The generator applies require-one-by-tag rules by selecting any eligible component that matches the tag criteria for the target slot (e.g., "Fridays lunch: require a fish curry" inserts a fish-tagged curry)
   5. The generator applies exclude rules by removing matching components from the pool before selection; all 22 existing generator TDD tests continue to pass (with updated rule input shapes)
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 Plans:
 - [x] 07-01-PLAN.md — Types, compiler, and form state types for scheduling-rule
-- [ ] 07-02-PLAN.md — Generator filter-pool and exclude effects
+- [x] 07-02-PLAN.md — Generator filter-pool and exclude effects
 - [ ] 07-03-PLAN.md — Generator require-one effect (two-pass mechanism)
 
 ### Phase 8: Scheduling Rule UI + Migration
@@ -90,7 +90,7 @@ Plans:
 | 4. Plan Board UI | v1.0 | 3/3 | Complete | 2026-03-21 |
 | 5. Rules Manager UI | v1.0 | 2/2 | Complete | 2026-03-21 |
 | 6. Save, History, and Export | v1.0 | 3/3 | Complete | 2026-03-22 |
-| 7. Scheduling Rule Engine | v1.1 | 1/3 | In Progress|  |
+| 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
 | 8. Scheduling Rule UI + Migration | v1.1 | 0/? | Not started | — |
 | 9. Meal Template Engine | v1.1 | 0/? | Not started | — |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/? | Not started | — |

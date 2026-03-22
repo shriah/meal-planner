@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Rule Engine Overhaul
-status: unknown
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-03-22T15:56:36.391Z"
+status: Ready to execute
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-03-22T16:28:19.992Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-22 — v1.1 started)
 ## Current Position
 
 Phase: 07 (scheduling-rule-engine) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -63,6 +63,7 @@ Plan: 2 of 3
 | Phase 06 P02 | ~8min | 2 tasks | 5 files |
 | Phase 06 P03 | 2min | 2 tasks | 5 files |
 | Phase 07 P01 | 199s | 2 tasks | 6 files |
+| Phase 07 P02 | 150s | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,8 @@ Recent decisions affecting current work:
 - [Phase 07]: scheduling-rule CompiledFilter uses nullable days/slots — undefined from RuleDefinition converts to null at compile time, consistent with existing variants
 - [Phase 07]: SchedulingRuleFormState.match uses mode:''/mode:'tag'/mode:'component' discriminated union — empty string sentinel matches NoRepeatFormState pattern
 - [Phase 07]: SET_EFFECT and SET_MATCH_MODE FormActions added to types.ts for Phase 8 UI without requiring form reducer redesign
+- [Phase 07]: applicableSchedulingRules extracted once per (day, slot) before all component selection paths — avoids repeated filtering and keeps order consistent
+- [Phase 07]: scheduling-rule filter-pool and exclude applied AFTER no-repeat and day-filter — scheduling-rule is the outermost soft constraint layer
 
 ### Pending Todos
 
@@ -139,6 +142,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-22T15:56:36.389Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-03-22T16:28:19.990Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
