@@ -11,7 +11,7 @@
 - [x] **SCHED-01**: User can create a scheduling rule scoped to any combination of days (Mon–Sun) and meal slots (breakfast / lunch / dinner), with both fields optional (omitting means "all days" or "all slots")
 - [x] **SCHED-02**: User selects the rule effect: "Filter pool" (only matching components eligible), "Require one" (at least one matching component must appear), or "Exclude" (matching components removed from pool)
 - [x] **SCHED-03**: User matches components by tag filter (dietary / protein / regional / occasion) or by picking a specific component from the library
-- [ ] **SCHED-04**: "Require one by tag" — generator selects any eligible component matching the tag criteria for that slot (e.g., "Fridays lunch: require a fish curry" picks any fish-tagged curry)
+- [x] **SCHED-04**: "Require one by tag" — generator selects any eligible component matching the tag criteria for that slot (e.g., "Fridays lunch: require a fish curry" picks any fish-tagged curry)
 - [ ] **SCHED-05**: Existing `day-filter` and `require-component` rules in IndexedDB are automatically migrated to `scheduling-rule` format at app startup; old CompiledFilter variants removed from the type system
 
 ### Meal Template (base-type composition rule)
@@ -54,7 +54,7 @@
 | SCHED-01 | Phase 7 | Complete |
 | SCHED-02 | Phase 7 | Complete |
 | SCHED-03 | Phase 7 | Complete |
-| SCHED-04 | Phase 7 | Pending |
+| SCHED-04 | Phase 7 | Complete |
 | SCHED-05 | Phase 8 | Pending |
 | TMPL-01 | Phase 9 | Pending |
 | TMPL-02 | Phase 9 | Pending |

@@ -43,7 +43,7 @@
 Plans:
 - [x] 07-01-PLAN.md — Types, compiler, and form state types for scheduling-rule
 - [x] 07-02-PLAN.md — Generator filter-pool and exclude effects
-- [ ] 07-03-PLAN.md — Generator require-one effect (two-pass mechanism)
+- [x] 07-03-PLAN.md — Generator require-one effect (two-pass mechanism)
 
 ### Phase 8: Scheduling Rule UI + Migration
 **Goal**: Users can create scheduling rules through the Rules UI, and all existing rules are automatically migrated to the new type at app startup
