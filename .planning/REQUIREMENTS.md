@@ -47,7 +47,7 @@
 
 ### Save & History
 
-- [ ] **SAVE-01**: User can save the current plan with a name
+- [x] **SAVE-01**: User can save the current plan with a name
 - [ ] **SAVE-02**: User can browse previously saved plans and load any of them
 
 ### Export
@@ -110,7 +110,7 @@
 | UI-02 | Phase 4 | Complete |
 | UI-03 | Phase 4 | Complete |
 | UI-04 | Phase 4 | Complete |
-| SAVE-01 | Phase 6 | Pending |
+| SAVE-01 | Phase 6 | Complete |
 | SAVE-02 | Phase 6 | Pending |
 | EXPORT-01 | Phase 6 | Pending |
 

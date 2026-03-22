@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-02-PLAN.md
-last_updated: "2026-03-21T06:23:48.098Z"
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-22T04:06:15.532Z"
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 16
+  completed_plans: 14
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Phase 05 — rules-manager-ui
+**Current focus:** Phase 06 — save-history-export
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
+Phase: 06 (save-history-export) — EXECUTING
+Plan: 2 of 3
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Plan: Not started
 | Phase 04 P03 | 2min | 1 tasks | 3 files |
 | Phase 05 P01 | 91s | 2 tasks | 7 files |
 | Phase 05 P02 | 3min | 2 tasks | 7 files |
+| Phase 06 P01 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,9 @@ Recent decisions affecting current work:
 - [Phase 05-01]: RuleList returns null (not spinner) while useLiveQuery loads - per UI-SPEC
 - [Phase 05]: Shared types.ts extracted for FormState/FormAction to avoid circular imports between RuleForm and field components
 - [Phase 05]: RuleImpactPreview uses useMemo for synchronous impact computation from live useLiveQuery component pool
+- [Phase 06]: Upsert via where('week_start').first() + update/add pattern for secondary-key upsert in Dexie v4 (not put() which would require week_start as PK)
+- [Phase 06]: Write-through on saveWeekPlan for current week keeps active_plan in sync with saved_plans without double-read at load time (D-03, D-09)
+- [Phase 06]: UTC-based date construction in week-utils eliminates timezone-induced off-by-one errors in ISO week calculations
 
 ### Pending Todos
 
@@ -124,6 +128,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-21T06:20:10.975Z
-Stopped at: Completed 05-02-PLAN.md
+Last session: 2026-03-22T04:06:15.531Z
+Stopped at: Completed 06-01-PLAN.md
 Resume file: None
