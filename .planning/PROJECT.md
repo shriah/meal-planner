@@ -18,13 +18,12 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - [x] Lock specific meals at the day or meal-slot level; randomize the rest — Validated in Phase 04: plan-board-ui
 - [x] Rules manager UI for writing, reviewing, toggling, and deleting scheduling rules — Validated in Phase 05: rules-manager-ui (RULE-01, RULE-05)
 
-### Active
+### Validated (continued)
 
-- [ ] Lock specific meals at the day or meal-slot level; randomize the rest
-- [ ] Generate a full Mon-Sun meal plan with one action
-- [ ] Edit generated plan (swap individual meals)
-- [ ] Save plans for future reference
-- [ ] Export/share plans (PDF, image, or text)
+- [x] Generate a full Mon-Sun meal plan with one action — Validated in Phase 06: save-history-export
+- [x] Edit generated plan (swap individual meals) — Validated in Phase 04: plan-board-ui
+- [x] Save plans for future reference — Validated in Phase 06: auto-save per calendar week, week navigation (SAVE-01, SAVE-02)
+- [x] Export/share plans as PNG image — Validated in Phase 06: satori + resvg PNG export, Web Share API (EXPORT-01)
 
 ### Out of Scope
 
@@ -57,4 +56,4 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | Personal-use scope for v1 | Simplifies auth, data model, and UX significantly | — Pending |
 
 ---
-*Last updated: 2026-03-21 — Phase 05 complete (rules-manager-ui — /rules list + /rules/new form, 95 tests passing)*
+*Last updated: 2026-03-22 — Phase 06 complete (save-history-export — auto-save calendar weeks, week navigation, PNG export via satori + resvg, 119 tests passing). v1.0 milestone complete.*
