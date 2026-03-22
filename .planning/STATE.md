@@ -108,7 +108,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- [2026-03-22] Refactor and move slot setting to Rules tab — `ui` area
 
 ### Quick Tasks Completed
 
