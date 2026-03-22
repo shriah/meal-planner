@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Plan Generator + Rule Engine** - Implement the core generation algorithm and LLM rule compilation back-end, with unit tests, before any UI exists (completed 2026-03-20)
 - [x] **Phase 4: Plan Board UI** - Build the interactive 7x3 weekly grid with lock, swap, and regenerate on top of the tested generator (completed 2026-03-21)
 - [x] **Phase 5: Rules Manager UI** - Surface the rule engine through a UI for entering, reviewing, and managing natural language scheduling rules (completed 2026-03-21)
-- [ ] **Phase 6: Save, History, and Export** - Add named plan saving, history browsing, and PNG export for sharing
+- [ ] **Phase 6: Save, History, and Export** - Add calendar-week navigation, auto-save per week, and PNG export for sharing
 
 ## Phase Details
 
@@ -102,14 +102,19 @@ Plans:
 - [x] 05-02-PLAN.md — Build /rules/new creation form with useReducer, variant-specific fields, live impact preview, zero-match warning
 
 ### Phase 6: Save, History, and Export
-**Goal**: Users can save named plans for future reference, load previously saved plans, and export the current plan as a PNG image suitable for sharing on WhatsApp
+**Goal**: Users can navigate between calendar weeks with auto-saved plans, view past weeks as read-only, and export any week's plan as a PNG image suitable for sharing on WhatsApp
 **Depends on**: Phase 4
 **Requirements**: SAVE-01, SAVE-02, EXPORT-01
 **Success Criteria** (what must be TRUE):
-  1. User can save the current plan under a chosen name and see it appear in a saved plans list
-  2. User can open the saved plans list, select any previously saved plan, and have it loaded into the plan board as the active plan
+  1. Each week auto-saves to its own Dexie record keyed by ISO week start date; no manual save button needed
+  2. User can navigate prev/next between weeks; past weeks are read-only, future weeks show a generate prompt
   3. User can export the current plan as a PNG image and the result is a clean, shareable image (not a screenshot of the interactive grid)
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — Dexie v4 migration with week_start index, week-keyed service functions (saveWeekPlan/getWeekPlan), week date utilities with TDD
+- [ ] 06-02-PLAN.md — Week-aware Zustand store with navigation, WeekNavigator component, PlanBoard read-only mode, future empty state
+- [ ] 06-03-PLAN.md — PNG export pipeline: satori + resvg-js route handler, export template, Export PNG button with Web Share API + download fallback
 
 ## Progress
 
@@ -123,4 +128,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 3/3 | Complete   | 2026-03-21 |
 | 5. Rules Manager UI | 2/2 | Complete   | 2026-03-21 |
-| 6. Save, History, and Export | 0/TBD | Not started | - |
+| 6. Save, History, and Export | 0/3 | Not started | - |
