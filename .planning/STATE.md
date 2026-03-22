@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-03-22T04:06:15.532Z"
+stopped_at: Completed 06-02-PLAN.md
+last_updated: "2026-03-22T04:10:38.550Z"
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 06 (save-history-export) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Plan: 2 of 3
 | Phase 05 P01 | 91s | 2 tasks | 7 files |
 | Phase 05 P02 | 3min | 2 tasks | 7 files |
 | Phase 06 P01 | 5min | 2 tasks | 5 files |
+| Phase 06 P02 | ~8min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,9 @@ Recent decisions affecting current work:
 - [Phase 06]: Upsert via where('week_start').first() + update/add pattern for secondary-key upsert in Dexie v4 (not put() which would require week_start as PK)
 - [Phase 06]: Write-through on saveWeekPlan for current week keeps active_plan in sync with saved_plans without double-read at load time (D-03, D-09)
 - [Phase 06]: UTC-based date construction in week-utils eliminates timezone-induced off-by-one errors in ISO week calculations
+- [Phase 06]: Replace saveActivePlan with saveWeekPlan in all mutations — single call performs write-through to active_plan for current week
+- [Phase 06]: navigateToWeek loads from active_plan for current week and from saved_plans for all others — fast hydration path for the common case (D-09)
+- [Phase 06]: isReadOnly derived from weekStart < thisWeek in navigateToWeek and stored in Zustand — components read it directly without recomputing
 
 ### Pending Todos
 
@@ -128,6 +132,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-22T04:06:15.531Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-03-22T04:10:38.548Z
+Stopped at: Completed 06-02-PLAN.md
 Resume file: None

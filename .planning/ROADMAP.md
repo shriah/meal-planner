@@ -113,7 +113,7 @@ Plans:
 
 Plans:
 - [x] 06-01-PLAN.md — Dexie v4 migration with week_start index, week-keyed service functions (saveWeekPlan/getWeekPlan), week date utilities with TDD
-- [ ] 06-02-PLAN.md — Week-aware Zustand store with navigation, WeekNavigator component, PlanBoard read-only mode, future empty state
+- [x] 06-02-PLAN.md — Week-aware Zustand store with navigation, WeekNavigator component, PlanBoard read-only mode, future empty state
 - [ ] 06-03-PLAN.md — PNG export pipeline: satori + resvg-js route handler, export template, Export PNG button with Web Share API + download fallback
 
 ## Progress
@@ -128,4 +128,4 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. Plan Generator + Rule Engine | 3/3 | Complete   | 2026-03-20 |
 | 4. Plan Board UI | 3/3 | Complete   | 2026-03-21 |
 | 5. Rules Manager UI | 2/2 | Complete   | 2026-03-21 |
-| 6. Save, History, and Export | 1/3 | In Progress|  |
+| 6. Save, History, and Export | 2/3 | In Progress|  |
