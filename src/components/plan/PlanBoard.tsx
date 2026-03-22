@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getAllComponents } from '@/services/food-db'
 import { usePlanStore } from '@/stores/plan-store'
+import { getISOWeekStart } from '@/services/week-utils'
 import { ALL_DAYS } from '@/types/plan'
 import type { DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
@@ -13,7 +14,10 @@ import { MealCell } from './MealCell'
 import { PlanActionBar } from './PlanActionBar'
 import { WarningBanner } from './WarningBanner'
 import { MealPickerSheet } from './MealPickerSheet'
+import { WeekNavigator } from './WeekNavigator'
 import { Button } from '@/components/ui/button'
+import { Separator } from '@/components/ui/separator'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { BaseType } from '@/types/component'
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
@@ -25,6 +29,8 @@ export function PlanBoard() {
   const isGenerating = usePlanStore(s => s.isGenerating)
   const initFromDB = usePlanStore(s => s.initFromDB)
   const generateFresh = usePlanStore(s => s.generateFresh)
+  const isReadOnly = usePlanStore(s => s.isReadOnly)
+  const currentWeekStart = usePlanStore(s => s.currentWeekStart)
 
   // Picker state (which cell + component type is being picked)
   const [pickerState, setPickerState] = useState<{
@@ -52,9 +58,14 @@ export function PlanBoard() {
   }
 
   const hasPlan = plan !== null && plan.slots.length > 0
+  const isPastWeek = isReadOnly
+  const isFutureWeek = !isReadOnly && currentWeekStart > getISOWeekStart(new Date())
 
   return (
     <div className="px-4 py-8 sm:px-8">
+      <WeekNavigator />
+      <Separator className="mb-4" />
+
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-[28px] font-semibold font-heading">Weekly Plan</h1>
         <PlanActionBar />
@@ -62,16 +73,40 @@ export function PlanBoard() {
 
       <WarningBanner />
 
+      {isPastWeek && (
+        <Alert className="border-amber-300 bg-amber-50 text-amber-900 mb-4" role="status">
+          <AlertDescription>This is a past week — the plan is read-only.</AlertDescription>
+        </Alert>
+      )}
+
       {!hasPlan ? (
-        <div className="flex flex-col items-center justify-center py-12 gap-4">
-          <h2 className="text-xl font-semibold">No plan yet</h2>
-          <p className="text-sm text-muted-foreground text-center max-w-md">
-            Generate your first weekly meal plan. Locked slots will stay across regenerations.
-          </p>
-          <Button onClick={generateFresh} disabled={isGenerating} size="lg">
-            {isGenerating ? 'Generating...' : 'Generate Plan'}
-          </Button>
-        </div>
+        <>
+          {isFutureWeek ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <h2 className="text-xl font-semibold">No plan yet for this week</h2>
+              <p className="text-sm text-muted-foreground text-center max-w-md">
+                This week hasn&apos;t been planned yet. Generate a fresh plan to get started.
+              </p>
+              <Button onClick={generateFresh} disabled={isGenerating} size="lg">
+                {isGenerating ? 'Generating...' : 'Generate Plan for This Week'}
+              </Button>
+            </div>
+          ) : isPastWeek ? (
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <h2 className="text-xl font-semibold text-muted-foreground">No plan was saved for this week</h2>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-12 gap-4">
+              <h2 className="text-xl font-semibold">No plan yet</h2>
+              <p className="text-sm text-muted-foreground text-center max-w-md">
+                Generate your first weekly meal plan. Locked slots will stay across regenerations.
+              </p>
+              <Button onClick={generateFresh} disabled={isGenerating} size="lg">
+                {isGenerating ? 'Generating...' : 'Generate Plan'}
+              </Button>
+            </div>
+          )}
+        </>
       ) : (
         <div className="overflow-x-auto mt-4">
           <div
@@ -100,7 +135,7 @@ export function PlanBoard() {
                       planSlot={planSlot}
                       componentsMap={componentsMap}
                       warnings={warnings}
-                      onPickerOpen={(componentType) => setPickerState({ day, slot, componentType })}
+                      onPickerOpen={isReadOnly ? () => {} : (componentType) => setPickerState({ day, slot, componentType })}
                     />
                   )
                 })}
@@ -110,7 +145,7 @@ export function PlanBoard() {
         </div>
       )}
 
-      {pickerState && (
+      {!isReadOnly && pickerState && (
         <MealPickerSheet
           open={pickerState !== null}
           onOpenChange={(open) => { if (!open) setPickerState(null) }}
