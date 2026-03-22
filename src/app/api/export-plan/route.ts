@@ -6,7 +6,7 @@ import { buildPlanElement } from '@/services/export-template'
 import type { ExportPlanPayload } from '@/services/export-template'
 
 // Load font once at module scope (cached across requests)
-const fontData = readFileSync(join(process.cwd(), 'public/fonts/inter-regular.ttf'))
+const fontData = readFileSync(join(process.cwd(), 'public/fonts/inter-regular.woff'))
 
 export async function POST(request: Request) {
   try {
