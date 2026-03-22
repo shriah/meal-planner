@@ -119,7 +119,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- [2026-03-22] Refactor and move slot setting to Rules tab — `ui` area
+- [2026-03-22] Meal Template rule type — unify slot settings and composition constraints — `ui` area (v1.1 scope)
 
 ### Quick Tasks Completed
 

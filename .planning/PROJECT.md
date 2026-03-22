@@ -26,7 +26,10 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ### Active
 
-*(Start next milestone to define v1.1 requirements)*
+- [ ] **TMPL-01**: Meal Template rule type — base-type-scoped constraints (slot assignment, composition exclusions, required extras) expressed as named, togglable rules
+- [ ] **TMPL-02**: Meal Template supports optional context scope (slot + day) so rules like "bread-based on weekdays: no subzi" are expressible
+- [ ] **TMPL-03**: `/settings/slots` page replaced — AppNav "Slot Settings" removed, all constraints live in Rules UI
+- [ ] **TMPL-04**: Existing `base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup (Dexie upgrade)
 
 ### Out of Scope
 
