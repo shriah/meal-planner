@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A personal weekly meal planner built for Indian dietary patterns. Users build a library of Indian meals (structured as Base + Curry + Subzi + Extras), write natural language rules for scheduling constraints, and generate randomized Mon-Sun plans that respect those rules — with the ability to lock specific meals, edit the plan, save it, and export/share it.
+A personal weekly meal planner built for Indian dietary patterns. Users build a library of Indian meals (structured as Base + Curry + Subzi + Extras), write structured scheduling rules, and generate randomized Mon-Sun plans that respect those rules — with the ability to lock specific meals, swap individual slots, save per calendar week, and export/share as PNG.
 
 ## Core Value
 
@@ -12,48 +12,61 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ### Validated
 
-- [x] Indian food database with meals structured as Base + Curry + Subzi + Extras — Validated in Phase 01: data-foundation (Dexie DB, discriminated union types, 12-function CRUD service, 7/7 tests passing)
-- [x] Configurable meal slots: breakfast, lunch, dinner per day — Validated in Phase 02: meal-library-ui
-- [x] Natural language rules to constrain meal randomization (day-based and rotation rules) — Validated in Phase 03: plan-generator-rule-engine (structured form-based compiler, no LLM required)
-- [x] Lock specific meals at the day or meal-slot level; randomize the rest — Validated in Phase 04: plan-board-ui
-- [x] Rules manager UI for writing, reviewing, toggling, and deleting scheduling rules — Validated in Phase 05: rules-manager-ui (RULE-01, RULE-05)
+- ✓ Indian food database with meals structured as Base + Curry + Subzi + Extras — v1.0 (Dexie v4, discriminated union types, 12-function CRUD service)
+- ✓ Configurable meal slots: breakfast, lunch, dinner per day — v1.0
+- ✓ 87-component Indian meal seed dataset covering all four component types — v1.0
+- ✓ Natural language rules to constrain meal randomization (day-based and rotation rules) — v1.0 (structured form compiler; no LLM at generation time)
+- ✓ Lock specific meals at the day or meal-slot level; randomize the rest — v1.0
+- ✓ Generate a full Mon-Sun meal plan with one action — v1.0
+- ✓ Edit generated plan (swap individual meals via MealPickerSheet) — v1.0
+- ✓ Rules manager UI for writing, reviewing, toggling, and deleting scheduling rules — v1.0
+- ✓ Save plans per calendar week (auto-save, no manual save button) — v1.0
+- ✓ Browse past weeks (read-only) and navigate prev/next — v1.0
+- ✓ Export/share plans as PNG image (Web Share API + download fallback) — v1.0
 
-### Validated (continued)
+### Active
 
-- [x] Generate a full Mon-Sun meal plan with one action — Validated in Phase 06: save-history-export
-- [x] Edit generated plan (swap individual meals) — Validated in Phase 04: plan-board-ui
-- [x] Save plans for future reference — Validated in Phase 06: auto-save per calendar week, week navigation (SAVE-01, SAVE-02)
-- [x] Export/share plans as PNG image — Validated in Phase 06: satori + resvg PNG export, Web Share API (EXPORT-01)
+*(Start next milestone to define v1.1 requirements)*
 
 ### Out of Scope
 
-- Calorie/macro tracking — not needed for v1; focus is scheduling
-- Multi-user / family accounts — personal use only for v1
-- Public user accounts / social features — single user, no auth complexity needed for v1
-- Native mobile app — web-first for v1
+- Calorie/macro tracking — not needed; focus is scheduling
+- Multi-user / family accounts — personal use only
+- Public user accounts / social features — single user, no auth complexity
+- Native mobile app — web-first; PWA works fine
+- Grocery list generation — requires ingredient-level data not in current model
+- PDF export — image export covers the sharing use case (deferred to v2)
+- Seasonal / occasion-based rules (Navratri, etc.) — deferred to v1.1
+- Cross-week rotation rules (don't repeat within 2 weeks) — deferred to v1.1
 
 ## Context
 
-- Modeled on eatthismuch.com's meal generation UX but adapted for Indian cuisine
-- Indian meals have a distinct compositional structure: a starchy base (rice, roti, dosa) paired with a curry/dal, a dry subzi, and optional extras (rasam, sambar, pappad, sweets, pickle)
-- The same base (e.g., rice) can appear with many different combinations — the randomization value comes from varying the sides, not just the base
-- LLM used to translate English rules like "Fridays are fish days" or "Never repeat the same subzi twice in a week" into meal filters at generation time
-- Personal use — no need for complex auth, multi-tenancy, or social features
+- Shipped v1.0 with ~8,600 LOC TypeScript in 3 days (2026-03-19 → 2026-03-22)
+- Tech stack: Next.js 16, Dexie.js (IndexedDB), Zustand, shadcn/ui, satori + @resvg/resvg-js (PNG export)
+- Rules compile once at save time (structured form → CompiledFilter); generation is synchronous and LLM-free
+- Slot settings (3×3 base-type × meal-slot checkbox grid) currently at /settings; a pending todo proposes moving it to the Rules tab
+- 119 tests passing at v1.0 ship
 
 ## Constraints
 
 - **Scope**: Single-user personal app — no auth complexity, no multi-tenancy
-- **Tech stack**: To be determined during research phase
-- **Nutrition**: Explicitly out of scope for v1 — do not track calories or macros
-- **LLM dependency**: Natural language rules require LLM API integration (e.g., Claude API)
+- **Tech stack**: Next.js 16 + Dexie.js + Zustand + shadcn/ui (confirmed)
+- **Nutrition**: Explicitly out of scope — do not track calories or macros
+- **LLM dependency**: Rule form uses structured UI (not LLM) — LLM integration removed during Phase 3 (form-based compiler is sufficient and simpler)
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| LLM for rule interpretation | English rules are flexible and human-friendly; LLM translates to filters | — Pending |
-| Meal structure as components | Base + Curry + Subzi + Extras matches real Indian meal patterns | Implemented as discriminated union ComponentRecord in Phase 01 |
-| Personal-use scope for v1 | Simplifies auth, data model, and UX significantly | — Pending |
+| Meal structure as components | Base + Curry + Subzi + Extras matches real Indian meal patterns | ✓ Good — discriminated union ComponentRecord shipped in Phase 01 |
+| Personal-use scope for v1 | Simplifies auth, data model, and UX significantly | ✓ Good — no complexity regrets |
+| Rules compile at save time (not generation time) | Generation must be synchronous and fast | ✓ Good — zero LLM calls during generation |
+| Structured rule form (not LLM) | LLM adds latency and API cost; 3 rule types cover 95% of use cases | ✓ Good — simpler, faster, cheaper |
+| Dexie v4 with EntityTable typing | Type-safe IndexedDB ORM with live query hooks | ✓ Good — useLiveQuery drove all reactive UI |
+| Zustand for plan board state | Lightweight store, fire-and-forget IndexedDB writes | ✓ Good — kept UI responsive |
+| satori + resvg for PNG export | Server-side render to PNG without browser screenshot | ✓ Good — clean shareable output; required Node.js runtime (not edge) |
+| Fire-and-forget saveWeekPlan in mutations | Keeps UI responsive; write failures are non-critical | — Accepted trade-off (IndexedDB failures silent) |
+| UTC-based date construction in week-utils | Eliminates timezone off-by-one in ISO week calculations | ✓ Good — resolved date edge cases |
 
 ---
-*Last updated: 2026-03-22 — Phase 06 complete (save-history-export — auto-save calendar weeks, week navigation, PNG export via satori + resvg, 119 tests passing). v1.0 milestone complete.*
+*Last updated: 2026-03-22 after v1.0 milestone complete — 6 phases, 16 plans, 27/27 requirements shipped*
