@@ -15,8 +15,9 @@ export interface RuleRecord {
 
 export interface SavedPlanRecord {
   id?: number;
-  name: string;
-  slots: unknown;
+  week_start: string;    // ISO date "YYYY-MM-DD" (Monday of the week)
+  slots: WeeklyPlan;     // typed — was: unknown
+  locks: Record<string, boolean>;
   created_at: string;
 }
 
@@ -72,6 +73,16 @@ db.version(3).stores({
   meal_extras: '[meal_id+component_id], meal_id, component_id',
   rules: '++id',
   saved_plans: '++id',
+  preferences: 'id',
+  active_plan: 'id',
+});
+
+db.version(4).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
   preferences: 'id',
   active_plan: 'id',
 });
