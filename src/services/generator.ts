@@ -235,6 +235,92 @@ function applySchedulingExclude(
   return filtered;
 }
 
+// ─── Helper: applyRequireOneByTag ────────────────────────────────────────────
+
+/**
+ * Two-pass require-one-by-tag (D-05).
+ * If selected component doesn't match the tag criteria, override
+ * from the FULL library (bypassing filter-pool rules — D-06).
+ * Uses uniform random for override pick (not weighted — explicit requirement).
+ */
+function applyRequireOneByTag(
+  selected: ComponentRecord,
+  requireOneRules: SchedulingRule[],
+  fullLibrary: ComponentRecord[],
+  warnings: Warning[],
+  day: DayOfWeek,
+  slot: MealSlot,
+  ruleRecords: RuleRecord[],
+): ComponentRecord {
+  for (const rule of requireOneRules) {
+    if (rule.match.mode !== 'tag') continue;
+    const tagMatch = rule.match;
+    if (matchesTagFilter(selected, tagMatch.filter)) continue; // already satisfied
+    // Override: pick from full library, not filtered pool (D-05, D-06)
+    const candidates = fullLibrary.filter(c => matchesTagFilter(c, tagMatch.filter));
+    if (candidates.length === 0) {
+      // D-03: no matching component in library — warn + skip
+      const rr = ruleRecords.find(r =>
+        JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
+      );
+      warnings.push({
+        slot: { day, meal_slot: slot },
+        rule_id: rr?.id ?? null,
+        message: `scheduling-rule require-one: no component in library matches tag filter on ${day} ${slot} — skipped`,
+      });
+      continue;
+    }
+    // Uniform random (not weighted) — explicit requirement override
+    return candidates[Math.floor(Math.random() * candidates.length)];
+  }
+  return selected;
+}
+
+// ─── Helper: applyRequireOneByComponent ──────────────────────────────────────
+
+/**
+ * Require-one-by-component (D-04).
+ * Inject the required component into the slot regardless of filter-pool rules.
+ * Only applies if the required component matches the expected componentType.
+ */
+function applyRequireOneByComponent(
+  selected: ComponentRecord,
+  requireOneRules: SchedulingRule[],
+  allComponents: ComponentRecord[],
+  expectedComponentType: string,
+  warnings: Warning[],
+  day: DayOfWeek,
+  slot: MealSlot,
+  ruleRecords: RuleRecord[],
+): ComponentRecord {
+  for (const rule of requireOneRules) {
+    if (rule.match.mode !== 'component') continue;
+    const componentId = rule.match.component_id;
+    const required = allComponents.find(
+      c => c.id === componentId && c.componentType === expectedComponentType,
+    );
+    if (!required) {
+      // Component not found or wrong type — skip silently (Pitfall 2)
+      // If component doesn't exist at all, warn.
+      const exists = allComponents.find(c => c.id === componentId);
+      if (!exists) {
+        const rr = ruleRecords.find(r =>
+          JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
+        );
+        warnings.push({
+          slot: { day, meal_slot: slot },
+          rule_id: rr?.id ?? null,
+          message: `scheduling-rule require-one: component id=${componentId} not found — skipped`,
+        });
+      }
+      continue;
+    }
+    // D-04: inject regardless of filter-pool
+    return required;
+  }
+  return selected;
+}
+
 // ─── Helper: pickFromPool ─────────────────────────────────────────────────────
 
 /**
@@ -470,6 +556,13 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         finalBasePool = applySchedulingExclude(finalBasePool, basePool, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
 
         selectedBase = weightedRandom(finalBasePool, c => effectiveWeight(c, usageCount));
+
+        // Pass 2: require-one override (D-05)
+        const baseRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
+        if (baseRequireOneRules.length > 0) {
+          selectedBase = applyRequireOneByTag(selectedBase, baseRequireOneRules, bases, warnings, day, meal_slot, enabledRules);
+          selectedBase = applyRequireOneByComponent(selectedBase, baseRequireOneRules, allComponents, 'base', warnings, day, meal_slot, enabledRules);
+        }
       }
 
       // Track base usage
@@ -523,9 +616,16 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
             enabledRules,
           );
           if (picked) {
-            selectedCurry = picked;
-            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-            if (noRepeatCurry) usedCurryIds.add(picked.id!);
+            // Pass 2: require-one override for curry (D-05)
+            const curryRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
+            let finalPicked = picked;
+            if (curryRequireOneRules.length > 0) {
+              finalPicked = applyRequireOneByTag(finalPicked, curryRequireOneRules, curries, warnings, day, meal_slot, enabledRules);
+              finalPicked = applyRequireOneByComponent(finalPicked, curryRequireOneRules, allComponents, 'curry', warnings, day, meal_slot, enabledRules);
+            }
+            selectedCurry = finalPicked;
+            usageCount.set(finalPicked.id!, (usageCount.get(finalPicked.id!) ?? 0) + 1);
+            if (noRepeatCurry) usedCurryIds.add(finalPicked.id!);
           }
         }
         // If curryPool is empty (all curries used, no-repeat active), skip curry for this slot
@@ -576,9 +676,16 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
             enabledRules,
           );
           if (picked) {
-            selectedSubzi = picked;
-            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-            if (noRepeatSubzi) usedSubziIds.add(picked.id!);
+            // Pass 2: require-one override for subzi (D-05)
+            const subziRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
+            let finalPicked = picked;
+            if (subziRequireOneRules.length > 0) {
+              finalPicked = applyRequireOneByTag(finalPicked, subziRequireOneRules, subzis, warnings, day, meal_slot, enabledRules);
+              finalPicked = applyRequireOneByComponent(finalPicked, subziRequireOneRules, allComponents, 'subzi', warnings, day, meal_slot, enabledRules);
+            }
+            selectedSubzi = finalPicked;
+            usageCount.set(finalPicked.id!, (usageCount.get(finalPicked.id!) ?? 0) + 1);
+            if (noRepeatSubzi) usedSubziIds.add(finalPicked.id!);
           }
         }
         // If subziPool is empty (all subzis used, no-repeat active), skip subzi for this slot
