@@ -4,9 +4,10 @@ import type { WeeklyPlan, Warning, DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
 import { getActivePlan } from '@/services/plan-db'
 import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
-import { getISOWeekStart, addWeeks } from '@/services/week-utils'
+import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
 import { generate } from '@/services/generator'
 import type { GenerateOptions } from '@/services/generator'
+import type { ExportPlanPayload } from '@/services/export-template'
 
 type LockableComponent = 'base' | 'curry' | 'subzi' | 'extras'
 export type LockKey = `${DayOfWeek}-${MealSlot}-${LockableComponent}`
@@ -20,6 +21,8 @@ interface PlanStore {
   warningBannerDismissed: boolean
   currentWeekStart: string
   isReadOnly: boolean
+  isExporting: boolean
+  exportError: string | null
 
   initFromDB: () => Promise<void>
   setLock: (key: LockKey, locked: boolean) => void
@@ -30,6 +33,7 @@ interface PlanStore {
   generateFresh: () => Promise<void>
   dismissWarningBanner: () => void
   navigateToWeek: (weekStart: string) => Promise<void>
+  exportPlan: (componentNames: Record<number, string>) => Promise<void>
 }
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
@@ -44,6 +48,8 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
   warningBannerDismissed: false,
   currentWeekStart: getISOWeekStart(new Date()),
   isReadOnly: false,
+  isExporting: false,
+  exportError: null,
 
   initFromDB: async () => {
     const record = await getActivePlan()
@@ -184,6 +190,68 @@ export const usePlanStore = create<PlanStore>((set, get) => ({
         warnings: [],
         warningBannerDismissed: false,
       })
+    }
+  },
+  exportPlan: async (componentNames) => {
+    const { plan, currentWeekStart } = get()
+    if (!plan) return
+    set({ isExporting: true, exportError: null })
+    try {
+      const weekLabel = `Week of ${formatWeekLabel(currentWeekStart)}`
+
+      // Build serialized slots with resolved component names
+      const slots = plan.slots.map(s => {
+        const parts: string[] = []
+        const baseName = componentNames[s.base_id]
+        if (baseName) parts.push(baseName)
+        if (s.curry_id !== undefined) {
+          const curryName = componentNames[s.curry_id]
+          if (curryName) parts.push(curryName)
+        }
+        if (s.subzi_id !== undefined) {
+          const subziName = componentNames[s.subzi_id]
+          if (subziName) parts.push(subziName)
+        }
+        for (const eid of s.extra_ids) {
+          const extraName = componentNames[eid]
+          if (extraName) parts.push(extraName)
+        }
+        return {
+          day: s.day,
+          meal_slot: s.meal_slot,
+          text: parts.length > 0 ? parts.join(', ') : '—',
+        }
+      })
+
+      const payload: ExportPlanPayload = { slots, weekLabel }
+
+      const response = await fetch('/api/export-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) throw new Error('Export failed')
+      const blob = await response.blob()
+
+      const weekSlug = currentWeekStart
+      const filename = `meal-plan-${weekSlug}.png`
+
+      // Try Web Share API on mobile first
+      const file = new File([blob], filename, { type: 'image/png' })
+      if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'Meal Plan' })
+      } else {
+        // Desktop / fallback: trigger download
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = filename
+        a.click()
+        URL.revokeObjectURL(url)
+      }
+      set({ isExporting: false })
+    } catch {
+      set({ isExporting: false, exportError: 'Export failed. Try again.' })
     }
   },
 }))
