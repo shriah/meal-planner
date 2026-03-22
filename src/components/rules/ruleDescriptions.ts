@@ -44,5 +44,19 @@ export function describeRule(filter: CompiledFilter): string {
       const slotsSuffix = formatSlotsSuffix(filter.slots)
       return `Require specific component on ${daysPart}${slotsSuffix}`
     }
+
+    case 'scheduling-rule': {
+      const effectLabel: Record<string, string> = {
+        'filter-pool': 'Filter pool',
+        'require-one': 'Require one',
+        'exclude': 'Exclude',
+      }
+      const daysPart = filter.days && filter.days.length > 0 ? ` on ${formatDays(filter.days)}` : ''
+      const slotsSuffix = formatSlotsSuffix(filter.slots)
+      const matchDesc = filter.match.mode === 'tag'
+        ? Object.entries(filter.match.filter).filter(([, v]) => Boolean(v)).map(([k, v]) => `${k.replace('_tag', '')}: ${v}`).join(', ') || 'any tag'
+        : `component #${filter.match.component_id}`
+      return `${effectLabel[filter.effect] ?? filter.effect}${daysPart}${slotsSuffix}: ${matchDesc}`
+    }
   }
 }

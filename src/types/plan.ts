@@ -92,6 +92,16 @@ export const CompiledFilterSchema = z.discriminatedUnion('type', [
     days: z.array(DayOfWeekEnum),
     slots: z.array(MealSlotEnum).nullable(),
   }),
+  z.object({
+    type: z.literal('scheduling-rule'),
+    effect: z.enum(['filter-pool', 'require-one', 'exclude']),
+    days: z.array(DayOfWeekEnum).nullable(),
+    slots: z.array(MealSlotEnum).nullable(),
+    match: z.discriminatedUnion('mode', [
+      z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
+      z.object({ mode: z.literal('component'), component_id: z.number() }),
+    ]),
+  }),
 ]);
 
 export type CompiledFilter = z.infer<typeof CompiledFilterSchema>;
@@ -103,6 +113,7 @@ export type RequireComponentRule = Extract<
   CompiledFilter,
   { type: 'require-component' }
 >;
+export type SchedulingRule = Extract<CompiledFilter, { type: 'scheduling-rule' }>;
 
 // ─── RuleDefinition (structured input from Phase 5 form UI) ──────────────────
 
@@ -122,6 +133,15 @@ export type RuleDefinition =
       component_id: number;
       days: DayOfWeek[];
       slots?: MealSlot[];
+    }
+  | {
+      ruleType: 'scheduling-rule';
+      effect: 'filter-pool' | 'require-one' | 'exclude';
+      days?: DayOfWeek[];
+      slots?: MealSlot[];
+      match:
+        | { mode: 'tag'; filter: TagFilter }
+        | { mode: 'component'; component_id: number };
     };
 
 // ─── Generator result types ───────────────────────────────────────────────────

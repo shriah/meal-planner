@@ -63,4 +63,56 @@ describe('RULE-02: compileRule', () => {
       }
     });
   });
+
+  describe('scheduling-rule Zod schema', () => {
+    it('accepts scheduling-rule with filter-pool effect and tag match', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      })).not.toThrow();
+    });
+
+    it('accepts scheduling-rule with require-one effect and component match', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'scheduling-rule',
+        effect: 'require-one',
+        days: null,
+        slots: null,
+        match: { mode: 'component', component_id: 42 },
+      })).not.toThrow();
+    });
+
+    it('accepts scheduling-rule with exclude effect and multiple days/slots', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: ['monday', 'tuesday'],
+        slots: ['breakfast', 'dinner'],
+        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+      })).not.toThrow();
+    });
+
+    it('rejects scheduling-rule with invalid effect', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'scheduling-rule',
+        effect: 'invalid',
+        days: ['friday'],
+        slots: null,
+        match: { mode: 'tag', filter: {} },
+      })).toThrow();
+    });
+
+    it('rejects scheduling-rule with unknown match mode', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
+        days: ['friday'],
+        slots: ['lunch'],
+        match: { mode: 'unknown' },
+      })).toThrow();
+    });
+  });
 });

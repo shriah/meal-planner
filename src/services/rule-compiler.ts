@@ -22,5 +22,13 @@ export function compileRule(def: RuleDefinition): CompiledFilter {
         days: def.days,
         slots: def.slots ?? null,
       };
+    case 'scheduling-rule':
+      return {
+        type: 'scheduling-rule',
+        effect: def.effect,
+        days: def.days ?? null,
+        slots: def.slots ?? null,
+        match: def.match,
+      };
   }
 }
