@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Rule Engine Overhaul
-status: defining_requirements
-stopped_at: Defining requirements
-last_updated: "2026-03-22T14:00:00.000Z"
+status: roadmap_created
+stopped_at: Roadmap created — ready to plan Phase 7
+last_updated: "2026-03-22T14:30:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22 — v1.1 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.1 — Rule Engine Overhaul (defining requirements)
+**Current focus:** v1.1 — Rule Engine Overhaul (Phase 7: Scheduling Rule Engine)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: Phase 7 — Scheduling Rule Engine (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-22 — Milestone v1.1 started
+Status: Roadmap created, ready to plan
+Last activity: 2026-03-22 — Roadmap created for v1.1 (4 phases, 12 requirements mapped)
 
 ## Performance Metrics
 
@@ -118,10 +118,12 @@ Recent decisions affecting current work:
 - [Phase 06]: isReadOnly derived from weekStart < thisWeek in navigateToWeek and stored in Zustand — components read it directly without recomputing
 - [Phase 06]: No export const runtime = 'edge' on route handler — @resvg/resvg-js requires Node.js runtime (napi-rs native bindings)
 - [Phase 06]: Component names passed in from PlanActionBar via useLiveQuery to exportPlan — store does not directly access IndexedDB component names
+- [v1.1 Roadmap]: Collapse day-filter + require-component into scheduling-rule — Phases 7-8 (engine first, then UI + migration)
+- [v1.1 Roadmap]: Move slot settings into meal-template rules — Phases 9-10 (engine first, then UI + cleanup + migration)
 
 ### Pending Todos
 
-- [2026-03-22] Meal Template rule type — unify slot settings and composition constraints — `ui` area (v1.1 scope)
+(none — roadmap created, ready to plan Phase 7)
 
 ### Quick Tasks Completed
 
@@ -131,12 +133,10 @@ Recent decisions affecting current work:
 
 ### Blockers/Concerns
 
-- [Phase 3]: CompiledFilter DSL completeness is unvalidated — write 15-20 realistic user rules and verify DSL coverage before building Rule Engine
-- [Phase 2]: Tag taxonomy must be fully defined before the meal library UI is built (tags are a fixed multi-select)
-- [Phase 2]: Seed dataset of 50-100 Indian meals must be authored manually — no open dataset matches this data model; budget 1-2 days
+(none at roadmap stage)
 
 ## Session Continuity
 
-Last session: 2026-03-22T04:15:20.960Z
-Stopped at: Completed 06-03-PLAN.md
+Last session: 2026-03-22T14:30:00.000Z
+Stopped at: Roadmap created for v1.1 — 4 phases (7-10), 12/12 requirements mapped
 Resume file: None

@@ -24,12 +24,6 @@
 - [ ] **TMPL-06**: `/settings/slots` route and all settings components removed; AppNav "Slot Settings" link removed; slot assignment managed through meal template rules in the Rules UI
 - [ ] **TMPL-07**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` preference data automatically migrated to `meal-template` rules at app startup
 
-### No Repeat (expanded)
-
-- [ ] **NRPT-01**: No-repeat rule window is user-configurable: within this day / within this week / within N consecutive weeks (user picks N: 2 or 3)
-- [ ] **NRPT-02**: No-repeat rule can be scoped to specific meal slots (e.g., "don't repeat subzi at dinner" — repeats at lunch are allowed)
-- [ ] **NRPT-03**: No-repeat rule can be scoped to specific days (e.g., "don't repeat base on weekdays only")
-
 ## v2 Requirements
 
 ### Enhanced Export
@@ -57,27 +51,24 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SCHED-01 | — | Pending |
-| SCHED-02 | — | Pending |
-| SCHED-03 | — | Pending |
-| SCHED-04 | — | Pending |
-| SCHED-05 | — | Pending |
-| TMPL-01 | — | Pending |
-| TMPL-02 | — | Pending |
-| TMPL-03 | — | Pending |
-| TMPL-04 | — | Pending |
-| TMPL-05 | — | Pending |
-| TMPL-06 | — | Pending |
-| TMPL-07 | — | Pending |
-| NRPT-01 | — | Pending |
-| NRPT-02 | — | Pending |
-| NRPT-03 | — | Pending |
+| SCHED-01 | Phase 7 | Pending |
+| SCHED-02 | Phase 7 | Pending |
+| SCHED-03 | Phase 7 | Pending |
+| SCHED-04 | Phase 7 | Pending |
+| SCHED-05 | Phase 8 | Pending |
+| TMPL-01 | Phase 9 | Pending |
+| TMPL-02 | Phase 9 | Pending |
+| TMPL-03 | Phase 9 | Pending |
+| TMPL-04 | Phase 9 | Pending |
+| TMPL-05 | Phase 9 | Pending |
+| TMPL-06 | Phase 10 | Pending |
+| TMPL-07 | Phase 10 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 15 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 15 ⚠
+- v1.1 requirements: 12 total
+- Mapped to phases: 12 (roadmap created 2026-03-22)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 after milestone v1.1 definition*
+*Last updated: 2026-03-22 — traceability filled after roadmap creation*
