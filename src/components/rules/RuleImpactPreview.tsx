@@ -15,30 +15,28 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
   const allComponents = useLiveQuery(() => getAllComponents()) ?? [];
 
   const impact = useMemo(() => {
-    if (formState.ruleType === 'day-filter') {
-      const matchCount = allComponents.filter(c => {
-        const { filter } = formState;
-        const dietaryOk = !filter.dietary_tag || c.dietary_tags.includes(filter.dietary_tag);
-        const proteinOk = !filter.protein_tag || c.protein_tag === filter.protein_tag;
-        const regionalOk = !filter.regional_tag || c.regional_tags.includes(filter.regional_tag);
-        const occasionOk = !filter.occasion_tag || c.occasion_tags.includes(filter.occasion_tag);
-        return dietaryOk && proteinOk && regionalOk && occasionOk;
-      }).length;
-      return { type: 'day-filter' as const, matchCount, total: allComponents.length };
-    }
-
     if (formState.ruleType === 'no-repeat') {
       return { type: 'no-repeat' as const, component_type: formState.component_type };
     }
 
-    if (formState.ruleType === 'require-component') {
-      const componentName =
-        allComponents.find(c => c.id === formState.component_id)?.name ?? 'Unknown';
-      return {
-        type: 'require-component' as const,
-        componentName,
-        dayCount: formState.days.length,
-      };
+    if (formState.ruleType === 'scheduling-rule') {
+      if (formState.match.mode === 'tag') {
+        const { filter } = formState.match;
+        const matchCount = allComponents.filter(c => {
+          const dietaryOk = !filter.dietary_tag || c.dietary_tags.includes(filter.dietary_tag);
+          const proteinOk = !filter.protein_tag || c.protein_tag === filter.protein_tag;
+          const regionalOk = !filter.regional_tag || c.regional_tags.includes(filter.regional_tag);
+          const occasionOk = !filter.occasion_tag || c.occasion_tags.includes(filter.occasion_tag);
+          return dietaryOk && proteinOk && regionalOk && occasionOk;
+        }).length;
+        return { type: 'scheduling-rule-tag' as const, matchCount, total: allComponents.length };
+      }
+      if (formState.match.mode === 'component') {
+        const match = formState.match;
+        const componentName =
+          allComponents.find(c => c.id === match.component_id)?.name ?? 'Unknown';
+        return { type: 'scheduling-rule-component' as const, componentName };
+      }
     }
 
     return null;
@@ -48,7 +46,7 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
 
   return (
     <div className="space-y-3">
-      {impact.type === 'day-filter' && (
+      {impact.type === 'scheduling-rule-tag' && (
         <>
           <p className="text-sm text-muted-foreground">
             This rule affects {impact.matchCount} of {impact.total} components.
@@ -64,15 +62,15 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
         </>
       )}
 
-      {impact.type === 'no-repeat' && impact.component_type && (
+      {impact.type === 'scheduling-rule-component' && (
         <p className="text-sm text-muted-foreground">
-          Ensures no {impact.component_type} repeats within the week.
+          This rule will apply to component: {impact.componentName}.
         </p>
       )}
 
-      {impact.type === 'require-component' && impact.dayCount > 0 && (
+      {impact.type === 'no-repeat' && impact.component_type && (
         <p className="text-sm text-muted-foreground">
-          This rule will require {impact.componentName} on {impact.dayCount} day(s).
+          Ensures no {impact.component_type} repeats within the week.
         </p>
       )}
     </div>

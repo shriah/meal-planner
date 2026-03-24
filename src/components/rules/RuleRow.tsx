@@ -26,11 +26,13 @@ export function RuleRow({ rule }: RuleRowProps) {
   const summary = describeRule(rule.compiled_filter)
 
   const ruleTypeLabel =
-    rule.compiled_filter.type === 'day-filter'
-      ? 'Day Filter'
-      : rule.compiled_filter.type === 'no-repeat'
-        ? 'No Repeat'
-        : 'Require'
+    rule.compiled_filter.type === 'no-repeat'
+      ? 'No Repeat'
+      : rule.compiled_filter.effect === 'filter-pool'
+        ? 'Filter Pool'
+        : rule.compiled_filter.effect === 'require-one'
+          ? 'Require One'
+          : 'Exclude'
 
   async function handleToggle() {
     await updateRule(rule.id!, { enabled: !rule.enabled })
