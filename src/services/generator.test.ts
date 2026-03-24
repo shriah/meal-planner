@@ -267,10 +267,10 @@ describe('PLAN-04: Extra compatibility', () => {
   });
 });
 
-// ─── RULE-03: Day-based rules (DayFilterRule) ─────────────────────────────────
+// ─── RULE-03: Scheduling-rule filter-pool (replaces DayFilterRule) ────────────
 
-describe('RULE-03: Day-based rules (DayFilterRule)', () => {
-  it('9. day-filter with protein_tag:fish on friday — Friday slots have fish-tagged components', async () => {
+describe('RULE-03: scheduling-rule filter-pool', () => {
+  it('9. scheduling-rule filter-pool with protein_tag:fish on friday — Friday slots have fish-tagged components', async () => {
     // Add a fish curry
     await addComponent({
       name: 'Fish Curry',
@@ -299,7 +299,7 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
     await addRule({
       name: 'Friday fish',
       enabled: true,
-      compiled_filter: { type: 'day-filter', days: ['friday'], slots: null, filter: { protein_tag: 'fish' } },
+      compiled_filter: { type: 'scheduling-rule', effect: 'filter-pool', days: ['friday'], slots: null, match: { mode: 'tag', filter: { protein_tag: 'fish' } } },
       created_at: '',
     });
 
@@ -319,7 +319,7 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
     expect(fridayFishCount).toBeGreaterThan(0);
   });
 
-  it('10. day-filter only affects matching days — non-Friday slots unaffected', async () => {
+  it('10. scheduling-rule filter-pool only affects matching days — non-Friday slots unaffected', async () => {
     // Add one fish curry and one veg curry
     const fishCurryId = await addComponent({
       name: 'Fish Curry',
@@ -345,7 +345,7 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
     await addRule({
       name: 'Friday fish',
       enabled: true,
-      compiled_filter: { type: 'day-filter', days: ['friday'], slots: null, filter: { protein_tag: 'fish' } },
+      compiled_filter: { type: 'scheduling-rule', effect: 'filter-pool', days: ['friday'], slots: null, match: { mode: 'tag', filter: { protein_tag: 'fish' } } },
       created_at: '',
     });
 
@@ -364,7 +364,7 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
     void vegCurryUsed; // non-Friday usage tracked
   });
 
-  it('11. day-filter with slots:[breakfast] only affects breakfast on those days', async () => {
+  it('11. scheduling-rule filter-pool with slots:[breakfast] only affects breakfast on those days', async () => {
     // Add fish and non-fish curry
     await addComponent({
       name: 'Fish Curry',
@@ -391,10 +391,11 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
       name: 'Monday breakfast fish',
       enabled: true,
       compiled_filter: {
-        type: 'day-filter',
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
         days: ['monday'],
         slots: ['breakfast'],
-        filter: { protein_tag: 'fish' },
+        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
       },
       created_at: '',
     });
@@ -410,7 +411,7 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
     void mondayLunchWarnings;
   });
 
-  it('12. day-filter with multiple tags uses AND logic', async () => {
+  it('12. scheduling-rule filter-pool with multiple tags uses AND logic', async () => {
     // Add a component matching both tags (fish + non-veg)
     await addComponent({
       name: 'Fish Curry',
@@ -439,10 +440,11 @@ describe('RULE-03: Day-based rules (DayFilterRule)', () => {
       name: 'Friday non-veg fish',
       enabled: true,
       compiled_filter: {
-        type: 'day-filter',
+        type: 'scheduling-rule',
+        effect: 'filter-pool',
         days: ['friday'],
         slots: null,
-        filter: { protein_tag: 'fish', dietary_tag: 'non-veg' },
+        match: { mode: 'tag', filter: { protein_tag: 'fish', dietary_tag: 'non-veg' } },
       },
       created_at: '',
     });
@@ -649,7 +651,7 @@ describe('Recency halving', () => {
 // ─── Over-constrained handling ────────────────────────────────────────────────
 
 describe('Over-constrained handling', () => {
-  it('19. impossible day-filter (no matching components) — slot still filled, warning emitted', async () => {
+  it('19. impossible scheduling-rule filter-pool (no matching components) — slot still filled, warning emitted', async () => {
     // Add components with no fish protein tag
     await addComponent({ name: 'Rice', componentType: 'base', base_type: 'rice-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
     await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
@@ -659,7 +661,7 @@ describe('Over-constrained handling', () => {
     await addRule({
       name: 'Impossible fish rule',
       enabled: true,
-      compiled_filter: { type: 'day-filter', days: ['friday'], slots: null, filter: { protein_tag: 'fish' } },
+      compiled_filter: { type: 'scheduling-rule', effect: 'filter-pool', days: ['friday'], slots: null, match: { mode: 'tag', filter: { protein_tag: 'fish' } } },
       created_at: '',
     });
 
@@ -671,19 +673,20 @@ describe('Over-constrained handling', () => {
     expect(fridayWarnings.length).toBeGreaterThan(0);
   });
 
-  it('20. require-component rule with valid component_id — that component assigned on specified days', async () => {
+  it('20. scheduling-rule require-one with valid component_id — that component assigned on specified days', async () => {
     const ids = await seedMinimalComponents();
     await seedDefaultPreferences();
 
-    // Require Plain Rice (riceBaseId) on Monday breakfast
+    // Require Plain Rice (riceBaseId) on Monday breakfast via scheduling-rule require-one
     await addRule({
       name: 'Monday Rice',
       enabled: true,
       compiled_filter: {
-        type: 'require-component',
-        component_id: ids.riceBaseId,
+        type: 'scheduling-rule',
+        effect: 'require-one',
         days: ['monday'],
         slots: ['breakfast'],
+        match: { mode: 'component', component_id: ids.riceBaseId },
       },
       created_at: '',
     });
@@ -699,7 +702,7 @@ describe('Over-constrained handling', () => {
     }
   });
 
-  it('21. require-component rule with invalid component_id — warning emitted, slot filled from pool', async () => {
+  it('21. scheduling-rule require-one with invalid component_id — warning emitted, slot filled from pool', async () => {
     await seedMinimalComponents();
     await seedDefaultPreferences();
 
@@ -708,10 +711,11 @@ describe('Over-constrained handling', () => {
       name: 'Missing component rule',
       enabled: true,
       compiled_filter: {
-        type: 'require-component',
-        component_id: invalidId,
+        type: 'scheduling-rule',
+        effect: 'require-one',
         days: ['tuesday'],
         slots: ['lunch'],
+        match: { mode: 'component', component_id: invalidId },
       },
       created_at: '',
     });
@@ -725,7 +729,7 @@ describe('Over-constrained handling', () => {
     );
     expect(tuesdayLunch).toBeDefined();
     expect(tuesdayLunch!.base_id).toBeGreaterThan(0);
-    // Warning should be emitted for the invalid require-component
+    // Warning should be emitted for the invalid require-one
     const relevantWarnings = result.warnings.filter(
       w => w.slot.day === 'tuesday' && w.slot.meal_slot === 'lunch',
     );
