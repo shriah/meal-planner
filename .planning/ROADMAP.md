@@ -54,7 +54,11 @@ Plans:
   2. A rule created through the form appears in the rules list and is applied on the next plan generation
   3. On first app startup after the Dexie version bump, all existing day-filter and require-component records are converted to scheduling-rule records with equivalent semantics; no rule data is lost
   4. After migration, the app generates plans correctly using only scheduling-rule CompiledFilter variants — no old variant code paths remain
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 08-01-PLAN.md — Dexie v5 migration + type system cleanup + test fixture updates
+- [ ] 08-02-PLAN.md — SchedulingRuleFields component + RuleForm rewire + preset/badge/preview updates
 
 ### Phase 9: Meal Template Engine
 **Goal**: The system can represent, compile, and generate plans using the meal-template rule type for slot assignment and composition constraints
@@ -91,6 +95,6 @@ Plans:
 | 5. Rules Manager UI | v1.0 | 2/2 | Complete | 2026-03-21 |
 | 6. Save, History, and Export | v1.0 | 3/3 | Complete | 2026-03-22 |
 | 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
-| 8. Scheduling Rule UI + Migration | v1.1 | 0/? | Not started | — |
+| 8. Scheduling Rule UI + Migration | v1.1 | 0/2 | Not started | — |
 | 9. Meal Template Engine | v1.1 | 0/? | Not started | — |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/? | Not started | — |
