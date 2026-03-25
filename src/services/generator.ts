@@ -9,6 +9,7 @@ import {
   type CompiledFilter,
   type TagFilter,
   type SchedulingRule,
+  type MealTemplateRule,
   type GeneratorResult,
   type PlanSlot,
   type Warning,
@@ -108,6 +109,11 @@ function isRuleApplicable(
     if (rule.slots !== null && !rule.slots.includes(slot)) return false;
     return true;
   }
+  if (rule.type === 'meal-template') {
+    if (rule.days !== null && !rule.days.includes(day)) return false;
+    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
+    return true;
+  }
   return false;
 }
 
@@ -129,17 +135,83 @@ function matchesTagFilter(component: ComponentRecord, filter: TagFilter): boolea
   return true;
 }
 
+// ─── Helper: getMealTemplateAllowedSlots ──────────────────────────────────────
+
+/**
+ * Returns the intersection of allowed_slots across all meal-template rules for a base type.
+ * Returns null if no rules exist or all rules have allowed_slots=null (unrestricted).
+ * Returns empty array if intersection is empty (triggers D-10 relaxation).
+ */
+function getMealTemplateAllowedSlots(
+  baseType: BaseType,
+  mealTemplateRules: MealTemplateRule[],
+): MealSlot[] | null {
+  const rulesForBase = mealTemplateRules.filter(r => r.base_type === baseType);
+  if (rulesForBase.length === 0) return null; // No template = no restriction from templates
+  const withAllowedSlots = rulesForBase.filter(r => r.allowed_slots !== null);
+  if (withAllowedSlots.length === 0) return null; // All rules have allowed_slots=null = unrestricted
+  // Intersection of all allowed_slots arrays (D-08)
+  let result: MealSlot[] = withAllowedSlots[0].allowed_slots!;
+  for (let i = 1; i < withAllowedSlots.length; i++) {
+    result = result.filter(s => withAllowedSlots[i].allowed_slots!.includes(s));
+  }
+  return result;
+}
+
+// ─── Helper: getApplicableMealTemplates ───────────────────────────────────────
+
+/**
+ * Returns meal-template rules applicable for a given (baseType, day, slot) context.
+ * Used for composition constraints (exclude_component_types, extras) — gated by
+ * days/slots context scope per D-02/D-09.
+ */
+function getApplicableMealTemplates(
+  baseType: BaseType,
+  day: DayOfWeek,
+  slot: MealSlot,
+  mealTemplateRules: MealTemplateRule[],
+): MealTemplateRule[] {
+  return mealTemplateRules.filter(r =>
+    r.base_type === baseType &&
+    (r.days === null || r.days.includes(day)) &&
+    (r.slots === null || r.slots.includes(slot)),
+  );
+}
+
 // ─── Helper: getEligibleBases ─────────────────────────────────────────────────
 
 function getEligibleBases(
   slot: MealSlot,
   prefs: UserPreferencesRecord,
   bases: ComponentRecord[],
+  mealTemplateRules: MealTemplateRule[],
+  warnings: Warning[],
+  day: DayOfWeek,
 ): ComponentRecord[] {
-  const restrictions = prefs.slot_restrictions.base_type_slots;
   return bases.filter(base => {
     const baseType = base.base_type as BaseType | undefined;
     if (!baseType) return true; // no base_type, no restriction
+
+    // D-07: Check if any meal-template rules exist for this base type
+    const templatesForBase = mealTemplateRules.filter(r => r.base_type === baseType);
+    if (templatesForBase.length > 0) {
+      // D-05: meal-template overrides prefs
+      const allowedSlots = getMealTemplateAllowedSlots(baseType, mealTemplateRules);
+      if (allowedSlots === null) return true; // unrestricted
+      if (allowedSlots.length === 0) {
+        // D-10: intersection empty — relax with warning
+        warnings.push({
+          slot: { day, meal_slot: slot },
+          rule_id: null,
+          message: `meal-template allowed_slots intersection is empty for ${baseType} — constraint relaxed`,
+        });
+        return true;
+      }
+      return allowedSlots.includes(slot);
+    }
+
+    // D-06: No templates — fall through to prefs
+    const restrictions = prefs.slot_restrictions.base_type_slots;
     const allowedSlots = restrictions[baseType];
     // If no restriction specified for this base_type, all slots are allowed
     if (allowedSlots === undefined) return true;
@@ -353,6 +425,11 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
   const usedCurryIds = new Set<number>();
   const usedSubziIds = new Set<number>();
 
+  // Extract meal-template rules
+  const mealTemplateRules = validRules.filter(
+    r => r.type === 'meal-template',
+  ) as MealTemplateRule[];
+
   // Extract per-type no-repeat rules
   const noRepeatBase = validRules.some(
     r => r.type === 'no-repeat' && r.component_type === 'base',
@@ -382,7 +459,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       // ── Base selection ──────────────────────────────────────────────────────
 
       // Hard constraint: slot restrictions + component_slot_overrides + occasion
-      let eligibleBases = getEligibleBases(meal_slot, resolvedPrefs, bases).filter(b => {
+      let eligibleBases = getEligibleBases(meal_slot, resolvedPrefs, bases, mealTemplateRules, warnings, day).filter(b => {
         const override = resolvedPrefs.slot_restrictions.component_slot_overrides[b.id!];
         if (override !== undefined && !override.includes(meal_slot)) return false;
         return isOccasionAllowed(b, day);
@@ -456,17 +533,27 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       if (noRepeatBase) usedBaseIds.add(selectedBaseId);
       const selectedBaseType = selectedBase.base_type as BaseType | undefined;
 
+      // ── Meal-template composition constraints for this (day, slot, baseType) ─
+
+      const applicableTemplates = selectedBaseType
+        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules)
+        : [];
+      const excludedComponentTypes = new Set(
+        applicableTemplates.flatMap(t => t.exclude_component_types),
+      );
+
       // ── Curry selection ─────────────────────────────────────────────────────
 
       let selectedCurry: ComponentRecord | undefined;
+      const skipCurry = excludedComponentTypes.has('curry');
       if (locked?.curry_id !== undefined) {
-        // Use locked curry directly
+        // Use locked curry directly — locked components bypass soft constraints
         const lockedCurry = curries.find(c => c.id === locked.curry_id);
         if (lockedCurry) {
           selectedCurry = lockedCurry;
           usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
         }
-      } else if (curries.length > 0) {
+      } else if (!skipCurry && curries.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
         const eligibleCurries = curries.filter(c => {
           const override = resolvedPrefs.slot_restrictions.component_slot_overrides[c.id!];
@@ -510,14 +597,15 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       // ── Subzi selection ─────────────────────────────────────────────────────
 
       let selectedSubzi: ComponentRecord | undefined;
+      const skipSubzi = excludedComponentTypes.has('subzi');
       if (locked?.subzi_id !== undefined) {
-        // Use locked subzi directly
+        // Use locked subzi directly — locked components bypass soft constraints
         const lockedSubzi = subzis.find(s => s.id === locked.subzi_id);
         if (lockedSubzi) {
           selectedSubzi = lockedSubzi;
           usageCount.set(lockedSubzi.id!, (usageCount.get(lockedSubzi.id!) ?? 0) + 1);
         }
-      } else if (subzis.length > 0) {
+      } else if (!skipSubzi && subzis.length > 0) {
         // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
         const eligibleSubzis = subzis.filter(s => {
           const override = resolvedPrefs.slot_restrictions.component_slot_overrides[s.id!];
