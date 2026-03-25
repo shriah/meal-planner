@@ -1610,6 +1610,343 @@ describe('SCHED: scheduling-rule require-one', () => {
   });
 });
 
+// ─── Meal-template rules: slot assignment + component exclusions ───────────────
+
+describe('meal-template rules: slot assignment (TMPL-02)', () => {
+  it('TMPL-02-1. meal-template allowed_slots restricts base to specified slots', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice template: lunch+dinner only',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['lunch', 'dinner'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const breakfastSlots = result.plan.slots.filter(s => s.meal_slot === 'breakfast');
+      for (const slot of breakfastSlots) {
+        // Rice-based base must never appear at breakfast
+        expect(slot.base_id).not.toBe(ids.riceBaseId);
+      }
+    }
+  });
+
+  it('TMPL-02-2. meal-template allowed_slots=null does not restrict base', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice template: unrestricted',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    // Rice-based should still appear at breakfast across many runs
+    let riceAtBreakfast = false;
+    for (let run = 0; run < 50; run++) {
+      const result = await generate();
+      const breakfastSlots = result.plan.slots.filter(s => s.meal_slot === 'breakfast');
+      if (breakfastSlots.some(s => s.base_id === ids.riceBaseId)) {
+        riceAtBreakfast = true;
+        break;
+      }
+    }
+    expect(riceAtBreakfast).toBe(true);
+  });
+
+  it('TMPL-02-3. multiple meal-template rules for same base type — allowed_slots intersect', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Rule A: lunch + dinner
+    await addRule({
+      name: 'Rice: lunch+dinner',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['lunch', 'dinner'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+    // Rule B: dinner only — intersection = [dinner]
+    await addRule({
+      name: 'Rice: dinner only',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['dinner'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      // Rice-based must only appear at dinner
+      const nonDinnerRice = result.plan.slots.filter(
+        s => s.meal_slot !== 'dinner' && s.base_id === ids.riceBaseId,
+      );
+      expect(nonDinnerRice).toHaveLength(0);
+    }
+  });
+
+  it('TMPL-02-4. meal-template overrides prefs.base_type_slots for that base type (D-05)', async () => {
+    const ids = await seedMinimalComponents();
+    // Prefs allow rice-based in all slots
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: {
+        base_type_slots: { 'rice-based': ['breakfast', 'lunch', 'dinner'] },
+        component_slot_overrides: {},
+      },
+      extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 2 },
+      base_type_rules: [],
+    });
+    // Template restricts to dinner only
+    await addRule({
+      name: 'Rice: dinner only (override prefs)',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['dinner'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      // Despite prefs allowing all slots, rice-based only at dinner
+      const nonDinnerRice = result.plan.slots.filter(
+        s => s.meal_slot !== 'dinner' && s.base_id === ids.riceBaseId,
+      );
+      expect(nonDinnerRice).toHaveLength(0);
+    }
+  });
+
+  it('TMPL-02-5. base type without meal-template falls back to prefs (D-06)', async () => {
+    const ids = await seedMinimalComponents();
+    // Prefs restrict bread-based to lunch only
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: {
+        base_type_slots: { 'bread-based': ['lunch'] },
+        component_slot_overrides: {},
+      },
+      extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 2 },
+      base_type_rules: [],
+    });
+    // Only add a meal-template for rice-based, not bread-based
+    await addRule({
+      name: 'Rice template only',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      // Bread-based still uses prefs — only at lunch
+      const nonLunchBread = result.plan.slots.filter(
+        s => s.meal_slot !== 'lunch' && s.base_id === ids.breadBaseId,
+      );
+      expect(nonLunchBread).toHaveLength(0);
+    }
+  });
+
+  it('TMPL-02-6. allowed_slots intersection empty — relax to unrestricted with warning (D-10)', async () => {
+    await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Rule A: lunch only
+    await addRule({
+      name: 'Rice: lunch only',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['lunch'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+    // Rule B: dinner only — intersection with [lunch] is empty
+    await addRule({
+      name: 'Rice: dinner only',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: ['dinner'],
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete
+    expect(result.plan.slots).toHaveLength(21);
+    // Warnings must mention constraint relaxed for rice-based
+    const relaxedWarning = result.warnings.find(
+      w => w.message.includes('rice-based') && w.message.includes('relaxed'),
+    );
+    expect(relaxedWarning).toBeDefined();
+  });
+});
+
+describe('meal-template rules: component exclusions (TMPL-03)', () => {
+  it('TMPL-03-1. meal-template exclude_component_types=[subzi] — no subzi for that base type', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Bread: no subzi',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: ['subzi'],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
+      for (const slot of breadSlots) {
+        expect(slot.subzi_id).toBeUndefined();
+      }
+    }
+  });
+
+  it('TMPL-03-2. meal-template exclude_component_types=[curry] — no curry for that base type', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice: no curry',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: ['curry'],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const riceSlots = result.plan.slots.filter(s => s.base_id === ids.riceBaseId);
+      for (const slot of riceSlots) {
+        expect(slot.curry_id).toBeUndefined();
+      }
+    }
+  });
+
+  it('TMPL-03-3. component exclusion scoped by days/slots context (D-02, D-09)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Bread: no subzi on monday dinner',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: ['monday'],
+        slots: ['dinner'],
+        exclude_component_types: ['subzi'],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const mondayDinner = result.plan.slots.find(
+        s => s.day === 'monday' && s.meal_slot === 'dinner',
+      );
+      if (mondayDinner && mondayDinner.base_id === ids.breadBaseId) {
+        // Bread-based on monday dinner must have no subzi
+        expect(mondayDinner.subzi_id).toBeUndefined();
+      }
+    }
+  });
+
+  it('TMPL-03-4. component exclusion without meal-template — curries and subzis selected normally', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // No meal-template rules — normal behavior
+    const result = await generate();
+    // At least some slots should have curry_id and subzi_id set
+    const hasAnyCurry = result.plan.slots.some(s => s.curry_id !== undefined);
+    const hasAnySubzi = result.plan.slots.some(s => s.subzi_id !== undefined);
+    expect(hasAnyCurry).toBe(true);
+    expect(hasAnySubzi).toBe(true);
+    void ids;
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
