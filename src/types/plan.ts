@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { MealSlot } from './preferences';
-import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag } from './component';
+import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag, ExtraCategory } from './component';
 
 // Suppress unused type import warnings — these are used via Zod inference only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -13,6 +13,8 @@ type _RegionalTag = RegionalTag;
 type _OccasionTag = OccasionTag;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _MealSlot = MealSlot;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _ExtraCategory = ExtraCategory;
 
 // ─── DayOfWeek ───────────────────────────────────────────────────────────────
 
@@ -90,6 +92,16 @@ export const CompiledFilterSchema = z.discriminatedUnion('type', [
       z.object({ mode: z.literal('component'), component_id: z.number() }),
     ]),
   }),
+  z.object({
+    type: z.literal('meal-template'),
+    base_type: z.enum(['rice-based', 'bread-based', 'other']),
+    days: z.array(DayOfWeekEnum).nullable(),
+    slots: z.array(MealSlotEnum).nullable(),
+    allowed_slots: z.array(MealSlotEnum).nullable(),
+    exclude_component_types: z.array(z.enum(['curry', 'subzi'])),
+    exclude_extra_categories: z.array(z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet'])),
+    require_extra_category: z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet']).nullable(),
+  }),
 ]);
 
 export type CompiledFilter = z.infer<typeof CompiledFilterSchema>;
@@ -97,6 +109,7 @@ export type CompiledFilter = z.infer<typeof CompiledFilterSchema>;
 // Concrete type aliases for each variant (used by rule-compiler and generator)
 export type NoRepeatRule = Extract<CompiledFilter, { type: 'no-repeat' }>;
 export type SchedulingRule = Extract<CompiledFilter, { type: 'scheduling-rule' }>;
+export type MealTemplateRule = Extract<CompiledFilter, { type: 'meal-template' }>;
 
 // ─── RuleDefinition (structured input from Phase 5 form UI) ──────────────────
 
@@ -113,6 +126,16 @@ export type RuleDefinition =
       match:
         | { mode: 'tag'; filter: TagFilter }
         | { mode: 'component'; component_id: number };
+    }
+  | {
+      ruleType: 'meal-template';
+      base_type: 'rice-based' | 'bread-based' | 'other';
+      days?: DayOfWeek[];
+      slots?: MealSlot[];
+      allowed_slots?: MealSlot[];
+      exclude_component_types?: ('curry' | 'subzi')[];
+      exclude_extra_categories?: ExtraCategory[];
+      require_extra_category?: ExtraCategory;
     };
 
 // ─── Generator result types ───────────────────────────────────────────────────

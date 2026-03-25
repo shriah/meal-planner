@@ -92,6 +92,89 @@ describe('RULE-02: compileRule', () => {
     });
   });
 
+  describe('meal-template rules', () => {
+    it('compiles minimal meal-template with only base_type (all optionals default to null/[])', () => {
+      const result = compileRule({ ruleType: 'meal-template', base_type: 'bread-based' });
+      expect(result).toEqual({
+        type: 'meal-template',
+        base_type: 'bread-based',
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      });
+    });
+
+    it('compiles meal-template with slots, allowed_slots, exclude_component_types, require_extra_category', () => {
+      const result = compileRule({
+        ruleType: 'meal-template',
+        base_type: 'rice-based',
+        slots: ['lunch', 'dinner'],
+        allowed_slots: ['lunch', 'dinner'],
+        exclude_component_types: ['curry'],
+        require_extra_category: 'liquid',
+      });
+      expect(result).toEqual({
+        type: 'meal-template',
+        base_type: 'rice-based',
+        days: null,
+        slots: ['lunch', 'dinner'],
+        allowed_slots: ['lunch', 'dinner'],
+        exclude_component_types: ['curry'],
+        exclude_extra_categories: [],
+        require_extra_category: 'liquid',
+      });
+    });
+
+    it('Zod round-trip — compileRule output passes CompiledFilterSchema.parse()', () => {
+      const result = compileRule({ ruleType: 'meal-template', base_type: 'rice-based' });
+      expect(() => CompiledFilterSchema.parse(result)).not.toThrow();
+    });
+  });
+
+  describe('meal-template Zod schema', () => {
+    it('accepts a fully populated meal-template object', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'meal-template',
+        base_type: 'rice-based',
+        days: ['monday'],
+        slots: ['lunch', 'dinner'],
+        allowed_slots: ['lunch', 'dinner'],
+        exclude_component_types: ['subzi'],
+        exclude_extra_categories: ['sweet'],
+        require_extra_category: 'liquid',
+      })).not.toThrow();
+    });
+
+    it('accepts a minimal meal-template with only base_type (nullable fields as null, arrays as [])', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'meal-template',
+        base_type: 'other',
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      })).not.toThrow();
+    });
+
+    it('rejects meal-template with invalid base_type', () => {
+      expect(() => CompiledFilterSchema.parse({
+        type: 'meal-template',
+        base_type: 'invalid-type',
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      })).toThrow();
+    });
+  });
+
   describe('scheduling-rule Zod schema', () => {
     it('accepts scheduling-rule with filter-pool effect and tag match', () => {
       expect(() => CompiledFilterSchema.parse({
