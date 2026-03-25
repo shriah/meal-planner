@@ -70,7 +70,11 @@ Plans:
   3. The generator respects meal-template component exclusions: if a meal-template excludes curry or subzi for a given base type, no component of that type is selected for meals using that base
   4. The generator respects meal-template extra exclusions: if a meal-template excludes an extra category (e.g., sweet), extras of that category are not picked for meals using that base type
   5. The generator respects meal-template required extras: if a meal-template requires one extra of a category (e.g., liquid), the generator always includes an eligible extra of that category for meals using that base type
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Types, compiler, Dexie v6, describeRule + RuleRow badge for meal-template
+- [ ] 09-02-PLAN.md — Generator integration: slot assignment, component/extra exclusions, required extras
 
 ### Phase 10: Meal Template UI, Settings Removal, and Migration
 **Goal**: Users can create meal template rules through the Rules UI; slot settings are managed entirely through rules; existing slot prefs are migrated automatically
@@ -96,5 +100,5 @@ Plans:
 | 6. Save, History, and Export | v1.0 | 3/3 | Complete | 2026-03-22 |
 | 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete   | 2026-03-25 |
-| 9. Meal Template Engine | v1.1 | 0/? | Not started | — |
+| 9. Meal Template Engine | v1.1 | 0/2 | Not started | — |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/? | Not started | — |
