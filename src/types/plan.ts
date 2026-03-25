@@ -76,21 +76,9 @@ export type TagFilter = z.infer<typeof TagFilterSchema>;
 
 export const CompiledFilterSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('day-filter'),
-    days: z.array(DayOfWeekEnum),
-    slots: z.array(MealSlotEnum).nullable(),
-    filter: TagFilterSchema,
-  }),
-  z.object({
     type: z.literal('no-repeat'),
     component_type: z.enum(['base', 'curry', 'subzi']),
     within: z.literal('week'),
-  }),
-  z.object({
-    type: z.literal('require-component'),
-    component_id: z.number(),
-    days: z.array(DayOfWeekEnum),
-    slots: z.array(MealSlotEnum).nullable(),
   }),
   z.object({
     type: z.literal('scheduling-rule'),
@@ -107,32 +95,15 @@ export const CompiledFilterSchema = z.discriminatedUnion('type', [
 export type CompiledFilter = z.infer<typeof CompiledFilterSchema>;
 
 // Concrete type aliases for each variant (used by rule-compiler and generator)
-export type DayFilterRule = Extract<CompiledFilter, { type: 'day-filter' }>;
 export type NoRepeatRule = Extract<CompiledFilter, { type: 'no-repeat' }>;
-export type RequireComponentRule = Extract<
-  CompiledFilter,
-  { type: 'require-component' }
->;
 export type SchedulingRule = Extract<CompiledFilter, { type: 'scheduling-rule' }>;
 
 // ─── RuleDefinition (structured input from Phase 5 form UI) ──────────────────
 
 export type RuleDefinition =
   | {
-      ruleType: 'day-filter';
-      days: DayOfWeek[];
-      slots?: MealSlot[];
-      filter: TagFilter;
-    }
-  | {
       ruleType: 'no-repeat';
       component_type: 'base' | 'curry' | 'subzi';
-    }
-  | {
-      ruleType: 'require-component';
-      component_id: number;
-      days: DayOfWeek[];
-      slots?: MealSlot[];
     }
   | {
       ruleType: 'scheduling-rule';

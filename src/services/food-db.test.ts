@@ -298,14 +298,14 @@ describe('Rule CRUD', () => {
     const id = await addRule({
       name: 'Friday fish',
       enabled: true,
-      compiled_filter: { type: 'day-filter', days: ['friday'], slots: null, filter: { protein_tag: 'fish' } },
+      compiled_filter: { type: 'scheduling-rule', effect: 'filter-pool', days: ['friday'], slots: null, match: { mode: 'tag', filter: { protein_tag: 'fish' } } },
       created_at: new Date().toISOString(),
     });
     expect(typeof id).toBe('number');
     const rules = await getRules();
     expect(rules).toHaveLength(1);
     expect(rules[0].name).toBe('Friday fish');
-    expect(rules[0].compiled_filter.type).toBe('day-filter');
+    expect(rules[0].compiled_filter.type).toBe('scheduling-rule');
   });
 
   it('getEnabledRules filters out disabled rules', async () => {

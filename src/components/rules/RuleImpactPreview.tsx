@@ -24,8 +24,8 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
       if (effect === '' || match.mode === '') return null;
 
       if (match.mode === 'tag') {
+        const { filter } = match;
         const matchCount = allComponents.filter(c => {
-          const { filter } = match;
           const dietaryOk = !filter.dietary_tag || c.dietary_tags.includes(filter.dietary_tag);
           const proteinOk = !filter.protein_tag || c.protein_tag === filter.protein_tag;
           const regionalOk = !filter.regional_tag || c.regional_tags.includes(filter.regional_tag);

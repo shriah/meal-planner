@@ -14,6 +14,7 @@ import {
   type Warning,
 } from '@/types/plan';
 
+
 // ─── GenerateOptions ──────────────────────────────────────────────────────────
 
 export interface GenerateOptions {
@@ -98,18 +99,8 @@ function isRuleApplicable(
   day: DayOfWeek,
   slot: MealSlot,
 ): boolean {
-  if (rule.type === 'day-filter') {
-    if (!rule.days.includes(day)) return false;
-    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
-    return true;
-  }
   if (rule.type === 'no-repeat') {
     // no-repeat applies to all slots
-    return true;
-  }
-  if (rule.type === 'require-component') {
-    if (!rule.days.includes(day)) return false;
-    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
     return true;
   }
   if (rule.type === 'scheduling-rule') {
@@ -156,29 +147,6 @@ function getEligibleBases(
     if (allowedSlots.length === 0) return false;
     return allowedSlots.includes(slot);
   });
-}
-
-// ─── Helper: applyDayFilterToPool ─────────────────────────────────────────────
-
-/**
- * Apply day-filter rules to a component pool.
- * Returns filtered pool (may be empty — caller handles relaxation).
- */
-function applyDayFilterToPool(
-  pool: ComponentRecord[],
-  rules: CompiledFilter[],
-  day: DayOfWeek,
-  slot: MealSlot,
-): ComponentRecord[] {
-  const applicableDayFilters = rules.filter(
-    r => r.type === 'day-filter' && isRuleApplicable(r, day, slot),
-  ) as Extract<CompiledFilter, { type: 'day-filter' }>[];
-
-  if (applicableDayFilters.length === 0) return pool;
-
-  return pool.filter(component =>
-    applicableDayFilters.every(rule => matchesTagFilter(component, rule.filter)),
-  );
 }
 
 // ─── Helper: applySchedulingFilterPool ───────────────────────────────────────
@@ -324,46 +292,15 @@ function applyRequireOneByComponent(
 // ─── Helper: pickFromPool ─────────────────────────────────────────────────────
 
 /**
- * Pick a component from pool, applying soft rules and recency.
- * If filtered pool is empty, falls back to full pool (emits warnings).
+ * Pick a component from pool using weighted random selection.
+ * Pool is already pre-filtered for no-repeat and scheduling-rule constraints by the caller.
  */
 function pickFromPool(
   pool: ComponentRecord[],
-  rules: CompiledFilter[],
-  _usedIds: Set<number>,
   usageCount: Map<number, number>,
-  day: DayOfWeek,
-  slot: MealSlot,
-  warnings: Warning[],
-  ruleRecords: RuleRecord[],
 ): ComponentRecord | null {
   if (pool.length === 0) return null;
-
-  // Pool is already pre-filtered for no-repeat by the caller.
-  // Apply day-filter rules (soft constraint) to the provided pool.
-  let filtered = pool;
-
-  const withTagFilter = applyDayFilterToPool(filtered, rules, day, slot);
-  if (withTagFilter.length > 0) {
-    filtered = withTagFilter;
-  } else if (filtered.length > 0) {
-    // Over-constrained: relax day-filter, emit warnings
-    const applicableDayFilters = rules.filter(
-      r => r.type === 'day-filter' && isRuleApplicable(r, day, slot),
-    );
-    for (const rule of applicableDayFilters) {
-      const ruleRecord = ruleRecords.find(r =>
-        JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
-      );
-      warnings.push({
-        slot: { day, meal_slot: slot },
-        rule_id: ruleRecord?.id ?? null,
-        message: `No components match day-filter rule on ${day} ${slot} — constraint relaxed`,
-      });
-    }
-  }
-
-  return weightedRandom(filtered, c => effectiveWeight(c, usageCount));
+  return weightedRandom(pool, c => effectiveWeight(c, usageCount));
 }
 
 // ─── Main generator function ──────────────────────────────────────────────────
@@ -427,12 +364,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
     r => r.type === 'no-repeat' && r.component_type === 'subzi',
   );
 
-  // Extract require-component rules
-  const requireRules = validRules.filter(r => r.type === 'require-component') as Extract<
-    CompiledFilter,
-    { type: 'require-component' }
-  >[];
-
   // 5. Fill order: breakfasts, then lunches, then dinners (all 7 days each)
   const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner'];
   const slots: PlanSlot[] = [];
@@ -457,11 +388,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         return isOccasionAllowed(b, day);
       });
 
-      // Check require-component rules that target this (day, slot)
-      const applicableRequireRules = requireRules.filter(r =>
-        isRuleApplicable(r, day, meal_slot),
-      );
-
       let selectedBase: ComponentRecord | null = null;
 
       // If this slot has a locked base_id, use it directly
@@ -469,27 +395,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         const lockedBase = bases.find(b => b.id === locked.base_id);
         if (lockedBase) {
           selectedBase = lockedBase;
-        }
-      }
-
-      if (!selectedBase && applicableRequireRules.length > 0) {
-        // Try to honor require-component for base
-        for (const rule of applicableRequireRules) {
-          const required = eligibleBases.find(c => c.id === rule.component_id);
-          if (required) {
-            selectedBase = required;
-            break;
-          } else {
-            // Required component not found or not in eligible pool
-            warnings.push({
-              slot: { day, meal_slot },
-              rule_id: enabledRules.find(r =>
-                r.compiled_filter.type === 'require-component' &&
-                (r.compiled_filter as Extract<CompiledFilter, { type: 'require-component' }>).component_id === rule.component_id,
-              )?.id ?? null,
-              message: `Required component id=${rule.component_id} not found or not eligible for ${day} ${meal_slot}`,
-            });
-          }
         }
       }
 
@@ -520,27 +425,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           : eligibleBases;
 
         const basePool = noRepeatFilteredBases.length > 0 ? noRepeatFilteredBases : eligibleBases;
-
-        // Apply day-filter soft constraints
-        const dayFilteredBases = applyDayFilterToPool(basePool, validRules, day, meal_slot);
-        let finalBasePool = dayFilteredBases.length > 0 ? dayFilteredBases : basePool;
-        if (dayFilteredBases.length === 0 && basePool.length > 0) {
-          // Over-constrained: emit warnings for applicable day-filter rules
-          const applicableDayFilters = validRules.filter(
-            r => r.type === 'day-filter' && isRuleApplicable(r, day, meal_slot),
-          );
-          for (const rule of applicableDayFilters) {
-            const ruleRecord = enabledRules.find(r =>
-              JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
-            );
-            warnings.push({
-              slot: { day, meal_slot },
-              rule_id: ruleRecord?.id ?? null,
-              message: `No bases match day-filter rule on ${day} ${meal_slot} — constraint relaxed`,
-            });
-          }
-          finalBasePool = basePool;
-        }
+        let finalBasePool = basePool;
 
         // Apply scheduling-rule filter-pool and exclude to base pool
         const schedulingFilteredBases = applySchedulingFilterPool(finalBasePool, applicableSchedulingRules);
@@ -605,16 +490,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         const curryPool = applySchedulingExclude(scheduledCurryPool, curryPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
 
         if (curryPool.length > 0) {
-          const picked = pickFromPool(
-            curryPool,
-            validRules,
-            usedCurryIds,
-            usageCount,
-            day,
-            meal_slot,
-            warnings,
-            enabledRules,
-          );
+          const picked = pickFromPool(curryPool, usageCount);
           if (picked) {
             // Pass 2: require-one override for curry (D-05)
             const curryRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
@@ -665,16 +541,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         const subziPool = applySchedulingExclude(scheduledSubziPool, subziPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
 
         if (subziPool.length > 0) {
-          const picked = pickFromPool(
-            subziPool,
-            validRules,
-            usedSubziIds,
-            usageCount,
-            day,
-            meal_slot,
-            warnings,
-            enabledRules,
-          );
+          const picked = pickFromPool(subziPool, usageCount);
           if (picked) {
             // Pass 2: require-one override for subzi (D-05)
             const subziRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
