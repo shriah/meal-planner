@@ -25,10 +25,11 @@ export function RuleRow({ rule }: RuleRowProps) {
 
   const summary = describeRule(rule.compiled_filter)
 
-  const ruleTypeLabel =
-    rule.compiled_filter.type === 'no-repeat'
-      ? 'No Repeat'
-      : 'Scheduling'
+  const ruleTypeLabel: Record<string, string> = {
+    'no-repeat': 'No Repeat',
+    'scheduling-rule': 'Scheduling',
+    'meal-template': 'Meal Template',
+  }
 
   async function handleToggle() {
     await updateRule(rule.id!, { enabled: !rule.enabled })
@@ -52,7 +53,7 @@ export function RuleRow({ rule }: RuleRowProps) {
           <p className="text-sm text-muted-foreground truncate">{summary}</p>
         </div>
         <Badge variant="secondary" className="text-xs shrink-0">
-          {ruleTypeLabel}
+          {ruleTypeLabel[rule.compiled_filter.type] ?? rule.compiled_filter.type}
         </Badge>
         <button
           type="button"

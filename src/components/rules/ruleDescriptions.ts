@@ -33,5 +33,47 @@ export function describeRule(filter: CompiledFilter): string {
         : `component #${filter.match.component_id}`
       return `${effectLabel[filter.effect] ?? filter.effect}${daysPart}${slotsSuffix}: ${matchDesc}`
     }
+
+    case 'meal-template': {
+      const baseLabel = capitalize(filter.base_type.replace('-based', '-based'))
+      const parts: string[] = []
+
+      // Slot assignment
+      if (filter.allowed_slots !== null) {
+        parts.push(`allowed at ${filter.allowed_slots.join(', ')}`)
+      }
+
+      // Component type exclusions
+      if (filter.exclude_component_types.length > 0) {
+        parts.push(`exclude ${filter.exclude_component_types.join(', ')}`)
+      }
+
+      // Extra category exclusions
+      if (filter.exclude_extra_categories.length > 0) {
+        const catLabel = filter.exclude_extra_categories.map(c => `${c} extras`).join(', ')
+        // Merge with component exclusions if both present
+        if (filter.exclude_component_types.length > 0) {
+          parts.push(catLabel)
+        } else {
+          parts.push(`exclude ${catLabel}`)
+        }
+      }
+
+      // Required extra
+      if (filter.require_extra_category !== null) {
+        parts.push(`require ${filter.require_extra_category} extra`)
+      }
+
+      // Context scope qualifier (slots in parens when present)
+      const slotsQualifier = filter.slots !== null && filter.slots.length > 0
+        ? ` (${filter.slots.join(', ')})`
+        : ''
+
+      if (parts.length === 0) {
+        return `${baseLabel}${slotsQualifier}`
+      }
+
+      return `${baseLabel}${slotsQualifier}: ${parts.join(', ')}`
+    }
   }
 }
