@@ -16,7 +16,7 @@
 
 ### Meal Template (base-type composition rule)
 
-- [ ] **TMPL-01**: User can create a meal template rule for a specific base type (rice-based / bread-based / other), optionally scoped to meal slots and/or days
+- [x] **TMPL-01**: User can create a meal template rule for a specific base type (rice-based / bread-based / other), optionally scoped to meal slots and/or days
 - [ ] **TMPL-02**: Meal template defines which meal slots the base type is allowed in (e.g., rice-based → lunch and dinner only) — replaces the 3×3 slot assignment grid in settings
 - [ ] **TMPL-03**: Meal template can exclude component types (curry and/or subzi) for the given base type context (e.g., bread-based: no subzi)
 - [ ] **TMPL-04**: Meal template can exclude extra categories (liquid / crunchy / condiment / dairy / sweet) for the given base type context (e.g., bread-based: no sweet extras)
@@ -56,7 +56,7 @@
 | SCHED-03 | Phase 7 | Complete |
 | SCHED-04 | Phase 7 | Complete |
 | SCHED-05 | Phase 8 | Pending |
-| TMPL-01 | Phase 9 | Pending |
+| TMPL-01 | Phase 9 | Complete |
 | TMPL-02 | Phase 9 | Pending |
 | TMPL-03 | Phase 9 | Pending |
 | TMPL-04 | Phase 9 | Pending |
