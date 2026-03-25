@@ -6,7 +6,7 @@ const PRESETS = [
   {
     id: 'fish-fridays',
     name: 'Fish Fridays',
-    description: 'Requires fish protein on Fridays',
+    description: 'Always includes fish protein on Fridays',
   },
   {
     id: 'no-repeat-subzi',
@@ -16,7 +16,12 @@ const PRESETS = [
   {
     id: 'weekend-special',
     name: 'Weekend special',
-    description: 'Filters for weekend occasion on Saturday and Sunday',
+    description: 'Only allows weekend occasion on Saturday and Sunday',
+  },
+  {
+    id: 'no-paneer-weekdays',
+    name: 'No paneer weekdays',
+    description: 'Never includes paneer protein on weekdays',
   },
 ]
 

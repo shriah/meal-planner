@@ -11,9 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { compileRule } from '@/services/rule-compiler';
 import { addRule } from '@/services/food-db';
-import { DayFilterFields } from './RuleFormFields/DayFilterFields';
 import { NoRepeatFields } from './RuleFormFields/NoRepeatFields';
-import { RequireComponentFields } from './RuleFormFields/RequireComponentFields';
+import { SchedulingRuleFields } from './RuleFormFields/SchedulingRuleFields';
 import { RuleImpactPreview } from './RuleImpactPreview';
 import type { FormState, FormAction } from './types';
 
@@ -22,10 +21,11 @@ import type { FormState, FormAction } from './types';
 const EXAMPLE_PRESETS: Record<string, FormState> = {
   'fish-fridays': {
     name: 'Fish Fridays',
-    ruleType: 'day-filter',
+    ruleType: 'scheduling-rule',
+    effect: 'require-one',
     days: ['friday'],
     slots: [],
-    filter: { protein_tag: 'fish' },
+    match: { mode: 'tag', filter: { protein_tag: 'fish' } },
   },
   'no-repeat-subzi': {
     name: 'No repeat subzi',
@@ -34,10 +34,19 @@ const EXAMPLE_PRESETS: Record<string, FormState> = {
   },
   'weekend-special': {
     name: 'Weekend special',
-    ruleType: 'day-filter',
+    ruleType: 'scheduling-rule',
+    effect: 'filter-pool',
     days: ['saturday', 'sunday'],
     slots: [],
-    filter: { occasion_tag: 'weekend' },
+    match: { mode: 'tag', filter: { occasion_tag: 'weekend' } },
+  },
+  'no-paneer-weekdays': {
+    name: 'No paneer weekdays',
+    ruleType: 'scheduling-rule',
+    effect: 'exclude',
+    days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    slots: [],
+    match: { mode: 'tag', filter: { protein_tag: 'paneer' } },
   },
 };
 
@@ -53,44 +62,28 @@ function formReducer(state: FormState, action: FormAction): FormState {
     case 'SET_RULE_TYPE': {
       const name = state.name;
       switch (action.ruleType) {
-        case 'day-filter':
-          return { name, ruleType: 'day-filter', days: [], slots: [], filter: {} };
         case 'no-repeat':
           return { name, ruleType: 'no-repeat', component_type: '' };
-        case 'require-component':
-          return { name, ruleType: 'require-component', component_id: null, days: [], slots: [] };
         case 'scheduling-rule':
           return { name, ruleType: 'scheduling-rule', effect: '', days: [], slots: [], match: { mode: '' } };
       }
     }
 
     case 'SET_DAYS':
-      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component' || state.ruleType === 'scheduling-rule') {
+      if (state.ruleType === 'scheduling-rule') {
         return { ...state, days: action.days };
       }
       return state;
 
     case 'SET_SLOTS':
-      if (state.ruleType === 'day-filter' || state.ruleType === 'require-component' || state.ruleType === 'scheduling-rule') {
+      if (state.ruleType === 'scheduling-rule') {
         return { ...state, slots: action.slots };
-      }
-      return state;
-
-    case 'SET_FILTER':
-      if (state.ruleType === 'day-filter') {
-        return { ...state, filter: action.filter };
       }
       return state;
 
     case 'SET_COMPONENT_TYPE':
       if (state.ruleType === 'no-repeat') {
         return { ...state, component_type: action.component_type };
-      }
-      return state;
-
-    case 'SET_COMPONENT_ID':
-      if (state.ruleType === 'require-component') {
-        return { ...state, component_id: action.component_id };
       }
       return state;
 
@@ -110,6 +103,18 @@ function formReducer(state: FormState, action: FormAction): FormState {
       }
       return state;
 
+    case 'SET_SCHEDULING_TAG_FILTER':
+      if (state.ruleType === 'scheduling-rule' && state.match.mode === 'tag') {
+        return { ...state, match: { mode: 'tag' as const, filter: action.filter } };
+      }
+      return state;
+
+    case 'SET_SCHEDULING_COMPONENT_ID':
+      if (state.ruleType === 'scheduling-rule' && state.match.mode === 'component') {
+        return { ...state, match: { mode: 'component' as const, component_id: action.component_id } };
+      }
+      return state;
+
     case 'LOAD_PRESET':
       return action.state;
 
@@ -123,10 +128,18 @@ function formReducer(state: FormState, action: FormAction): FormState {
 function isFormValid(state: FormState): boolean {
   if (state.name.trim() === '') return false;
   if (state.ruleType === '') return false;
-  if (state.ruleType === 'day-filter') return state.days.length > 0;
   if (state.ruleType === 'no-repeat') return state.component_type !== '';
-  if (state.ruleType === 'require-component')
-    return state.component_id !== null && state.days.length > 0;
+  if (state.ruleType === 'scheduling-rule') {
+    if (state.effect === '') return false;
+    if (state.match.mode === '') return false;
+    if (state.match.mode === 'tag') {
+      return Object.values(state.match.filter).some(v => v !== undefined);
+    }
+    if (state.match.mode === 'component') {
+      return state.match.component_id !== null;
+    }
+    return false;
+  }
   return false;
 }
 
@@ -155,24 +168,22 @@ export function RuleForm() {
     setSaving(true);
     try {
       let def;
-      if (state.ruleType === 'day-filter') {
-        def = {
-          ruleType: 'day-filter' as const,
-          days: state.days,
-          slots: state.slots.length > 0 ? state.slots : undefined,
-          filter: state.filter,
-        };
-      } else if (state.ruleType === 'no-repeat') {
+      if (state.ruleType === 'no-repeat') {
         def = {
           ruleType: 'no-repeat' as const,
           component_type: state.component_type as 'base' | 'curry' | 'subzi',
         };
-      } else if (state.ruleType === 'require-component') {
+      } else if (state.ruleType === 'scheduling-rule') {
+        const match = state.match;
+        if (match.mode !== 'tag' && match.mode !== 'component') return;
         def = {
-          ruleType: 'require-component' as const,
-          component_id: state.component_id!,
-          days: state.days,
+          ruleType: 'scheduling-rule' as const,
+          effect: state.effect as 'filter-pool' | 'require-one' | 'exclude',
+          days: state.days.length > 0 ? state.days : undefined,
           slots: state.slots.length > 0 ? state.slots : undefined,
+          match: match.mode === 'tag'
+            ? { mode: 'tag' as const, filter: match.filter }
+            : { mode: 'component' as const, component_id: match.component_id! },
         };
       } else {
         return;
@@ -230,28 +241,22 @@ export function RuleForm() {
             onValueChange={v =>
               dispatch({
                 type: 'SET_RULE_TYPE',
-                ruleType: v as 'day-filter' | 'no-repeat' | 'require-component',
+                ruleType: v as 'no-repeat' | 'scheduling-rule',
               })
             }
           >
             <TabsList>
-              <TabsTrigger value="day-filter">Day Filter</TabsTrigger>
               <TabsTrigger value="no-repeat">No Repeat</TabsTrigger>
-              <TabsTrigger value="require-component">Require Component</TabsTrigger>
+              <TabsTrigger value="scheduling-rule">Scheduling Rule</TabsTrigger>
             </TabsList>
-            <TabsContent value="day-filter">
-              {state.ruleType === 'day-filter' && (
-                <DayFilterFields state={state} dispatch={dispatch} />
-              )}
-            </TabsContent>
             <TabsContent value="no-repeat">
               {state.ruleType === 'no-repeat' && (
                 <NoRepeatFields state={state} dispatch={dispatch} />
               )}
             </TabsContent>
-            <TabsContent value="require-component">
-              {state.ruleType === 'require-component' && (
-                <RequireComponentFields state={state} dispatch={dispatch} />
+            <TabsContent value="scheduling-rule">
+              {state.ruleType === 'scheduling-rule' && (
+                <SchedulingRuleFields state={state} dispatch={dispatch} />
               )}
             </TabsContent>
           </Tabs>
