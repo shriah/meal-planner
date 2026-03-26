@@ -86,7 +86,11 @@ Plans:
   3. All meal-template constraints visible in the Rules Manager list are togglable and deletable like any other rule
   4. On first app startup after the Dexie version bump, existing slot_restrictions.base_type_slots and base_type_rules preference data are converted to meal-template rules; no preference data is lost
   5. After migration, plan generation behavior is equivalent to pre-migration for any user who had slot settings configured
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 10-01-PLAN.md — MealTemplateFields form component, RuleForm integration, settings removal
+- [ ] 10-02-PLAN.md — Dexie v7 migration + seed update for new users
 
 ## Progress
 
@@ -101,4 +105,4 @@ Plans:
 | 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete   | 2026-03-25 |
 | 9. Meal Template Engine | v1.1 | 2/2 | Complete    | 2026-03-26 |
-| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/? | Not started | — |
+| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/2 | Planned | — |
