@@ -7,6 +7,7 @@ describe('runSeed', () => {
   beforeEach(async () => {
     await db.components.clear();
     await db.preferences.clear();
+    await db.rules.clear();
   });
 
   it('inserts 80-100 components when DB is empty', async () => {
@@ -29,27 +30,22 @@ describe('runSeed', () => {
     expect(extras.length).toBeGreaterThanOrEqual(15);
   });
 
-  it('creates UserPreferences with correct slot defaults', async () => {
+  it('creates UserPreferences with empty slot_restrictions (rules used instead)', async () => {
     await runSeed();
     const prefs = await getPreferences();
     expect(prefs).toBeDefined();
-    expect(prefs!.slot_restrictions.base_type_slots).toEqual({
-      other: ['breakfast', 'dinner'],
-      'rice-based': ['lunch'],
-      'bread-based': ['dinner'],
-    });
+    expect(prefs!.slot_restrictions.base_type_slots).toEqual({});
+    expect(prefs!.slot_restrictions.component_slot_overrides).toEqual({});
   });
 
-  it('sets Poori override to breakfast only', async () => {
+  it('seeds meal-template rules for base type slots and Poori restriction', async () => {
     await runSeed();
-    const all = await db.components.toArray();
-    const poori = all.find(c => c.name === 'Poori');
-    expect(poori).toBeDefined();
-    const pooriId = poori!.id!;
-    const prefs = await getPreferences();
-    expect(prefs).toBeDefined();
-    const overrides = prefs!.slot_restrictions.component_slot_overrides;
-    expect(overrides[pooriId]).toEqual(['breakfast']);
+    const rules = await db.rules.toArray();
+    const ruleNames = rules.map(r => r.name);
+    expect(ruleNames).toContain('Other: breakfast and dinner');
+    expect(ruleNames).toContain('Rice-based: lunch only');
+    expect(ruleNames).toContain('Bread-based: dinner only');
+    expect(ruleNames).toContain('Poori: breakfast only');
   });
 
   it('is idempotent — does not re-seed if count > 0', async () => {
