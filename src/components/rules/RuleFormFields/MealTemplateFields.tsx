@@ -132,11 +132,11 @@ export function MealTemplateFields({ state, dispatch }: MealTemplateFieldsProps)
       <div className="space-y-2">
         <Label className="text-sm font-medium">Require extra</Label>
         <Select
-          value={state.require_extra_category ?? ''}
+          value={state.require_extra_category ?? 'none'}
           onValueChange={v =>
             dispatch({
               type: 'SET_REQUIRE_EXTRA_CATEGORY',
-              require_extra_category: v === '' ? null : (v as ExtraCategory),
+              require_extra_category: v === 'none' ? null : (v as ExtraCategory),
             })
           }
         >
@@ -144,7 +144,7 @@ export function MealTemplateFields({ state, dispatch }: MealTemplateFieldsProps)
             <SelectValue placeholder="None (optional)" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">None (optional)</SelectItem>
+            <SelectItem value="none">None (optional)</SelectItem>
             {ALL_EXTRA_CATEGORIES.map(cat => (
               <SelectItem key={cat} value={cat}>
                 {capitalize(cat)}

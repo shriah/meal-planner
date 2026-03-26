@@ -313,7 +313,7 @@ export function RuleForm() {
         <div className="space-y-2">
           <Label>Rule type</Label>
           <Tabs
-            value={state.ruleType || undefined}
+            value={state.ruleType}
             onValueChange={v =>
               dispatch({
                 type: 'SET_RULE_TYPE',
