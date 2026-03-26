@@ -2239,13 +2239,26 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       created_at: '',
     });
 
+    // Use higher extra limits to ensure both mandatory extras fit (liquid + condiment = 2 minimum)
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} },
+      extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 },
+      base_type_rules: [],
+    });
+
     for (let run = 0; run < 5; run++) {
       const result = await generate();
       const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
       for (const slot of breadSlots) {
-        // Both liquid and condiment must be present
-        expect(slot.extra_ids).toContain(liquidBreadId);
-        expect(slot.extra_ids).toContain(condimentBreadId);
+        // Both a liquid AND a condiment must be present (any ID in each category)
+        const hasLiquid = slot.extra_ids.includes(liquidBreadId);
+        // condiment can be either condimentBreadId OR extraCondimentAllId (both bread-compatible)
+        const hasCondiment =
+          slot.extra_ids.includes(condimentBreadId) ||
+          slot.extra_ids.includes(ids.extraCondimentAllId);
+        expect(hasLiquid).toBe(true);
+        expect(hasCondiment).toBe(true);
       }
     }
   });

@@ -663,25 +663,84 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         return isOccasionAllowed(e, day);
       });
 
-      // Check mandatory extras from base_type_rules (skip if extras are locked)
+      // Meal-template: exclude extra categories (D-08 union, D-02 context scope, D-10 relax)
+      if (selectedBaseType && applicableTemplates.length > 0) {
+        const excludedExtraCategories = new Set(
+          applicableTemplates.flatMap(t => t.exclude_extra_categories),
+        );
+        if (excludedExtraCategories.size > 0) {
+          const filteredExtras = eligibleExtras.filter(
+            e => !excludedExtraCategories.has(e.extra_category!),
+          );
+          if (filteredExtras.length === 0 && eligibleExtras.length > 0) {
+            // D-10: all extras excluded — relax with warning
+            warnings.push({
+              slot: { day, meal_slot },
+              rule_id: null,
+              message: `meal-template exclude_extra_categories removed all eligible extras for ${selectedBaseType} — constraint relaxed`,
+            });
+          } else {
+            eligibleExtras = filteredExtras;
+          }
+        }
+      }
+
+      // Check mandatory extras: meal-template rules override prefs (D-05/D-06)
       const selectedExtraIds: number[] = [];
       if (locked?.extra_ids !== undefined) {
         // Use locked extras directly — preserve the exact array
         selectedExtraIds.push(...locked.extra_ids);
       } else {
         if (selectedBaseType) {
-          const baseTypeRule = resolvedPrefs.base_type_rules.find(
+          const templatesForBase = mealTemplateRules.filter(
             r => r.base_type === selectedBaseType,
           );
-          if (baseTypeRule?.required_extra_category) {
-            const requiredCategory = baseTypeRule.required_extra_category;
-            const mandatoryExtras = eligibleExtras.filter(
-              e => e.extra_category === requiredCategory,
+
+          if (templatesForBase.length > 0) {
+            // D-05: meal-template overrides prefs.base_type_rules
+            // D-08: each applicable rule's require_extra_category attempted independently
+            for (const tmpl of applicableTemplates) {
+              if (tmpl.require_extra_category === null) continue;
+              const requiredCategory = tmpl.require_extra_category;
+              const mandatoryExtras = eligibleExtras.filter(
+                e =>
+                  e.extra_category === requiredCategory &&
+                  !selectedExtraIds.includes(e.id!),
+              );
+              if (mandatoryExtras.length > 0) {
+                const mandatory = weightedRandom(
+                  mandatoryExtras,
+                  c => effectiveWeight(c, usageCount),
+                );
+                selectedExtraIds.push(mandatory.id!);
+                usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
+              } else {
+                // D-10: no eligible extras for required category — warn + skip
+                warnings.push({
+                  slot: { day, meal_slot },
+                  rule_id: null,
+                  message: `meal-template require_extra_category '${requiredCategory}' has no eligible extras for ${selectedBaseType} on ${day} ${meal_slot} — skipped`,
+                });
+              }
+            }
+          } else {
+            // D-06: No templates — fall through to prefs.base_type_rules
+            const baseTypeRule = resolvedPrefs.base_type_rules.find(
+              r => r.base_type === selectedBaseType,
             );
-            if (mandatoryExtras.length > 0) {
-              const mandatory = weightedRandom(mandatoryExtras, c => effectiveWeight(c, usageCount));
-              selectedExtraIds.push(mandatory.id!);
-              usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
+            if (baseTypeRule?.required_extra_category) {
+              const requiredCategory = baseTypeRule.required_extra_category;
+              const mandatoryExtras = eligibleExtras.filter(
+                e => e.extra_category === requiredCategory,
+              );
+              if (mandatoryExtras.length > 0) {
+                const mandatory = weightedRandom(
+                  mandatoryExtras,
+                  c => effectiveWeight(c, usageCount),
+                );
+                selectedExtraIds.push(mandatory.id!);
+                usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
+              }
             }
           }
         }
