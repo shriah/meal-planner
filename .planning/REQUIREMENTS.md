@@ -17,10 +17,10 @@
 ### Meal Template (base-type composition rule)
 
 - [x] **TMPL-01**: User can create a meal template rule for a specific base type (rice-based / bread-based / other), optionally scoped to meal slots and/or days
-- [ ] **TMPL-02**: Meal template defines which meal slots the base type is allowed in (e.g., rice-based → lunch and dinner only) — replaces the 3×3 slot assignment grid in settings
-- [ ] **TMPL-03**: Meal template can exclude component types (curry and/or subzi) for the given base type context (e.g., bread-based: no subzi)
-- [ ] **TMPL-04**: Meal template can exclude extra categories (liquid / crunchy / condiment / dairy / sweet) for the given base type context (e.g., bread-based: no sweet extras)
-- [ ] **TMPL-05**: Meal template can require one extra of a specific category for the given base type (e.g., bread-based always includes a liquid extra)
+- [x] **TMPL-02**: Meal template defines which meal slots the base type is allowed in (e.g., rice-based → lunch and dinner only) — replaces the 3×3 slot assignment grid in settings
+- [x] **TMPL-03**: Meal template can exclude component types (curry and/or subzi) for the given base type context (e.g., bread-based: no subzi)
+- [x] **TMPL-04**: Meal template can exclude extra categories (liquid / crunchy / condiment / dairy / sweet) for the given base type context (e.g., bread-based: no sweet extras)
+- [x] **TMPL-05**: Meal template can require one extra of a specific category for the given base type (e.g., bread-based always includes a liquid extra)
 - [ ] **TMPL-06**: `/settings/slots` route and all settings components removed; AppNav "Slot Settings" link removed; slot assignment managed through meal template rules in the Rules UI
 - [ ] **TMPL-07**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` preference data automatically migrated to `meal-template` rules at app startup
 
@@ -57,10 +57,10 @@
 | SCHED-04 | Phase 7 | Complete |
 | SCHED-05 | Phase 8 | Pending |
 | TMPL-01 | Phase 9 | Complete |
-| TMPL-02 | Phase 9 | Pending |
-| TMPL-03 | Phase 9 | Pending |
-| TMPL-04 | Phase 9 | Pending |
-| TMPL-05 | Phase 9 | Pending |
+| TMPL-02 | Phase 9 | Complete |
+| TMPL-03 | Phase 9 | Complete |
+| TMPL-04 | Phase 9 | Complete |
+| TMPL-05 | Phase 9 | Complete |
 | TMPL-06 | Phase 10 | Pending |
 | TMPL-07 | Phase 10 | Pending |
 

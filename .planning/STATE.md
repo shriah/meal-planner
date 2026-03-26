@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Rule Engine Overhaul
-status: Ready to execute
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-03-25T15:44:44.674Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-03-26T02:09:01.123Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -68,6 +68,7 @@ Plan: 2 of 2
 | Phase 08 P01 | 6min | 3 tasks | 12 files |
 | Phase 08 P02 | 4min | 2 tasks | 8 files |
 | Phase 09 P01 | 165s | 2 tasks | 6 files |
+| Phase 09-meal-template-engine P02 | 31min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,9 @@ Recent decisions affecting current work:
 - [Phase 09]: ExtraCategory imported into plan.ts for RuleDefinition meal-template variant
 - [Phase 09]: Dexie v6 has no upgrade() callback — meal-template rules stored as JSON transparently
 - [Phase 09]: ruleTypeLabel in RuleRow.tsx changed from ternary to Record<string,string> map to support 3+ rule types
+- [Phase 09-meal-template-engine]: mealTemplateRules extracted once per generateWeekPlan; applicableTemplates computed per slot after base selection — base type must be known to look up applicable templates
+- [Phase 09-meal-template-engine]: D-05/D-06 branch pattern used identically for slot assignment and required extras: if (templatesForBase.length > 0) { template logic } else { prefs fallback }
+- [Phase 09-meal-template-engine]: Locked components bypass all meal-template soft constraints — locked curry/subzi checked before skipCurry/skipSubzi guards
 
 ### Pending Todos
 
@@ -156,6 +160,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-25T15:44:44.672Z
-Stopped at: Completed 09-01-PLAN.md
+Last session: 2026-03-26T02:09:01.121Z
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None

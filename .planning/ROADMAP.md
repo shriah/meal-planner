@@ -23,7 +23,7 @@
 
 - [ ] **Phase 7: Scheduling Rule Engine** — New unified scheduling-rule type, compiler variants, and generator logic for all three effects and match criteria
 - [x] **Phase 8: Scheduling Rule UI + Migration** — Rule creation form for scheduling-rule; automatic migration of existing day-filter and require-component rules (completed 2026-03-25)
-- [ ] **Phase 9: Meal Template Engine** — New meal-template rule type with generator integration for slot assignment and composition constraints
+- [x] **Phase 9: Meal Template Engine** — New meal-template rule type with generator integration for slot assignment and composition constraints (completed 2026-03-26)
 - [ ] **Phase 10: Meal Template UI, Settings Removal, and Migration** — Rule creation form for meal-template; remove /settings/slots; migrate existing slot prefs
 
 ## Phase Details
@@ -70,11 +70,11 @@ Plans:
   3. The generator respects meal-template component exclusions: if a meal-template excludes curry or subzi for a given base type, no component of that type is selected for meals using that base
   4. The generator respects meal-template extra exclusions: if a meal-template excludes an extra category (e.g., sweet), extras of that category are not picked for meals using that base type
   5. The generator respects meal-template required extras: if a meal-template requires one extra of a category (e.g., liquid), the generator always includes an eligible extra of that category for meals using that base type
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 09-01-PLAN.md — Types, compiler, Dexie v6, describeRule + RuleRow badge for meal-template
-- [ ] 09-02-PLAN.md — Generator integration: slot assignment, component/extra exclusions, required extras
+- [x] 09-02-PLAN.md — Generator integration: slot assignment, component/extra exclusions, required extras
 
 ### Phase 10: Meal Template UI, Settings Removal, and Migration
 **Goal**: Users can create meal template rules through the Rules UI; slot settings are managed entirely through rules; existing slot prefs are migrated automatically
@@ -100,5 +100,5 @@ Plans:
 | 6. Save, History, and Export | v1.0 | 3/3 | Complete | 2026-03-22 |
 | 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete   | 2026-03-25 |
-| 9. Meal Template Engine | v1.1 | 1/2 | In Progress|  |
+| 9. Meal Template Engine | v1.1 | 2/2 | Complete   | 2026-03-26 |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/? | Not started | — |
