@@ -38,7 +38,7 @@ export async function runSeed(): Promise<void> {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'other',
+        selector: { mode: 'base', base_type: 'other' },
         days: null,
         slots: null,
         allowed_slots: ['breakfast', 'dinner'],
@@ -53,7 +53,7 @@ export async function runSeed(): Promise<void> {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         days: null,
         slots: null,
         allowed_slots: ['lunch'],
@@ -68,7 +68,7 @@ export async function runSeed(): Promise<void> {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         days: null,
         slots: null,
         allowed_slots: ['dinner'],

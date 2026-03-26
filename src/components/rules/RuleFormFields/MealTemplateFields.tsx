@@ -1,6 +1,8 @@
 'use client';
 
 import * as React from 'react';
+import { useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Toggle } from '@/components/ui/toggle';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -12,10 +14,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { ALL_DAYS } from '@/types/plan';
 import type { MealSlot } from '@/types/preferences';
-import type { ExtraCategory } from '@/types/component';
+import type { ExtraCategory, ComponentType } from '@/types/component';
+import type { TagFilter } from '@/types/plan';
 import type { MealTemplateFormState, FormAction } from '../types';
+import { db } from '@/db/client';
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner'];
 const ALL_EXTRA_CATEGORIES: ExtraCategory[] = ['liquid', 'crunchy', 'condiment', 'dairy', 'sweet'];
@@ -31,38 +36,232 @@ interface MealTemplateFieldsProps {
 }
 
 export function MealTemplateFields({ state, dispatch }: MealTemplateFieldsProps) {
+  const [componentPickerType, setComponentPickerType] = useState<'' | ComponentType>('');
+
+  const filteredComponents = useLiveQuery(async () => {
+    if (!componentPickerType) return [];
+    return db.components.where('componentType').equals(componentPickerType).toArray();
+  }, [componentPickerType]) ?? [];
+
+  const componentOptions = filteredComponents.map(c => ({
+    value: String(c.id),
+    label: c.name,
+  }));
+
+  const updateTagFilter = (key: string, value: string) => {
+    if (state.selector.mode !== 'tag') return;
+    const updated: TagFilter = {
+      ...state.selector.filter,
+      [key]: value === 'any' ? undefined : value,
+    };
+    dispatch({ type: 'SET_TEMPLATE_TAG_FILTER', filter: updated });
+  };
+
   return (
     <div className="space-y-4 pt-3">
-      {/* Section 1 — Base type RadioGroup (required) */}
+      {/* Section 1 — Selector mode (Base / Tag / Component) */}
       <div className="space-y-2">
-        <Label className="text-sm font-medium">Base type</Label>
+        <Label className="text-sm font-medium">Selector type</Label>
         <RadioGroup
           className="flex gap-4"
-          value={state.base_type || undefined}
+          value={state.selector.mode || undefined}
           onValueChange={v =>
-            dispatch({ type: 'SET_BASE_TYPE', base_type: v as 'rice-based' | 'bread-based' | 'other' })
+            dispatch({ type: 'SET_TEMPLATE_SELECTOR_MODE', mode: v as 'base' | 'tag' | 'component' })
           }
         >
           <div className="flex items-center gap-2">
-            <RadioGroupItem value="rice-based" id="tmpl-base-rice" />
-            <Label htmlFor="tmpl-base-rice">Rice-based</Label>
+            <RadioGroupItem value="base" id="tmpl-sel-base" />
+            <Label htmlFor="tmpl-sel-base">Base type</Label>
           </div>
           <div className="flex items-center gap-2">
-            <RadioGroupItem value="bread-based" id="tmpl-base-bread" />
-            <Label htmlFor="tmpl-base-bread">Bread-based</Label>
+            <RadioGroupItem value="tag" id="tmpl-sel-tag" />
+            <Label htmlFor="tmpl-sel-tag">Tag</Label>
           </div>
           <div className="flex items-center gap-2">
-            <RadioGroupItem value="other" id="tmpl-base-other" />
-            <Label htmlFor="tmpl-base-other">Other</Label>
+            <RadioGroupItem value="component" id="tmpl-sel-component" />
+            <Label htmlFor="tmpl-sel-component">Component</Label>
           </div>
         </RadioGroup>
       </div>
+
+      {/* Section 1a — Base type sub-options */}
+      {state.selector.mode === 'base' && (
+        <div className="space-y-2 pl-4 border-l-2 border-muted">
+          <Label className="text-sm font-medium">Base type</Label>
+          <RadioGroup
+            className="flex gap-4"
+            value={state.selector.base_type || undefined}
+            onValueChange={v =>
+              dispatch({ type: 'SET_TEMPLATE_BASE_TYPE', base_type: v as 'rice-based' | 'bread-based' | 'other' })
+            }
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="rice-based" id="tmpl-base-rice" />
+              <Label htmlFor="tmpl-base-rice">Rice-based</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="bread-based" id="tmpl-base-bread" />
+              <Label htmlFor="tmpl-base-bread">Bread-based</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="other" id="tmpl-base-other" />
+              <Label htmlFor="tmpl-base-other">Other</Label>
+            </div>
+          </RadioGroup>
+        </div>
+      )}
+
+      {/* Section 1b — Tag filter sub-options */}
+      {state.selector.mode === 'tag' && (
+        <div className="space-y-2 pl-4 border-l-2 border-muted">
+          <Label className="text-sm font-medium">Tag filters</Label>
+          <div className="grid grid-cols-2 gap-4">
+            {/* Dietary */}
+            <div className="space-y-1.5">
+              <Label htmlFor="tmpl-filter-dietary">Dietary</Label>
+              <Select
+                value={state.selector.filter.dietary_tag ?? 'any'}
+                onValueChange={v => updateTagFilter('dietary_tag', v)}
+              >
+                <SelectTrigger id="tmpl-filter-dietary" className="w-full">
+                  <SelectValue placeholder="Any" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any</SelectItem>
+                  <SelectItem value="veg">Veg</SelectItem>
+                  <SelectItem value="non-veg">Non-veg</SelectItem>
+                  <SelectItem value="vegan">Vegan</SelectItem>
+                  <SelectItem value="jain">Jain</SelectItem>
+                  <SelectItem value="eggetarian">Eggetarian</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Protein */}
+            <div className="space-y-1.5">
+              <Label htmlFor="tmpl-filter-protein">Protein</Label>
+              <Select
+                value={state.selector.filter.protein_tag ?? 'any'}
+                onValueChange={v => updateTagFilter('protein_tag', v)}
+              >
+                <SelectTrigger id="tmpl-filter-protein" className="w-full">
+                  <SelectValue placeholder="Any" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any</SelectItem>
+                  <SelectItem value="fish">Fish</SelectItem>
+                  <SelectItem value="chicken">Chicken</SelectItem>
+                  <SelectItem value="mutton">Mutton</SelectItem>
+                  <SelectItem value="egg">Egg</SelectItem>
+                  <SelectItem value="paneer">Paneer</SelectItem>
+                  <SelectItem value="dal">Dal</SelectItem>
+                  <SelectItem value="none">None</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Regional */}
+            <div className="space-y-1.5">
+              <Label htmlFor="tmpl-filter-regional">Regional</Label>
+              <Select
+                value={state.selector.filter.regional_tag ?? 'any'}
+                onValueChange={v => updateTagFilter('regional_tag', v)}
+              >
+                <SelectTrigger id="tmpl-filter-regional" className="w-full">
+                  <SelectValue placeholder="Any" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any</SelectItem>
+                  <SelectItem value="south-indian">South Indian</SelectItem>
+                  <SelectItem value="north-indian">North Indian</SelectItem>
+                  <SelectItem value="coastal-konkan">Coastal Konkan</SelectItem>
+                  <SelectItem value="pan-indian">Pan Indian</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Occasion */}
+            <div className="space-y-1.5">
+              <Label htmlFor="tmpl-filter-occasion">Occasion</Label>
+              <Select
+                value={state.selector.filter.occasion_tag ?? 'any'}
+                onValueChange={v => updateTagFilter('occasion_tag', v)}
+              >
+                <SelectTrigger id="tmpl-filter-occasion" className="w-full">
+                  <SelectValue placeholder="Any" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">Any</SelectItem>
+                  <SelectItem value="everyday">Everyday</SelectItem>
+                  <SelectItem value="weekday">Weekday</SelectItem>
+                  <SelectItem value="weekend">Weekend</SelectItem>
+                  <SelectItem value="fasting">Fasting</SelectItem>
+                  <SelectItem value="festive">Festive</SelectItem>
+                  <SelectItem value="monday">Monday</SelectItem>
+                  <SelectItem value="tuesday">Tuesday</SelectItem>
+                  <SelectItem value="wednesday">Wednesday</SelectItem>
+                  <SelectItem value="thursday">Thursday</SelectItem>
+                  <SelectItem value="friday">Friday</SelectItem>
+                  <SelectItem value="saturday">Saturday</SelectItem>
+                  <SelectItem value="sunday">Sunday</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Section 1c — Component picker sub-options */}
+      {state.selector.mode === 'component' && (
+        <div className="space-y-3 pl-4 border-l-2 border-muted">
+          <div className="space-y-1.5">
+            <Label>Component type</Label>
+            <Select
+              value={componentPickerType || undefined}
+              onValueChange={v => {
+                setComponentPickerType(v as ComponentType);
+                dispatch({ type: 'SET_TEMPLATE_COMPONENT_ID', component_id: null });
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="base">Base</SelectItem>
+                <SelectItem value="curry">Curry</SelectItem>
+                <SelectItem value="subzi">Subzi</SelectItem>
+                <SelectItem value="extra">Extra</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Component</Label>
+            <Combobox
+              options={componentPickerType === '' ? [] : componentOptions}
+              value={
+                state.selector.mode === 'component' && state.selector.component_id !== null
+                  ? String(state.selector.component_id)
+                  : ''
+              }
+              onValueChange={v =>
+                dispatch({
+                  type: 'SET_TEMPLATE_COMPONENT_ID',
+                  component_id: v ? Number(v) : null,
+                })
+              }
+              placeholder={componentPickerType === '' ? 'Select type first' : 'Select component...'}
+              className="w-full"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Section 2 — Slot assignment */}
       <div className="space-y-2">
         <Label className="text-sm font-medium">Slot assignment</Label>
         <p className="text-sm text-muted-foreground">
-          Slots this base type is allowed in (leave empty for unrestricted)
+          Slots this selector is allowed in (leave empty for unrestricted)
         </p>
         <div className="flex gap-2">
           {ALL_SLOTS.map(slot => (

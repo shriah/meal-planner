@@ -52,7 +52,7 @@ const EXAMPLE_PRESETS: Record<string, FormState> = {
   'rice-lunch-dinner': {
     name: 'Rice: lunch and dinner only',
     ruleType: 'meal-template',
-    base_type: 'rice-based',
+    selector: { mode: 'base', base_type: 'rice-based' },
     allowed_slots: ['lunch', 'dinner'],
     exclude_component_types: [],
     exclude_extra_categories: [],
@@ -79,7 +79,7 @@ function formReducer(state: FormState, action: FormAction): FormState {
         case 'scheduling-rule':
           return { name, ruleType: 'scheduling-rule', effect: '', days: [], slots: [], match: { mode: '' } };
         case 'meal-template':
-          return { name, ruleType: 'meal-template', base_type: '', allowed_slots: [], exclude_component_types: [], exclude_extra_categories: [], require_extra_category: null, days: [], slots: [] };
+          return { name, ruleType: 'meal-template', selector: { mode: '' as const }, allowed_slots: [], exclude_component_types: [], exclude_extra_categories: [], require_extra_category: null, days: [], slots: [] };
       }
     }
 
@@ -129,9 +129,33 @@ function formReducer(state: FormState, action: FormAction): FormState {
       }
       return state;
 
-    case 'SET_BASE_TYPE':
+    case 'SET_TEMPLATE_SELECTOR_MODE':
       if (state.ruleType === 'meal-template') {
-        return { ...state, base_type: action.base_type };
+        const selector =
+          action.mode === 'base'
+            ? { mode: 'base' as const, base_type: '' as const }
+            : action.mode === 'tag'
+              ? { mode: 'tag' as const, filter: {} }
+              : { mode: 'component' as const, component_id: null };
+        return { ...state, selector };
+      }
+      return state;
+
+    case 'SET_TEMPLATE_BASE_TYPE':
+      if (state.ruleType === 'meal-template' && state.selector.mode === 'base') {
+        return { ...state, selector: { mode: 'base' as const, base_type: action.base_type } };
+      }
+      return state;
+
+    case 'SET_TEMPLATE_TAG_FILTER':
+      if (state.ruleType === 'meal-template' && state.selector.mode === 'tag') {
+        return { ...state, selector: { mode: 'tag' as const, filter: action.filter } };
+      }
+      return state;
+
+    case 'SET_TEMPLATE_COMPONENT_ID':
+      if (state.ruleType === 'meal-template' && state.selector.mode === 'component') {
+        return { ...state, selector: { mode: 'component' as const, component_id: action.component_id } };
       }
       return state;
 
@@ -197,7 +221,11 @@ function isFormValid(state: FormState): boolean {
     return false;
   }
   if (state.ruleType === 'meal-template') {
-    if (state.base_type === '') return false;
+    const sel = state.selector;
+    if (sel.mode === '') return false;
+    if (sel.mode === 'base' && sel.base_type === '') return false;
+    if (sel.mode === 'tag' && !Object.values(sel.filter).some(v => v !== undefined)) return false;
+    if (sel.mode === 'component' && sel.component_id === null) return false;
     return (
       state.allowed_slots.length > 0 ||
       state.exclude_component_types.length > 0 ||
@@ -251,9 +279,17 @@ export function RuleForm() {
             : { mode: 'component' as const, component_id: match.component_id! },
         };
       } else if (state.ruleType === 'meal-template') {
+        const sel = state.selector;
+        if (sel.mode === '') return;
+        const selector =
+          sel.mode === 'base'
+            ? { mode: 'base' as const, base_type: sel.base_type as 'rice-based' | 'bread-based' | 'other' }
+            : sel.mode === 'tag'
+              ? { mode: 'tag' as const, filter: sel.filter }
+              : { mode: 'component' as const, component_id: sel.component_id! };
         def = {
           ruleType: 'meal-template' as const,
-          base_type: state.base_type as 'rice-based' | 'bread-based' | 'other',
+          selector,
           days: state.days.length > 0 ? state.days : undefined,
           slots: state.slots.length > 0 ? state.slots : undefined,
           allowed_slots: state.allowed_slots.length > 0 ? state.allowed_slots : undefined,

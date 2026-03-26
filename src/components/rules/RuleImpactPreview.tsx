@@ -43,7 +43,7 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
     }
 
     if (formState.ruleType === 'meal-template') {
-      if (formState.base_type === '') return null;
+      if (formState.selector.mode === '') return null;
       const baseCount = allComponents.filter(c => c.componentType === 'base').length;
       return { type: 'meal-template' as const, baseCount };
     }

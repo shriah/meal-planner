@@ -25,7 +25,11 @@ export type SchedulingRuleFormState = {
 export type MealTemplateFormState = {
   name: string;
   ruleType: 'meal-template';
-  base_type: '' | 'rice-based' | 'bread-based' | 'other';
+  selector:
+    | { mode: 'base'; base_type: '' | 'rice-based' | 'bread-based' | 'other' }
+    | { mode: 'tag'; filter: TagFilter }
+    | { mode: 'component'; component_id: number | null }
+    | { mode: '' };
   allowed_slots: MealSlot[];
   exclude_component_types: ('curry' | 'subzi')[];
   exclude_extra_categories: ExtraCategory[];
@@ -57,7 +61,10 @@ export type FormAction =
   | { type: 'SET_MATCH_MODE'; mode: 'tag' | 'component' }
   | { type: 'SET_SCHEDULING_TAG_FILTER'; filter: TagFilter }
   | { type: 'SET_SCHEDULING_COMPONENT_ID'; component_id: number | null }
-  | { type: 'SET_BASE_TYPE'; base_type: 'rice-based' | 'bread-based' | 'other' }
+  | { type: 'SET_TEMPLATE_SELECTOR_MODE'; mode: 'base' | 'tag' | 'component' }
+  | { type: 'SET_TEMPLATE_BASE_TYPE'; base_type: 'rice-based' | 'bread-based' | 'other' }
+  | { type: 'SET_TEMPLATE_TAG_FILTER'; filter: TagFilter }
+  | { type: 'SET_TEMPLATE_COMPONENT_ID'; component_id: number | null }
   | { type: 'SET_ALLOWED_SLOTS'; allowed_slots: MealSlot[] }
   | { type: 'SET_EXCLUDE_COMPONENT_TYPES'; exclude_component_types: ('curry' | 'subzi')[] }
   | { type: 'SET_EXCLUDE_EXTRA_CATEGORIES'; exclude_extra_categories: ExtraCategory[] }

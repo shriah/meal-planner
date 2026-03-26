@@ -1621,7 +1621,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['lunch', 'dinner'],
         days: null,
         slots: null,
@@ -1650,7 +1650,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -1683,7 +1683,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['lunch', 'dinner'],
         days: null,
         slots: null,
@@ -1699,7 +1699,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['dinner'],
         days: null,
         slots: null,
@@ -1738,7 +1738,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['dinner'],
         days: null,
         slots: null,
@@ -1777,7 +1777,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -1807,7 +1807,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['lunch'],
         days: null,
         slots: null,
@@ -1823,7 +1823,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: ['dinner'],
         days: null,
         slots: null,
@@ -1854,7 +1854,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -1882,7 +1882,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -1910,7 +1910,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: ['monday'],
         slots: ['dinner'],
@@ -1969,7 +1969,7 @@ describe('meal-template rules: extra exclusions (TMPL-04)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -1997,7 +1997,7 @@ describe('meal-template rules: extra exclusions (TMPL-04)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2027,7 +2027,7 @@ describe('meal-template rules: extra exclusions (TMPL-04)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: ['monday'],
         slots: null,
@@ -2071,7 +2071,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2127,7 +2127,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2160,7 +2160,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2212,7 +2212,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2228,7 +2228,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'bread-based',
+        selector: { mode: 'base', base_type: 'bread-based' },
         allowed_slots: null,
         days: null,
         slots: null,
@@ -2278,7 +2278,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'meal-template',
-        base_type: 'rice-based',
+        selector: { mode: 'base', base_type: 'rice-based' },
         allowed_slots: null,
         days: null,
         slots: null,
