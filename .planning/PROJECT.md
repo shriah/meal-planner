@@ -47,8 +47,8 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - ✓ **TMPL-02**: Meal template specifies which slots the base type is allowed in (slot assignment — replaces 3×3 settings grid) — Validated in Phase 9: Meal Template Engine
 - ✓ **TMPL-03**: Meal template can exclude component types (curry, subzi) and/or extra categories (liquid, sweet, etc.) for the given base type context — Validated in Phase 9: Meal Template Engine
 - ✓ **TMPL-04**: Meal template can require an extra category for the given base type (e.g., bread-based always needs a liquid extra) — Validated in Phase 9: Meal Template Engine
-- [ ] **TMPL-05**: `/settings/slots` page removed; AppNav "Slot Settings" link removed; all constraints managed through Rules UI
-- [ ] **TMPL-06**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup
+- ✓ **TMPL-05**: `/settings/slots` page removed; AppNav "Slot Settings" link removed; all constraints managed through Rules UI — Validated in Phase 10: Meal Template UI, Settings Removal & Migration
+- ✓ **TMPL-06**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup — Validated in Phase 10: Meal Template UI, Settings Removal & Migration
 
 ### Out of Scope
 
@@ -90,7 +90,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | Fire-and-forget saveWeekPlan in mutations | Keeps UI responsive; write failures are non-critical | — Accepted trade-off (IndexedDB failures silent) |
 | UTC-based date construction in week-utils | Eliminates timezone off-by-one in ISO week calculations | ✓ Good — resolved date edge cases |
 | Collapse day-filter + require-component into scheduling-rule | One concept for users, one handler in generator, cleaner form | — Pending (v1.1) |
-| Move slot settings into meal-template rules | All scheduling constraints in one place, deletable/togglable | — Pending (v1.1) |
+| Move slot settings into meal-template rules | All scheduling constraints in one place, deletable/togglable | ✓ Good — unified in Phase 10; settings page fully removed |
 
 ## Evolution
 
@@ -110,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 — Phase 9 complete (meal-template engine backend fully implemented; TMPL-01 through TMPL-04 validated)*
+*Last updated: 2026-03-26 — Phase 10 complete (meal-template UI, settings removal, and migration; all TMPL requirements validated; only SCHED requirements remain for v1.1)*
