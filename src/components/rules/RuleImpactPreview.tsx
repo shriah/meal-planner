@@ -42,6 +42,12 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
       }
     }
 
+    if (formState.ruleType === 'meal-template') {
+      if (formState.base_type === '') return null;
+      const baseCount = allComponents.filter(c => c.componentType === 'base').length;
+      return { type: 'meal-template' as const, baseCount };
+    }
+
     return null;
   }, [allComponents, formState]);
 
@@ -74,6 +80,12 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
       {impact.type === 'scheduling-rule-component' && (
         <p className="text-sm text-muted-foreground">
           This rule applies to {impact.componentName}.
+        </p>
+      )}
+
+      {impact.type === 'meal-template' && (
+        <p className="text-sm text-muted-foreground">
+          This template applies to {impact.baseCount} base components.
         </p>
       )}
     </div>

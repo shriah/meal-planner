@@ -13,8 +13,9 @@ import { compileRule } from '@/services/rule-compiler';
 import { addRule } from '@/services/food-db';
 import { NoRepeatFields } from './RuleFormFields/NoRepeatFields';
 import { SchedulingRuleFields } from './RuleFormFields/SchedulingRuleFields';
+import { MealTemplateFields } from './RuleFormFields/MealTemplateFields';
 import { RuleImpactPreview } from './RuleImpactPreview';
-import type { FormState, FormAction } from './types';
+import type { FormState, FormAction, MealTemplateFormState } from './types';
 
 // ─── Example presets ──────────────────────────────────────────────────────────
 
@@ -48,6 +49,17 @@ const EXAMPLE_PRESETS: Record<string, FormState> = {
     slots: [],
     match: { mode: 'tag', filter: { protein_tag: 'paneer' } },
   },
+  'rice-lunch-dinner': {
+    name: 'Rice: lunch and dinner only',
+    ruleType: 'meal-template',
+    base_type: 'rice-based',
+    allowed_slots: ['lunch', 'dinner'],
+    exclude_component_types: [],
+    exclude_extra_categories: [],
+    require_extra_category: null,
+    days: [],
+    slots: [],
+  } as MealTemplateFormState,
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
@@ -66,6 +78,8 @@ function formReducer(state: FormState, action: FormAction): FormState {
           return { name, ruleType: 'no-repeat', component_type: '' };
         case 'scheduling-rule':
           return { name, ruleType: 'scheduling-rule', effect: '', days: [], slots: [], match: { mode: '' } };
+        case 'meal-template':
+          return { name, ruleType: 'meal-template', base_type: '', allowed_slots: [], exclude_component_types: [], exclude_extra_categories: [], require_extra_category: null, days: [], slots: [] };
       }
     }
 
@@ -115,6 +129,48 @@ function formReducer(state: FormState, action: FormAction): FormState {
       }
       return state;
 
+    case 'SET_BASE_TYPE':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, base_type: action.base_type };
+      }
+      return state;
+
+    case 'SET_ALLOWED_SLOTS':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, allowed_slots: action.allowed_slots };
+      }
+      return state;
+
+    case 'SET_EXCLUDE_COMPONENT_TYPES':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, exclude_component_types: action.exclude_component_types };
+      }
+      return state;
+
+    case 'SET_EXCLUDE_EXTRA_CATEGORIES':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, exclude_extra_categories: action.exclude_extra_categories };
+      }
+      return state;
+
+    case 'SET_REQUIRE_EXTRA_CATEGORY':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, require_extra_category: action.require_extra_category };
+      }
+      return state;
+
+    case 'SET_TEMPLATE_DAYS':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, days: action.days };
+      }
+      return state;
+
+    case 'SET_TEMPLATE_SLOTS':
+      if (state.ruleType === 'meal-template') {
+        return { ...state, slots: action.slots };
+      }
+      return state;
+
     case 'LOAD_PRESET':
       return action.state;
 
@@ -139,6 +195,15 @@ function isFormValid(state: FormState): boolean {
       return state.match.component_id !== null;
     }
     return false;
+  }
+  if (state.ruleType === 'meal-template') {
+    if (state.base_type === '') return false;
+    return (
+      state.allowed_slots.length > 0 ||
+      state.exclude_component_types.length > 0 ||
+      state.exclude_extra_categories.length > 0 ||
+      state.require_extra_category !== null
+    );
   }
   return false;
 }
@@ -184,6 +249,17 @@ export function RuleForm() {
           match: match.mode === 'tag'
             ? { mode: 'tag' as const, filter: match.filter }
             : { mode: 'component' as const, component_id: match.component_id! },
+        };
+      } else if (state.ruleType === 'meal-template') {
+        def = {
+          ruleType: 'meal-template' as const,
+          base_type: state.base_type as 'rice-based' | 'bread-based' | 'other',
+          days: state.days.length > 0 ? state.days : undefined,
+          slots: state.slots.length > 0 ? state.slots : undefined,
+          allowed_slots: state.allowed_slots.length > 0 ? state.allowed_slots : undefined,
+          exclude_component_types: state.exclude_component_types.length > 0 ? state.exclude_component_types : undefined,
+          exclude_extra_categories: state.exclude_extra_categories.length > 0 ? state.exclude_extra_categories : undefined,
+          require_extra_category: state.require_extra_category ?? undefined,
         };
       } else {
         return;
@@ -241,13 +317,14 @@ export function RuleForm() {
             onValueChange={v =>
               dispatch({
                 type: 'SET_RULE_TYPE',
-                ruleType: v as 'no-repeat' | 'scheduling-rule',
+                ruleType: v as 'no-repeat' | 'scheduling-rule' | 'meal-template',
               })
             }
           >
             <TabsList>
               <TabsTrigger value="no-repeat">No Repeat</TabsTrigger>
               <TabsTrigger value="scheduling-rule">Scheduling Rule</TabsTrigger>
+              <TabsTrigger value="meal-template">Meal Template</TabsTrigger>
             </TabsList>
             <TabsContent value="no-repeat">
               {state.ruleType === 'no-repeat' && (
@@ -257,6 +334,11 @@ export function RuleForm() {
             <TabsContent value="scheduling-rule">
               {state.ruleType === 'scheduling-rule' && (
                 <SchedulingRuleFields state={state} dispatch={dispatch} />
+              )}
+            </TabsContent>
+            <TabsContent value="meal-template">
+              {state.ruleType === 'meal-template' && (
+                <MealTemplateFields state={state} dispatch={dispatch} />
               )}
             </TabsContent>
           </Tabs>
