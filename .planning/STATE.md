@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Rule Engine Overhaul
-status: Ready to plan
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-26T02:16:04.285Z"
+status: Phase complete — ready for verification
+stopped_at: Completed 10-01-PLAN.md
+last_updated: "2026-03-26T03:16:03.468Z"
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
+  completed_phases: 4
+  total_plans: 9
+  completed_plans: 9
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-22 — v1.1 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Phase 09 — meal-template-engine
+**Current focus:** Phase 10 — meal-template-ui-settings-removal-migration
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
+Phase: 10 (meal-template-ui-settings-removal-migration) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -69,6 +69,8 @@ Plan: Not started
 | Phase 08 P02 | 4min | 2 tasks | 8 files |
 | Phase 09 P01 | 165s | 2 tasks | 6 files |
 | Phase 09-meal-template-engine P02 | 31min | 2 tasks | 2 files |
+| Phase 10 P02 | 79s | 2 tasks | 2 files |
+| Phase 10-meal-template-ui-settings-removal-migration P01 | ~15min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -143,6 +145,10 @@ Recent decisions affecting current work:
 - [Phase 09-meal-template-engine]: mealTemplateRules extracted once per generateWeekPlan; applicableTemplates computed per slot after base selection — base type must be known to look up applicable templates
 - [Phase 09-meal-template-engine]: D-05/D-06 branch pattern used identically for slot assignment and required extras: if (templatesForBase.length > 0) { template logic } else { prefs fallback }
 - [Phase 09-meal-template-engine]: Locked components bypass all meal-template soft constraints — locked curry/subzi checked before skipCurry/skipSubzi guards
+- [Phase 10]: Dexie v7 upgrade uses async callback to allow component name lookup for friendlier rule names
+- [Phase 10]: Seed uses db.rules.bulkAdd directly to avoid circular import from service layer
+- [Phase 10-meal-template-ui-settings-removal-migration]: MealTemplateFormState follows flat pattern of SchedulingRuleFormState — no nested discriminated union needed
+- [Phase 10-meal-template-ui-settings-removal-migration]: Toggle (shadcn) used for allowed_slots chip group per UI-SPEC; installed as it was absent
 
 ### Pending Todos
 
@@ -160,6 +166,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-26T02:09:01.121Z
-Stopped at: Completed 09-02-PLAN.md
+Last session: 2026-03-26T03:16:03.466Z
+Stopped at: Completed 10-01-PLAN.md
 Resume file: None

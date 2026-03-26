@@ -24,7 +24,7 @@
 - [ ] **Phase 7: Scheduling Rule Engine** — New unified scheduling-rule type, compiler variants, and generator logic for all three effects and match criteria
 - [x] **Phase 8: Scheduling Rule UI + Migration** — Rule creation form for scheduling-rule; automatic migration of existing day-filter and require-component rules (completed 2026-03-25)
 - [x] **Phase 9: Meal Template Engine** — New meal-template rule type with generator integration for slot assignment and composition constraints (completed 2026-03-26)
-- [ ] **Phase 10: Meal Template UI, Settings Removal, and Migration** — Rule creation form for meal-template; remove /settings/slots; migrate existing slot prefs
+- [x] **Phase 10: Meal Template UI, Settings Removal, and Migration** — Rule creation form for meal-template; remove /settings/slots; migrate existing slot prefs (completed 2026-03-26)
 
 ## Phase Details
 
@@ -86,11 +86,11 @@ Plans:
   3. All meal-template constraints visible in the Rules Manager list are togglable and deletable like any other rule
   4. On first app startup after the Dexie version bump, existing slot_restrictions.base_type_slots and base_type_rules preference data are converted to meal-template rules; no preference data is lost
   5. After migration, plan generation behavior is equivalent to pre-migration for any user who had slot settings configured
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 10-01-PLAN.md — MealTemplateFields form component, RuleForm integration, settings removal
-- [ ] 10-02-PLAN.md — Dexie v7 migration + seed update for new users
+- [x] 10-01-PLAN.md — MealTemplateFields form component, RuleForm integration, settings removal
+- [x] 10-02-PLAN.md — Dexie v7 migration + seed update for new users
 
 ## Progress
 
@@ -105,4 +105,4 @@ Plans:
 | 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete   | 2026-03-25 |
 | 9. Meal Template Engine | v1.1 | 2/2 | Complete    | 2026-03-26 |
-| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 0/2 | Planned | — |
+| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete   | 2026-03-26 |
