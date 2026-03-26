@@ -142,4 +142,97 @@ db.version(6).stores({
   active_plan: 'id',
 });
 
+db.version(7).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(async tx => {
+  const prefsTable = tx.table('preferences');
+  const rulesTable = tx.table('rules');
+  const componentsTable = tx.table('components');
+
+  const prefs = await prefsTable.get('prefs');
+  if (!prefs) return;
+
+  const now = new Date().toISOString();
+  const ALL_SLOTS = ['breakfast', 'lunch', 'dinner'];
+
+  // D-09: component_slot_overrides -> scheduling-rule exclude records
+  const overrides = prefs.slot_restrictions?.component_slot_overrides ?? {};
+  for (const [idStr, allowedSlots] of Object.entries(overrides)) {
+    const componentId = Number(idStr);
+    const excluded = ALL_SLOTS.filter(s => !(allowedSlots as string[]).includes(s));
+    if (excluded.length === 0) continue; // unrestricted, no rule needed
+
+    // Look up component name for friendlier rule name
+    const comp = await componentsTable.get(componentId);
+    const compName = comp?.name ?? String(componentId);
+
+    await rulesTable.add({
+      name: `${compName} slot restriction (migrated)`,
+      enabled: true,
+      compiled_filter: {
+        type: 'scheduling-rule',
+        effect: 'exclude',
+        days: null,
+        slots: excluded,
+        match: { mode: 'component', component_id: componentId },
+      },
+      created_at: now,
+    });
+  }
+
+  // D-10: base_type_slots -> meal-template records
+  const baseTypeSlots = prefs.slot_restrictions?.base_type_slots ?? {};
+  for (const [baseType, allowedSlots] of Object.entries(baseTypeSlots)) {
+    await rulesTable.add({
+      name: `${baseType} slot assignment (migrated)`,
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: baseType,
+        days: null,
+        slots: null,
+        allowed_slots: allowedSlots,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: now,
+    });
+  }
+
+  // D-11: base_type_rules -> meal-template records
+  const baseTypeRules = prefs.base_type_rules ?? [];
+  for (const rule of baseTypeRules) {
+    if (!rule.required_extra_category) continue; // skip entries with no requirement
+    await rulesTable.add({
+      name: `${rule.base_type} required ${rule.required_extra_category} (migrated)`,
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: rule.base_type,
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: rule.required_extra_category,
+      },
+      created_at: now,
+    });
+  }
+
+  // D-12: Clear migrated prefs data
+  await prefsTable.update('prefs', {
+    'slot_restrictions.base_type_slots': {},
+    'slot_restrictions.component_slot_overrides': {},
+    base_type_rules: [],
+  });
+});
+
 export { db };
