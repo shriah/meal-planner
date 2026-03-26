@@ -159,6 +159,7 @@ Recent decisions affecting current work:
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260321-amx | Enable day of the week in the occasion tag | 2026-03-21 | 671913f | [260321-amx-enable-day-of-the-week-in-the-occasion-t](./quick/260321-amx-enable-day-of-the-week-in-the-occasion-t/) |
+| 260326-w99 | Meal template flexible selector (Base/Tag/Component) | 2026-03-26 | 99efa8f | [260326-w99-meal-template-flexible-selector-base-tag](./quick/260326-w99-meal-template-flexible-selector-base-tag/) |
 
 ### Blockers/Concerns
 
@@ -166,6 +167,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-26T03:16:03.466Z
-Stopped at: Completed 10-01-PLAN.md
+Last session: 2026-03-26T17:57:00Z
+Stopped at: Completed quick task 260326-w99
 Resume file: None
