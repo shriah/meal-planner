@@ -43,10 +43,10 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - [ ] **SCHED-05**: Existing `day-filter` and `require-component` rules migrated to `scheduling-rule` at startup (Dexie version bump); old rule types removed from CompiledFilter
 
 **Meal Template**
-- [ ] **TMPL-01**: User can create a meal template rule scoped to a base type (rice-based / bread-based / other) with optional slot and day context
-- [ ] **TMPL-02**: Meal template specifies which slots the base type is allowed in (slot assignment — replaces 3×3 settings grid)
-- [ ] **TMPL-03**: Meal template can exclude component types (curry, subzi) and/or extra categories (liquid, sweet, etc.) for the given base type context
-- [ ] **TMPL-04**: Meal template can require an extra category for the given base type (e.g., bread-based always needs a liquid extra)
+- ✓ **TMPL-01**: User can create a meal template rule scoped to a base type (rice-based / bread-based / other) with optional slot and day context — Validated in Phase 9: Meal Template Engine
+- ✓ **TMPL-02**: Meal template specifies which slots the base type is allowed in (slot assignment — replaces 3×3 settings grid) — Validated in Phase 9: Meal Template Engine
+- ✓ **TMPL-03**: Meal template can exclude component types (curry, subzi) and/or extra categories (liquid, sweet, etc.) for the given base type context — Validated in Phase 9: Meal Template Engine
+- ✓ **TMPL-04**: Meal template can require an extra category for the given base type (e.g., bread-based always needs a liquid extra) — Validated in Phase 9: Meal Template Engine
 - [ ] **TMPL-05**: `/settings/slots` page removed; AppNav "Slot Settings" link removed; all constraints managed through Rules UI
 - [ ] **TMPL-06**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup
 
@@ -110,4 +110,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-22 — v1.1 milestone started (rule engine overhaul)*
+*Last updated: 2026-03-26 — Phase 9 complete (meal-template engine backend fully implemented; TMPL-01 through TMPL-04 validated)*
