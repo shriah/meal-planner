@@ -1947,6 +1947,346 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
   });
 });
 
+// ─── Meal-template rules: extra exclusions + required extras ──────────────────
+
+describe('meal-template rules: extra exclusions (TMPL-04)', () => {
+  it('TMPL-04-1. meal-template exclude_extra_categories=[sweet] — no sweet extras for that base type', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Seed a sweet extra compatible with rice-based
+    const sweetRiceId = await addComponent({
+      name: 'Kheer',
+      componentType: 'extra',
+      extra_category: 'sweet',
+      compatible_base_types: ['rice-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addRule({
+      name: 'Rice: no sweets',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: ['sweet'],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const riceSlots = result.plan.slots.filter(s => s.base_id === ids.riceBaseId);
+      for (const slot of riceSlots) {
+        expect(slot.extra_ids).not.toContain(sweetRiceId);
+      }
+    }
+  });
+
+  it('TMPL-04-2. meal-template exclude_extra_categories removes all eligible extras — relax with warning (D-10)', async () => {
+    await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice: exclude all extra categories',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: ['liquid', 'condiment', 'crunchy', 'dairy', 'sweet'],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete
+    expect(result.plan.slots).toHaveLength(21);
+    // Warnings must mention relaxed extra exclusion
+    const relaxedWarning = result.warnings.find(
+      w => w.message.includes('exclude_extra_categories') && w.message.includes('relaxed'),
+    );
+    expect(relaxedWarning).toBeDefined();
+  });
+
+  it('TMPL-04-3. extra exclusion scoped by days/slots context', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Rule scoped to Monday only
+    await addRule({
+      name: 'Rice: no liquid on monday',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: ['monday'],
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: ['liquid'],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      // Rice on Monday must not have the liquid extra (Rasam = extraLiquidRiceId)
+      const mondayRiceSlots = result.plan.slots.filter(
+        s => s.day === 'monday' && s.base_id === ids.riceBaseId,
+      );
+      for (const slot of mondayRiceSlots) {
+        expect(slot.extra_ids).not.toContain(ids.extraLiquidRiceId);
+      }
+    }
+  });
+});
+
+describe('meal-template rules: required extras (TMPL-05)', () => {
+  it('TMPL-05-1. meal-template require_extra_category=liquid — always includes liquid extra for that base type', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Seed a liquid extra compatible with bread-based
+    const liquidBreadId = await addComponent({
+      name: 'Chai',
+      componentType: 'extra',
+      extra_category: 'liquid',
+      compatible_base_types: ['bread-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addRule({
+      name: 'Bread: require liquid',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'liquid',
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
+      for (const slot of breadSlots) {
+        expect(slot.extra_ids).toContain(liquidBreadId);
+      }
+    }
+  });
+
+  it('TMPL-05-2. meal-template require_extra_category overrides prefs.base_type_rules (D-05)', async () => {
+    const ids = await seedMinimalComponents();
+    // Prefs require condiment for bread-based
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} },
+      extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 },
+      base_type_rules: [{ base_type: 'bread-based', required_extra_category: 'condiment' }],
+    });
+    // Seed a condiment and a liquid extra for bread-based
+    const condimentBreadId = await addComponent({
+      name: 'Butter',
+      componentType: 'extra',
+      extra_category: 'condiment',
+      compatible_base_types: ['bread-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const liquidBreadId = await addComponent({
+      name: 'Chai',
+      componentType: 'extra',
+      extra_category: 'liquid',
+      compatible_base_types: ['bread-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    // Template requires liquid (overrides prefs condiment)
+    await addRule({
+      name: 'Bread: require liquid (overrides prefs)',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'liquid',
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 3; run++) {
+      const result = await generate();
+      const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
+      for (const slot of breadSlots) {
+        // Must have liquid (from template)
+        expect(slot.extra_ids).toContain(liquidBreadId);
+        // Should NOT have condiment as a mandatory extra (prefs overridden)
+        // Note: condiment could still appear as a fill extra, but we primarily check liquid is present
+      }
+    }
+    void condimentBreadId;
+  });
+
+  it('TMPL-05-3. meal-template require_extra_category with no eligible extras — skip with warning (D-10)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // No dairy extras seeded — require dairy for bread-based
+    await addRule({
+      name: 'Bread: require dairy (impossible)',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'dairy',
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    // Generation must still complete
+    expect(result.plan.slots).toHaveLength(21);
+    // Warning must mention no eligible extras
+    const warnMsg = result.warnings.find(
+      w => w.message.includes('require_extra_category') && w.message.includes('skipped'),
+    );
+    expect(warnMsg).toBeDefined();
+    void ids;
+  });
+
+  it('TMPL-05-4. multiple meal-template rules with different require_extra_category — both attempted (D-08)', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    // Seed liquid and condiment extras for bread-based
+    const liquidBreadId = await addComponent({
+      name: 'Chai',
+      componentType: 'extra',
+      extra_category: 'liquid',
+      compatible_base_types: ['bread-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const condimentBreadId = await addComponent({
+      name: 'Butter',
+      componentType: 'extra',
+      extra_category: 'condiment',
+      compatible_base_types: ['bread-based'],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    // Rule A: require liquid
+    await addRule({
+      name: 'Bread: require liquid',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'liquid',
+      },
+      created_at: '',
+    });
+    // Rule B: require condiment
+    await addRule({
+      name: 'Bread: require condiment',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'bread-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'condiment',
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 5; run++) {
+      const result = await generate();
+      const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
+      for (const slot of breadSlots) {
+        // Both liquid and condiment must be present
+        expect(slot.extra_ids).toContain(liquidBreadId);
+        expect(slot.extra_ids).toContain(condimentBreadId);
+      }
+    }
+  });
+
+  it('TMPL-05-5. base type without meal-template — prefs.base_type_rules still works (D-06)', async () => {
+    const ids = await seedMinimalComponents();
+    // Prefs require condiment for bread-based
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} },
+      extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 },
+      base_type_rules: [{ base_type: 'bread-based', required_extra_category: 'condiment' }],
+    });
+    // Only add meal-template for rice-based, not bread-based
+    await addRule({
+      name: 'Rice template only (no bread template)',
+      enabled: true,
+      compiled_filter: {
+        type: 'meal-template',
+        base_type: 'rice-based',
+        allowed_slots: null,
+        days: null,
+        slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      },
+      created_at: '',
+    });
+
+    for (let run = 0; run < 3; run++) {
+      const result = await generate();
+      const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
+      for (const slot of breadSlots) {
+        // Bread-based uses prefs fallback — must have a condiment (extraCondimentAllId)
+        expect(slot.extra_ids).toContain(ids.extraCondimentAllId);
+      }
+    }
+  });
+});
+
 // ─── Performance ──────────────────────────────────────────────────────────────
 
 describe('Performance', () => {
