@@ -35,7 +35,18 @@ export function describeRule(filter: CompiledFilter): string {
     }
 
     case 'meal-template': {
-      const baseLabel = capitalize(filter.base_type.replace('-based', '-based'))
+      let selectorLabel: string
+      if (filter.selector.mode === 'base') {
+        selectorLabel = capitalize(filter.selector.base_type)
+      } else if (filter.selector.mode === 'tag') {
+        const tagParts = Object.entries(filter.selector.filter)
+          .filter(([, v]) => Boolean(v))
+          .map(([k, v]) => `${k.replace('_tag', '')}: ${v}`)
+          .join(', ')
+        selectorLabel = `Tag: ${tagParts || 'any'}`
+      } else {
+        selectorLabel = `Component #${filter.selector.component_id}`
+      }
       const parts: string[] = []
 
       // Slot assignment
@@ -70,10 +81,10 @@ export function describeRule(filter: CompiledFilter): string {
         : ''
 
       if (parts.length === 0) {
-        return `${baseLabel}${slotsQualifier}`
+        return `${selectorLabel}${slotsQualifier}`
       }
 
-      return `${baseLabel}${slotsQualifier}: ${parts.join(', ')}`
+      return `${selectorLabel}${slotsQualifier}: ${parts.join(', ')}`
     }
   }
 }

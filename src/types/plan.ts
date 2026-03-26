@@ -94,7 +94,11 @@ export const CompiledFilterSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('meal-template'),
-    base_type: z.enum(['rice-based', 'bread-based', 'other']),
+    selector: z.discriminatedUnion('mode', [
+      z.object({ mode: z.literal('base'), base_type: z.enum(['rice-based', 'bread-based', 'other']) }),
+      z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
+      z.object({ mode: z.literal('component'), component_id: z.number() }),
+    ]),
     days: z.array(DayOfWeekEnum).nullable(),
     slots: z.array(MealSlotEnum).nullable(),
     allowed_slots: z.array(MealSlotEnum).nullable(),
@@ -129,7 +133,10 @@ export type RuleDefinition =
     }
   | {
       ruleType: 'meal-template';
-      base_type: 'rice-based' | 'bread-based' | 'other';
+      selector:
+        | { mode: 'base'; base_type: 'rice-based' | 'bread-based' | 'other' }
+        | { mode: 'tag'; filter: TagFilter }
+        | { mode: 'component'; component_id: number };
       days?: DayOfWeek[];
       slots?: MealSlot[];
       allowed_slots?: MealSlot[];

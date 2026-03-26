@@ -67,4 +67,64 @@ describe('describeRule', () => {
       })
     ).toBe('Filter pool on Monday: any tag')
   })
+
+  it('meal-template: base selector with allowed_slots', () => {
+    expect(
+      describeRule({
+        type: 'meal-template',
+        selector: { mode: 'base', base_type: 'rice-based' },
+        days: null,
+        slots: null,
+        allowed_slots: ['lunch', 'dinner'],
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      })
+    ).toBe('Rice-based: allowed at lunch, dinner')
+  })
+
+  it('meal-template: tag selector with protein tag', () => {
+    expect(
+      describeRule({
+        type: 'meal-template',
+        selector: { mode: 'tag', filter: { protein_tag: 'fish' } },
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: ['curry'],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      })
+    ).toBe('Tag: protein: fish: exclude curry')
+  })
+
+  it('meal-template: component selector', () => {
+    expect(
+      describeRule({
+        type: 'meal-template',
+        selector: { mode: 'component', component_id: 42 },
+        days: null,
+        slots: null,
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: 'liquid',
+      })
+    ).toBe('Component #42: require liquid extra')
+  })
+
+  it('meal-template: base selector with no parts returns just selector label', () => {
+    expect(
+      describeRule({
+        type: 'meal-template',
+        selector: { mode: 'base', base_type: 'bread-based' },
+        days: null,
+        slots: ['lunch'],
+        allowed_slots: null,
+        exclude_component_types: [],
+        exclude_extra_categories: [],
+        require_extra_category: null,
+      })
+    ).toBe('Bread-based (lunch)')
+  })
 })

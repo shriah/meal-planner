@@ -19,7 +19,7 @@ export function compileRule(def: RuleDefinition): CompiledFilter {
     case 'meal-template':
       return {
         type: 'meal-template',
-        base_type: def.base_type,
+        selector: def.selector,
         days: def.days ?? null,
         slots: def.slots ?? null,
         allowed_slots: def.allowed_slots ?? null,

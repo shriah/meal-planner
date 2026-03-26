@@ -235,4 +235,37 @@ db.version(7).stores({
   });
 });
 
+/**
+ * Migrate a compiled_filter from v7 (meal-template with base_type) to v8 (meal-template with selector).
+ * Pure function — used by Dexie upgrade and testable independently.
+ */
+export function migrateMealTemplateSelector(cf: unknown): unknown {
+  if (!cf || typeof cf !== 'object' || !('type' in cf)) return cf;
+  const record = cf as Record<string, unknown>;
+
+  if (record.type === 'meal-template' && 'base_type' in record && !('selector' in record)) {
+    const { base_type, ...rest } = record;
+    return {
+      ...rest,
+      selector: { mode: 'base', base_type },
+    };
+  }
+
+  return cf; // Already migrated or unknown type — pass through unchanged
+}
+
+db.version(8).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(tx => {
+  return tx.table('rules').toCollection().modify(rule => {
+    rule.compiled_filter = migrateMealTemplateSelector(rule.compiled_filter);
+  });
+});
+
 export { db };
