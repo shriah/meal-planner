@@ -135,10 +135,53 @@ function matchesTagFilter(component: ComponentRecord, filter: TagFilter): boolea
   return true;
 }
 
+// ─── Helper: selectorMatchesBase ─────────────────────────────────────────────
+
+/**
+ * Determines whether a meal-template rule's selector matches for slot assignment purposes.
+ * For allowed_slots intersection, only base-mode selectors apply (slot restriction is
+ * based on the base type, not tags or components).
+ */
+function selectorMatchesForSlotAssignment(
+  rule: MealTemplateRule,
+  baseType: BaseType,
+): boolean {
+  return rule.selector.mode === 'base' && rule.selector.base_type === baseType;
+}
+
+// ─── Helper: selectorMatches ──────────────────────────────────────────────────
+
+/**
+ * Determines whether a meal-template rule's selector matches for composition constraints.
+ */
+function selectorMatches(
+  rule: MealTemplateRule,
+  baseType: BaseType,
+  baseComponent?: ComponentRecord,
+  slotComponentIds?: number[],
+): boolean {
+  const selector = rule.selector;
+  switch (selector.mode) {
+    case 'base':
+      return selector.base_type === baseType;
+    case 'tag': {
+      if (!baseComponent) return false;
+      const f = selector.filter;
+      if (f.dietary_tag !== undefined && !baseComponent.dietary_tags.includes(f.dietary_tag)) return false;
+      if (f.protein_tag !== undefined && baseComponent.protein_tag !== f.protein_tag) return false;
+      if (f.regional_tag !== undefined && !baseComponent.regional_tags.includes(f.regional_tag)) return false;
+      if (f.occasion_tag !== undefined && !baseComponent.occasion_tags.includes(f.occasion_tag)) return false;
+      return true;
+    }
+    case 'component':
+      return slotComponentIds?.includes(selector.component_id) ?? false;
+  }
+}
+
 // ─── Helper: getMealTemplateAllowedSlots ──────────────────────────────────────
 
 /**
- * Returns the intersection of allowed_slots across all meal-template rules for a base type.
+ * Returns the intersection of allowed_slots across all base-mode meal-template rules for a base type.
  * Returns null if no rules exist or all rules have allowed_slots=null (unrestricted).
  * Returns empty array if intersection is empty (triggers D-10 relaxation).
  */
@@ -146,7 +189,7 @@ function getMealTemplateAllowedSlots(
   baseType: BaseType,
   mealTemplateRules: MealTemplateRule[],
 ): MealSlot[] | null {
-  const rulesForBase = mealTemplateRules.filter(r => r.base_type === baseType);
+  const rulesForBase = mealTemplateRules.filter(r => selectorMatchesForSlotAssignment(r, baseType));
   if (rulesForBase.length === 0) return null; // No template = no restriction from templates
   const withAllowedSlots = rulesForBase.filter(r => r.allowed_slots !== null);
   if (withAllowedSlots.length === 0) return null; // All rules have allowed_slots=null = unrestricted
@@ -164,15 +207,23 @@ function getMealTemplateAllowedSlots(
  * Returns meal-template rules applicable for a given (baseType, day, slot) context.
  * Used for composition constraints (exclude_component_types, extras) — gated by
  * days/slots context scope per D-02/D-09.
+ *
+ * Two-pass usage pattern:
+ * - First pass (after base selection): pass baseComponent, no slotComponentIds
+ *   → matches base-mode and tag-mode templates for curry/subzi exclusion decisions
+ * - Second pass (after all components selected): pass full slotComponentIds
+ *   → matches component-mode templates for extra exclusion/requirement decisions
  */
 function getApplicableMealTemplates(
   baseType: BaseType,
   day: DayOfWeek,
   slot: MealSlot,
   mealTemplateRules: MealTemplateRule[],
+  baseComponent?: ComponentRecord,
+  slotComponentIds?: number[],
 ): MealTemplateRule[] {
   return mealTemplateRules.filter(r =>
-    r.base_type === baseType &&
+    selectorMatches(r, baseType, baseComponent, slotComponentIds) &&
     (r.days === null || r.days.includes(day)) &&
     (r.slots === null || r.slots.includes(slot)),
   );
@@ -192,8 +243,8 @@ function getEligibleBases(
     const baseType = base.base_type as BaseType | undefined;
     if (!baseType) return true; // no base_type, no restriction
 
-    // D-07: Check if any meal-template rules exist for this base type
-    const templatesForBase = mealTemplateRules.filter(r => r.base_type === baseType);
+    // D-07: Check if any base-mode meal-template rules exist for this base type
+    const templatesForBase = mealTemplateRules.filter(r => selectorMatchesForSlotAssignment(r, baseType));
     if (templatesForBase.length > 0) {
       // D-05: meal-template overrides prefs
       const allowedSlots = getMealTemplateAllowedSlots(baseType, mealTemplateRules);
@@ -535,11 +586,12 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
       // ── Meal-template composition constraints for this (day, slot, baseType) ─
 
-      const applicableTemplates = selectedBaseType
-        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules)
+      // First pass: match base-mode and tag-mode templates (for curry/subzi exclusion)
+      const baseTemplates = selectedBaseType
+        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules, selectedBase)
         : [];
       const excludedComponentTypes = new Set(
-        applicableTemplates.flatMap(t => t.exclude_component_types),
+        baseTemplates.flatMap(t => t.exclude_component_types),
       );
 
       // ── Curry selection ─────────────────────────────────────────────────────
@@ -646,6 +698,18 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         // If subziPool is empty (all subzis used, no-repeat active), skip subzi for this slot
       }
 
+      // ── Second pass: match component-mode templates after all components selected ─
+
+      // Collect all slot component IDs (base + curry + subzi) for component-mode matching
+      const slotComponentIds: number[] = [selectedBase.id!];
+      if (selectedCurry?.id !== undefined) slotComponentIds.push(selectedCurry.id);
+      if (selectedSubzi?.id !== undefined) slotComponentIds.push(selectedSubzi.id);
+
+      // Full templates: includes base-mode, tag-mode, AND component-mode matches
+      const fullTemplates = selectedBaseType
+        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules, selectedBase, slotComponentIds)
+        : [];
+
       // ── Extras selection ────────────────────────────────────────────────────
 
       const maxExtras = resolvedPrefs.extra_quantity_limits[meal_slot] ?? 2;
@@ -664,9 +728,9 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       });
 
       // Meal-template: exclude extra categories (D-08 union, D-02 context scope, D-10 relax)
-      if (selectedBaseType && applicableTemplates.length > 0) {
+      if (selectedBaseType && fullTemplates.length > 0) {
         const excludedExtraCategories = new Set(
-          applicableTemplates.flatMap(t => t.exclude_extra_categories),
+          fullTemplates.flatMap(t => t.exclude_extra_categories),
         );
         if (excludedExtraCategories.size > 0) {
           const filteredExtras = eligibleExtras.filter(
@@ -692,14 +756,11 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         selectedExtraIds.push(...locked.extra_ids);
       } else {
         if (selectedBaseType) {
-          const templatesForBase = mealTemplateRules.filter(
-            r => r.base_type === selectedBaseType,
-          );
-
-          if (templatesForBase.length > 0) {
-            // D-05: meal-template overrides prefs.base_type_rules
+          // D-05: meal-template overrides prefs.base_type_rules
+          // Use fullTemplates (second pass) which includes all selector modes
+          if (fullTemplates.length > 0) {
             // D-08: each applicable rule's require_extra_category attempted independently
-            for (const tmpl of applicableTemplates) {
+            for (const tmpl of fullTemplates) {
               if (tmpl.require_extra_category === null) continue;
               const requiredCategory = tmpl.require_extra_category;
               const mandatoryExtras = eligibleExtras.filter(
