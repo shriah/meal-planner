@@ -48,7 +48,8 @@ Declared values (multiples of 4):
 Exceptions:
 - Rule row min-height: 48px touch target — inherited from `RuleRow` (`min-h-[48px]`)
 - Form container max width: `max-w-2xl` with `px-4 py-8 sm:px-8` — inherited from `RuleForm` outer `<main>`
-- Field label-to-select gap: `space-y-1.5` (6px) — matches `SchedulingRuleFields` internal pattern; do not change
+- Field label-to-select gap in `MealTemplateFields`: `space-y-2` (8px) — on-grid value; use this for all new fields in Phase 10
+- Note: `SchedulingRuleFields` internally uses a 6px label-to-select gap (pre-existing, out of Phase 10 scope). `MealTemplateFields` does NOT inherit this non-grid value; it uses `space-y-2` (8px) instead.
 
 ---
 
@@ -97,6 +98,8 @@ Warning color: `border-amber-500 bg-amber-50 text-amber-900` — impact preview 
 Location: `src/components/rules/RuleFormFields/MealTemplateFields.tsx`
 
 This is a flat, single-pass form. All sections are visible simultaneously — no tabs, no collapsibles (per CONTEXT.md D-01).
+
+**Primary visual anchor: Base type RadioGroup** — required field at top of form, gates form validity, draws eye first.
 
 #### MealTemplateFields layout (top to bottom, per CONTEXT.md D-02)
 
