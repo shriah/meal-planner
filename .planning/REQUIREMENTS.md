@@ -21,7 +21,7 @@
 - [x] **TMPL-03**: Meal template can exclude component types (curry and/or subzi) for the given base type context (e.g., bread-based: no subzi)
 - [x] **TMPL-04**: Meal template can exclude extra categories (liquid / crunchy / condiment / dairy / sweet) for the given base type context (e.g., bread-based: no sweet extras)
 - [x] **TMPL-05**: Meal template can require one extra of a specific category for the given base type (e.g., bread-based always includes a liquid extra)
-- [ ] **TMPL-06**: `/settings/slots` route and all settings components removed; AppNav "Slot Settings" link removed; slot assignment managed through meal template rules in the Rules UI
+- [x] **TMPL-06**: `/settings/slots` route and all settings components removed; AppNav "Slot Settings" link removed; slot assignment managed through meal template rules in the Rules UI
 - [ ] **TMPL-07**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` preference data automatically migrated to `meal-template` rules at app startup
 
 ## v2 Requirements
@@ -61,7 +61,7 @@
 | TMPL-03 | Phase 9 | Complete |
 | TMPL-04 | Phase 9 | Complete |
 | TMPL-05 | Phase 9 | Complete |
-| TMPL-06 | Phase 10 | Pending |
+| TMPL-06 | Phase 10 | Complete |
 | TMPL-07 | Phase 10 | Pending |
 
 **Coverage:**
