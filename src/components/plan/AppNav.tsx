@@ -15,9 +15,6 @@ export function AppNav() {
         <Link href="/rules" className="text-sm text-muted-foreground hover:text-foreground">
           Rules
         </Link>
-        <Link href="/settings/slots" className="text-sm text-muted-foreground hover:text-foreground">
-          Slot Settings
-        </Link>
       </div>
     </nav>
   )
