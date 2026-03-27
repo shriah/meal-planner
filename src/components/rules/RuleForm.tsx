@@ -5,235 +5,145 @@ import { useReducer, useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { compileRule } from '@/services/rule-compiler';
 import { addRule } from '@/services/food-db';
-import { NoRepeatFields } from './RuleFormFields/NoRepeatFields';
-import { SchedulingRuleFields } from './RuleFormFields/SchedulingRuleFields';
-import { MealTemplateFields } from './RuleFormFields/MealTemplateFields';
+import { RuleFields } from './RuleFormFields/RuleFields';
 import { RuleImpactPreview } from './RuleImpactPreview';
-import type { FormState, FormAction, MealTemplateFormState } from './types';
+import type { RuleFormState, FormAction } from './types';
 
 // ─── Example presets ──────────────────────────────────────────────────────────
 
-const EXAMPLE_PRESETS: Record<string, FormState> = {
+const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
   'fish-fridays': {
     name: 'Fish Fridays',
-    ruleType: 'scheduling-rule',
-    effect: 'require-one',
-    days: ['friday'],
-    slots: [],
-    match: { mode: 'tag', filter: { protein_tag: 'fish' } },
+    target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+    days: ['friday'], slots: [],
+    selection: 'require_one',
+    allowed_slots: [], skip_component_types: [],
+    exclude_extra_categories: [], require_extra_categories: [],
   },
   'no-repeat-subzi': {
     name: 'No repeat subzi',
-    ruleType: 'no-repeat',
-    component_type: 'subzi',
+    target: { mode: 'component_type', component_type: 'subzi' },
+    days: [], slots: [],
+    selection: 'no_repeat',
+    allowed_slots: [], skip_component_types: [],
+    exclude_extra_categories: [], require_extra_categories: [],
   },
   'weekend-special': {
     name: 'Weekend special',
-    ruleType: 'scheduling-rule',
-    effect: 'filter-pool',
-    days: ['saturday', 'sunday'],
-    slots: [],
-    match: { mode: 'tag', filter: { occasion_tag: 'weekend' } },
+    target: { mode: 'tag', filter: { occasion_tag: 'weekend' } },
+    days: ['saturday', 'sunday'], slots: [],
+    selection: 'filter_pool',
+    allowed_slots: [], skip_component_types: [],
+    exclude_extra_categories: [], require_extra_categories: [],
   },
   'no-paneer-weekdays': {
     name: 'No paneer weekdays',
-    ruleType: 'scheduling-rule',
-    effect: 'exclude',
-    days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-    slots: [],
-    match: { mode: 'tag', filter: { protein_tag: 'paneer' } },
+    target: { mode: 'tag', filter: { protein_tag: 'paneer' } },
+    days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], slots: [],
+    selection: 'exclude',
+    allowed_slots: [], skip_component_types: [],
+    exclude_extra_categories: [], require_extra_categories: [],
   },
   'rice-lunch-dinner': {
     name: 'Rice: lunch and dinner only',
-    ruleType: 'meal-template',
-    selector: { mode: 'base', base_type: 'rice-based' },
+    target: { mode: 'base_type', base_type: 'rice-based' },
+    days: [], slots: [],
+    selection: '',
     allowed_slots: ['lunch', 'dinner'],
-    exclude_component_types: [],
-    exclude_extra_categories: [],
-    require_extra_category: null,
-    days: [],
-    slots: [],
-  } as MealTemplateFormState,
+    skip_component_types: [], exclude_extra_categories: [], require_extra_categories: [],
+  },
+};
+
+// ─── Initial state ────────────────────────────────────────────────────────────
+
+const initialState: RuleFormState = {
+  name: '',
+  target: { mode: '' },
+  days: [], slots: [],
+  selection: '',
+  allowed_slots: [], skip_component_types: [],
+  exclude_extra_categories: [], require_extra_categories: [],
 };
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
 
-const initialState: FormState = { name: '', ruleType: '' };
-
-function formReducer(state: FormState, action: FormAction): FormState {
+function formReducer(state: RuleFormState, action: FormAction): RuleFormState {
   switch (action.type) {
     case 'SET_NAME':
       return { ...state, name: action.name };
 
-    case 'SET_RULE_TYPE': {
-      const name = state.name;
-      switch (action.ruleType) {
-        case 'no-repeat':
-          return { name, ruleType: 'no-repeat', component_type: '' };
-        case 'scheduling-rule':
-          return { name, ruleType: 'scheduling-rule', effect: '', days: [], slots: [], match: { mode: '' } };
-        case 'meal-template':
-          return { name, ruleType: 'meal-template', selector: { mode: '' as const }, allowed_slots: [], exclude_component_types: [], exclude_extra_categories: [], require_extra_category: null, days: [], slots: [] };
-      }
+    case 'SET_TARGET_MODE': {
+      const mode = action.mode;
+      const base: Omit<RuleFormState, 'target'> = {
+        name: state.name, days: state.days, slots: state.slots,
+        selection: state.selection, allowed_slots: state.allowed_slots,
+        skip_component_types: state.skip_component_types,
+        exclude_extra_categories: state.exclude_extra_categories,
+        require_extra_categories: state.require_extra_categories,
+      };
+      if (mode === 'component_type') return { ...base, target: { mode, component_type: '' } };
+      if (mode === 'tag')            return { ...base, target: { mode, filter: {} } };
+      if (mode === 'component')      return { ...base, target: { mode, component_id: null } };
+      if (mode === 'base_type')      return { ...base, target: { mode, base_type: '' } };
+      return state;
     }
 
-    case 'SET_DAYS':
-      if (state.ruleType === 'scheduling-rule') {
-        return { ...state, days: action.days };
-      }
+    case 'SET_TARGET_COMPONENT_TYPE':
+      if (state.target.mode === 'component_type')
+        return { ...state, target: { mode: 'component_type', component_type: action.component_type } };
       return state;
 
-    case 'SET_SLOTS':
-      if (state.ruleType === 'scheduling-rule') {
-        return { ...state, slots: action.slots };
-      }
+    case 'SET_TARGET_TAG_FILTER':
+      if (state.target.mode === 'tag')
+        return { ...state, target: { mode: 'tag', filter: action.filter } };
       return state;
 
-    case 'SET_COMPONENT_TYPE':
-      if (state.ruleType === 'no-repeat') {
-        return { ...state, component_type: action.component_type };
-      }
+    case 'SET_TARGET_COMPONENT_ID':
+      if (state.target.mode === 'component')
+        return { ...state, target: { mode: 'component', component_id: action.component_id } };
       return state;
 
-    case 'SET_EFFECT':
-      if (state.ruleType === 'scheduling-rule') {
-        return { ...state, effect: action.effect };
-      }
+    case 'SET_TARGET_BASE_TYPE':
+      if (state.target.mode === 'base_type')
+        return { ...state, target: { mode: 'base_type', base_type: action.base_type } };
       return state;
 
-    case 'SET_MATCH_MODE':
-      if (state.ruleType === 'scheduling-rule') {
-        const match =
-          action.mode === 'tag'
-            ? { mode: 'tag' as const, filter: {} }
-            : { mode: 'component' as const, component_id: null };
-        return { ...state, match };
-      }
-      return state;
+    case 'SET_DAYS':   return { ...state, days: action.days };
+    case 'SET_SLOTS':  return { ...state, slots: action.slots };
+    case 'SET_SELECTION': return { ...state, selection: action.selection };
+    case 'SET_ALLOWED_SLOTS': return { ...state, allowed_slots: action.allowed_slots };
+    case 'SET_SKIP_COMPONENT_TYPES': return { ...state, skip_component_types: action.skip_component_types };
+    case 'SET_EXCLUDE_EXTRA_CATEGORIES': return { ...state, exclude_extra_categories: action.categories };
+    case 'SET_REQUIRE_EXTRA_CATEGORIES': return { ...state, require_extra_categories: action.categories };
+    case 'LOAD_PRESET': return action.state;
 
-    case 'SET_SCHEDULING_TAG_FILTER':
-      if (state.ruleType === 'scheduling-rule' && state.match.mode === 'tag') {
-        return { ...state, match: { mode: 'tag' as const, filter: action.filter } };
-      }
-      return state;
-
-    case 'SET_SCHEDULING_COMPONENT_ID':
-      if (state.ruleType === 'scheduling-rule' && state.match.mode === 'component') {
-        return { ...state, match: { mode: 'component' as const, component_id: action.component_id } };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_SELECTOR_MODE':
-      if (state.ruleType === 'meal-template') {
-        const selector =
-          action.mode === 'base'
-            ? { mode: 'base' as const, base_type: '' as const }
-            : action.mode === 'tag'
-              ? { mode: 'tag' as const, filter: {} }
-              : { mode: 'component' as const, component_id: null };
-        return { ...state, selector };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_BASE_TYPE':
-      if (state.ruleType === 'meal-template' && state.selector.mode === 'base') {
-        return { ...state, selector: { mode: 'base' as const, base_type: action.base_type } };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_TAG_FILTER':
-      if (state.ruleType === 'meal-template' && state.selector.mode === 'tag') {
-        return { ...state, selector: { mode: 'tag' as const, filter: action.filter } };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_COMPONENT_ID':
-      if (state.ruleType === 'meal-template' && state.selector.mode === 'component') {
-        return { ...state, selector: { mode: 'component' as const, component_id: action.component_id } };
-      }
-      return state;
-
-    case 'SET_ALLOWED_SLOTS':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, allowed_slots: action.allowed_slots };
-      }
-      return state;
-
-    case 'SET_EXCLUDE_COMPONENT_TYPES':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, exclude_component_types: action.exclude_component_types };
-      }
-      return state;
-
-    case 'SET_EXCLUDE_EXTRA_CATEGORIES':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, exclude_extra_categories: action.exclude_extra_categories };
-      }
-      return state;
-
-    case 'SET_REQUIRE_EXTRA_CATEGORY':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, require_extra_category: action.require_extra_category };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_DAYS':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, days: action.days };
-      }
-      return state;
-
-    case 'SET_TEMPLATE_SLOTS':
-      if (state.ruleType === 'meal-template') {
-        return { ...state, slots: action.slots };
-      }
-      return state;
-
-    case 'LOAD_PRESET':
-      return action.state;
-
-    default:
-      return state;
+    default: return state;
   }
 }
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-function isFormValid(state: FormState): boolean {
+function isFormValid(state: RuleFormState): boolean {
   if (state.name.trim() === '') return false;
-  if (state.ruleType === '') return false;
-  if (state.ruleType === 'no-repeat') return state.component_type !== '';
-  if (state.ruleType === 'scheduling-rule') {
-    if (state.effect === '') return false;
-    if (state.match.mode === '') return false;
-    if (state.match.mode === 'tag') {
-      return Object.values(state.match.filter).some(v => v !== undefined);
-    }
-    if (state.match.mode === 'component') {
-      return state.match.component_id !== null;
-    }
-    return false;
-  }
-  if (state.ruleType === 'meal-template') {
-    const sel = state.selector;
-    if (sel.mode === '') return false;
-    if (sel.mode === 'base' && sel.base_type === '') return false;
-    if (sel.mode === 'tag' && !Object.values(sel.filter).some(v => v !== undefined)) return false;
-    if (sel.mode === 'component' && sel.component_id === null) return false;
-    return (
-      state.allowed_slots.length > 0 ||
-      state.exclude_component_types.length > 0 ||
-      state.exclude_extra_categories.length > 0 ||
-      state.require_extra_category !== null
-    );
-  }
-  return false;
+  const t = state.target;
+  if (t.mode === '') return false;
+  if (t.mode === 'component_type' && t.component_type === '') return false;
+  if (t.mode === 'tag' && !Object.values(t.filter).some(v => v !== undefined)) return false;
+  if (t.mode === 'component' && t.component_id === null) return false;
+  if (t.mode === 'base_type' && t.base_type === '') return false;
+  // At least one effect
+  return (
+    state.selection !== '' ||
+    state.allowed_slots.length > 0 ||
+    state.skip_component_types.length > 0 ||
+    state.exclude_extra_categories.length > 0 ||
+    state.require_extra_categories.length > 0
+  );
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -245,7 +155,6 @@ export function RuleForm() {
   const [saving, setSaving] = useState(false);
   const presetLoadedRef = useRef(false);
 
-  // Load preset from query param on mount (run only once)
   useEffect(() => {
     if (presetLoadedRef.current) return;
     const preset = searchParams.get('preset');
@@ -257,51 +166,9 @@ export function RuleForm() {
 
   const handleSave = async () => {
     if (!isFormValid(state) || saving) return;
-
     setSaving(true);
     try {
-      let def;
-      if (state.ruleType === 'no-repeat') {
-        def = {
-          ruleType: 'no-repeat' as const,
-          component_type: state.component_type as 'base' | 'curry' | 'subzi',
-        };
-      } else if (state.ruleType === 'scheduling-rule') {
-        const match = state.match;
-        if (match.mode !== 'tag' && match.mode !== 'component') return;
-        def = {
-          ruleType: 'scheduling-rule' as const,
-          effect: state.effect as 'filter-pool' | 'require-one' | 'exclude',
-          days: state.days.length > 0 ? state.days : undefined,
-          slots: state.slots.length > 0 ? state.slots : undefined,
-          match: match.mode === 'tag'
-            ? { mode: 'tag' as const, filter: match.filter }
-            : { mode: 'component' as const, component_id: match.component_id! },
-        };
-      } else if (state.ruleType === 'meal-template') {
-        const sel = state.selector;
-        if (sel.mode === '') return;
-        const selector =
-          sel.mode === 'base'
-            ? { mode: 'base' as const, base_type: sel.base_type as 'rice-based' | 'bread-based' | 'other' }
-            : sel.mode === 'tag'
-              ? { mode: 'tag' as const, filter: sel.filter }
-              : { mode: 'component' as const, component_id: sel.component_id! };
-        def = {
-          ruleType: 'meal-template' as const,
-          selector,
-          days: state.days.length > 0 ? state.days : undefined,
-          slots: state.slots.length > 0 ? state.slots : undefined,
-          allowed_slots: state.allowed_slots.length > 0 ? state.allowed_slots : undefined,
-          exclude_component_types: state.exclude_component_types.length > 0 ? state.exclude_component_types : undefined,
-          exclude_extra_categories: state.exclude_extra_categories.length > 0 ? state.exclude_extra_categories : undefined,
-          require_extra_category: state.require_extra_category ?? undefined,
-        };
-      } else {
-        return;
-      }
-
-      const compiled = compileRule(def);
+      const compiled = compileRule(state);
       await addRule({
         name: state.name.trim(),
         enabled: true,
@@ -314,27 +181,16 @@ export function RuleForm() {
     }
   };
 
-  const valid = isFormValid(state);
-
   return (
     <main className="px-4 py-8 sm:px-8 max-w-2xl">
       <div className="flex items-center gap-3 mb-6">
         <Button variant="ghost" size="icon" asChild>
-          <Link href="/rules">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          <Link href="/rules"><ArrowLeft className="h-4 w-4" /></Link>
         </Button>
         <h1 className="text-[28px] font-semibold font-heading">New Rule</h1>
       </div>
 
-      <form
-        onSubmit={e => {
-          e.preventDefault();
-          handleSave();
-        }}
-        className="space-y-6"
-      >
-        {/* Rule name */}
+      <form onSubmit={e => { e.preventDefault(); handleSave(); }} className="space-y-6">
         <div className="space-y-2">
           <Label htmlFor="rule-name">Rule name</Label>
           <Input
@@ -345,46 +201,11 @@ export function RuleForm() {
           />
         </div>
 
-        {/* Rule type */}
-        <div className="space-y-2">
-          <Label>Rule type</Label>
-          <Tabs
-            value={state.ruleType}
-            onValueChange={v =>
-              dispatch({
-                type: 'SET_RULE_TYPE',
-                ruleType: v as 'no-repeat' | 'scheduling-rule' | 'meal-template',
-              })
-            }
-          >
-            <TabsList>
-              <TabsTrigger value="no-repeat">No Repeat</TabsTrigger>
-              <TabsTrigger value="scheduling-rule">Scheduling Rule</TabsTrigger>
-              <TabsTrigger value="meal-template">Meal Template</TabsTrigger>
-            </TabsList>
-            <TabsContent value="no-repeat">
-              {state.ruleType === 'no-repeat' && (
-                <NoRepeatFields state={state} dispatch={dispatch} />
-              )}
-            </TabsContent>
-            <TabsContent value="scheduling-rule">
-              {state.ruleType === 'scheduling-rule' && (
-                <SchedulingRuleFields state={state} dispatch={dispatch} />
-              )}
-            </TabsContent>
-            <TabsContent value="meal-template">
-              {state.ruleType === 'meal-template' && (
-                <MealTemplateFields state={state} dispatch={dispatch} />
-              )}
-            </TabsContent>
-          </Tabs>
-        </div>
+        <RuleFields state={state} dispatch={dispatch} />
 
-        {/* Impact preview */}
-        {state.ruleType !== '' && <RuleImpactPreview formState={state} />}
+        {state.target.mode !== '' && <RuleImpactPreview formState={state} />}
 
-        {/* Save button */}
-        <Button type="submit" disabled={!valid || saving}>
+        <Button type="submit" disabled={!isFormValid(state) || saving}>
           {saving ? 'Saving...' : 'Save Rule'}
         </Button>
       </form>

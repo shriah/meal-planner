@@ -5,47 +5,47 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { TriangleAlert as TriangleAlertIcon } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getAllComponents } from '@/services/food-db';
-import type { FormState } from './types';
+import type { RuleFormState } from './types';
 
 interface RuleImpactPreviewProps {
-  formState: FormState;
+  formState: RuleFormState;
 }
 
 export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
   const allComponents = useLiveQuery(() => getAllComponents()) ?? [];
 
   const impact = useMemo(() => {
-    if (formState.ruleType === 'no-repeat') {
-      return { type: 'no-repeat' as const, component_type: formState.component_type };
+    const target = formState.target;
+    if (target.mode === '') return null;
+
+    if (target.mode === 'component_type') {
+      const count = allComponents.filter(c => c.componentType === target.component_type).length;
+      return { type: 'count' as const, count, label: `${target.component_type}s` };
     }
 
-    if (formState.ruleType === 'scheduling-rule') {
-      const { match, effect } = formState;
-      if (effect === '' || match.mode === '') return null;
-
-      if (match.mode === 'tag') {
-        const { filter } = match;
-        const matchCount = allComponents.filter(c => {
-          const dietaryOk = !filter.dietary_tag || c.dietary_tags.includes(filter.dietary_tag);
-          const proteinOk = !filter.protein_tag || c.protein_tag === filter.protein_tag;
-          const regionalOk = !filter.regional_tag || c.regional_tags.includes(filter.regional_tag);
-          const occasionOk = !filter.occasion_tag || c.occasion_tags.includes(filter.occasion_tag);
-          return dietaryOk && proteinOk && regionalOk && occasionOk;
-        }).length;
-        return { type: 'scheduling-rule-tag' as const, matchCount, total: allComponents.length };
-      }
-
-      if (match.mode === 'component') {
-        if (match.component_id === null) return null;
-        const componentName = allComponents.find(c => c.id === match.component_id)?.name ?? 'Unknown';
-        return { type: 'scheduling-rule-component' as const, componentName };
-      }
+    if (target.mode === 'tag') {
+      const f = target.filter;
+      const matchCount = allComponents.filter(c => {
+        const dietaryOk = !f.dietary_tag  || c.dietary_tags.includes(f.dietary_tag);
+        const proteinOk = !f.protein_tag  || c.protein_tag === f.protein_tag;
+        const regionalOk = !f.regional_tag || c.regional_tags.includes(f.regional_tag);
+        const occasionOk = !f.occasion_tag || c.occasion_tags.includes(f.occasion_tag);
+        return dietaryOk && proteinOk && regionalOk && occasionOk;
+      }).length;
+      return { type: 'tag_count' as const, matchCount, total: allComponents.length };
     }
 
-    if (formState.ruleType === 'meal-template') {
-      if (formState.selector.mode === '') return null;
-      const baseCount = allComponents.filter(c => c.componentType === 'base').length;
-      return { type: 'meal-template' as const, baseCount };
+    if (target.mode === 'component') {
+      if (target.component_id === null) return null;
+      const name = allComponents.find(c => c.id === target.component_id)?.name ?? 'Unknown';
+      return { type: 'component' as const, name };
+    }
+
+    if (target.mode === 'base_type') {
+      const count = allComponents.filter(
+        c => c.componentType === 'base' && c.base_type === target.base_type,
+      ).length;
+      return { type: 'base_type' as const, count, base_type: target.base_type };
     }
 
     return null;
@@ -55,13 +55,12 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
 
   return (
     <div className="space-y-3">
-      {impact.type === 'no-repeat' && impact.component_type && (
+      {impact.type === 'count' && (
         <p className="text-sm text-muted-foreground">
-          Ensures no {impact.component_type} repeats within the week.
+          This rule targets {impact.count} {impact.label}.
         </p>
       )}
-
-      {impact.type === 'scheduling-rule-tag' && (
+      {impact.type === 'tag_count' && (
         <>
           <p className="text-sm text-muted-foreground">
             This rule affects {impact.matchCount} of {impact.total} components.
@@ -76,16 +75,12 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
           )}
         </>
       )}
-
-      {impact.type === 'scheduling-rule-component' && (
-        <p className="text-sm text-muted-foreground">
-          This rule applies to {impact.componentName}.
-        </p>
+      {impact.type === 'component' && (
+        <p className="text-sm text-muted-foreground">This rule applies to {impact.name}.</p>
       )}
-
-      {impact.type === 'meal-template' && (
+      {impact.type === 'base_type' && (
         <p className="text-sm text-muted-foreground">
-          This template applies to {impact.baseCount} base components.
+          This rule applies to {impact.count} {impact.base_type} bases.
         </p>
       )}
     </div>
