@@ -36,9 +36,19 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - ✓ **TMPL-06**: Meal template creation UI in Rules Manager with RadioGroup, Toggle slot chips, exclusion checkboxes — v1.1
 - ✓ **TMPL-07**: Existing slot_restrictions and base_type_rules prefs auto-migrated to meal-template/scheduling-rule records (Dexie v7) — v1.1
 
+## Current Milestone: v1.2 Edit Rule
+
+**Goal:** Let users edit existing rules from the rules list without leaving the page.
+
+**Target features:**
+- Edit button on each rule card in the rules list
+- Sheet opens with RuleForm pre-populated from the existing rule's data
+- Save overwrites the rule in Dexie (in-place update)
+- Cancel/close discards changes
+
 ### Active
 
-*(planning next milestone — run `/gsd:new-milestone` to define v1.2 requirements)*
+*(requirements defined below — see REQUIREMENTS.md)*
 
 ### Out of Scope
 
@@ -106,4 +116,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 — v1.1 Rule Engine Overhaul complete (all 12 SCHED + TMPL requirements validated; 4 phases, 9 plans, 71 commits)*
+*Last updated: 2026-03-27 — v1.2 Edit Rule milestone started*
