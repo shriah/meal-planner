@@ -3,18 +3,22 @@ import type { ComponentRecord, BaseType } from '@/types/component';
 import type { UserPreferencesRecord, MealSlot } from '@/types/preferences';
 import type { RuleRecord } from '@/db/client';
 import {
-  CompiledFilterSchema,
+  CompiledRuleSchema,
   ALL_DAYS,
   type DayOfWeek,
-  type CompiledFilter,
+  type CompiledRule,
+  type Target,
+  type RuleScope,
+  type AnyEffect,
+  type AllowedSlotsEffect,
+  type SkipComponentEffect,
+  type ExcludeExtraEffect,
+  type RequireExtraEffect,
   type TagFilter,
-  type SchedulingRule,
-  type MealTemplateRule,
   type GeneratorResult,
   type PlanSlot,
   type Warning,
 } from '@/types/plan';
-
 
 // ─── GenerateOptions ──────────────────────────────────────────────────────────
 
@@ -25,6 +29,13 @@ export interface GenerateOptions {
     subzi_id?: number;
     extra_ids?: number[];
   }>>;
+}
+
+// ─── ValidatedRule ────────────────────────────────────────────────────────────
+
+interface ValidatedRule {
+  compiled: CompiledRule;
+  id: number;
 }
 
 // ─── Occasion-day enforcement ─────────────────────────────────────────────────
@@ -93,30 +104,6 @@ function weightedRandom<T>(items: T[], getWeight: (item: T) => number): T {
   return items[items.length - 1];
 }
 
-// ─── Helper: isRuleApplicable ─────────────────────────────────────────────────
-
-function isRuleApplicable(
-  rule: CompiledFilter,
-  day: DayOfWeek,
-  slot: MealSlot,
-): boolean {
-  if (rule.type === 'no-repeat') {
-    // no-repeat applies to all slots
-    return true;
-  }
-  if (rule.type === 'scheduling-rule') {
-    if (rule.days !== null && !rule.days.includes(day)) return false;
-    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
-    return true;
-  }
-  if (rule.type === 'meal-template') {
-    if (rule.days !== null && !rule.days.includes(day)) return false;
-    if (rule.slots !== null && !rule.slots.includes(slot)) return false;
-    return true;
-  }
-  return false;
-}
-
 // ─── Helper: matchesTagFilter ─────────────────────────────────────────────────
 
 function matchesTagFilter(component: ComponentRecord, filter: TagFilter): boolean {
@@ -135,229 +122,148 @@ function matchesTagFilter(component: ComponentRecord, filter: TagFilter): boolea
   return true;
 }
 
-// ─── Helper: selectorMatchesBase ─────────────────────────────────────────────
+// ─── Helper: targetMatches ────────────────────────────────────────────────────
 
-/**
- * Determines whether a meal-template rule's selector matches for slot assignment purposes.
- * For allowed_slots intersection, only base-mode selectors apply (slot restriction is
- * based on the base type, not tags or components).
- */
-function selectorMatchesForSlotAssignment(
-  rule: MealTemplateRule,
-  baseType: BaseType,
-): boolean {
-  return rule.selector.mode === 'base' && rule.selector.base_type === baseType;
-}
-
-// ─── Helper: selectorMatches ──────────────────────────────────────────────────
-
-/**
- * Determines whether a meal-template rule's selector matches for composition constraints.
- */
-function selectorMatches(
-  rule: MealTemplateRule,
-  baseType: BaseType,
-  baseComponent?: ComponentRecord,
-  slotComponentIds?: number[],
-): boolean {
-  const selector = rule.selector;
-  switch (selector.mode) {
-    case 'base':
-      return selector.base_type === baseType;
-    case 'tag': {
-      if (!baseComponent) return false;
-      const f = selector.filter;
-      if (f.dietary_tag !== undefined && !baseComponent.dietary_tags.includes(f.dietary_tag)) return false;
-      if (f.protein_tag !== undefined && baseComponent.protein_tag !== f.protein_tag) return false;
-      if (f.regional_tag !== undefined && !baseComponent.regional_tags.includes(f.regional_tag)) return false;
-      if (f.occasion_tag !== undefined && !baseComponent.occasion_tags.includes(f.occasion_tag)) return false;
-      return true;
-    }
+function targetMatches(target: Target, component: ComponentRecord): boolean {
+  switch (target.mode) {
+    case 'component_type':
+      return component.componentType === target.component_type;
+    case 'tag':
+      return matchesTagFilter(component, target.filter);
     case 'component':
-      return slotComponentIds?.includes(selector.component_id) ?? false;
+      return component.id === target.component_id;
+    case 'base_type':
+      return component.componentType === 'base' && component.base_type === target.base_type;
   }
 }
 
-// ─── Helper: getMealTemplateAllowedSlots ──────────────────────────────────────
+// ─── Helper: scopeMatches ─────────────────────────────────────────────────────
+
+function scopeMatches(scope: RuleScope, day: DayOfWeek, slot: MealSlot): boolean {
+  if (scope.days !== null && !scope.days.includes(day)) return false;
+  if (scope.slots !== null && !scope.slots.includes(slot)) return false;
+  return true;
+}
+
+// ─── Helper: getAllowedSlotsForBase ───────────────────────────────────────────
 
 /**
- * Returns the intersection of allowed_slots across all base-mode meal-template rules for a base type.
- * Returns null if no rules exist or all rules have allowed_slots=null (unrestricted).
- * Returns empty array if intersection is empty (triggers D-10 relaxation).
+ * Returns intersection of allowed_slots across all rules that target `base` and
+ * have an allowed_slots effect. Ignores scope.slots (placement is not slot-conditional).
+ * Returns null if no such rules exist (no restriction).
  */
-function getMealTemplateAllowedSlots(
-  baseType: BaseType,
-  mealTemplateRules: MealTemplateRule[],
+function getAllowedSlotsForBase(
+  base: ComponentRecord,
+  rules: ValidatedRule[],
+  day: DayOfWeek,
 ): MealSlot[] | null {
-  const rulesForBase = mealTemplateRules.filter(r => selectorMatchesForSlotAssignment(r, baseType));
-  if (rulesForBase.length === 0) return null; // No template = no restriction from templates
-  const withAllowedSlots = rulesForBase.filter(r => r.allowed_slots !== null);
-  if (withAllowedSlots.length === 0) return null; // All rules have allowed_slots=null = unrestricted
-  // Intersection of all allowed_slots arrays (D-08)
-  let result: MealSlot[] = withAllowedSlots[0].allowed_slots!;
-  for (let i = 1; i < withAllowedSlots.length; i++) {
-    result = result.filter(s => withAllowedSlots[i].allowed_slots!.includes(s));
+  const arrays = rules
+    .filter(r =>
+      (r.compiled.scope.days === null || r.compiled.scope.days.includes(day)) &&
+      targetMatches(r.compiled.target, base) &&
+      r.compiled.effects.some(e => e.kind === 'allowed_slots'),
+    )
+    .flatMap(r =>
+      r.compiled.effects
+        .filter((e): e is AllowedSlotsEffect => e.kind === 'allowed_slots')
+        .map(e => e.slots),
+    );
+
+  if (arrays.length === 0) return null;
+  let result = arrays[0];
+  for (let i = 1; i < arrays.length; i++) {
+    result = result.filter(s => arrays[i].includes(s));
   }
   return result;
 }
 
-// ─── Helper: getApplicableMealTemplates ───────────────────────────────────────
+// ─── Helper: applyFilterPool ──────────────────────────────────────────────────
 
-/**
- * Returns meal-template rules applicable for a given (baseType, day, slot) context.
- * Used for composition constraints (exclude_component_types, extras) — gated by
- * days/slots context scope per D-02/D-09.
- *
- * Two-pass usage pattern:
- * - First pass (after base selection): pass baseComponent, no slotComponentIds
- *   → matches base-mode and tag-mode templates for curry/subzi exclusion decisions
- * - Second pass (after all components selected): pass full slotComponentIds
- *   → matches component-mode templates for extra exclusion/requirement decisions
- */
-function getApplicableMealTemplates(
-  baseType: BaseType,
-  day: DayOfWeek,
-  slot: MealSlot,
-  mealTemplateRules: MealTemplateRule[],
-  baseComponent?: ComponentRecord,
-  slotComponentIds?: number[],
-): MealTemplateRule[] {
-  return mealTemplateRules.filter(r =>
-    selectorMatches(r, baseType, baseComponent, slotComponentIds) &&
-    (r.days === null || r.days.includes(day)) &&
-    (r.slots === null || r.slots.includes(slot)),
-  );
-}
-
-// ─── Helper: getEligibleBases ─────────────────────────────────────────────────
-
-function getEligibleBases(
-  slot: MealSlot,
-  prefs: UserPreferencesRecord,
-  bases: ComponentRecord[],
-  mealTemplateRules: MealTemplateRule[],
-  warnings: Warning[],
-  day: DayOfWeek,
-): ComponentRecord[] {
-  return bases.filter(base => {
-    const baseType = base.base_type as BaseType | undefined;
-    if (!baseType) return true; // no base_type, no restriction
-
-    // D-07: Check if any base-mode meal-template rules exist for this base type
-    const templatesForBase = mealTemplateRules.filter(r => selectorMatchesForSlotAssignment(r, baseType));
-    if (templatesForBase.length > 0) {
-      // D-05: meal-template overrides prefs
-      const allowedSlots = getMealTemplateAllowedSlots(baseType, mealTemplateRules);
-      if (allowedSlots === null) return true; // unrestricted
-      if (allowedSlots.length === 0) {
-        // D-10: intersection empty — relax with warning
-        warnings.push({
-          slot: { day, meal_slot: slot },
-          rule_id: null,
-          message: `meal-template allowed_slots intersection is empty for ${baseType} — constraint relaxed`,
-        });
-        return true;
-      }
-      return allowedSlots.includes(slot);
-    }
-
-    // D-06: No templates — fall through to prefs
-    const restrictions = prefs.slot_restrictions.base_type_slots;
-    const allowedSlots = restrictions[baseType];
-    // If no restriction specified for this base_type, all slots are allowed
-    if (allowedSlots === undefined) return true;
-    // If restriction is empty array, base type is disabled entirely
-    if (allowedSlots.length === 0) return false;
-    return allowedSlots.includes(slot);
-  });
-}
-
-// ─── Helper: applySchedulingFilterPool ───────────────────────────────────────
-
-function applySchedulingFilterPool(
+function applyFilterPool(
   pool: ComponentRecord[],
-  applicableRules: SchedulingRule[],
-): ComponentRecord[] {
-  const filterPoolRules = applicableRules.filter(r => r.effect === 'filter-pool');
-  if (filterPoolRules.length === 0) return pool;
-  return pool.filter(component =>
-    filterPoolRules.every(rule => {
-      if (rule.match.mode === 'tag') return matchesTagFilter(component, rule.match.filter);
-      if (rule.match.mode === 'component') return component.id === rule.match.component_id;
-      return true;
-    }),
-  );
-}
-
-// ─── Helper: applySchedulingExclude ──────────────────────────────────────────
-
-function applySchedulingExclude(
-  pool: ComponentRecord[],
-  fullPool: ComponentRecord[],
-  applicableRules: SchedulingRule[],
-  warnings: Warning[],
+  rules: ValidatedRule[],
   day: DayOfWeek,
   slot: MealSlot,
-  ruleRecords: RuleRecord[],
+  warnings: Warning[],
 ): ComponentRecord[] {
-  const excludeRules = applicableRules.filter(r => r.effect === 'exclude');
-  if (excludeRules.length === 0) return pool;
+  const filterRules = rules.filter(r =>
+    scopeMatches(r.compiled.scope, day, slot) &&
+    r.compiled.effects.some(e => e.kind === 'filter_pool'),
+  );
+  if (filterRules.length === 0) return pool;
   const filtered = pool.filter(component =>
-    excludeRules.every(rule => {
-      if (rule.match.mode === 'tag') return !matchesTagFilter(component, rule.match.filter);
-      if (rule.match.mode === 'component') return component.id !== rule.match.component_id;
-      return true;
-    }),
+    filterRules.every(r => targetMatches(r.compiled.target, component)),
   );
   if (filtered.length === 0 && pool.length > 0) {
-    for (const rule of excludeRules) {
-      const rr = ruleRecords.find(r =>
-        JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
-      );
+    for (const r of filterRules) {
       warnings.push({
         slot: { day, meal_slot: slot },
-        rule_id: rr?.id ?? null,
-        message: `scheduling-rule exclude removed all components from pool on ${day} ${slot} — constraint relaxed`,
+        rule_id: r.id,
+        message: `filter_pool: no components match on ${day} ${slot} — constraint relaxed`,
       });
     }
-    return pool;
+    return pool; // relax
   }
-  void fullPool; // parameter kept for API symmetry with plan spec
   return filtered;
 }
 
-// ─── Helper: applyRequireOneByTag ────────────────────────────────────────────
+// ─── Helper: applyExclude ─────────────────────────────────────────────────────
 
-/**
- * Two-pass require-one-by-tag (D-05).
- * If selected component doesn't match the tag criteria, override
- * from the FULL library (bypassing filter-pool rules — D-06).
- * Uses uniform random for override pick (not weighted — explicit requirement).
- */
-function applyRequireOneByTag(
-  selected: ComponentRecord,
-  requireOneRules: SchedulingRule[],
-  fullLibrary: ComponentRecord[],
-  warnings: Warning[],
+function applyExclude(
+  pool: ComponentRecord[],
+  rules: ValidatedRule[],
   day: DayOfWeek,
   slot: MealSlot,
-  ruleRecords: RuleRecord[],
-): ComponentRecord {
-  for (const rule of requireOneRules) {
-    if (rule.match.mode !== 'tag') continue;
-    const tagMatch = rule.match;
-    if (matchesTagFilter(selected, tagMatch.filter)) continue; // already satisfied
-    // Override: pick from full library, not filtered pool (D-05, D-06)
-    const candidates = fullLibrary.filter(c => matchesTagFilter(c, tagMatch.filter));
-    if (candidates.length === 0) {
-      // D-03: no matching component in library — warn + skip
-      const rr = ruleRecords.find(r =>
-        JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
-      );
+  warnings: Warning[],
+): ComponentRecord[] {
+  const excludeRules = rules.filter(r =>
+    scopeMatches(r.compiled.scope, day, slot) &&
+    r.compiled.effects.some(e => e.kind === 'exclude'),
+  );
+  if (excludeRules.length === 0) return pool;
+  const filtered = pool.filter(component =>
+    excludeRules.every(r => !targetMatches(r.compiled.target, component)),
+  );
+  if (filtered.length === 0 && pool.length > 0) {
+    for (const r of excludeRules) {
       warnings.push({
         slot: { day, meal_slot: slot },
-        rule_id: rr?.id ?? null,
-        message: `scheduling-rule require-one: no component in library matches tag filter on ${day} ${slot} — skipped`,
+        rule_id: r.id,
+        message: `exclude: removed all components from pool on ${day} ${slot} — constraint relaxed`,
+      });
+    }
+    return pool; // relax
+  }
+  return filtered;
+}
+
+// ─── Helper: applyRequireOne ──────────────────────────────────────────────────
+
+/**
+ * Two-pass require-one: if selected component doesn't satisfy any require_one rule,
+ * override from the FULL library (bypassing filter_pool — D-06).
+ * Uses uniform random for override pick.
+ */
+function applyRequireOne(
+  selected: ComponentRecord,
+  rules: ValidatedRule[],
+  fullLibrary: ComponentRecord[],
+  day: DayOfWeek,
+  slot: MealSlot,
+  warnings: Warning[],
+): ComponentRecord {
+  const requireRules = rules.filter(r =>
+    scopeMatches(r.compiled.scope, day, slot) &&
+    r.compiled.effects.some(e => e.kind === 'require_one'),
+  );
+  for (const r of requireRules) {
+    if (targetMatches(r.compiled.target, selected)) continue; // already satisfied
+    const candidates = fullLibrary.filter(c => targetMatches(r.compiled.target, c));
+    if (candidates.length === 0) {
+      warnings.push({
+        slot: { day, meal_slot: slot },
+        rule_id: r.id,
+        message: `require_one: no component in library matches target on ${day} ${slot} — skipped`,
       });
       continue;
     }
@@ -367,56 +273,87 @@ function applyRequireOneByTag(
   return selected;
 }
 
-// ─── Helper: applyRequireOneByComponent ──────────────────────────────────────
+// ─── Helper: compositionEffectsFirstPass ─────────────────────────────────────
 
 /**
- * Require-one-by-component (D-04).
- * Inject the required component into the slot regardless of filter-pool rules.
- * Only applies if the required component matches the expected componentType.
+ * First pass (after base selection): find skip_component effects from rules
+ * whose target matches the selected base. Component-mode rules excluded
+ * (they require knowing the full slot components).
  */
-function applyRequireOneByComponent(
-  selected: ComponentRecord,
-  requireOneRules: SchedulingRule[],
-  allComponents: ComponentRecord[],
-  expectedComponentType: string,
-  warnings: Warning[],
+function compositionEffectsFirstPass(
+  rules: ValidatedRule[],
+  base: ComponentRecord,
   day: DayOfWeek,
   slot: MealSlot,
-  ruleRecords: RuleRecord[],
-): ComponentRecord {
-  for (const rule of requireOneRules) {
-    if (rule.match.mode !== 'component') continue;
-    const componentId = rule.match.component_id;
-    const required = allComponents.find(
-      c => c.id === componentId && c.componentType === expectedComponentType,
-    );
-    if (!required) {
-      // Component not found or wrong type — skip silently (Pitfall 2)
-      // If component doesn't exist at all, warn.
-      const exists = allComponents.find(c => c.id === componentId);
-      if (!exists) {
-        const rr = ruleRecords.find(r =>
-          JSON.stringify(r.compiled_filter) === JSON.stringify(rule),
-        );
-        warnings.push({
-          slot: { day, meal_slot: slot },
-          rule_id: rr?.id ?? null,
-          message: `scheduling-rule require-one: component id=${componentId} not found — skipped`,
-        });
+): AnyEffect[] {
+  return rules
+    .filter(r => {
+      if (!scopeMatches(r.compiled.scope, day, slot)) return false;
+      const t = r.compiled.target;
+      if (t.mode === 'component') return false; // skip — needs full slot context
+      return targetMatches(t, base);
+    })
+    .flatMap(r => r.compiled.effects)
+    .filter(e => e.kind === 'skip_component');
+}
+
+// ─── Helper: compositionEffectsSecondPass ────────────────────────────────────
+
+/**
+ * Second pass (after all components selected): find exclude_extra and require_extra
+ * effects from rules whose target matches ANY component in the slot.
+ */
+function compositionEffectsSecondPass(
+  rules: ValidatedRule[],
+  base: ComponentRecord,
+  slotComponentIds: number[],
+  day: DayOfWeek,
+  slot: MealSlot,
+): AnyEffect[] {
+  return rules
+    .filter(r => {
+      if (!scopeMatches(r.compiled.scope, day, slot)) return false;
+      const t = r.compiled.target;
+      if (t.mode === 'component') {
+        return slotComponentIds.includes(t.component_id);
       }
-      continue;
+      return targetMatches(t, base);
+    })
+    .flatMap(r => r.compiled.effects)
+    .filter(e => e.kind === 'exclude_extra' || e.kind === 'require_extra');
+}
+
+// ─── Helper: getEligibleBases ─────────────────────────────────────────────────
+
+function getEligibleBases(
+  slot: MealSlot,
+  bases: ComponentRecord[],
+  rules: ValidatedRule[],
+  warnings: Warning[],
+  day: DayOfWeek,
+): ComponentRecord[] {
+  return bases.filter(base => {
+    // Occasion hard constraint
+    if (!isOccasionAllowed(base, day)) return false;
+    // allowed_slots from rules (replaces prefs.base_type_slots and meal-template allowed_slots)
+    const allowedSlots = getAllowedSlotsForBase(base, rules, day);
+    if (allowedSlots === null) return true; // no restriction
+    if (allowedSlots.length === 0) {
+      warnings.push({
+        slot: { day, meal_slot: slot },
+        rule_id: null,
+        message: `allowed_slots intersection is empty for base "${base.name}" — constraint relaxed`,
+      });
+      return true; // relax
     }
-    // D-04: inject regardless of filter-pool
-    return required;
-  }
-  return selected;
+    return allowedSlots.includes(slot);
+  });
 }
 
 // ─── Helper: pickFromPool ─────────────────────────────────────────────────────
 
 /**
  * Pick a component from pool using weighted random selection.
- * Pool is already pre-filtered for no-repeat and scheduling-rule constraints by the caller.
  */
 function pickFromPool(
   pool: ComponentRecord[],
@@ -438,12 +375,12 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
   // 2. Validate rules with Zod — skip invalid ones with a warning
   const warnings: Warning[] = [];
-  const validRules: CompiledFilter[] = [];
+  const validatedRules: ValidatedRule[] = [];
 
   for (const ruleRecord of enabledRules) {
-    const parsed = CompiledFilterSchema.safeParse(ruleRecord.compiled_filter);
+    const parsed = CompiledRuleSchema.safeParse(ruleRecord.compiled_filter);
     if (parsed.success) {
-      validRules.push(parsed.data);
+      validatedRules.push({ compiled: parsed.data, id: ruleRecord.id! });
     } else {
       warnings.push({
         slot: { day: 'monday', meal_slot: 'breakfast' },
@@ -476,20 +413,21 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
   const usedCurryIds = new Set<number>();
   const usedSubziIds = new Set<number>();
 
-  // Extract meal-template rules
-  const mealTemplateRules = validRules.filter(
-    r => r.type === 'meal-template',
-  ) as MealTemplateRule[];
-
-  // Extract per-type no-repeat rules
-  const noRepeatBase = validRules.some(
-    r => r.type === 'no-repeat' && r.component_type === 'base',
+  // Extract per-type no-repeat flags
+  const noRepeatBase = validatedRules.some(r =>
+    r.compiled.target.mode === 'component_type' &&
+    r.compiled.target.component_type === 'base' &&
+    r.compiled.effects.some(e => e.kind === 'no_repeat'),
   );
-  const noRepeatCurry = validRules.some(
-    r => r.type === 'no-repeat' && r.component_type === 'curry',
+  const noRepeatCurry = validatedRules.some(r =>
+    r.compiled.target.mode === 'component_type' &&
+    r.compiled.target.component_type === 'curry' &&
+    r.compiled.effects.some(e => e.kind === 'no_repeat'),
   );
-  const noRepeatSubzi = validRules.some(
-    r => r.type === 'no-repeat' && r.component_type === 'subzi',
+  const noRepeatSubzi = validatedRules.some(r =>
+    r.compiled.target.mode === 'component_type' &&
+    r.compiled.target.component_type === 'subzi' &&
+    r.compiled.effects.some(e => e.kind === 'no_repeat'),
   );
 
   // 5. Fill order: breakfasts, then lunches, then dinners (all 7 days each)
@@ -502,33 +440,18 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       const lockKey = `${day}-${meal_slot}` as `${DayOfWeek}-${MealSlot}`;
       const locked = options?.lockedSlots?.[lockKey];
 
-      // ── Scheduling-rule applicability for this (day, slot) ─────────────────
-      const applicableSchedulingRules = validRules.filter(
-        r => r.type === 'scheduling-rule' && isRuleApplicable(r, day, meal_slot),
-      ) as SchedulingRule[];
-
       // ── Base selection ──────────────────────────────────────────────────────
 
-      // Hard constraint: slot restrictions + component_slot_overrides + occasion
-      let eligibleBases = getEligibleBases(meal_slot, resolvedPrefs, bases, mealTemplateRules, warnings, day).filter(b => {
-        const override = resolvedPrefs.slot_restrictions.component_slot_overrides[b.id!];
-        if (override !== undefined && !override.includes(meal_slot)) return false;
-        return isOccasionAllowed(b, day);
-      });
-
+      let eligibleBases = getEligibleBases(meal_slot, bases, validatedRules, warnings, day);
       let selectedBase: ComponentRecord | null = null;
 
-      // If this slot has a locked base_id, use it directly
       if (locked?.base_id !== undefined) {
         const lockedBase = bases.find(b => b.id === locked.base_id);
-        if (lockedBase) {
-          selectedBase = lockedBase;
-        }
+        if (lockedBase) selectedBase = lockedBase;
       }
 
       if (!selectedBase) {
         if (eligibleBases.length === 0) {
-          // No bases available — warn and try full pool
           warnings.push({
             slot: { day, meal_slot },
             rule_id: null,
@@ -538,7 +461,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         }
 
         if (eligibleBases.length === 0) {
-          // Truly no bases — skip slot (shouldn't happen with seeded data)
           warnings.push({
             slot: { day, meal_slot },
             rule_id: null,
@@ -547,278 +469,171 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           continue;
         }
 
-        // Apply no-repeat to base pool
-        const noRepeatFilteredBases = noRepeatBase
+        // No-repeat filter
+        const noRepeatPool = noRepeatBase
           ? eligibleBases.filter(b => !usedBaseIds.has(b.id!))
           : eligibleBases;
+        let basePool = noRepeatPool.length > 0 ? noRepeatPool : eligibleBases;
 
-        const basePool = noRepeatFilteredBases.length > 0 ? noRepeatFilteredBases : eligibleBases;
-        let finalBasePool = basePool;
+        // Selection effects
+        basePool = applyFilterPool(basePool, validatedRules, day, meal_slot, warnings);
+        basePool = applyExclude(basePool, validatedRules, day, meal_slot, warnings);
 
-        // Apply scheduling-rule filter-pool and exclude to base pool
-        const schedulingFilteredBases = applySchedulingFilterPool(finalBasePool, applicableSchedulingRules);
-        if (schedulingFilteredBases.length === 0 && finalBasePool.length > 0) {
-          // D-01: relax filter-pool
-          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
-            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
-            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no bases match on ${day} ${meal_slot} — constraint relaxed` });
-          }
-        } else {
-          finalBasePool = schedulingFilteredBases;
-        }
-        finalBasePool = applySchedulingExclude(finalBasePool, basePool, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
-
-        selectedBase = weightedRandom(finalBasePool, c => effectiveWeight(c, usageCount));
-
-        // Pass 2: require-one override (D-05)
-        const baseRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
-        if (baseRequireOneRules.length > 0) {
-          selectedBase = applyRequireOneByTag(selectedBase, baseRequireOneRules, bases, warnings, day, meal_slot, enabledRules);
-          selectedBase = applyRequireOneByComponent(selectedBase, baseRequireOneRules, allComponents, 'base', warnings, day, meal_slot, enabledRules);
-        }
+        selectedBase = weightedRandom(basePool, c => effectiveWeight(c, usageCount));
+        selectedBase = applyRequireOne(selectedBase, validatedRules, bases, day, meal_slot, warnings);
       }
 
       // Track base usage
       const selectedBaseId = selectedBase.id!;
       usageCount.set(selectedBaseId, (usageCount.get(selectedBaseId) ?? 0) + 1);
       if (noRepeatBase) usedBaseIds.add(selectedBaseId);
-      const selectedBaseType = selectedBase.base_type as BaseType | undefined;
 
-      // ── Meal-template composition constraints for this (day, slot, baseType) ─
+      // ── Meal composition constraints (first pass) ────────────────────────────
 
-      // First pass: match base-mode and tag-mode templates (for curry/subzi exclusion)
-      const baseTemplates = selectedBaseType
-        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules, selectedBase)
-        : [];
-      const excludedComponentTypes = new Set(
-        baseTemplates.flatMap(t => t.exclude_component_types),
+      const firstPassEffects = compositionEffectsFirstPass(
+        validatedRules, selectedBase, day, meal_slot,
       );
+      const skippedComponentTypes = new Set(
+        firstPassEffects
+          .filter((e): e is SkipComponentEffect => e.kind === 'skip_component')
+          .flatMap(e => e.component_types),
+      );
+      const skipCurry = skippedComponentTypes.has('curry');
+      const skipSubzi = skippedComponentTypes.has('subzi');
 
       // ── Curry selection ─────────────────────────────────────────────────────
 
       let selectedCurry: ComponentRecord | undefined;
-      const skipCurry = excludedComponentTypes.has('curry');
       if (locked?.curry_id !== undefined) {
-        // Use locked curry directly — locked components bypass soft constraints
         const lockedCurry = curries.find(c => c.id === locked.curry_id);
         if (lockedCurry) {
           selectedCurry = lockedCurry;
           usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
         }
       } else if (!skipCurry && curries.length > 0) {
-        // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
-        const eligibleCurries = curries.filter(c => {
-          const override = resolvedPrefs.slot_restrictions.component_slot_overrides[c.id!];
-          if (override !== undefined && !override.includes(meal_slot)) return false;
-          return isOccasionAllowed(c, day);
-        });
+        const eligible = curries.filter(c => isOccasionAllowed(c, day));
         const curryPoolBase = noRepeatCurry
-          ? eligibleCurries.filter(c => !usedCurryIds.has(c.id!))
-          : eligibleCurries;
-
-        // Apply scheduling-rule filter-pool and exclude to curry pool
-        let scheduledCurryPool = applySchedulingFilterPool(curryPoolBase, applicableSchedulingRules);
-        if (scheduledCurryPool.length === 0 && curryPoolBase.length > 0) {
-          // D-01: relax filter-pool
-          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
-            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
-            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no curries match on ${day} ${meal_slot} — constraint relaxed` });
-          }
-          scheduledCurryPool = curryPoolBase;
-        }
-        const curryPool = applySchedulingExclude(scheduledCurryPool, curryPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
+          ? eligible.filter(c => !usedCurryIds.has(c.id!))
+          : eligible;
+        let curryPool = applyFilterPool(curryPoolBase, validatedRules, day, meal_slot, warnings);
+        curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
 
         if (curryPool.length > 0) {
-          const picked = pickFromPool(curryPool, usageCount);
-          if (picked) {
-            // Pass 2: require-one override for curry (D-05)
-            const curryRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
-            let finalPicked = picked;
-            if (curryRequireOneRules.length > 0) {
-              finalPicked = applyRequireOneByTag(finalPicked, curryRequireOneRules, curries, warnings, day, meal_slot, enabledRules);
-              finalPicked = applyRequireOneByComponent(finalPicked, curryRequireOneRules, allComponents, 'curry', warnings, day, meal_slot, enabledRules);
-            }
-            selectedCurry = finalPicked;
-            usageCount.set(finalPicked.id!, (usageCount.get(finalPicked.id!) ?? 0) + 1);
-            if (noRepeatCurry) usedCurryIds.add(finalPicked.id!);
-          }
+          let picked = pickFromPool(curryPool, usageCount)!;
+          picked = applyRequireOne(picked, validatedRules, curries, day, meal_slot, warnings);
+          selectedCurry = picked;
+          usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
+          if (noRepeatCurry) usedCurryIds.add(picked.id!);
         }
-        // If curryPool is empty (all curries used, no-repeat active), skip curry for this slot
       }
 
       // ── Subzi selection ─────────────────────────────────────────────────────
 
       let selectedSubzi: ComponentRecord | undefined;
-      const skipSubzi = excludedComponentTypes.has('subzi');
       if (locked?.subzi_id !== undefined) {
-        // Use locked subzi directly — locked components bypass soft constraints
         const lockedSubzi = subzis.find(s => s.id === locked.subzi_id);
         if (lockedSubzi) {
           selectedSubzi = lockedSubzi;
           usageCount.set(lockedSubzi.id!, (usageCount.get(lockedSubzi.id!) ?? 0) + 1);
         }
       } else if (!skipSubzi && subzis.length > 0) {
-        // When no-repeat is active, only use the unvisited pool (no fallback to repeats)
-        const eligibleSubzis = subzis.filter(s => {
-          const override = resolvedPrefs.slot_restrictions.component_slot_overrides[s.id!];
-          if (override !== undefined && !override.includes(meal_slot)) return false;
-          return isOccasionAllowed(s, day);
-        });
+        const eligible = subzis.filter(s => isOccasionAllowed(s, day));
         const subziPoolBase = noRepeatSubzi
-          ? eligibleSubzis.filter(s => !usedSubziIds.has(s.id!))
-          : eligibleSubzis;
-
-        // Apply scheduling-rule filter-pool and exclude to subzi pool
-        let scheduledSubziPool = applySchedulingFilterPool(subziPoolBase, applicableSchedulingRules);
-        if (scheduledSubziPool.length === 0 && subziPoolBase.length > 0) {
-          // D-01: relax filter-pool
-          for (const rule of applicableSchedulingRules.filter(r => r.effect === 'filter-pool')) {
-            const rr = enabledRules.find(r => JSON.stringify(r.compiled_filter) === JSON.stringify(rule));
-            warnings.push({ slot: { day, meal_slot }, rule_id: rr?.id ?? null, message: `scheduling-rule filter-pool: no subzis match on ${day} ${meal_slot} — constraint relaxed` });
-          }
-          scheduledSubziPool = subziPoolBase;
-        }
-        const subziPool = applySchedulingExclude(scheduledSubziPool, subziPoolBase, applicableSchedulingRules, warnings, day, meal_slot, enabledRules);
+          ? eligible.filter(s => !usedSubziIds.has(s.id!))
+          : eligible;
+        let subziPool = applyFilterPool(subziPoolBase, validatedRules, day, meal_slot, warnings);
+        subziPool = applyExclude(subziPool, validatedRules, day, meal_slot, warnings);
 
         if (subziPool.length > 0) {
-          const picked = pickFromPool(subziPool, usageCount);
-          if (picked) {
-            // Pass 2: require-one override for subzi (D-05)
-            const subziRequireOneRules = applicableSchedulingRules.filter(r => r.effect === 'require-one');
-            let finalPicked = picked;
-            if (subziRequireOneRules.length > 0) {
-              finalPicked = applyRequireOneByTag(finalPicked, subziRequireOneRules, subzis, warnings, day, meal_slot, enabledRules);
-              finalPicked = applyRequireOneByComponent(finalPicked, subziRequireOneRules, allComponents, 'subzi', warnings, day, meal_slot, enabledRules);
-            }
-            selectedSubzi = finalPicked;
-            usageCount.set(finalPicked.id!, (usageCount.get(finalPicked.id!) ?? 0) + 1);
-            if (noRepeatSubzi) usedSubziIds.add(finalPicked.id!);
-          }
+          let picked = pickFromPool(subziPool, usageCount)!;
+          picked = applyRequireOne(picked, validatedRules, subzis, day, meal_slot, warnings);
+          selectedSubzi = picked;
+          usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
+          if (noRepeatSubzi) usedSubziIds.add(picked.id!);
         }
-        // If subziPool is empty (all subzis used, no-repeat active), skip subzi for this slot
       }
 
-      // ── Second pass: match component-mode templates after all components selected ─
+      // ── Second pass: composition effects for extras ──────────────────────────
 
-      // Collect all slot component IDs (base + curry + subzi) for component-mode matching
       const slotComponentIds: number[] = [selectedBase.id!];
       if (selectedCurry?.id !== undefined) slotComponentIds.push(selectedCurry.id);
       if (selectedSubzi?.id !== undefined) slotComponentIds.push(selectedSubzi.id);
 
-      // Full templates: includes base-mode, tag-mode, AND component-mode matches
-      const fullTemplates = selectedBaseType
-        ? getApplicableMealTemplates(selectedBaseType, day, meal_slot, mealTemplateRules, selectedBase, slotComponentIds)
-        : [];
+      const secondPassEffects = compositionEffectsSecondPass(
+        validatedRules, selectedBase, slotComponentIds, day, meal_slot,
+      );
+
+      const excludedExtraCategories = new Set(
+        secondPassEffects
+          .filter((e): e is ExcludeExtraEffect => e.kind === 'exclude_extra')
+          .flatMap(e => e.categories),
+      );
+
+      const requiredExtraCategories = [
+        ...new Set(
+          secondPassEffects
+            .filter((e): e is RequireExtraEffect => e.kind === 'require_extra')
+            .flatMap(e => e.categories),
+        ),
+      ];
 
       // ── Extras selection ────────────────────────────────────────────────────
 
       const maxExtras = resolvedPrefs.extra_quantity_limits[meal_slot] ?? 2;
+      const selectedBaseType = selectedBase.base_type as BaseType | undefined;
 
-      // Filter extras by compatible_base_types of selected base
       let eligibleExtras = extras.filter(e => {
         if (!selectedBaseType) return true;
-        return (e.compatible_base_types ?? []).includes(selectedBaseType);
-      });
-
-      // Also filter by component_slot_overrides + occasion (hard constraints)
-      eligibleExtras = eligibleExtras.filter(e => {
-        const override = resolvedPrefs.slot_restrictions.component_slot_overrides[e.id!];
-        if (override !== undefined && !override.includes(meal_slot)) return false;
+        if (!(e.compatible_base_types ?? []).includes(selectedBaseType)) return false;
         return isOccasionAllowed(e, day);
       });
 
-      // Meal-template: exclude extra categories (D-08 union, D-02 context scope, D-10 relax)
-      if (selectedBaseType && fullTemplates.length > 0) {
-        const excludedExtraCategories = new Set(
-          fullTemplates.flatMap(t => t.exclude_extra_categories),
-        );
-        if (excludedExtraCategories.size > 0) {
-          const filteredExtras = eligibleExtras.filter(
-            e => !excludedExtraCategories.has(e.extra_category!),
-          );
-          if (filteredExtras.length === 0 && eligibleExtras.length > 0) {
-            // D-10: all extras excluded — relax with warning
-            warnings.push({
-              slot: { day, meal_slot },
-              rule_id: null,
-              message: `meal-template exclude_extra_categories removed all eligible extras for ${selectedBaseType} — constraint relaxed`,
-            });
-          } else {
-            eligibleExtras = filteredExtras;
-          }
+      if (excludedExtraCategories.size > 0) {
+        const filtered = eligibleExtras.filter(e => !excludedExtraCategories.has(e.extra_category!));
+        if (filtered.length === 0 && eligibleExtras.length > 0) {
+          warnings.push({
+            slot: { day, meal_slot },
+            rule_id: null,
+            message: `exclude_extra removed all eligible extras for ${selectedBaseType ?? 'unknown'} on ${day} ${meal_slot} — constraint relaxed`,
+          });
+        } else {
+          eligibleExtras = filtered;
         }
       }
 
-      // Check mandatory extras: meal-template rules override prefs (D-05/D-06)
       const selectedExtraIds: number[] = [];
+
       if (locked?.extra_ids !== undefined) {
-        // Use locked extras directly — preserve the exact array
         selectedExtraIds.push(...locked.extra_ids);
       } else {
-        if (selectedBaseType) {
-          // D-05: meal-template overrides prefs.base_type_rules
-          // Use fullTemplates (second pass) which includes all selector modes
-          if (fullTemplates.length > 0) {
-            // D-08: each applicable rule's require_extra_category attempted independently
-            for (const tmpl of fullTemplates) {
-              if (tmpl.require_extra_category === null) continue;
-              const requiredCategory = tmpl.require_extra_category;
-              const mandatoryExtras = eligibleExtras.filter(
-                e =>
-                  e.extra_category === requiredCategory &&
-                  !selectedExtraIds.includes(e.id!),
-              );
-              if (mandatoryExtras.length > 0) {
-                const mandatory = weightedRandom(
-                  mandatoryExtras,
-                  c => effectiveWeight(c, usageCount),
-                );
-                selectedExtraIds.push(mandatory.id!);
-                usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
-              } else {
-                // D-10: no eligible extras for required category — warn + skip
-                warnings.push({
-                  slot: { day, meal_slot },
-                  rule_id: null,
-                  message: `meal-template require_extra_category '${requiredCategory}' has no eligible extras for ${selectedBaseType} on ${day} ${meal_slot} — skipped`,
-                });
-              }
-            }
+        // Fill required extra categories first
+        for (const category of requiredExtraCategories) {
+          const candidates = eligibleExtras.filter(
+            e => e.extra_category === category && !selectedExtraIds.includes(e.id!),
+          );
+          if (candidates.length > 0) {
+            const picked = weightedRandom(candidates, c => effectiveWeight(c, usageCount));
+            selectedExtraIds.push(picked.id!);
+            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
           } else {
-            // D-06: No templates — fall through to prefs.base_type_rules
-            const baseTypeRule = resolvedPrefs.base_type_rules.find(
-              r => r.base_type === selectedBaseType,
-            );
-            if (baseTypeRule?.required_extra_category) {
-              const requiredCategory = baseTypeRule.required_extra_category;
-              const mandatoryExtras = eligibleExtras.filter(
-                e => e.extra_category === requiredCategory,
-              );
-              if (mandatoryExtras.length > 0) {
-                const mandatory = weightedRandom(
-                  mandatoryExtras,
-                  c => effectiveWeight(c, usageCount),
-                );
-                selectedExtraIds.push(mandatory.id!);
-                usageCount.set(mandatory.id!, (usageCount.get(mandatory.id!) ?? 0) + 1);
-              }
-            }
+            warnings.push({
+              slot: { day, meal_slot },
+              rule_id: null,
+              message: `require_extra category '${category}' has no eligible extras on ${day} ${meal_slot} — skipped`,
+            });
           }
         }
 
-        // Fill remaining extra slots (up to limit)
-        const remainingSlots = maxExtras - selectedExtraIds.length;
-        if (remainingSlots > 0 && eligibleExtras.length > 0) {
-          const availableExtras = eligibleExtras.filter(e => !selectedExtraIds.includes(e.id!));
-          // Use weighted random selection without replacement
-          const tempPool = [...availableExtras];
-          for (let i = 0; i < remainingSlots && tempPool.length > 0; i++) {
+        // Random fill remaining slots
+        const remaining = maxExtras - selectedExtraIds.length;
+        if (remaining > 0 && eligibleExtras.length > 0) {
+          const pool = eligibleExtras.filter(e => !selectedExtraIds.includes(e.id!));
+          const tempPool = [...pool];
+          for (let i = 0; i < remaining && tempPool.length > 0; i++) {
             const picked = weightedRandom(tempPool, c => effectiveWeight(c, usageCount));
             selectedExtraIds.push(picked.id!);
             usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-            // Remove from temp pool to avoid duplicate in same slot
-            const idx = tempPool.findIndex(c => c.id === picked.id);
-            if (idx !== -1) tempPool.splice(idx, 1);
+            tempPool.splice(tempPool.findIndex(c => c.id === picked.id), 1);
           }
         }
       }
