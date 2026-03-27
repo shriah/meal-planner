@@ -1,255 +1,62 @@
 import { describe, it, expect } from 'vitest';
 import { compileRule } from './rule-compiler';
-import { CompiledFilterSchema } from '@/types/plan';
+import type { RuleFormState } from '@/components/rules/types';
 
-describe('RULE-02: compileRule', () => {
-  describe('no-repeat rules', () => {
-    it('compiles no-repeat for subzi', () => {
-      const result = compileRule({ ruleType: 'no-repeat', component_type: 'subzi' });
-      expect(result).toEqual({ type: 'no-repeat', component_type: 'subzi', within: 'week' });
-    });
-
-    it('compiles no-repeat for curry', () => {
-      const result = compileRule({ ruleType: 'no-repeat', component_type: 'curry' });
-      expect(result).toEqual({ type: 'no-repeat', component_type: 'curry', within: 'week' });
-    });
-
-    it('compiles no-repeat for base', () => {
-      const result = compileRule({ ruleType: 'no-repeat', component_type: 'base' });
-      expect(result).toEqual({ type: 'no-repeat', component_type: 'base', within: 'week' });
-    });
-  });
-
-  describe('scheduling-rule rules', () => {
-    it('compiles filter-pool with tag match and no slots (slots = null)', () => {
-      const result = compileRule({
-        ruleType: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      });
-      expect(result).toEqual({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        slots: null,
-        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      });
-    });
-
-    it('compiles require-one with component match and no days (days = null)', () => {
-      const result = compileRule({
-        ruleType: 'scheduling-rule',
-        effect: 'require-one',
-        match: { mode: 'component', component_id: 42 },
-      });
-      expect(result).toEqual({
-        type: 'scheduling-rule',
-        effect: 'require-one',
-        days: null,
-        slots: null,
-        match: { mode: 'component', component_id: 42 },
-      });
-    });
-
-    it('compiles exclude with both days and slots specified', () => {
-      const result = compileRule({
-        ruleType: 'scheduling-rule',
-        effect: 'exclude',
-        days: ['monday'],
-        slots: ['breakfast', 'lunch'],
-        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      });
-      expect(result).toEqual({
-        type: 'scheduling-rule',
-        effect: 'exclude',
-        days: ['monday'],
-        slots: ['breakfast', 'lunch'],
-        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      });
-    });
-
-    it('converts undefined days and slots to null', () => {
-      const result = compileRule({
-        ruleType: 'scheduling-rule',
-        effect: 'filter-pool',
-        match: { mode: 'tag', filter: {} },
-      });
-      expect(result).toMatchObject({ type: 'scheduling-rule', days: null, slots: null });
+describe('compileRule', () => {
+  it('compiles a no-repeat rule', () => {
+    const state: RuleFormState = {
+      name: 'No repeat base',
+      target: { mode: 'component_type', component_type: 'base' },
+      days: [], slots: [],
+      selection: 'no_repeat',
+      allowed_slots: [], skip_component_types: [],
+      exclude_extra_categories: [], require_extra_categories: [],
+    };
+    expect(compileRule(state)).toEqual({
+      type: 'rule',
+      target: { mode: 'component_type', component_type: 'base' },
+      scope: { days: null, slots: null },
+      effects: [{ kind: 'no_repeat' }],
     });
   });
 
-  describe('Zod validation round-trip', () => {
-    it('every compiled output passes CompiledFilterSchema.parse()', () => {
-      const defs = [
-        { ruleType: 'no-repeat' as const, component_type: 'subzi' as const },
-        { ruleType: 'scheduling-rule' as const, effect: 'filter-pool' as const, days: ['friday' as const], match: { mode: 'tag' as const, filter: { protein_tag: 'fish' as const } } },
-      ];
-      for (const def of defs) {
-        const compiled = compileRule(def);
-        expect(() => CompiledFilterSchema.parse(compiled)).not.toThrow();
-      }
+  it('compiles a filter_pool rule with days scope', () => {
+    const state: RuleFormState = {
+      name: 'Fish Fridays',
+      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      days: ['friday'], slots: [],
+      selection: 'filter_pool',
+      allowed_slots: [], skip_component_types: [],
+      exclude_extra_categories: [], require_extra_categories: [],
+    };
+    expect(compileRule(state)).toEqual({
+      type: 'rule',
+      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      scope: { days: ['friday'], slots: null },
+      effects: [{ kind: 'filter_pool' }],
     });
   });
 
-  describe('meal-template rules', () => {
-    it('compiles minimal meal-template with base selector (all optionals default to null/[])', () => {
-      const result = compileRule({ ruleType: 'meal-template', selector: { mode: 'base', base_type: 'bread-based' } });
-      expect(result).toEqual({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'bread-based' },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      });
-    });
-
-    it('compiles meal-template with slots, allowed_slots, exclude_component_types, require_extra_category', () => {
-      const result = compileRule({
-        ruleType: 'meal-template',
-        selector: { mode: 'base', base_type: 'rice-based' },
-        slots: ['lunch', 'dinner'],
-        allowed_slots: ['lunch', 'dinner'],
-        exclude_component_types: ['curry'],
-        require_extra_category: 'liquid',
-      });
-      expect(result).toEqual({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'rice-based' },
-        days: null,
-        slots: ['lunch', 'dinner'],
-        allowed_slots: ['lunch', 'dinner'],
-        exclude_component_types: ['curry'],
-        exclude_extra_categories: [],
-        require_extra_category: 'liquid',
-      });
-    });
-
-    it('Zod round-trip — compileRule output passes CompiledFilterSchema.parse()', () => {
-      const result = compileRule({ ruleType: 'meal-template', selector: { mode: 'base', base_type: 'rice-based' } });
-      expect(() => CompiledFilterSchema.parse(result)).not.toThrow();
-    });
-  });
-
-  describe('meal-template Zod schema', () => {
-    it('accepts a fully populated meal-template object with base selector', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'rice-based' },
-        days: ['monday'],
-        slots: ['lunch', 'dinner'],
-        allowed_slots: ['lunch', 'dinner'],
-        exclude_component_types: ['subzi'],
-        exclude_extra_categories: ['sweet'],
-        require_extra_category: 'liquid',
-      })).not.toThrow();
-    });
-
-    it('accepts a minimal meal-template with base selector (nullable fields as null, arrays as [])', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'other' },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })).not.toThrow();
-    });
-
-    it('accepts a meal-template with tag selector', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'meal-template',
-        selector: { mode: 'tag', filter: { protein_tag: 'fish' } },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })).not.toThrow();
-    });
-
-    it('accepts a meal-template with component selector', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'meal-template',
-        selector: { mode: 'component', component_id: 42 },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })).not.toThrow();
-    });
-
-    it('rejects meal-template with invalid base_type in selector', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'invalid-type' },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })).toThrow();
-    });
-  });
-
-  describe('scheduling-rule Zod schema', () => {
-    it('accepts scheduling-rule with filter-pool effect and tag match', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        slots: ['lunch'],
-        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      })).not.toThrow();
-    });
-
-    it('accepts scheduling-rule with require-one effect and component match', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'scheduling-rule',
-        effect: 'require-one',
-        days: null,
-        slots: null,
-        match: { mode: 'component', component_id: 42 },
-      })).not.toThrow();
-    });
-
-    it('accepts scheduling-rule with exclude effect and multiple days/slots', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'scheduling-rule',
-        effect: 'exclude',
-        days: ['monday', 'tuesday'],
-        slots: ['breakfast', 'dinner'],
-        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      })).not.toThrow();
-    });
-
-    it('rejects scheduling-rule with invalid effect', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'scheduling-rule',
-        effect: 'invalid',
-        days: ['friday'],
-        slots: null,
-        match: { mode: 'tag', filter: {} },
-      })).toThrow();
-    });
-
-    it('rejects scheduling-rule with unknown match mode', () => {
-      expect(() => CompiledFilterSchema.parse({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        slots: ['lunch'],
-        match: { mode: 'unknown' },
-      })).toThrow();
+  it('compiles a rice template with multiple effects', () => {
+    const state: RuleFormState = {
+      name: 'Rice rules',
+      target: { mode: 'base_type', base_type: 'rice-based' },
+      days: [], slots: [],
+      selection: '',
+      allowed_slots: ['lunch', 'dinner'],
+      skip_component_types: ['curry'],
+      exclude_extra_categories: [],
+      require_extra_categories: ['condiment', 'liquid'],
+    };
+    expect(compileRule(state)).toEqual({
+      type: 'rule',
+      target: { mode: 'base_type', base_type: 'rice-based' },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
+        { kind: 'skip_component', component_types: ['curry'] },
+        { kind: 'require_extra', categories: ['condiment', 'liquid'] },
+      ],
     });
   });
 });
