@@ -74,6 +74,73 @@ export const TagFilterSchema = z.object({
 
 export type TagFilter = z.infer<typeof TagFilterSchema>;
 
+// ─── ExtraCategoryEnum (shared) ───────────────────────────────────────────────
+
+const ExtraCategoryEnum = z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet']);
+
+// ─── Target ───────────────────────────────────────────────────────────────────
+
+export const TargetSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('component_type'), component_type: z.enum(['base', 'curry', 'subzi']) }),
+  z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
+  z.object({ mode: z.literal('component'), component_id: z.number() }),
+  z.object({ mode: z.literal('base_type'), base_type: z.enum(['rice-based', 'bread-based', 'other']) }),
+]);
+
+export type Target = z.infer<typeof TargetSchema>;
+
+// ─── RuleScope ────────────────────────────────────────────────────────────────
+
+export const RuleScopeSchema = z.object({
+  days:  z.array(DayOfWeekEnum).nullable(),
+  slots: z.array(MealSlotEnum).nullable(),
+});
+
+export type RuleScope = z.infer<typeof RuleScopeSchema>;
+
+// ─── Effects ──────────────────────────────────────────────────────────────────
+
+export const EffectSchema = z.discriminatedUnion('kind', [
+  // Selection effects (mutually exclusive — at most one per rule)
+  z.object({ kind: z.literal('filter_pool') }),
+  z.object({ kind: z.literal('require_one') }),
+  z.object({ kind: z.literal('exclude') }),
+  z.object({ kind: z.literal('no_repeat') }),
+  // Placement effect
+  z.object({ kind: z.literal('allowed_slots'), slots: z.array(MealSlotEnum) }),
+  // Component shape
+  z.object({ kind: z.literal('skip_component'), component_types: z.array(z.enum(['curry', 'subzi'])) }),
+  // Extra effects
+  z.object({ kind: z.literal('exclude_extra'), categories: z.array(ExtraCategoryEnum) }),
+  z.object({ kind: z.literal('require_extra'), categories: z.array(ExtraCategoryEnum) }),
+]);
+
+export type AnyEffect = z.infer<typeof EffectSchema>;
+
+// Concrete types for each effect variant
+export type FilterPoolEffect   = Extract<AnyEffect, { kind: 'filter_pool' }>;
+export type RequireOneEffect   = Extract<AnyEffect, { kind: 'require_one' }>;
+export type ExcludeEffect      = Extract<AnyEffect, { kind: 'exclude' }>;
+export type NoRepeatEffect     = Extract<AnyEffect, { kind: 'no_repeat' }>;
+export type AllowedSlotsEffect = Extract<AnyEffect, { kind: 'allowed_slots' }>;
+export type SkipComponentEffect = Extract<AnyEffect, { kind: 'skip_component' }>;
+export type ExcludeExtraEffect = Extract<AnyEffect, { kind: 'exclude_extra' }>;
+export type RequireExtraEffect = Extract<AnyEffect, { kind: 'require_extra' }>;
+
+export type SelectionEffect = FilterPoolEffect | RequireOneEffect | ExcludeEffect | NoRepeatEffect;
+export type CompositionEffect = AllowedSlotsEffect | SkipComponentEffect | ExcludeExtraEffect | RequireExtraEffect;
+
+// ─── CompiledRule (unified) ───────────────────────────────────────────────────
+
+export const CompiledRuleSchema = z.object({
+  type:    z.literal('rule'),
+  target:  TargetSchema,
+  scope:   RuleScopeSchema,
+  effects: z.array(EffectSchema),
+});
+
+export type CompiledRule = z.infer<typeof CompiledRuleSchema>;
+
 // ─── CompiledFilter (discriminated union) ────────────────────────────────────
 
 export const CompiledFilterSchema = z.discriminatedUnion('type', [
