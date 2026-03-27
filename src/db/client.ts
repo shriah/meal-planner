@@ -2,14 +2,14 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
-import type { CompiledFilter, WeeklyPlan } from '@/types/plan';
+import type { CompiledFilter, CompiledRule, WeeklyPlan } from '@/types/plan';
 
 // Rule record — typed CompiledFilter DSL for Phase 3
 export interface RuleRecord {
   id?: number;
   name: string;
   enabled: boolean;
-  compiled_filter: CompiledFilter;
+  compiled_filter: CompiledRule;  // changed from CompiledFilter
   created_at: string;
 }
 
@@ -265,6 +265,97 @@ db.version(8).stores({
 }).upgrade(tx => {
   return tx.table('rules').toCollection().modify(rule => {
     rule.compiled_filter = migrateMealTemplateSelector(rule.compiled_filter);
+  });
+});
+
+/**
+ * Migrate a compiled_filter from v8 (3-variant CompiledFilter) to v9 (unified CompiledRule).
+ * Pure function — used by Dexie upgrade and testable independently.
+ */
+export function migrateToCompiledRule(cf: unknown): unknown {
+  if (!cf || typeof cf !== 'object' || !('type' in cf)) return cf;
+  const r = cf as Record<string, unknown>;
+
+  // Already migrated
+  if (r.type === 'rule') return cf;
+
+  if (r.type === 'no-repeat') {
+    return {
+      type: 'rule',
+      target: { mode: 'component_type', component_type: r.component_type },
+      scope: { days: null, slots: null },
+      effects: [{ kind: 'no_repeat' }],
+    };
+  }
+
+  if (r.type === 'scheduling-rule') {
+    const match = r.match as Record<string, unknown>;
+    const target = match.mode === 'tag'
+      ? { mode: 'tag', filter: match.filter }
+      : { mode: 'component', component_id: match.component_id };
+    const effectKind =
+      r.effect === 'filter-pool' ? 'filter_pool' :
+      r.effect === 'require-one' ? 'require_one' :
+      'exclude';
+    return {
+      type: 'rule',
+      target,
+      scope: { days: r.days ?? null, slots: r.slots ?? null },
+      effects: [{ kind: effectKind }],
+    };
+  }
+
+  if (r.type === 'meal-template') {
+    const selector = r.selector as Record<string, unknown>;
+    const target = selector.mode === 'base'
+      ? { mode: 'base_type', base_type: selector.base_type }
+      : selector.mode === 'tag'
+        ? { mode: 'tag', filter: selector.filter }
+        : { mode: 'component', component_id: selector.component_id };
+
+    const effects: unknown[] = [];
+
+    const allowedSlots = r.allowed_slots as string[] | null;
+    if (allowedSlots !== null && Array.isArray(allowedSlots) && allowedSlots.length > 0) {
+      effects.push({ kind: 'allowed_slots', slots: allowedSlots });
+    }
+
+    const excludeTypes = (r.exclude_component_types as string[] | undefined) ?? [];
+    if (excludeTypes.length > 0) {
+      effects.push({ kind: 'skip_component', component_types: excludeTypes });
+    }
+
+    const excludeExtras = (r.exclude_extra_categories as string[] | undefined) ?? [];
+    if (excludeExtras.length > 0) {
+      effects.push({ kind: 'exclude_extra', categories: excludeExtras });
+    }
+
+    if (r.require_extra_category !== null && r.require_extra_category !== undefined) {
+      effects.push({ kind: 'require_extra', categories: [r.require_extra_category] });
+    }
+
+    return {
+      type: 'rule',
+      target,
+      scope: { days: r.days ?? null, slots: r.slots ?? null },
+      effects,
+    };
+  }
+
+  return cf; // Unknown type — pass through
+}
+
+db.version(9).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(tx => {
+  return tx.table('rules').toCollection().modify(rule => {
+    rule.compiled_filter = migrateToCompiledRule(rule.compiled_filter);
   });
 });
 
