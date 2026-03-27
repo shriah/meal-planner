@@ -2,14 +2,14 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
-import type { CompiledFilter, CompiledRule, WeeklyPlan } from '@/types/plan';
+import type { CompiledRule, WeeklyPlan } from '@/types/plan';
 
-// Rule record — typed CompiledFilter DSL for Phase 3
+// Rule record — stores unified CompiledRule
 export interface RuleRecord {
   id?: number;
   name: string;
   enabled: boolean;
-  compiled_filter: CompiledRule;  // changed from CompiledFilter
+  compiled_filter: CompiledRule;
   created_at: string;
 }
 
