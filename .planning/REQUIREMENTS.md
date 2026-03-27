@@ -1,10 +1,19 @@
 # Requirements: Indian Food Planner
 
 **Defined:** 2026-03-22
-**Milestone:** v1.1 — Rule Engine Overhaul
+**Milestone:** v1.2 — Edit Rule
 **Core Value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
 
-## v1.1 Requirements
+## v1.2 Requirements
+
+### Edit Rule
+
+- [ ] **EDIT-01**: User can open an edit sheet for any existing rule from the rules list
+- [ ] **EDIT-02**: Edit sheet opens with the RuleForm pre-populated with the rule's current target, scope, and effects
+- [ ] **EDIT-03**: Saving overwrites the existing rule record in Dexie (no duplicate created)
+- [ ] **EDIT-04**: Closing or canceling the sheet discards unsaved changes
+
+## v1.1 Requirements (Complete)
 
 ### Scheduling Rule (unified day/slot constraint)
 
@@ -51,6 +60,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| EDIT-01 | Phase 11 | Pending |
+| EDIT-02 | Phase 11 | Pending |
+| EDIT-03 | Phase 11 | Pending |
+| EDIT-04 | Phase 11 | Pending |
 | SCHED-01 | Phase 7 | Complete |
 | SCHED-02 | Phase 7 | Complete |
 | SCHED-03 | Phase 7 | Complete |
@@ -65,10 +78,10 @@
 | TMPL-07 | Phase 10 | Complete |
 
 **Coverage:**
-- v1.1 requirements: 12 total
-- Mapped to phases: 12 (roadmap created 2026-03-22)
+- v1.2 requirements: 4 total
+- Mapped to phases: 4 (roadmap TBD)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-22 — traceability filled after roadmap creation*
+*Last updated: 2026-03-27 — v1.2 Edit Rule requirements added*
