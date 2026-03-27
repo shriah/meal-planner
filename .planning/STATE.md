@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Edit Rule
-status: defining requirements
-stopped_at: Milestone v1.2 started
+status: roadmap created
+stopped_at: Phase 11 roadmap written — ready to plan
 last_updated: "2026-03-27T00:00:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.2 Edit Rule — defining requirements
+**Current focus:** v1.2 Edit Rule — Phase 11 roadmapped, ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 11 — Edit Rule (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-03-27 — Milestone v1.2 started
+Status: Roadmap created; awaiting `/gsd:plan-phase 11`
+Last activity: 2026-03-27 — v1.2 roadmap written
 
 ## Performance Metrics
 
@@ -151,10 +151,11 @@ Recent decisions affecting current work:
 - [Phase 10]: Seed uses db.rules.bulkAdd directly to avoid circular import from service layer
 - [Phase 10-meal-template-ui-settings-removal-migration]: MealTemplateFormState follows flat pattern of SchedulingRuleFormState — no nested discriminated union needed
 - [Phase 10-meal-template-ui-settings-removal-migration]: Toggle (shadcn) used for allowed_slots chip group per UI-SPEC; installed as it was absent
+- [v1.2 Roadmap]: All 4 edit-rule requirements are tightly coupled (UI entry point, pre-population, save, cancel) — collapsed into single Phase 11
 
 ### Pending Todos
 
-(none — roadmap created, ready to plan Phase 7)
+(none — roadmap created, ready to plan Phase 11)
 
 ### Quick Tasks Completed
 
@@ -169,6 +170,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-26T17:57:00Z
-Stopped at: Completed quick task 260326-w99
+Last session: 2026-03-27T00:00:00Z
+Stopped at: v1.2 roadmap created — Phase 11 ready to plan
 Resume file: None

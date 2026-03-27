@@ -4,6 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
+- 🔄 **v1.2 Edit Rule** — Phase 11 (in progress)
 
 ## Phases
 
@@ -29,6 +30,24 @@
 
 </details>
 
+### v1.2 Edit Rule
+
+- [ ] **Phase 11: Edit Rule** - Add edit capability to the rules list so users can update any existing rule in place
+
+## Phase Details
+
+### Phase 11: Edit Rule
+**Goal**: Users can edit any existing rule from the rules list without leaving the page
+**Depends on**: Phase 10 (unified RuleForm exists; rules stored in Dexie with auto-incremented id)
+**Requirements**: EDIT-01, EDIT-02, EDIT-03, EDIT-04
+**Success Criteria** (what must be TRUE):
+  1. Each rule card in the rules list has an Edit button that opens a Sheet overlay
+  2. The Sheet opens with RuleForm pre-populated with the rule's current target, scope, and effects — no fields are blank or reset to defaults
+  3. Saving the edited rule overwrites the original record in Dexie — no duplicate rule is created and the rule count stays the same
+  4. Closing or canceling the Sheet (via close button, Cancel button, or pressing Escape) discards all unsaved edits — the original rule remains unchanged
+**Plans**: TBD
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -43,3 +62,4 @@
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete | 2026-03-25 |
 | 9. Meal Template Engine | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete | 2026-03-26 |
+| 11. Edit Rule | v1.2 | 0/? | Not started | - |

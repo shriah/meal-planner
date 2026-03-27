@@ -79,9 +79,9 @@
 
 **Coverage:**
 - v1.2 requirements: 4 total
-- Mapped to phases: 4 (roadmap TBD)
+- Mapped to phases: 4/4
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-27 — v1.2 Edit Rule requirements added*
+*Last updated: 2026-03-27 — v1.2 roadmap created; all 4 requirements mapped to Phase 11*
