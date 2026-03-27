@@ -8,15 +8,6 @@ A personal weekly meal planner built for Indian dietary patterns. Users build a 
 
 Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
 
-## Current Milestone: v1.1 Rule Engine Overhaul
-
-**Goal:** Replace the fragmented constraint system (3 separate rule types + hidden slot prefs) with two clean, composable rule types that cover the full scheduling space.
-
-**Target features:**
-- `scheduling-rule` — unified day/slot-scoped rule replacing `day-filter` + `require-component` (filter pool / require / exclude, by tag or specific component)
-- `meal-template` — base-type-scoped composition rule replacing `/settings/slots` and `base_type_rules` prefs (slot assignment, composition exclusions, required extras)
-- Migration: existing rules + prefs → new variants at startup
-
 ## Requirements
 
 ### Validated
@@ -32,23 +23,22 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - ✓ Save plans per calendar week (auto-save, no manual save button) — v1.0
 - ✓ Browse past weeks (read-only) and navigate prev/next — v1.0
 - ✓ Export/share plans as PNG image (Web Share API + download fallback) — v1.0
+- ✓ **SCHED-01**: User can create a scheduling rule scoped to any combination of days and meal slots — v1.1
+- ✓ **SCHED-02**: Scheduling rule effect can be "filter pool", "require one", or "exclude" — v1.1
+- ✓ **SCHED-03**: Scheduling rule match criteria can be tag-based or specific component — v1.1
+- ✓ **SCHED-04**: "Require one by tag" — generator picks any eligible component matching the tag filter for that slot — v1.1
+- ✓ **SCHED-05**: Existing day-filter and require-component rules auto-migrated to scheduling-rule at startup (Dexie v5) — v1.1
+- ✓ **TMPL-01**: User can create a meal template rule scoped to a base type with optional slot and day context — v1.1
+- ✓ **TMPL-02**: Meal template specifies which slots the base type is allowed in (replaces 3×3 settings grid) — v1.1
+- ✓ **TMPL-03**: Meal template can exclude component types (curry, subzi) and extra categories — v1.1
+- ✓ **TMPL-04**: Meal template can require an extra category for the given base type — v1.1
+- ✓ **TMPL-05**: /settings/slots removed; AppNav "Slot Settings" removed; all constraints in Rules UI — v1.1
+- ✓ **TMPL-06**: Meal template creation UI in Rules Manager with RadioGroup, Toggle slot chips, exclusion checkboxes — v1.1
+- ✓ **TMPL-07**: Existing slot_restrictions and base_type_rules prefs auto-migrated to meal-template/scheduling-rule records (Dexie v7) — v1.1
 
 ### Active
 
-**Scheduling Rule (unified)**
-- [ ] **SCHED-01**: User can create a scheduling rule scoped to any combination of days and meal slots
-- [ ] **SCHED-02**: Scheduling rule effect can be "filter pool" (restrict eligible components), "require one" (force a match to appear), or "exclude" (remove matches from pool)
-- [ ] **SCHED-03**: Scheduling rule match criteria can be tag-based (dietary / protein / regional / occasion) or specific component (by ID)
-- [ ] **SCHED-04**: "Require one by tag" — generator picks any eligible component matching the tag filter for that slot (e.g., "Fridays: require a fish curry")
-- [ ] **SCHED-05**: Existing `day-filter` and `require-component` rules migrated to `scheduling-rule` at startup (Dexie version bump); old rule types removed from CompiledFilter
-
-**Meal Template**
-- ✓ **TMPL-01**: User can create a meal template rule scoped to a base type (rice-based / bread-based / other) with optional slot and day context — Validated in Phase 9: Meal Template Engine
-- ✓ **TMPL-02**: Meal template specifies which slots the base type is allowed in (slot assignment — replaces 3×3 settings grid) — Validated in Phase 9: Meal Template Engine
-- ✓ **TMPL-03**: Meal template can exclude component types (curry, subzi) and/or extra categories (liquid, sweet, etc.) for the given base type context — Validated in Phase 9: Meal Template Engine
-- ✓ **TMPL-04**: Meal template can require an extra category for the given base type (e.g., bread-based always needs a liquid extra) — Validated in Phase 9: Meal Template Engine
-- ✓ **TMPL-05**: `/settings/slots` page removed; AppNav "Slot Settings" link removed; all constraints managed through Rules UI — Validated in Phase 10: Meal Template UI, Settings Removal & Migration
-- ✓ **TMPL-06**: Existing `slot_restrictions.base_type_slots` and `base_type_rules` prefs migrated to `meal-template` rules at startup — Validated in Phase 10: Meal Template UI, Settings Removal & Migration
+*(planning next milestone — run `/gsd:new-milestone` to define v1.2 requirements)*
 
 ### Out of Scope
 
@@ -63,18 +53,19 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 ## Context
 
 - Shipped v1.0 with ~8,600 LOC TypeScript in 3 days (2026-03-19 → 2026-03-22)
-- Tech stack: Next.js 16, Dexie.js (IndexedDB), Zustand, shadcn/ui, satori + @resvg/resvg-js (PNG export)
-- v1.0 rule system: 3 CompiledFilter variants (day-filter, no-repeat, require-component) — all being refactored in v1.1
-- Generator reads CompiledFilter variants directly; new variants require generator updates alongside type changes
-- 119 tests passing at v1.0 ship; generator has 22 TDD tests that must remain passing after refactor
+- Shipped v1.1 with ~11,300 LOC TypeScript in 4 days (2026-03-22 → 2026-03-26)
+- Tech stack: Next.js 16, Dexie.js (IndexedDB, v7 now), Zustand, shadcn/ui, satori + @resvg/resvg-js (PNG export)
+- Rule system: 2 CompiledFilter variants (no-repeat, scheduling-rule) + meal-template; all synchronous, LLM-free
+- ~160 tests passing at v1.1 ship; generator has 30+ TDD tests covering all rule types and edge cases
+- Dexie schema at v7; three auto-migration chains from v1 (day-filter/require-component → scheduling-rule at v5, slot prefs → rules at v7)
 
 ## Constraints
 
 - **Scope**: Single-user personal app — no auth complexity, no multi-tenancy
 - **Tech stack**: Next.js 16 + Dexie.js + Zustand + shadcn/ui (confirmed)
 - **Nutrition**: Explicitly out of scope — do not track calories or macros
-- **Backwards compatibility**: v1.1 must migrate existing IndexedDB data — no data loss on upgrade
-- **Test coverage**: Generator refactor must maintain or improve existing TDD suite (22 generator tests + 9 compiler tests)
+- **Backwards compatibility**: Dexie auto-migration handles all upgrade paths — no data loss on upgrade
+- **Test coverage**: All generator and compiler refactors covered by TDD; ~160 tests passing
 
 ## Key Decisions
 
@@ -89,8 +80,13 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | satori + resvg for PNG export | Server-side render to PNG without browser screenshot | ✓ Good — clean shareable output; required Node.js runtime (not edge) |
 | Fire-and-forget saveWeekPlan in mutations | Keeps UI responsive; write failures are non-critical | — Accepted trade-off (IndexedDB failures silent) |
 | UTC-based date construction in week-utils | Eliminates timezone off-by-one in ISO week calculations | ✓ Good — resolved date edge cases |
-| Collapse day-filter + require-component into scheduling-rule | One concept for users, one handler in generator, cleaner form | — Pending (v1.1) |
+| Collapse day-filter + require-component into scheduling-rule | One concept for users, one handler in generator, cleaner form | ✓ Good — shipped in v1.1; Dexie v5 migration covers existing rules |
 | Move slot settings into meal-template rules | All scheduling constraints in one place, deletable/togglable | ✓ Good — unified in Phase 10; settings page fully removed |
+| scheduling-rule match as discriminated union (tag/component) | Covers both use cases without separate rule types | ✓ Good — clean form UX with RadioGroup mode selector |
+| meal-template D-05/D-06 prefs-override semantics | Allows migration without breaking existing user intent | ✓ Good — zero data loss, relax-and-warn on empty pool |
+| Two-pass require-one generator effect | First check current pick, override from full library if needed | ✓ Good — D-06 override from full library prevents circular exclusion |
+| migrateCompiledFilter as pure function | Testable in isolation without Dexie upgrade callback complexity | ✓ Good — full unit test coverage, deterministic |
+| Flexible meal-template selector (quick task w99) | Base/tag/component targeting modes via discriminated union | ✓ Good — extends meal-template targeting beyond just base_type |
 
 ## Evolution
 
@@ -110,4 +106,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-26 — Phase 10 complete (meal-template UI, settings removal, and migration; all TMPL requirements validated; only SCHED requirements remain for v1.1)*
+*Last updated: 2026-03-26 — v1.1 Rule Engine Overhaul complete (all 12 SCHED + TMPL requirements validated; 4 phases, 9 plans, 71 commits)*
