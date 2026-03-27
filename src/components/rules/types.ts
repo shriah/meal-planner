@@ -28,9 +28,6 @@ export type RuleFormState = {
   require_extra_categories: ExtraCategory[];
 };
 
-// Keep FormState as alias for backwards compat with RuleImpactPreview (removed in Task 9)
-export type FormState = RuleFormState;
-
 // ─── Form Actions ─────────────────────────────────────────────────────────────
 
 export type FormAction =
