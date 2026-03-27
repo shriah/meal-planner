@@ -1,130 +1,53 @@
 import { describe, it, expect } from 'vitest'
 import { describeRule } from './ruleDescriptions'
+import type { CompiledRule } from '@/types/plan'
+
+function rule(partial: Omit<CompiledRule, 'type'>): CompiledRule {
+  return { type: 'rule', ...partial }
+}
 
 describe('describeRule', () => {
-  it('no-repeat: subzi variant', () => {
-    expect(
-      describeRule({ type: 'no-repeat', component_type: 'subzi', within: 'week' })
-    ).toBe('No repeated subzi within the week')
+  it('describes a no-repeat rule', () => {
+    expect(describeRule(rule({
+      target: { mode: 'component_type', component_type: 'base' },
+      scope: { days: null, slots: null },
+      effects: [{ kind: 'no_repeat' }],
+    }))).toBe('all bases: No-repeat')
   })
 
-  it('scheduling-rule: filter-pool with tag match on specific day', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        slots: null,
-        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      })
-    ).toBe('Filter pool on Friday: protein: fish')
+  it('describes a filter_pool rule with tag and day scope', () => {
+    expect(describeRule(rule({
+      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      scope: { days: ['friday'], slots: null },
+      effects: [{ kind: 'filter_pool' }],
+    }))).toBe('protein: fish on Friday: Filter pool')
   })
 
-  it('scheduling-rule: require-one with component match on multiple days', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'require-one',
-        days: ['monday', 'wednesday'],
-        slots: ['dinner'],
-        match: { mode: 'component', component_id: 5 },
-      })
-    ).toBe('Require one on Monday, Wednesday (dinner): component #5')
+  it('describes an exclude rule with component target', () => {
+    expect(describeRule(rule({
+      target: { mode: 'component', component_id: 5 },
+      scope: { days: null, slots: ['breakfast'] },
+      effects: [{ kind: 'exclude' }],
+    }))).toBe('component #5 (breakfast): Exclude')
   })
 
-  it('scheduling-rule: exclude with no days (all days)', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'exclude',
-        days: null,
-        slots: null,
-        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      })
-    ).toBe('Exclude: dietary: non-veg')
+  it('describes a rice template with composition effects', () => {
+    expect(describeRule(rule({
+      target: { mode: 'base_type', base_type: 'rice-based' },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
+        { kind: 'skip_component', component_types: ['curry'] },
+        { kind: 'require_extra', categories: ['condiment'] },
+      ],
+    }))).toBe('Rice-based: allowed at lunch, dinner; skip curry; require condiment extra')
   })
 
-  it('scheduling-rule: filter-pool with multiple tags', () => {
-    const result = describeRule({
-      type: 'scheduling-rule',
-      effect: 'filter-pool',
-      days: ['friday'],
-      slots: null,
-      match: { mode: 'tag', filter: { dietary_tag: 'non-veg', protein_tag: 'fish' } },
-    })
-    expect(result).toContain('dietary: non-veg')
-    expect(result).toContain('protein: fish')
-  })
-
-  it('scheduling-rule: filter-pool with empty tag filter returns any tag', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['monday'],
-        slots: null,
-        match: { mode: 'tag', filter: {} },
-      })
-    ).toBe('Filter pool on Monday: any tag')
-  })
-
-  it('meal-template: base selector with allowed_slots', () => {
-    expect(
-      describeRule({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'rice-based' },
-        days: null,
-        slots: null,
-        allowed_slots: ['lunch', 'dinner'],
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })
-    ).toBe('Rice-based: allowed at lunch, dinner')
-  })
-
-  it('meal-template: tag selector with protein tag', () => {
-    expect(
-      describeRule({
-        type: 'meal-template',
-        selector: { mode: 'tag', filter: { protein_tag: 'fish' } },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: ['curry'],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })
-    ).toBe('Tag: protein: fish: exclude curry')
-  })
-
-  it('meal-template: component selector', () => {
-    expect(
-      describeRule({
-        type: 'meal-template',
-        selector: { mode: 'component', component_id: 42 },
-        days: null,
-        slots: null,
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: 'liquid',
-      })
-    ).toBe('Component #42: require liquid extra')
-  })
-
-  it('meal-template: base selector with no parts returns just selector label', () => {
-    expect(
-      describeRule({
-        type: 'meal-template',
-        selector: { mode: 'base', base_type: 'bread-based' },
-        days: null,
-        slots: ['lunch'],
-        allowed_slots: null,
-        exclude_component_types: [],
-        exclude_extra_categories: [],
-        require_extra_category: null,
-      })
-    ).toBe('Bread-based (lunch)')
+  it('describes a rule with no effects', () => {
+    expect(describeRule(rule({
+      target: { mode: 'base_type', base_type: 'bread-based' },
+      scope: { days: null, slots: null },
+      effects: [],
+    }))).toBe('Bread-based')
   })
 })

@@ -1,4 +1,4 @@
-import type { CompiledFilter } from '@/types/plan'
+import type { CompiledRule, Target, AnyEffect } from '@/types/plan'
 
 function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1)
@@ -14,77 +14,60 @@ function formatSlotsSuffix(slots: string[] | null): string {
   return ` (${slots.join(', ')})`
 }
 
-export function describeRule(filter: CompiledFilter): string {
-  switch (filter.type) {
-    case 'no-repeat': {
-      return `No repeated ${filter.component_type} within the week`
+function describeTarget(target: Target): string {
+  switch (target.mode) {
+    case 'component_type':
+      return `all ${target.component_type}s`
+    case 'tag': {
+      const parts = Object.entries(target.filter)
+        .filter(([, v]) => Boolean(v))
+        .map(([k, v]) => `${k.replace('_tag', '')}: ${v}`)
+      return parts.length > 0 ? parts.join(', ') : 'any tag'
     }
-
-    case 'scheduling-rule': {
-      const effectLabel: Record<string, string> = {
-        'filter-pool': 'Filter pool',
-        'require-one': 'Require one',
-        'exclude': 'Exclude',
-      }
-      const daysPart = filter.days && filter.days.length > 0 ? ` on ${formatDays(filter.days)}` : ''
-      const slotsSuffix = formatSlotsSuffix(filter.slots)
-      const matchDesc = filter.match.mode === 'tag'
-        ? Object.entries(filter.match.filter).filter(([, v]) => Boolean(v)).map(([k, v]) => `${k.replace('_tag', '')}: ${v}`).join(', ') || 'any tag'
-        : `component #${filter.match.component_id}`
-      return `${effectLabel[filter.effect] ?? filter.effect}${daysPart}${slotsSuffix}: ${matchDesc}`
-    }
-
-    case 'meal-template': {
-      let selectorLabel: string
-      if (filter.selector.mode === 'base') {
-        selectorLabel = capitalize(filter.selector.base_type)
-      } else if (filter.selector.mode === 'tag') {
-        const tagParts = Object.entries(filter.selector.filter)
-          .filter(([, v]) => Boolean(v))
-          .map(([k, v]) => `${k.replace('_tag', '')}: ${v}`)
-          .join(', ')
-        selectorLabel = `Tag: ${tagParts || 'any'}`
-      } else {
-        selectorLabel = `Component #${filter.selector.component_id}`
-      }
-      const parts: string[] = []
-
-      // Slot assignment
-      if (filter.allowed_slots !== null) {
-        parts.push(`allowed at ${filter.allowed_slots.join(', ')}`)
-      }
-
-      // Component type exclusions
-      if (filter.exclude_component_types.length > 0) {
-        parts.push(`exclude ${filter.exclude_component_types.join(', ')}`)
-      }
-
-      // Extra category exclusions
-      if (filter.exclude_extra_categories.length > 0) {
-        const catLabel = filter.exclude_extra_categories.map(c => `${c} extras`).join(', ')
-        // Merge with component exclusions if both present
-        if (filter.exclude_component_types.length > 0) {
-          parts.push(catLabel)
-        } else {
-          parts.push(`exclude ${catLabel}`)
-        }
-      }
-
-      // Required extra
-      if (filter.require_extra_category !== null) {
-        parts.push(`require ${filter.require_extra_category} extra`)
-      }
-
-      // Context scope qualifier (slots in parens when present)
-      const slotsQualifier = filter.slots !== null && filter.slots.length > 0
-        ? ` (${filter.slots.join(', ')})`
-        : ''
-
-      if (parts.length === 0) {
-        return `${selectorLabel}${slotsQualifier}`
-      }
-
-      return `${selectorLabel}${slotsQualifier}: ${parts.join(', ')}`
-    }
+    case 'component':
+      return `component #${target.component_id}`
+    case 'base_type':
+      return capitalize(target.base_type)
   }
+}
+
+function describeEffects(effects: AnyEffect[]): string {
+  const parts: string[] = []
+
+  const selection = effects.find(e =>
+    e.kind === 'filter_pool' || e.kind === 'require_one' ||
+    e.kind === 'exclude' || e.kind === 'no_repeat',
+  )
+  if (selection) {
+    const labels: Record<string, string> = {
+      filter_pool: 'Filter pool', require_one: 'Require one',
+      exclude: 'Exclude', no_repeat: 'No-repeat',
+    }
+    parts.push(labels[selection.kind] ?? selection.kind)
+  }
+
+  for (const e of effects) {
+    if (e.kind === 'allowed_slots')
+      parts.push(`allowed at ${e.slots.join(', ')}`)
+    if (e.kind === 'skip_component')
+      parts.push(`skip ${e.component_types.join(', ')}`)
+    if (e.kind === 'exclude_extra')
+      parts.push(`exclude ${e.categories.join(', ')} extras`)
+    if (e.kind === 'require_extra')
+      parts.push(`require ${e.categories.join(', ')} extra`)
+  }
+
+  return parts.join('; ')
+}
+
+export function describeRule(rule: CompiledRule): string {
+  const targetLabel = describeTarget(rule.target)
+  const daysPart = rule.scope.days && rule.scope.days.length > 0
+    ? ` on ${formatDays(rule.scope.days)}`
+    : ''
+  const slotsSuffix = formatSlotsSuffix(rule.scope.slots)
+  const effectsLabel = describeEffects(rule.effects)
+
+  if (!effectsLabel) return `${targetLabel}${daysPart}${slotsSuffix}`
+  return `${targetLabel}${daysPart}${slotsSuffix}: ${effectsLabel}`
 }
