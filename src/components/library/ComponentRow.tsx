@@ -1,5 +1,7 @@
 'use client'
 
+import { useMemo } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import { Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -9,6 +11,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
+import { getCategoriesByKind } from '@/services/category-db'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -34,6 +38,13 @@ export function ComponentRow({
   onCancelDelete,
   onDelete,
 }: ComponentRowProps) {
+  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
+  const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
+  const baseCategoriesById = useMemo(() => buildCategoryMap(baseCategories ?? []), [baseCategories])
+  const extraCategoriesById = useMemo(() => buildCategoryMap(extraCategories ?? []), [extraCategories])
+  const compatibleBaseLabels = (component.compatible_base_category_ids ?? []).map((id) =>
+    getBaseCategoryLabel(baseCategoriesById, id),
+  )
 
   function handleRowClick() {
     if (expanded) {
@@ -84,10 +95,21 @@ export function ComponentRow({
           ))}
         </div>
 
-        {/* Compatible base types badge (Extras only) */}
-        {component.componentType === 'extra' && component.compatible_base_types && component.compatible_base_types.length > 0 && (
+        {component.componentType === 'base' && component.base_category_id != null && (
+          <Badge variant="secondary" className="shrink-0 text-sm px-2 py-0.5">
+            {getBaseCategoryLabel(baseCategoriesById, component.base_category_id)}
+          </Badge>
+        )}
+
+        {component.componentType === 'extra' && component.extra_category_id != null && (
+          <Badge variant="secondary" className="shrink-0 text-sm px-2 py-0.5">
+            {getExtraCategoryLabel(extraCategoriesById, component.extra_category_id)}
+          </Badge>
+        )}
+
+        {component.componentType === 'extra' && compatibleBaseLabels.length > 0 && (
           <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
-            {component.compatible_base_types.join(', ')}
+            {compatibleBaseLabels.join(', ')}
           </Badge>
         )}
 
