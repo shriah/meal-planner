@@ -14,12 +14,17 @@ export async function getComponentsByType(type: ComponentType): Promise<Componen
   return db.components.where('componentType').equals(type).toArray();
 }
 
-export async function getExtrasByBaseType(baseType: BaseType | number): Promise<ComponentRecord[]> {
+export async function getExtrasByBaseCategoryId(baseCategoryId: number): Promise<ComponentRecord[]> {
   const extras = await db.components.where('componentType').equals('extra').toArray();
+  return extras.filter((extra) => (extra.compatible_base_category_ids ?? []).includes(baseCategoryId));
+}
+
+export async function getExtrasByBaseType(baseType: BaseType | number): Promise<ComponentRecord[]> {
   if (typeof baseType === 'number') {
-    return extras.filter((extra) => (extra.compatible_base_category_ids ?? []).includes(baseType));
+    return getExtrasByBaseCategoryId(baseType);
   }
 
+  const extras = await db.components.where('componentType').equals('extra').toArray();
   return extras.filter((extra) => (extra.compatible_base_types ?? []).includes(baseType));
 }
 

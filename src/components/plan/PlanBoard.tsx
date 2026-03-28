@@ -18,7 +18,6 @@ import { WeekNavigator } from './WeekNavigator'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import type { BaseType } from '@/types/component'
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
 
@@ -152,12 +151,12 @@ export function PlanBoard() {
           day={pickerState.day}
           slot={pickerState.slot}
           componentType={pickerState.componentType}
-          currentBaseType={
+          currentBaseCategoryId={
             pickerState.componentType === 'extras'
               ? (() => {
                   const ps = plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
                   const baseComp = ps ? componentsMap.get(ps.base_id) : undefined
-                  return baseComp?.base_type as BaseType | undefined
+                  return baseComp?.base_category_id ?? undefined
                 })()
               : undefined
           }

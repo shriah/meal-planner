@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { db } from '@/db/client';
 import { generate } from './generator';
 import { addComponent, putPreferences, addRule } from '@/services/food-db';
+import { addCategory } from '@/services/category-db';
 import type { ComponentRecord } from '@/types/component';
 import type { UserPreferencesRecord } from '@/types/preferences';
 
@@ -12,6 +13,12 @@ import type { UserPreferencesRecord } from '@/types/preferences';
  * Returns a map of component IDs by name.
  */
 async function seedMinimalComponents(): Promise<{
+  riceBaseCategoryId: number;
+  breadBaseCategoryId: number;
+  otherBaseCategoryId: number;
+  liquidCategoryId: number;
+  condimentCategoryId: number;
+  sweetCategoryId: number;
   riceBaseId: number;
   breadBaseId: number;
   otherBaseId: number;
@@ -49,9 +56,16 @@ async function seedMinimalComponents(): Promise<{
     created_at: '',
   };
 
-  const riceBaseId = await addComponent({ ...base, name: 'Plain Rice', base_type: 'rice-based' });
-  const breadBaseId = await addComponent({ ...base, name: 'Chapati', base_type: 'bread-based' });
-  const otherBaseId = await addComponent({ ...base, name: 'Idli', base_type: 'other' });
+  const riceBaseCategoryId = await addCategory({ kind: 'base', name: 'rice-based' });
+  const breadBaseCategoryId = await addCategory({ kind: 'base', name: 'bread-based' });
+  const otherBaseCategoryId = await addCategory({ kind: 'base', name: 'other' });
+  const liquidCategoryId = await addCategory({ kind: 'extra', name: 'liquid' });
+  const condimentCategoryId = await addCategory({ kind: 'extra', name: 'condiment' });
+  const sweetCategoryId = await addCategory({ kind: 'extra', name: 'sweet' });
+
+  const riceBaseId = await addComponent({ ...base, name: 'Plain Rice', base_type: 'rice-based', base_category_id: riceBaseCategoryId });
+  const breadBaseId = await addComponent({ ...base, name: 'Chapati', base_type: 'bread-based', base_category_id: breadBaseCategoryId });
+  const otherBaseId = await addComponent({ ...base, name: 'Idli', base_type: 'other', base_category_id: otherBaseCategoryId });
 
   const curry1Id = await addComponent({ ...curry, name: 'Sambar' });
   const curry2Id = await addComponent({ ...curry, name: 'Dal Tadka' });
@@ -63,7 +77,9 @@ async function seedMinimalComponents(): Promise<{
   const extraLiquidRiceId = await addComponent({
     name: 'Rasam',
     componentType: 'extra',
+    extra_category_id: liquidCategoryId,
     extra_category: 'liquid',
+    compatible_base_category_ids: [riceBaseCategoryId],
     compatible_base_types: ['rice-based'],
     dietary_tags: ['veg'],
     regional_tags: ['south-indian'],
@@ -74,7 +90,9 @@ async function seedMinimalComponents(): Promise<{
   const extraCondimentAllId = await addComponent({
     name: 'Pickle',
     componentType: 'extra',
+    extra_category_id: condimentCategoryId,
     extra_category: 'condiment',
+    compatible_base_category_ids: [riceBaseCategoryId, breadBaseCategoryId, otherBaseCategoryId],
     compatible_base_types: ['rice-based', 'bread-based', 'other'],
     dietary_tags: ['veg'],
     regional_tags: ['pan-indian'],
@@ -85,7 +103,9 @@ async function seedMinimalComponents(): Promise<{
   const extraCondimentOtherId = await addComponent({
     name: 'Coconut Chutney',
     componentType: 'extra',
+    extra_category_id: condimentCategoryId,
     extra_category: 'condiment',
+    compatible_base_category_ids: [otherBaseCategoryId],
     compatible_base_types: ['other'],
     dietary_tags: ['veg'],
     regional_tags: ['south-indian'],
@@ -94,6 +114,12 @@ async function seedMinimalComponents(): Promise<{
   });
 
   return {
+    riceBaseCategoryId,
+    breadBaseCategoryId,
+    otherBaseCategoryId,
+    liquidCategoryId,
+    condimentCategoryId,
+    sweetCategoryId,
     riceBaseId, breadBaseId, otherBaseId,
     curry1Id, curry2Id,
     subzi1Id, subzi2Id, subzi3Id,
@@ -121,6 +147,7 @@ async function seedDefaultPreferences(): Promise<void> {
 // ─── beforeEach ───────────────────────────────────────────────────────────────
 
 beforeEach(async () => {
+  await db.categories.clear();
   await db.components.clear();
   await db.rules.clear();
   await db.preferences.clear();
@@ -184,7 +211,7 @@ describe('PLAN-04: Extra compatibility', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['breakfast'] }],
       },
@@ -195,7 +222,7 @@ describe('PLAN-04: Extra compatibility', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'other' },
+        target: { mode: 'base_category', category_id: ids.otherBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
       },
@@ -206,11 +233,11 @@ describe('PLAN-04: Extra compatibility', () => {
     // Instead, use allowed_slots rules that don't intersect — force rice/other to specific non-lunch/dinner slots
     // The cleanest approach: clear and re-seed with only bread-based
     await db.components.clear();
-    const breadBaseId2 = await addComponent({ name: 'Chapati', componentType: 'base', base_type: 'bread-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const breadBaseId2 = await addComponent({ name: 'Chapati', componentType: 'base', base_type: 'bread-based', base_category_id: ids.breadBaseCategoryId, dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
     await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraLiquidRiceId2 = await addComponent({ name: 'Rasam', componentType: 'extra', extra_category: 'liquid', compatible_base_types: ['rice-based'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraCondimentAllId2 = await addComponent({ name: 'Pickle', componentType: 'extra', extra_category: 'condiment', compatible_base_types: ['rice-based', 'bread-based', 'other'], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraCondimentOtherId2 = await addComponent({ name: 'Coconut Chutney', componentType: 'extra', extra_category: 'condiment', compatible_base_types: ['other'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraLiquidRiceId2 = await addComponent({ name: 'Rasam', componentType: 'extra', extra_category_id: ids.liquidCategoryId, extra_category: 'liquid', compatible_base_category_ids: [ids.riceBaseCategoryId], compatible_base_types: ['rice-based'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraCondimentAllId2 = await addComponent({ name: 'Pickle', componentType: 'extra', extra_category_id: ids.condimentCategoryId, extra_category: 'condiment', compatible_base_category_ids: [ids.riceBaseCategoryId, ids.breadBaseCategoryId, ids.otherBaseCategoryId], compatible_base_types: ['rice-based', 'bread-based', 'other'], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraCondimentOtherId2 = await addComponent({ name: 'Coconut Chutney', componentType: 'extra', extra_category_id: ids.condimentCategoryId, extra_category: 'condiment', compatible_base_category_ids: [ids.otherBaseCategoryId], compatible_base_types: ['other'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
     await db.rules.clear();
     await putPreferences({ id: 'prefs', slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} }, extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 }, base_type_rules: [] });
 
@@ -230,10 +257,12 @@ describe('PLAN-04: Extra compatibility', () => {
   });
 
   it('6. rice-only extra (Rasam) never appears with bread-based base', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
     // Seed only bread-based components so all slots pick bread-based
-    const breadBaseId = await addComponent({ name: 'Chapati', componentType: 'base', base_type: 'bread-based', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const breadBaseId = await addComponent({ name: 'Chapati', componentType: 'base', base_type: 'bread-based', base_category_id: ids.breadBaseCategoryId, dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
     await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraLiquidRiceId = await addComponent({ name: 'Rasam', componentType: 'extra', extra_category: 'liquid', compatible_base_types: ['rice-based'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraLiquidRiceId = await addComponent({ name: 'Rasam', componentType: 'extra', extra_category_id: ids.liquidCategoryId, extra_category: 'liquid', compatible_base_category_ids: [ids.riceBaseCategoryId], compatible_base_types: ['rice-based'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
     await putPreferences({ id: 'prefs', slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} }, extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 }, base_type_rules: [] });
     // Run 5 times to confirm no accidental pairing
     for (let i = 0; i < 5; i++) {
@@ -261,11 +290,13 @@ describe('PLAN-04: Extra compatibility', () => {
   });
 
   it('8. mandatory extra: other base type gets at least one condiment when require_extra rule requires it', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
     // Seed only 'other' base + compatible condiment extras
-    const otherBaseId = await addComponent({ name: 'Idli', componentType: 'base', base_type: 'other', dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const otherBaseId = await addComponent({ name: 'Idli', componentType: 'base', base_type: 'other', base_category_id: ids.otherBaseCategoryId, dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
     await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraCondimentAllId = await addComponent({ name: 'Pickle', componentType: 'extra', extra_category: 'condiment', compatible_base_types: ['rice-based', 'bread-based', 'other'], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
-    const extraCondimentOtherId = await addComponent({ name: 'Coconut Chutney', componentType: 'extra', extra_category: 'condiment', compatible_base_types: ['other'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraCondimentAllId = await addComponent({ name: 'Pickle', componentType: 'extra', extra_category_id: ids.condimentCategoryId, extra_category: 'condiment', compatible_base_category_ids: [ids.riceBaseCategoryId, ids.breadBaseCategoryId, ids.otherBaseCategoryId], compatible_base_types: ['rice-based', 'bread-based', 'other'], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    const extraCondimentOtherId = await addComponent({ name: 'Coconut Chutney', componentType: 'extra', extra_category_id: ids.condimentCategoryId, extra_category: 'condiment', compatible_base_category_ids: [ids.otherBaseCategoryId], compatible_base_types: ['other'], dietary_tags: ['veg'], regional_tags: ['south-indian'], occasion_tags: ['everyday'], created_at: '' });
     await putPreferences({ id: 'prefs', slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} }, extra_quantity_limits: { breakfast: 3, lunch: 3, dinner: 3 }, base_type_rules: [] });
     // Rule: require condiment for 'other' base type
     await addRule({
@@ -273,9 +304,9 @@ describe('PLAN-04: Extra compatibility', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'other' },
+        target: { mode: 'base_category', category_id: ids.otherBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['condiment'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.condimentCategoryId] }],
       },
       created_at: '',
     });
@@ -1625,7 +1656,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['lunch', 'dinner'] }],
       },
@@ -1650,7 +1681,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [],
       },
@@ -1679,7 +1710,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['lunch', 'dinner'] }],
       },
@@ -1691,7 +1722,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
       },
@@ -1726,7 +1757,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
       },
@@ -1752,7 +1783,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
       },
@@ -1772,7 +1803,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
   });
 
   it('TMPL-02-6. allowed_slots intersection empty — relax to unrestricted with warning (D-10)', async () => {
-    await seedMinimalComponents();
+    const ids = await seedMinimalComponents();
     await seedDefaultPreferences();
     // Rule A: lunch only
     await addRule({
@@ -1780,7 +1811,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['lunch'] }],
       },
@@ -1792,7 +1823,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
       },
@@ -1819,7 +1850,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'skip_component', component_types: ['subzi'] }],
       },
@@ -1843,7 +1874,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'skip_component', component_types: ['curry'] }],
       },
@@ -1867,7 +1898,7 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: ['monday'], slots: ['dinner'] },
         effects: [{ kind: 'skip_component', component_types: ['subzi'] }],
       },
@@ -1903,15 +1934,18 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
 // ─── Meal-template rules: require-or-none extras ─────────────────────────────
 
 describe('meal-template rules: require-or-none extras', () => {
-  it('without require_extra, compatible extras stay unconstrained and no extra warning is emitted', async () => {
+  it('without require_extra, unlocked slots default to empty extra_ids and no extra warning is emitted', async () => {
     await db.components.clear();
     await db.rules.clear();
     await db.preferences.clear();
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
 
     const riceBaseId = await addComponent({
       name: 'Plain Rice',
       componentType: 'base',
       base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
       occasion_tags: ['everyday'],
@@ -1929,7 +1963,9 @@ describe('meal-template rules: require-or-none extras', () => {
     const sweetRiceId = await addComponent({
       name: 'Kheer',
       componentType: 'extra',
+      extra_category_id: ids.sweetCategoryId,
       extra_category: 'sweet',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
       compatible_base_types: ['rice-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -1947,7 +1983,7 @@ describe('meal-template rules: require-or-none extras', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [{ kind: 'skip_component', component_types: ['subzi'] }],
       },
@@ -1959,8 +1995,9 @@ describe('meal-template rules: require-or-none extras', () => {
     expect(result.warnings.filter(w => w.message.includes('require_extra'))).toHaveLength(0);
     for (const slot of result.plan.slots) {
       expect(slot.base_id).toBe(riceBaseId);
-      expect(slot.extra_ids).toEqual([sweetRiceId]);
+      expect(slot.extra_ids).toEqual([]);
     }
+    void sweetRiceId;
   });
 });
 
@@ -1972,7 +2009,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
     const liquidBreadId = await addComponent({
       name: 'Chai',
       componentType: 'extra',
+      extra_category_id: ids.liquidCategoryId,
       extra_category: 'liquid',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
       compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -1984,9 +2023,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['liquid'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.liquidCategoryId] }],
       },
       created_at: '',
     });
@@ -2013,7 +2052,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
     const condimentBreadId = await addComponent({
       name: 'Butter',
       componentType: 'extra',
+      extra_category_id: ids.condimentCategoryId,
       extra_category: 'condiment',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
       compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -2023,7 +2064,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
     const liquidBreadId = await addComponent({
       name: 'Chai',
       componentType: 'extra',
+      extra_category_id: ids.liquidCategoryId,
       extra_category: 'liquid',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
       compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -2036,9 +2079,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['liquid'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.liquidCategoryId] }],
       },
       created_at: '',
     });
@@ -2065,9 +2108,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['dairy'] }],
+        effects: [{ kind: 'require_extra', category_ids: [999_999] }],
       },
       created_at: '',
     });
@@ -2090,7 +2133,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
     const liquidBreadId = await addComponent({
       name: 'Chai',
       componentType: 'extra',
+      extra_category_id: ids.liquidCategoryId,
       extra_category: 'liquid',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
       compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -2100,7 +2145,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
     const condimentBreadId = await addComponent({
       name: 'Butter',
       componentType: 'extra',
+      extra_category_id: ids.condimentCategoryId,
       extra_category: 'condiment',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
       compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
@@ -2113,9 +2160,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['liquid'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.liquidCategoryId] }],
       },
       created_at: '',
     });
@@ -2125,9 +2172,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['condiment'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.condimentCategoryId] }],
       },
       created_at: '',
     });
@@ -2165,9 +2212,9 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'bread-based' },
+        target: { mode: 'base_category', category_id: ids.breadBaseCategoryId },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'require_extra', categories: ['condiment'] }],
+        effects: [{ kind: 'require_extra', category_ids: [ids.condimentCategoryId] }],
       },
       created_at: '',
     });
@@ -2177,7 +2224,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
         scope: { days: null, slots: null },
         effects: [],
       },

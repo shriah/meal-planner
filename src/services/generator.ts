@@ -1,5 +1,5 @@
 import { getAllComponents, getPreferences, getEnabledRules } from '@/services/food-db';
-import type { ComponentRecord, BaseType } from '@/types/component';
+import type { ComponentRecord } from '@/types/component';
 import type { UserPreferencesRecord, MealSlot } from '@/types/preferences';
 import type { RuleRecord } from '@/db/client';
 import {
@@ -131,9 +131,24 @@ function targetMatches(target: Target, component: ComponentRecord): boolean {
       return matchesTagFilter(component, target.filter);
     case 'component':
       return component.id === target.component_id;
-    case 'base_type':
-      return component.componentType === 'base' && component.base_type === target.base_type;
+    case 'base_category':
+      return component.componentType === 'base' && component.base_category_id === target.category_id;
   }
+}
+
+function isExtraCompatibleWithBase(
+  extra: ComponentRecord,
+  base: ComponentRecord,
+): boolean {
+  if (base.base_category_id !== undefined && base.base_category_id !== null) {
+    return (extra.compatible_base_category_ids ?? []).includes(base.base_category_id);
+  }
+
+  if (base.base_type) {
+    return (extra.compatible_base_types ?? []).includes(base.base_type);
+  }
+
+  return false;
 }
 
 // ─── Helper: scopeMatches ─────────────────────────────────────────────────────
@@ -566,20 +581,16 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         ...new Set(
           secondPassEffects
             .filter((e): e is RequireExtraEffect => e.kind === 'require_extra')
-            .flatMap(e => e.categories),
+            .flatMap(e => e.category_ids)
+            .filter((categoryId) => Number.isFinite(categoryId)),
         ),
       ];
 
       // ── Extras selection ────────────────────────────────────────────────────
 
-      const maxExtras = resolvedPrefs.extra_quantity_limits[meal_slot] ?? 2;
-      const selectedBaseType = selectedBase.base_type as BaseType | undefined;
-
-      let eligibleExtras = extras.filter(e => {
-        if (!selectedBaseType) return true;
-        if (!(e.compatible_base_types ?? []).includes(selectedBaseType)) return false;
-        return isOccasionAllowed(e, day);
-      });
+      const eligibleExtras = extras.filter(
+        (extra) => isOccasionAllowed(extra, day) && isExtraCompatibleWithBase(extra, selectedBase),
+      );
 
       const selectedExtraIds: number[] = [];
 
@@ -587,9 +598,9 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         selectedExtraIds.push(...locked.extra_ids);
       } else {
         // Fill required extra categories first
-        for (const category of requiredExtraCategories) {
+        for (const categoryId of requiredExtraCategories) {
           const candidates = eligibleExtras.filter(
-            e => e.extra_category === category && !selectedExtraIds.includes(e.id!),
+            (extra) => extra.extra_category_id === categoryId && !selectedExtraIds.includes(extra.id!),
           );
           if (candidates.length > 0) {
             const picked = weightedRandom(candidates, c => effectiveWeight(c, usageCount));
@@ -599,21 +610,8 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
             warnings.push({
               slot: { day, meal_slot },
               rule_id: null,
-              message: `require_extra category '${category}' has no eligible extras on ${day} ${meal_slot} — skipped`,
+              message: `require_extra category_id '${categoryId}' has no eligible extras on ${day} ${meal_slot} — skipped`,
             });
-          }
-        }
-
-        // Random fill remaining slots
-        const remaining = maxExtras - selectedExtraIds.length;
-        if (remaining > 0 && eligibleExtras.length > 0) {
-          const pool = eligibleExtras.filter(e => !selectedExtraIds.includes(e.id!));
-          const tempPool = [...pool];
-          for (let i = 0; i < remaining && tempPool.length > 0; i++) {
-            const picked = weightedRandom(tempPool, c => effectiveWeight(c, usageCount));
-            selectedExtraIds.push(picked.id!);
-            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-            tempPool.splice(tempPool.findIndex(c => c.id === picked.id), 1);
           }
         }
       }
