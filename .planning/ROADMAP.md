@@ -124,3 +124,7 @@ Plans:
 **Requirements:** none new — closes audit tech debt
 **Depends on:** Phase 15
 **Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`
+**Plans:** 1 plan
+
+Plans:
+- [ ] 16-01-PLAN.md — Resolve preset category targets by stable built-in category identity and add direct `PlanBoard -> MealPickerSheet` handoff coverage
