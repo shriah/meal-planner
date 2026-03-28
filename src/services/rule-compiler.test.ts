@@ -1,35 +1,45 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { compileRule, decompileRule } from './rule-compiler';
 import type { CompiledRule } from '@/types/plan';
 import type { RuleFormState } from '@/components/rules/types';
 
 describe('compileRule', () => {
-  it('compiles a no-repeat rule', () => {
+  it('compiles base-category targets with numeric category IDs', () => {
     const state: RuleFormState = {
-      name: 'No repeat base',
-      target: { mode: 'component_type', component_type: 'base' },
-      days: [], slots: [],
-      selection: 'no_repeat',
-      allowed_slots: [], skip_component_types: [],
-      require_extra_categories: [],
+      name: 'Rice lunch and dinner',
+      target: { mode: 'base_category', base_category_id: 3 },
+      days: [],
+      slots: [],
+      selection: '',
+      allowed_slots: ['lunch', 'dinner'],
+      skip_component_types: ['curry'],
+      require_extra_category_ids: [7, 8],
     };
+
     expect(compileRule(state)).toEqual({
       type: 'rule',
-      target: { mode: 'component_type', component_type: 'base' },
+      target: { mode: 'base_category', category_id: 3 },
       scope: { days: null, slots: null },
-      effects: [{ kind: 'no_repeat' }],
+      effects: [
+        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
+        { kind: 'skip_component', component_types: ['curry'] },
+        { kind: 'require_extra', category_ids: [7, 8] },
+      ],
     });
   });
 
-  it('compiles a filter_pool rule with days scope', () => {
+  it('compiles scheduling rules without changing non-category targets', () => {
     const state: RuleFormState = {
       name: 'Fish Fridays',
       target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      days: ['friday'], slots: [],
+      days: ['friday'],
+      slots: [],
       selection: 'filter_pool',
-      allowed_slots: [], skip_component_types: [],
-      require_extra_categories: [],
+      allowed_slots: [],
+      skip_component_types: [],
+      require_extra_category_ids: [],
     };
+
     expect(compileRule(state)).toEqual({
       type: 'rule',
       target: { mode: 'tag', filter: { protein_tag: 'fish' } },
@@ -37,117 +47,75 @@ describe('compileRule', () => {
       effects: [{ kind: 'filter_pool' }],
     });
   });
-
-  it('compiles a rice template with multiple effects', () => {
-    const state: RuleFormState = {
-      name: 'Rice rules',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      days: [], slots: [],
-      selection: '',
-      allowed_slots: ['lunch', 'dinner'],
-      skip_component_types: ['curry'],
-      require_extra_categories: ['condiment', 'liquid'],
-    };
-    expect(compileRule(state)).toEqual({
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'require_extra', categories: ['condiment', 'liquid'] },
-      ],
-    });
-  });
 });
 
 describe('decompileRule', () => {
-  it('rehydrates a scheduling-style rule into form state', () => {
+  it('rehydrates base-category targets and require-extra category IDs', () => {
     const compiled: CompiledRule = {
       type: 'rule',
-      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      scope: { days: ['friday'], slots: ['dinner'] },
-      effects: [{ kind: 'require_one' }],
-    };
-
-    expect(decompileRule(compiled, 'Fish Fridays')).toEqual({
-      name: 'Fish Fridays',
-      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      days: ['friday'],
-      slots: ['dinner'],
-      selection: 'require_one',
-      allowed_slots: [],
-      skip_component_types: [],
-      require_extra_categories: [],
-    });
-  });
-
-  it('rehydrates a meal-template rule into form state', () => {
-    const compiled: CompiledRule = {
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'require_extra', categories: ['condiment', 'liquid'] },
-      ],
-    };
-
-    expect(decompileRule(compiled, 'Rice lunch+dinner')).toEqual({
-      name: 'Rice lunch+dinner',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      days: [],
-      slots: [],
-      selection: '',
-      allowed_slots: ['lunch', 'dinner'],
-      skip_component_types: ['curry'],
-      require_extra_categories: ['condiment', 'liquid'],
-    });
-  });
-
-  it('drops legacy exclude_extra effects during decompile and recompile', () => {
-    const compiled = {
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'exclude_extra', categories: ['sweet'] },
-        { kind: 'require_extra', categories: ['condiment'] },
-      ],
-    } as CompiledRule;
-
-    const state = decompileRule(compiled, 'Rice extras');
-
-    expect(state.require_extra_categories).toEqual(['condiment']);
-    expect(compileRule(state)).toEqual({
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'require_extra', categories: ['condiment'] }],
-    });
-  });
-
-  it('round-trips scheduling and meal-template compiled rules', () => {
-    const schedulingRule: CompiledRule = {
-      type: 'rule',
-      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      scope: { days: ['friday'], slots: ['dinner'] },
-      effects: [{ kind: 'filter_pool' }],
-    };
-    const templateRule: CompiledRule = {
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
+      target: { mode: 'base_category', category_id: 4 },
       scope: { days: null, slots: null },
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
         { kind: 'skip_component', component_types: ['subzi'] },
-        { kind: 'require_extra', categories: ['condiment'] },
+        { kind: 'require_extra', category_ids: [9] },
       ],
     };
 
-    expect(compileRule(decompileRule(schedulingRule, 'Fish Fridays'))).toEqual(schedulingRule);
-    expect(compileRule(decompileRule(templateRule, 'Rice lunch+dinner'))).toEqual(templateRule);
+    expect(decompileRule(compiled, 'Rice template', { baseCategoryIds: [4], extraCategoryIds: [9] })).toEqual({
+      name: 'Rice template',
+      target: { mode: 'base_category', base_category_id: 4 },
+      days: [],
+      slots: [],
+      selection: '',
+      allowed_slots: ['lunch', 'dinner'],
+      skip_component_types: ['subzi'],
+      require_extra_category_ids: [9],
+    });
+  });
+
+  it('drops deleted extra category IDs during decompile and round-trip', () => {
+    const compiled: CompiledRule = {
+      type: 'rule',
+      target: { mode: 'base_category', category_id: 4 },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'require_extra', category_ids: [9, 99] },
+      ],
+    };
+
+    const state = decompileRule(compiled, 'Rice extras', {
+      baseCategoryIds: [4],
+      extraCategoryIds: [9],
+    });
+
+    expect(state.require_extra_category_ids).toEqual([9]);
+    expect(compileRule(state)).toEqual({
+      type: 'rule',
+      target: { mode: 'base_category', category_id: 4 },
+      scope: { days: null, slots: null },
+      effects: [{ kind: 'require_extra', category_ids: [9] }],
+    });
+  });
+
+  it('returns an inert empty target when the referenced base category has been deleted', () => {
+    const compiled: CompiledRule = {
+      type: 'rule',
+      target: { mode: 'base_category', category_id: 4 },
+      scope: { days: ['monday'], slots: ['dinner'] },
+      effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
+    };
+
+    expect(decompileRule(compiled, 'Deleted base', { baseCategoryIds: [3], extraCategoryIds: [] })).toEqual({
+      name: 'Deleted base',
+      target: { mode: '' },
+      days: ['monday'],
+      slots: ['dinner'],
+      selection: '',
+      allowed_slots: ['dinner'],
+      skip_component_types: [],
+      require_extra_category_ids: [],
+    });
   });
 
   it('maps null scope fields back to empty arrays', () => {

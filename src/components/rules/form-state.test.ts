@@ -12,18 +12,29 @@ describe('formReducer', () => {
       selection: 'exclude',
       allowed_slots: ['lunch'],
       skip_component_types: ['subzi'],
-      require_extra_categories: ['condiment'],
+      require_extra_category_ids: [42],
     };
 
-    expect(formReducer(state, { type: 'SET_TARGET_MODE', mode: 'base_type' })).toEqual({
+    expect(formReducer(state, { type: 'SET_TARGET_MODE', mode: 'base_category' })).toEqual({
       name: 'Fish Fridays',
-      target: { mode: 'base_type', base_type: '' },
+      target: { mode: 'base_category', base_category_id: null },
       days: ['friday'],
       slots: ['dinner'],
       selection: 'exclude',
       allowed_slots: ['lunch'],
       skip_component_types: ['subzi'],
-      require_extra_categories: ['condiment'],
+      require_extra_category_ids: [42],
+    });
+  });
+
+  it('updates require-extra IDs without relying on legacy category names', () => {
+    expect(
+      formReducer(EMPTY_RULE_FORM_STATE, {
+        type: 'SET_REQUIRE_EXTRA_CATEGORY_IDS',
+        category_ids: [3, 5],
+      }),
+    ).toMatchObject({
+      require_extra_category_ids: [3, 5],
     });
   });
 
@@ -67,13 +78,13 @@ describe('isFormValid', () => {
     ).toBe(true);
   });
 
-  it('treats empty require_extra_categories as the no-extras-logic state', () => {
+  it('requires a real base-category ID before a category-targeted rule is valid', () => {
     expect(
       isFormValid({
         ...EMPTY_RULE_FORM_STATE,
-        name: 'Rice template',
-        target: { mode: 'base_type', base_type: 'rice-based' },
-        require_extra_categories: [],
+        name: 'Missing base category',
+        target: { mode: 'base_category', base_category_id: null },
+        allowed_slots: ['lunch'],
       }),
     ).toBe(false);
 
@@ -81,9 +92,18 @@ describe('isFormValid', () => {
       isFormValid({
         ...EMPTY_RULE_FORM_STATE,
         name: 'Rice template',
-        target: { mode: 'base_type', base_type: 'rice-based' },
+        target: { mode: 'base_category', base_category_id: 7 },
+        require_extra_category_ids: [],
+      }),
+    ).toBe(false);
+
+    expect(
+      isFormValid({
+        ...EMPTY_RULE_FORM_STATE,
+        name: 'Rice template',
+        target: { mode: 'base_category', base_category_id: 7 },
         allowed_slots: ['lunch'],
-        require_extra_categories: [],
+        require_extra_category_ids: [],
       }),
     ).toBe(true);
   });
