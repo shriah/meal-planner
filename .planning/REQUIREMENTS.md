@@ -21,6 +21,24 @@
 - [x] **PH12-04**: The generator leaves extras unconstrained unless a rule explicitly requires an extra category, and extra-related warnings only occur when that explicit requirement cannot be satisfied
 - [x] **PH12-05**: Rule descriptions and other user-visible copy mention only explicitly required extras and never excluded extra categories
 
+### Only Include Extras When Explicitly Required
+
+- [x] **PH13-01**: Unlocked generation adds no extras when the slot has no matching `require_extra` effect
+- [x] **PH13-02**: Matching `require_extra` effects remain the only runtime path that can add generated extras to an unlocked slot
+- [x] **PH13-03**: Locked slot `extra_ids` remain unchanged and bypass the no-random-fill default
+- [x] **PH13-04**: Extra-related warnings occur only for unsatisfied explicit `require_extra` categories, not for the absence of optional extras
+
+### Dynamic Categories
+
+- [x] **CAT-01**: Persist user-managed category records for both base and extra kinds, and migrate existing built-in literals into those records with stable IDs
+- [x] **CAT-02**: Component records and Library forms store category IDs instead of hard-coded category names, while extra compatibility keeps the current checklist interaction
+- [ ] **CAT-03**: Rule targets and `require_extra` effects store category IDs and render dynamic category-backed options in create/edit flows
+- [ ] **CAT-04**: Generator behavior and picker filtering resolve compatibility from category data while preserving the explicit-extra runtime contract from Phase 13
+- [ ] **CAT-05**: Users can add, rename, and delete both base and extra categories from a separate category-management UI
+- [x] **CAT-06**: Renaming a category cascades automatically across visible labels because identity is the stable ID, not the display name
+- [x] **CAT-07**: Deleting a category normalizes dependent references so no dangling IDs remain in components, rules, or runtime surfaces
+- [ ] **CAT-08**: Seed/default data and regression tests use the category-backed model instead of the old string unions
+
 ## v1.1 Requirements (Complete)
 
 ### Scheduling Rule (unified day/slot constraint)
@@ -77,6 +95,18 @@
 | PH12-03 | Phase 12 | Complete |
 | PH12-04 | Phase 12 | Complete |
 | PH12-05 | Phase 12 | Complete |
+| PH13-01 | Phase 13 | Complete |
+| PH13-02 | Phase 13 | Complete |
+| PH13-03 | Phase 13 | Complete |
+| PH13-04 | Phase 13 | Complete |
+| CAT-01 | Phase 14 | Planned |
+| CAT-02 | Phase 14 | Planned |
+| CAT-03 | Phase 14 | Planned |
+| CAT-04 | Phase 14 | Planned |
+| CAT-05 | Phase 14 | Planned |
+| CAT-06 | Phase 14 | Planned |
+| CAT-07 | Phase 14 | Planned |
+| CAT-08 | Phase 14 | Planned |
 | SCHED-01 | Phase 7 | Complete |
 | SCHED-02 | Phase 7 | Complete |
 | SCHED-03 | Phase 7 | Complete |
@@ -97,4 +127,4 @@
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-28 — Phase 12 require-extra normalization completed*
+*Last updated: 2026-03-28 — Phase 13 extra generation narrowed to explicit requirements only*

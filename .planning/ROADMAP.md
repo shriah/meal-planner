@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
-- 🔄 **v1.2 Edit Rule** — Phase 11 (in progress)
+- ✅ **v1.2 Edit Rule** — Phases 11-13 (shipped 2026-03-28)
 
 ## Phases
 
@@ -67,6 +67,7 @@ Plans:
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 11. Edit Rule | v1.2 | 2/2 | Complete   | 2026-03-27 |
 | 12. Require extra explicitly instead of excluding extra categories by default | v1.2 | 3/3 | Complete | 2026-03-28 |
+| 13. Only include extras when explicitly required | v1.2 | 1/1 | Complete | 2026-03-28 |
 
 ### Phase 12: Require extra explicitly instead of excluding extra categories by default
 
@@ -79,3 +80,26 @@ Plans:
 - [x] 12-01-PLAN.md — Remove exclude-extra from active form state and create/edit UI surfaces
 - [x] 12-02-PLAN.md — Normalize compiler, descriptions, and persisted rule data so exclude-extra cannot survive migration or round-trips
 - [x] 12-03-PLAN.md — Remove runtime exclude-extra support from schema/generator and finalize require-or-none validation
+
+### Phase 13: Only include extras when explicitly required
+
+**Goal:** Unlocked slots include generated extras only when a matching rule explicitly requires them, while locked extra selections and existing require-extra warning semantics remain unchanged
+**Requirements**: PH13-01, PH13-02, PH13-03, PH13-04
+**Depends on:** Phase 12
+**Plans:** 1 plan
+
+Plans:
+- [x] 13-01-PLAN.md — Remove unlocked default extra fill, preserve explicit require-extra and locked extras, then finalize regression coverage and validation
+
+### Phase 14: Add option to create more base category and extra category
+
+**Goal:** Users can manage base and extra categories as real data so new categories flow through library forms, rules, generator behavior, picker filtering, descriptions, and seed defaults without code changes
+**Requirements**: CAT-01, CAT-02, CAT-03, CAT-04, CAT-05, CAT-06, CAT-07, CAT-08
+**Depends on:** Phase 13
+**Plans:** 1/4 plans executed
+
+Plans:
+- [x] 14-01-PLAN.md — Add persisted category records, migrate literals to IDs, and centralize delete normalization in the service/data layer
+- [ ] 14-02-PLAN.md — Add the separate Library category manager and dynamic category-backed component forms
+- [ ] 14-03-PLAN.md — Convert rule schema, form state, compiler, and descriptions to category IDs with rename/delete-safe labels
+- [ ] 14-04-PLAN.md — Propagate dynamic categories through generator, picker, seeds, and finalize validation
