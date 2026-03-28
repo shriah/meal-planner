@@ -32,7 +32,7 @@
 
 - [x] **CAT-01**: Persist user-managed category records for both base and extra kinds, and migrate existing built-in literals into those records with stable IDs
 - [x] **CAT-02**: Component records and Library forms store category IDs instead of hard-coded category names, while extra compatibility keeps the current checklist interaction
-- [ ] **CAT-03**: Rule targets and `require_extra` effects store category IDs and render dynamic category-backed options in create/edit flows
+- [x] **CAT-03**: Rule targets and `require_extra` effects store category IDs and render dynamic category-backed options in create/edit flows
 - [ ] **CAT-04**: Generator behavior and picker filtering resolve compatibility from category data while preserving the explicit-extra runtime contract from Phase 13
 - [x] **CAT-05**: Users can add, rename, and delete both base and extra categories from a separate category-management UI
 - [x] **CAT-06**: Renaming a category cascades automatically across visible labels because identity is the stable ID, not the display name

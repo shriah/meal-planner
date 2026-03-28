@@ -96,10 +96,10 @@ Plans:
 **Goal:** Users can manage base and extra categories as real data so new categories flow through library forms, rules, generator behavior, picker filtering, descriptions, and seed defaults without code changes
 **Requirements**: CAT-01, CAT-02, CAT-03, CAT-04, CAT-05, CAT-06, CAT-07, CAT-08
 **Depends on:** Phase 13
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 - [x] 14-01-PLAN.md — Add persisted category records, migrate literals to IDs, and centralize delete normalization in the service/data layer
 - [x] 14-02-PLAN.md — Add the separate Library category manager and dynamic category-backed component forms
-- [ ] 14-03-PLAN.md — Convert rule schema, form state, compiler, and descriptions to category IDs with rename/delete-safe labels
+- [x] 14-03-PLAN.md — Convert rule schema, form state, compiler, and descriptions to category IDs with rename/delete-safe labels
 - [ ] 14-04-PLAN.md — Propagate dynamic categories through generator, picker, seeds, and finalize validation
