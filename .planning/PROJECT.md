@@ -8,6 +8,10 @@ A personal weekly meal planner built for Indian dietary patterns. Users build a 
 
 Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
 
+## Current State
+
+Shipped through `v1.2`. The app now supports in-place rule editing, explicit-only extra semantics, no-random-extra default behavior, and dynamic user-managed base/extra categories that flow through library forms, rules, generator behavior, picker filtering, descriptions, and seeded defaults.
+
 ## Requirements
 
 ### Validated
@@ -35,20 +39,22 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - ✓ **TMPL-05**: /settings/slots removed; AppNav "Slot Settings" removed; all constraints in Rules UI — v1.1
 - ✓ **TMPL-06**: Meal template creation UI in Rules Manager with RadioGroup, Toggle slot chips, exclusion checkboxes — v1.1
 - ✓ **TMPL-07**: Existing slot_restrictions and base_type_rules prefs auto-migrated to meal-template/scheduling-rule records (Dexie v7) — v1.1
-
-## Current Milestone: v1.2 Edit Rule
-
-**Goal:** Let users edit existing rules from the rules list without leaving the page.
-
-**Target features:**
-- Edit button on each rule card in the rules list
-- Sheet opens with RuleForm pre-populated from the existing rule's data
-- Save overwrites the rule in Dexie (in-place update)
-- Cancel/close discards changes
+- ✓ Edit existing rules in place from the rules list with exact persisted prefill, overwrite save, discard-on-close, and failure feedback — v1.2
+- ✓ Meal-template extras now use explicit require-only semantics, and unlocked generation adds no extras unless a rule requires them — v1.2
+- ✓ Base and extra categories are persisted dynamic records with separate category management UI and full propagation through rules, generator, picker, and seeds — v1.2
 
 ### Active
 
-*(requirements defined below — see REQUIREMENTS.md)*
+- [ ] PDF export of the weekly plan
+- [ ] Export the meal library to JSON for backup
+- [ ] Import meals from JSON
+- [ ] Cross-week rotation rules
+
+## Next Milestone Goals
+
+- Extend export beyond PNG where it materially helps reuse and sharing
+- Add data portability for the meal library
+- Add longer-horizon planning constraints such as cross-week rotation
 
 ### Out of Scope
 
@@ -64,10 +70,11 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 - Shipped v1.0 with ~8,600 LOC TypeScript in 3 days (2026-03-19 → 2026-03-22)
 - Shipped v1.1 with ~11,300 LOC TypeScript in 4 days (2026-03-22 → 2026-03-26)
-- Tech stack: Next.js 16, Dexie.js (IndexedDB, v7 now), Zustand, shadcn/ui, satori + @resvg/resvg-js (PNG export)
-- Rule system: 2 CompiledFilter variants (no-repeat, scheduling-rule) + meal-template; all synchronous, LLM-free
-- ~160 tests passing at v1.1 ship; generator has 30+ TDD tests covering all rule types and edge cases
-- Dexie schema at v7; three auto-migration chains from v1 (day-filter/require-component → scheduling-rule at v5, slot prefs → rules at v7)
+- Shipped v1.2 with ~12,500 LOC TypeScript in 2 days (2026-03-27 → 2026-03-29)
+- Tech stack: Next.js 16, Dexie.js (IndexedDB, v11), Zustand, shadcn/ui, satori + @resvg/resvg-js, local `sonner` shim for toast feedback
+- Rule system now supports inline edit, explicit-only extras, no-random-extra defaults, and category-backed rule targets/effects; generation remains synchronous and LLM-free
+- 168 tests passing after v1.2 debt closure, including focused validation reruns for Phase 11 and direct PlanBoard→MealPicker handoff coverage
+- Dexie schema now includes full migration history through v11, including unified rules, meal-template migration, legacy exclude-extra cleanup, and dynamic category records
 
 ## Constraints
 
@@ -76,6 +83,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 - **Nutrition**: Explicitly out of scope — do not track calories or macros
 - **Backwards compatibility**: Dexie auto-migration handles all upgrade paths — no data loss on upgrade
 - **Test coverage**: All generator and compiler refactors covered by TDD; ~160 tests passing
+- **User-defined categories**: Category identity is stable ID, not label; rename/delete safety must be preserved across UI and persistence
 
 ## Key Decisions
 
@@ -97,6 +105,10 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 | Two-pass require-one generator effect | First check current pick, override from full library if needed | ✓ Good — D-06 override from full library prevents circular exclusion |
 | migrateCompiledFilter as pure function | Testable in isolation without Dexie upgrade callback complexity | ✓ Good — full unit test coverage, deterministic |
 | Flexible meal-template selector (quick task w99) | Base/tag/component targeting modes via discriminated union | ✓ Good — extends meal-template targeting beyond just base_type |
+| Shared compile/decompile rule boundary | Edit flow needed exact persisted prefill without duplicating UI-specific mapping logic | ✓ Good — enabled rule editing and later category migration safely |
+| Extras are explicit-only at runtime | Optional extras should not appear unless the user explicitly requires them | ✓ Good — simpler generator semantics and clearer warnings |
+| Categories use stable IDs instead of names | Supports rename/delete safety and user-extensible categories across the full system | ✓ Good — shipped in v1.2 with full generator/picker propagation |
+| Presets resolve built-in category identity at the RuleForm boundary | Removes seed-order coupling while keeping `form-state.ts` pure | ✓ Good — closed the final v1.2 audit debt |
 
 ## Evolution
 
@@ -116,4 +128,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-27 — v1.2 Edit Rule milestone started*
+*Last updated: 2026-03-29 after v1.2 milestone*

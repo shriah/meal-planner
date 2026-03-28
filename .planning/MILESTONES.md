@@ -1,5 +1,27 @@
 # Milestones
 
+## v1.2 Edit Rule (Shipped: 2026-03-29)
+
+**Phases completed:** 6 phases, 12 plans, 16 tasks
+**Timeline:** 2026-03-27 → 2026-03-29 (2 days)
+**TypeScript LOC:** ~12,500 (+1,200 from v1.1)
+**Git:** 203 files changed, +12,237 / -9,450 lines
+
+**Key accomplishments:**
+
+- Shared rule-form reducer state and reversible compiler mapping for exact rule edit pre-population
+- Inline rule editing with a controlled right-side sheet, in-place Dexie updates, discard-on-close resets, and visible save-failure feedback
+- Dexie-backed base and extra category records with ID-based component references, transitional legacy shims, and centralized delete normalization
+- Sheet-based category management plus live category-backed library authoring and row labels for base and extra components
+- Category-ID rule persistence with live Dexie-backed base/extra options, rename-safe descriptions, and delete-safe rule rehydration
+- Category-ID runtime generation, picker filtering, and fresh seed bootstrapping for dynamic base and extra categories
+- Approved Phase 11 Nyquist validation with real rerun evidence for the shipped edit-rule test surface
+- Rule presets now resolve rice-category targets from live built-in category rows, and PlanBoard directly proves the extras picker handoff into MealPickerSheet.
+
+**Archive:** `.planning/milestones/v1.2-ROADMAP.md` · `.planning/milestones/v1.2-REQUIREMENTS.md`
+
+---
+
 ## v1.1 Rule Engine Overhaul (Shipped: 2026-03-26)
 
 **Phases completed:** 4 phases, 9 plans
