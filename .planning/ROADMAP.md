@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
-- ✅ **v1.2 Edit Rule** — Phases 11-13 (shipped 2026-03-28)
+- ✅ **v1.2 Edit Rule** — Phases 11-14 (shipped 2026-03-28)
 
 ## Phases
 
