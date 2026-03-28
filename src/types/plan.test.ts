@@ -25,12 +25,12 @@ describe('CompiledRuleSchema', () => {
   it('validates a rice template rule with composition effects', () => {
     const rule = {
       type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
+      target: { mode: 'base_category', category_id: 3 },
       scope: { days: null, slots: null },
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
         { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'require_extra', categories: ['condiment'] },
+        { kind: 'require_extra', category_ids: [7] },
       ],
     };
     expect(CompiledRuleSchema.safeParse(rule).success).toBe(true);
