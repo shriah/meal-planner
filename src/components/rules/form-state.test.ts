@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import type { CategoryRecord } from '@/types/category';
 import type { RuleFormState } from './types';
-import { EMPTY_RULE_FORM_STATE, EXAMPLE_PRESETS, formReducer, isFormValid } from './form-state';
+import {
+  EMPTY_RULE_FORM_STATE,
+  EXAMPLE_PRESETS,
+  formReducer,
+  isFormValid,
+  resolveExamplePreset,
+} from './form-state';
 
 describe('formReducer', () => {
   it('SET_TARGET_MODE preserves non-target fields and resets only target branch', () => {
@@ -39,12 +46,12 @@ describe('formReducer', () => {
   });
 
   it('LOAD_PRESET replaces the entire form state', () => {
-    const nextState = EXAMPLE_PRESETS['fish-fridays'];
+    const nextState = resolveExamplePreset('fish-fridays', []);
 
     expect(
       formReducer(EMPTY_RULE_FORM_STATE, {
         type: 'LOAD_PRESET',
-        state: nextState,
+        state: nextState!,
       }),
     ).toEqual(nextState);
   });
@@ -106,5 +113,29 @@ describe('isFormValid', () => {
         require_extra_category_ids: [],
       }),
     ).toBe(true);
+  });
+});
+
+describe('resolveExamplePreset', () => {
+  const baseCategories: CategoryRecord[] = [
+    { id: 9, kind: 'base', name: 'bread-based', created_at: '2026-03-28T00:00:00.000Z' },
+    { id: 14, kind: 'base', name: 'rice-based', created_at: '2026-03-28T00:00:00.000Z' },
+  ];
+
+  it('resolves rice-lunch-dinner against the live built-in rice category row', () => {
+    expect(resolveExamplePreset('rice-lunch-dinner', baseCategories)).toMatchObject({
+      name: 'Rice: lunch and dinner only',
+      target: { mode: 'base_category', base_category_id: 14 },
+      allowed_slots: ['lunch', 'dinner'],
+    });
+  });
+
+  it('returns null until the required base category row is available', () => {
+    expect(resolveExamplePreset('rice-lunch-dinner', [])).toBeNull();
+    expect(
+      resolveExamplePreset('rice-lunch-dinner', [
+        { id: 21, kind: 'base', name: 'bread-based', created_at: '2026-03-28T00:00:00.000Z' },
+      ]),
+    ).toBeNull();
   });
 });

@@ -1,6 +1,16 @@
+import type { CategoryRecord } from '@/types/category';
+import { BUILT_IN_BASE_CATEGORY_NAMES } from '@/types/category';
 import type { FormAction, RuleFormState } from './types';
 
-export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
+type BuiltInBaseCategoryName = (typeof BUILT_IN_BASE_CATEGORY_NAMES)[number];
+
+type ExamplePresetDefinition = Omit<RuleFormState, 'target'> & {
+  target:
+    | RuleFormState['target']
+    | { mode: 'built_in_base_category'; built_in_name: BuiltInBaseCategoryName };
+};
+
+export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
   'fish-fridays': {
     name: 'Fish Fridays',
     target: { mode: 'tag', filter: { protein_tag: 'fish' } },
@@ -43,7 +53,7 @@ export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
   },
   'rice-lunch-dinner': {
     name: 'Rice: lunch and dinner only',
-    target: { mode: 'base_category', base_category_id: 1 },
+    target: { mode: 'built_in_base_category', built_in_name: 'rice-based' },
     days: [],
     slots: [],
     selection: '',
@@ -63,6 +73,31 @@ export const EMPTY_RULE_FORM_STATE: RuleFormState = {
   skip_component_types: [],
   require_extra_category_ids: [],
 };
+
+export function resolveExamplePreset(
+  presetSlug: string,
+  baseCategories: CategoryRecord[],
+): RuleFormState | null {
+  const preset = EXAMPLE_PRESETS[presetSlug];
+  if (!preset) return null;
+
+  if (preset.target.mode !== 'built_in_base_category') {
+    return preset;
+  }
+
+  const matchingCategory = baseCategories.find(
+    (category) => category.kind === 'base' && category.name === preset.target.built_in_name,
+  );
+
+  if (matchingCategory?.id === undefined) {
+    return null;
+  }
+
+  return {
+    ...preset,
+    target: { mode: 'base_category', base_category_id: matchingCategory.id },
+  };
+}
 
 export function formReducer(state: RuleFormState, action: FormAction): RuleFormState {
   switch (action.type) {

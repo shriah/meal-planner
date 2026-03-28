@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { useReducer, useState, useEffect, useRef } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
@@ -10,11 +11,12 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { compileRule } from '@/services/rule-compiler';
 import { addRule } from '@/services/food-db';
+import { getCategoriesByKind } from '@/services/category-db';
 import {
   EMPTY_RULE_FORM_STATE,
-  EXAMPLE_PRESETS,
   formReducer,
   isFormValid,
+  resolveExamplePreset,
 } from './form-state';
 import { RuleFields } from './RuleFormFields/RuleFields';
 import { RuleImpactPreview } from './RuleImpactPreview';
@@ -27,15 +29,19 @@ export function RuleForm() {
   const [state, dispatch] = useReducer(formReducer, EMPTY_RULE_FORM_STATE);
   const [saving, setSaving] = useState(false);
   const presetLoadedRef = useRef(false);
+  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
 
   useEffect(() => {
     if (presetLoadedRef.current) return;
     const preset = searchParams.get('preset');
-    if (preset && EXAMPLE_PRESETS[preset]) {
-      dispatch({ type: 'LOAD_PRESET', state: EXAMPLE_PRESETS[preset] });
+    if (!preset) return;
+
+    const resolvedPreset = resolveExamplePreset(preset, baseCategories);
+    if (resolvedPreset) {
+      dispatch({ type: 'LOAD_PRESET', state: resolvedPreset });
       presetLoadedRef.current = true;
     }
-  }, [searchParams]);
+  }, [baseCategories, searchParams]);
 
   const handleSave = async () => {
     if (!isFormValid(state) || saving) return;
