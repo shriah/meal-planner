@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Edit Rule
-status: shipped
-stopped_at: Phase 14 shipped — PR #1
+status: planning
+stopped_at: Gap closure phases 15-16 added after milestone audit
 last_updated: "2026-03-28T08:11:36Z"
 last_activity: 2026-03-28
 progress:
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.2 shipped — PR #1 open
+**Current focus:** v1.2 debt cleanup — Phase 15 planning next
 
 ## Current Position
 
-Phase: 14 (add-option-to-create-more-base-category-and-extra-category) — COMPLETE
-Plan: 4 of 4
-Status: Phase 14 shipped — PR #1 open
-Last activity: 2026-03-28
+Phase: 15 (finalize-phase-11-validation-coverage) — NOT STARTED
+Plan: 0 of 0
+Status: Gap closure phases added from v1.2 milestone audit
+Last activity: 2026-03-29
 
 ## Performance Metrics
 
@@ -187,10 +187,13 @@ Recent decisions affecting current work:
 - Phase 13 completed: Only include extras when explicitly required
 - Phase 14 added: Add option to create more base category and extra category
 - Phase 14 completed: Add option to create more base category and extra category
+- Phase 15 added: Finalize Phase 11 validation coverage
+- Phase 16 added: Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage
 
 ### Pending Todos
 
-(none — v1.2 phase work complete)
+- Plan Phase 15 from the v1.2 milestone audit debt
+- Plan Phase 16 after Phase 15 scope is locked
 
 ### Quick Tasks Completed
 

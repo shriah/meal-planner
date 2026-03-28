@@ -4,7 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
-- ✅ **v1.2 Edit Rule** — Phases 11-14 (shipped 2026-03-28)
+- 🚧 **v1.2 Edit Rule** — Phases 11-16 (active debt cleanup)
 
 ## Phases
 
@@ -68,6 +68,9 @@ Plans:
 | 11. Edit Rule | v1.2 | 2/2 | Complete   | 2026-03-27 |
 | 12. Require extra explicitly instead of excluding extra categories by default | v1.2 | 3/3 | Complete | 2026-03-28 |
 | 13. Only include extras when explicitly required | v1.2 | 1/1 | Complete | 2026-03-28 |
+| 14. Add option to create more base category and extra category | v1.2 | 4/4 | Complete | 2026-03-28 |
+| 15. Finalize Phase 11 validation coverage | v1.2 | 0/0 | Pending | - |
+| 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 0/0 | Pending | - |
 
 ### Phase 12: Require extra explicitly instead of excluding extra categories by default
 
@@ -103,3 +106,17 @@ Plans:
 - [x] 14-02-PLAN.md — Add the separate Library category manager and dynamic category-backed component forms
 - [x] 14-03-PLAN.md — Convert rule schema, form state, compiler, and descriptions to category IDs with rename/delete-safe labels
 - [x] 14-04-PLAN.md — Propagate dynamic categories through generator, picker, seeds, and finalize validation
+
+### Phase 15: Finalize Phase 11 validation coverage
+
+**Goal:** Close the remaining milestone audit debt for Phase 11 by bringing its validation artifact and Nyquist coverage up to the same standard as later phases
+**Requirements:** none new — closes audit tech debt
+**Depends on:** Phase 14
+**Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`
+
+### Phase 16: Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage
+
+**Goal:** Remove the hidden category-ID ordering dependency from presets and add direct automated coverage for the `PlanBoard -> MealPickerSheet` category handoff
+**Requirements:** none new — closes audit tech debt
+**Depends on:** Phase 15
+**Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`
