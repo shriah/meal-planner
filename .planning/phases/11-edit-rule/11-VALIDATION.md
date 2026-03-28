@@ -1,9 +1,9 @@
 ---
 phase: 11
 slug: edit-rule
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-03-27
 ---
 
@@ -17,9 +17,9 @@ created: 2026-03-27
 
 | Property | Value |
 |----------|-------|
-| **Framework** | Vitest 4.1.0 + Testing Library + happy-dom |
+| **Framework** | Vitest `4.1.0` + Testing Library + happy-dom |
 | **Config file** | `vitest.config.ts` |
-| **Quick run command** | `npm test -- src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` |
+| **Quick run command** | `npx vitest run src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` |
 | **Full suite command** | `npm test` |
 | **Estimated runtime** | ~25 seconds |
 
@@ -27,7 +27,7 @@ created: 2026-03-27
 
 ## Sampling Rate
 
-- **After every task commit:** Run the task-local `<verify>` command first; use `npm test -- src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` as the cross-task smoke run before handoff
+- **After every task commit:** Run the task-local `<automated>` command, then rerun the focused Phase 11 suite: `npx vitest run src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx`
 - **After every plan wave:** Run `npm test`
 - **Before `$gsd-verify-work`:** Full suite must be green
 - **Max feedback latency:** 25 seconds
@@ -38,20 +38,21 @@ created: 2026-03-27
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 11-01-01 | 01 | 1 | EDIT-02 | unit | `npm test -- src/components/rules/form-state.test.ts` | ❌ W0 | ⬜ pending |
-| 11-01-02 | 01 | 1 | EDIT-02 | unit | `npm test -- src/services/rule-compiler.test.ts` | `src/services/rule-compiler.test.ts` exists | ⬜ pending |
-| 11-02-01 | 02 | 2 | EDIT-01 | component | `npm test -- src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` | `src/services/food-db.test.ts` exists; `src/components/rules/RuleRow.test.tsx` missing | ⬜ pending |
-| 11-02-02 | 02 | 2 | EDIT-03, EDIT-04 | service + component | `npm test -- src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` | `src/services/food-db.test.ts` exists; `src/components/rules/RuleRow.test.tsx` missing | ⬜ pending |
+| 11-01-01 | 01 | 1 | EDIT-02 | unit | `npx vitest run src/components/rules/form-state.test.ts` | ✅ | ✅ green |
+| 11-01-02 | 01 | 1 | EDIT-02 | unit | `npx vitest run src/services/rule-compiler.test.ts` | ✅ | ✅ green |
+| 11-02-01 | 02 | 2 | EDIT-01 | component | `npx vitest run src/components/rules/RuleRow.test.tsx` | ✅ | ✅ green |
+| 11-02-02 | 02 | 2 | EDIT-03, EDIT-04 | service + component | `npx vitest run src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
-## Wave 0 Requirements
+## Wave 0 Coverage
 
-- [ ] `src/components/rules/RuleRow.test.tsx` — open/save/discard interactions for edit sheet
-- [ ] `src/services/rule-compiler.test.ts` — add `decompileRule` and round-trip cases for scheduling and meal-template-derived rules
-- [ ] `src/services/food-db.test.ts` — assert updating name/compiled filter preserves row count and primary key
+- `src/components/rules/form-state.test.ts` covers the shared reducer, preset loading, and validation behavior reused by create and edit flows.
+- `src/services/rule-compiler.test.ts` covers `decompileRule` plus compile/decompile round-trips for persisted scheduling and meal-template rule shapes.
+- `src/services/food-db.test.ts` proves `updateRule` overwrites the existing Dexie row in place without changing row count, primary key, or `created_at`.
+- `src/components/rules/RuleRow.test.tsx` covers opening the edit sheet, pre-population from persisted data, save-overwrite behavior, discard on close/Escape/button, and save-failure feedback.
 
 ---
 
@@ -59,17 +60,17 @@ created: 2026-03-27
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Save failure shows a user-facing error surface if toast infrastructure is added in execution | EDIT-03 | Current repo has no existing toast system and implementation choice is still open | Trigger `updateRule` failure in the UI, verify the chosen error surface appears exactly once and the sheet remains open with draft values intact |
+| Inline edit sheet still feels correct in-browser on `/rules` after automated regressions pass | EDIT-01, EDIT-04 | Helpful UI sanity check for sheet presentation and focus handling, but not required for correctness because the core open/save/discard/failure flows are covered by automated tests | Open `/rules`, launch Edit on an existing rule, confirm the sheet opens on the same page, then cancel and reopen to verify the persisted values return |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 25s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all shipped Phase 11 evidence with no missing-file placeholders
+- [x] No watch-mode flags
+- [x] Feedback latency < 25s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-03-29
