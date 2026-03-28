@@ -5,6 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { TriangleAlert as TriangleAlertIcon } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getAllComponents } from '@/services/food-db';
+import { getCategoriesByKind } from '@/services/category-db';
+import { getBaseCategoryLabel } from '@/lib/category-labels';
 import type { RuleFormState } from './types';
 
 interface RuleImpactPreviewProps {
@@ -13,6 +15,11 @@ interface RuleImpactPreviewProps {
 
 export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
   const allComponents = useLiveQuery(() => getAllComponents()) ?? [];
+  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
+  const baseCategoriesById = useMemo(
+    () => new Map(baseCategories.filter((category) => category.id !== undefined).map((category) => [category.id!, category])),
+    [baseCategories],
+  );
 
   const impact = useMemo(() => {
     const target = formState.target;
@@ -41,15 +48,19 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
       return { type: 'component' as const, name };
     }
 
-    if (target.mode === 'base_type') {
+    if (target.mode === 'base_category') {
       const count = allComponents.filter(
-        c => c.componentType === 'base' && c.base_type === target.base_type,
+        c => c.componentType === 'base' && c.base_category_id === target.base_category_id,
       ).length;
-      return { type: 'base_type' as const, count, base_type: target.base_type };
+      return {
+        type: 'base_category' as const,
+        count,
+        label: getBaseCategoryLabel(baseCategoriesById, target.base_category_id),
+      };
     }
 
     return null;
-  }, [allComponents, formState]);
+  }, [allComponents, baseCategoriesById, formState]);
 
   if (!impact) return null;
 
@@ -78,9 +89,9 @@ export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
       {impact.type === 'component' && (
         <p className="text-sm text-muted-foreground">This rule applies to {impact.name}.</p>
       )}
-      {impact.type === 'base_type' && (
+      {impact.type === 'base_category' && (
         <p className="text-sm text-muted-foreground">
-          This rule applies to {impact.count} {impact.base_type} bases.
+          This rule applies to {impact.count} {impact.label} bases.
         </p>
       )}
     </div>

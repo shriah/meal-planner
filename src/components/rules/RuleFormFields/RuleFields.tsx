@@ -10,14 +10,13 @@ import { Combobox } from '@/components/ui/combobox';
 import type { ComboboxOption } from '@/components/ui/combobox';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getAllComponents } from '@/services/food-db';
+import { getCategoriesByKind } from '@/services/category-db';
 import { ALL_DAYS } from '@/types/plan';
-import type { RuleFormState, FormAction, TargetFormState } from '../types';
+import type { RuleFormState, FormAction } from '../types';
 import type { TagFilter } from '@/types/plan';
 import type { MealSlot } from '@/types/preferences';
-import type { ExtraCategory } from '@/types/component';
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner'];
-const EXTRA_CATEGORIES: ExtraCategory[] = ['liquid', 'crunchy', 'condiment', 'dairy', 'sweet'];
 const TAG_DIETARY = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian'] as const;
 const TAG_PROTEIN = ['fish', 'chicken', 'mutton', 'egg', 'paneer', 'dal', 'none'] as const;
 const TAG_REGIONAL = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian'] as const;
@@ -110,23 +109,24 @@ function ComponentPicker({ value, onChange }: { value: number | null; onChange: 
 
 function TargetSection({ state, dispatch }: Props) {
   const target = state.target;
+  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
 
   return (
     <div className="space-y-3">
       <Label>Target — what are you constraining?</Label>
       <RadioGroup
         value={target.mode}
-        onValueChange={v => dispatch({ type: 'SET_TARGET_MODE', mode: v as 'component_type' | 'tag' | 'component' | 'base_type' })}
+        onValueChange={v => dispatch({ type: 'SET_TARGET_MODE', mode: v as 'component_type' | 'tag' | 'component' | 'base_category' })}
         className="space-y-1"
       >
-        {(['component_type', 'tag', 'component', 'base_type'] as const).map(mode => (
+        {(['component_type', 'tag', 'component', 'base_category'] as const).map(mode => (
           <div key={mode} className="flex items-center space-x-2">
             <RadioGroupItem value={mode} id={`target-${mode}`} />
             <Label htmlFor={`target-${mode}`} className="font-normal cursor-pointer">
               {mode === 'component_type' && 'All bases / curries / subzis'}
               {mode === 'tag' && 'By tag'}
               {mode === 'component' && 'Specific component'}
-              {mode === 'base_type' && 'Base type'}
+              {mode === 'base_category' && 'Base category'}
             </Label>
           </div>
         ))}
@@ -162,16 +162,16 @@ function TargetSection({ state, dispatch }: Props) {
         />
       )}
 
-      {target.mode === 'base_type' && (
+      {target.mode === 'base_category' && (
         <RadioGroup
-          value={target.base_type}
-          onValueChange={v => dispatch({ type: 'SET_TARGET_BASE_TYPE', base_type: v as 'rice-based' | 'bread-based' | 'other' })}
-          className="flex gap-4 pt-1"
+          value={target.base_category_id !== null ? String(target.base_category_id) : ''}
+          onValueChange={v => dispatch({ type: 'SET_TARGET_BASE_CATEGORY_ID', base_category_id: v ? Number(v) : null })}
+          className="flex flex-wrap gap-4 pt-1"
         >
-          {(['rice-based', 'bread-based', 'other'] as const).map(bt => (
-            <div key={bt} className="flex items-center space-x-2">
-              <RadioGroupItem value={bt} id={`bt-${bt}`} />
-              <Label htmlFor={`bt-${bt}`} className="font-normal cursor-pointer">{bt}</Label>
+          {baseCategories.map(category => (
+            <div key={category.id} className="flex items-center space-x-2">
+              <RadioGroupItem value={String(category.id)} id={`bc-${category.id}`} />
+              <Label htmlFor={`bc-${category.id}`} className="font-normal cursor-pointer">{category.name}</Label>
             </div>
           ))}
         </RadioGroup>
@@ -238,6 +238,7 @@ function ScopeSection({ state, dispatch }: Props) {
 // ─── Effects section ──────────────────────────────────────────────────────────
 
 function EffectsSection({ state, dispatch }: Props) {
+  const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], []);
   const SELECTION_OPTIONS = [
     { value: '', label: 'None' },
     { value: 'filter_pool', label: 'Filter pool — only allow matching components in scope' },
@@ -253,11 +254,11 @@ function EffectsSection({ state, dispatch }: Props) {
     dispatch({ type: 'SET_SKIP_COMPONENT_TYPES', skip_component_types: next });
   };
 
-  const toggleRequireExtra = (cat: ExtraCategory) => {
-    const next = state.require_extra_categories.includes(cat)
-      ? state.require_extra_categories.filter(x => x !== cat)
-      : [...state.require_extra_categories, cat];
-    dispatch({ type: 'SET_REQUIRE_EXTRA_CATEGORIES', categories: next });
+  const toggleRequireExtra = (categoryId: number) => {
+    const next = state.require_extra_category_ids.includes(categoryId)
+      ? state.require_extra_category_ids.filter(x => x !== categoryId)
+      : [...state.require_extra_category_ids, categoryId];
+    dispatch({ type: 'SET_REQUIRE_EXTRA_CATEGORY_IDS', category_ids: next });
   };
 
   return (
@@ -319,12 +320,16 @@ function EffectsSection({ state, dispatch }: Props) {
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">Require extra categories</p>
           <div className="flex flex-wrap gap-2">
-            {EXTRA_CATEGORIES.map(cat => (
-              <div key={cat} className="flex items-center space-x-2">
-                <Checkbox id={`req-${cat}`}
-                  checked={state.require_extra_categories.includes(cat)}
-                  onCheckedChange={() => toggleRequireExtra(cat)} />
-                <Label htmlFor={`req-${cat}`} className="font-normal cursor-pointer">{cat}</Label>
+            {extraCategories.map(category => (
+              <div key={category.id} className="flex items-center space-x-2">
+                <Checkbox id={`req-${category.id}`}
+                  checked={category.id !== undefined && state.require_extra_category_ids.includes(category.id)}
+                  onCheckedChange={() => {
+                    if (category.id !== undefined) {
+                      toggleRequireExtra(category.id);
+                    }
+                  }} />
+                <Label htmlFor={`req-${category.id}`} className="font-normal cursor-pointer">{category.name}</Label>
               </div>
             ))}
           </div>

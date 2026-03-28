@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useReducer, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import type { RuleRecord } from '@/db/client';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -14,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
+import { getCategoriesByKind } from '@/services/category-db';
 import { updateRule } from '@/services/food-db';
 import { compileRule, decompileRule } from '@/services/rule-compiler';
 import {
@@ -37,6 +39,8 @@ export function EditRuleSheet({
 }: EditRuleSheetProps) {
   const [state, dispatch] = useReducer(formReducer, EMPTY_RULE_FORM_STATE);
   const [saving, setSaving] = useState(false);
+  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
+  const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], []);
 
   useEffect(() => {
     if (!open) {
@@ -45,9 +49,12 @@ export function EditRuleSheet({
 
     dispatch({
       type: 'LOAD_PRESET',
-      state: decompileRule(rule.compiled_filter, rule.name),
+      state: decompileRule(rule.compiled_filter, rule.name, {
+        baseCategoryIds: baseCategories.flatMap((category) => category.id ?? []),
+        extraCategoryIds: extraCategories.flatMap((category) => category.id ?? []),
+      }),
     });
-  }, [open, rule]);
+  }, [baseCategories, extraCategories, open, rule]);
 
   async function handleSave() {
     if (!isFormValid(state) || saving || rule.id == null) {

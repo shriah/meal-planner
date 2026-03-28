@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
 import type { RuleRecord } from '@/db/client'
 import { describeRule } from './ruleDescriptions'
 import { updateRule, deleteRule } from '@/services/food-db'
+import { getCategoriesByKind } from '@/services/category-db'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -24,8 +26,19 @@ interface RuleRowProps {
 export function RuleRow({ rule }: RuleRowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [editing, setEditing] = useState(false)
+  const categories = useLiveQuery(
+    async () => {
+      const [baseCategories, extraCategories] = await Promise.all([
+        getCategoriesByKind('base'),
+        getCategoriesByKind('extra'),
+      ])
+      return [...baseCategories, ...extraCategories]
+    },
+    [],
+    [],
+  )
 
-  const summary = describeRule(rule.compiled_filter)
+  const summary = describeRule(rule.compiled_filter, categories)
 
   const ruleTypeLabel: Record<string, string> = {
     'no-repeat': 'No Repeat',
