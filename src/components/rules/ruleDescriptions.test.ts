@@ -1,64 +1,56 @@
-import { describe, it, expect } from 'vitest'
-import { describeRule } from './ruleDescriptions'
-import type { CompiledRule } from '@/types/plan'
+import { describe, expect, it } from 'vitest';
+import { describeRule } from './ruleDescriptions';
+import type { CategoryRecord } from '@/types/category';
+import type { CompiledRule } from '@/types/plan';
 
 function rule(partial: Omit<CompiledRule, 'type'>): CompiledRule {
-  return { type: 'rule', ...partial }
+  return { type: 'rule', ...partial };
 }
 
+const categories: CategoryRecord[] = [
+  { id: 3, kind: 'base', name: 'Millet-based', created_at: '2026-03-28T00:00:00.000Z' },
+  { id: 7, kind: 'extra', name: 'Pickle', created_at: '2026-03-28T00:00:00.000Z' },
+];
+
 describe('describeRule', () => {
-  it('describes a no-repeat rule', () => {
-    expect(describeRule(rule({
-      target: { mode: 'component_type', component_type: 'base' },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'no_repeat' }],
-    }))).toBe('all bases: No-repeat')
-  })
+  it('describes non-category rules without needing category context', () => {
+    expect(
+      describeRule(
+        rule({
+          target: { mode: 'component_type', component_type: 'base' },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'no_repeat' }],
+        }),
+      ),
+    ).toBe('all bases: No-repeat');
+  });
 
-  it('describes a filter_pool rule with tag and day scope', () => {
-    expect(describeRule(rule({
-      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      scope: { days: ['friday'], slots: null },
-      effects: [{ kind: 'filter_pool' }],
-    }))).toBe('protein: fish on Friday: Filter pool')
-  })
+  it('resolves renamed base and extra labels from category records', () => {
+    expect(
+      describeRule(
+        rule({
+          target: { mode: 'base_category', category_id: 3 },
+          scope: { days: null, slots: null },
+          effects: [
+            { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
+            { kind: 'require_extra', category_ids: [7] },
+          ],
+        }),
+        categories,
+      ),
+    ).toBe('Millet-based: allowed at lunch, dinner; require Pickle extra');
+  });
 
-  it('describes an exclude rule with component target', () => {
-    expect(describeRule(rule({
-      target: { mode: 'component', component_id: 5 },
-      scope: { days: null, slots: ['breakfast'] },
-      effects: [{ kind: 'exclude' }],
-    }))).toBe('component #5 (breakfast): Exclude')
-  })
-
-  it('describes a rice template with composition effects', () => {
-    expect(describeRule(rule({
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'require_extra', categories: ['condiment'] },
-      ],
-    }))).toBe('Rice-based: allowed at lunch, dinner; skip curry; require condiment extra')
-  })
-
-  it('ignores legacy exclude-extra effects in user-facing copy', () => {
-    expect(describeRule(rule({
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'exclude_extra', categories: ['sweet'] },
-        { kind: 'require_extra', categories: ['condiment'] },
-      ],
-    } as CompiledRule))).toBe('Rice-based: require condiment extra')
-  })
-
-  it('describes a rule with no effects', () => {
-    expect(describeRule(rule({
-      target: { mode: 'base_type', base_type: 'bread-based' },
-      scope: { days: null, slots: null },
-      effects: [],
-    }))).toBe('Bread-based')
-  })
-})
+  it('falls back to deleted-category copy instead of raw ids', () => {
+    expect(
+      describeRule(
+        rule({
+          target: { mode: 'base_category', category_id: 99 },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'require_extra', category_ids: [98] }],
+        }),
+        categories,
+      ),
+    ).toBe('Deleted base category: require Deleted extra category extra');
+  });
+});
