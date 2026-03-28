@@ -7,6 +7,15 @@ import type {
   RegionalTag,
   OccasionTag,
 } from '@/types/component';
+import {
+  BUILT_IN_BASE_CATEGORY_NAMES,
+  BUILT_IN_EXTRA_CATEGORY_NAMES,
+} from '@/types/category';
+
+export type SeedCategoryLookup = {
+  base: Record<BaseType, number>;
+  extra: Record<ExtraCategory, number>;
+};
 
 // ─── Factory helpers ──────────────────────────────────────────────────────────
 
@@ -98,6 +107,30 @@ function makeExtra(
     occasion_tags: tags.occasion_tags,
     created_at: CREATED_AT,
   };
+}
+
+function applySeedCategoryIds(
+  component: Omit<ComponentRecord, 'id'>,
+  categoryLookup: SeedCategoryLookup,
+): Omit<ComponentRecord, 'id'> {
+  if (component.componentType === 'base' && component.base_type) {
+    return {
+      ...component,
+      base_category_id: categoryLookup.base[component.base_type],
+    };
+  }
+
+  if (component.componentType === 'extra' && component.extra_category) {
+    return {
+      ...component,
+      extra_category_id: categoryLookup.extra[component.extra_category],
+      compatible_base_category_ids: (component.compatible_base_types ?? []).map(
+        (baseType) => categoryLookup.base[baseType],
+      ),
+    };
+  }
+
+  return component;
 }
 
 // ─── Bases (~25) ──────────────────────────────────────────────────────────────
@@ -927,3 +960,14 @@ export const SEED_COMPONENTS: Omit<ComponentRecord, 'id'>[] = [
   halwa,
   gulabJamun,
 ];
+
+export function materializeSeedComponents(categoryLookup: SeedCategoryLookup): Omit<ComponentRecord, 'id'>[] {
+  return SEED_COMPONENTS.map((component) => applySeedCategoryIds(component, categoryLookup));
+}
+
+export function materializePooriSeed(categoryLookup: SeedCategoryLookup): Omit<ComponentRecord, 'id'> {
+  return applySeedCategoryIds(POORI_SEED, categoryLookup);
+}
+
+export const BUILT_IN_BASE_SEED_NAMES = [...BUILT_IN_BASE_CATEGORY_NAMES];
+export const BUILT_IN_EXTRA_SEED_NAMES = [...BUILT_IN_EXTRA_CATEGORY_NAMES];

@@ -1,49 +1,54 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Rule Engine Overhaul
-status: Milestone complete
-stopped_at: Completed 10-01-PLAN.md
-last_updated: "2026-03-26T03:23:28.033Z"
+milestone: v1.2
+milestone_name: Edit Rule
+status: planning
+stopped_at: Gap closure phases 15-16 added after milestone audit
+last_updated: "2026-03-28T08:11:36Z"
+last_activity: 2026-03-28
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-22 — v1.1 started)
+See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Phase 10 — meal-template-ui-settings-removal-migration
+**Current focus:** v1.2 debt cleanup — Phase 15 planning next
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
+Phase: 15 (finalize-phase-11-validation-coverage) — NOT STARTED
+Plan: 0 of 0
+Status: Gap closure phases added from v1.2 milestone audit
+Last activity: 2026-03-29
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 6
+- Average duration: 6min
+- Total execution time: 0.45 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 11-edit-rule | 2 | 16min | 8min |
+| 12-require-extra-explicitly-instead-of-excluding-extra-categories-by-default | 3 | 11min | 4min |
+| 13-only-include-extras-when-explicitly-required | 1 | 3min | 3min |
 
 **Recent Trend:**
 
-- Last 5 plans: —
-- Trend: —
+- Last 5 plans: 11-edit-rule P02 (11min), 12-require-extra P01 (3min), 12-require-extra P02 (3min), 12-require-extra P03 (5min), 13-only-include-extras P01 (3min)
+- Trend: steady
 
 *Updated after each plan completion*
 | Phase 01-data-foundation P01 | 2 | 2 tasks | 8 files |
@@ -71,6 +76,15 @@ Plan: Not started
 | Phase 09-meal-template-engine P02 | 31min | 2 tasks | 2 files |
 | Phase 10 P02 | 79s | 2 tasks | 2 files |
 | Phase 10-meal-template-ui-settings-removal-migration P01 | ~15min | 2 tasks | 10 files |
+| Phase 11-edit-rule P01 | 5min | 2 tasks | 6 files |
+| Phase 11-edit-rule P02 | 11min | 2 tasks | 10 files |
+| Phase 12-require-extra P01 | 3min | 2 tasks | 6 files |
+| Phase 12-require-extra P02 | 3min | 2 tasks | 6 files |
+| Phase 12-require-extra P03 | 5min | 2 tasks | 4 files |
+| Phase 14-add-option-to-create-more-base-category-and-extra-category P01 | 10min | 2 tasks | 9 files |
+| Phase 14 P02 | 7min | 2 tasks | 6 files |
+| Phase 14-add-option-to-create-more-base-category-and-extra-category P03 | 1h49m | 2 tasks | 15 files |
+| Phase 14 P04 | 8min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -149,16 +163,44 @@ Recent decisions affecting current work:
 - [Phase 10]: Seed uses db.rules.bulkAdd directly to avoid circular import from service layer
 - [Phase 10-meal-template-ui-settings-removal-migration]: MealTemplateFormState follows flat pattern of SchedulingRuleFormState — no nested discriminated union needed
 - [Phase 10-meal-template-ui-settings-removal-migration]: Toggle (shadcn) used for allowed_slots chip group per UI-SPEC; installed as it was absent
+- [v1.2 Roadmap]: All 4 edit-rule requirements are tightly coupled (UI entry point, pre-population, save, cancel) — collapsed into single Phase 11
+- [Phase 11]: compileRule and decompileRule now form a reversible service-layer pair for persisted rule rehydration.
+- [Phase 11]: Mounted a single app-level Toaster in layout so rule save failures surface globally.
+- [Phase 11]: EditRuleSheet reseeds reducer state from the persisted rule on every open, so close and discard never keep abandoned drafts.
+- [Phase 11]: Used a file-based local sonner shim because registry install was blocked in the execution environment.
+- [Phase 12]: Meal-template rule editing is now require-or-none for extras; the form no longer exposes exclude-extra controls.
+- [Phase 12]: Dexie v10 strips legacy compiled `exclude_extra` effects so old rule rows normalize on upgrade and on edit round-trips.
+- [Phase 12]: Runtime effect schema and generator now treat `require_extra` as the only extra-specific rule effect, so extra warnings only fire for unsatisfied explicit requirements.
+- [Phase 13]: Unlocked slots now generate no extras by default; only explicit `require_extra` rules can add extras, while locked `extra_ids` still pass through unchanged.
+- [Phase 14-add-option-to-create-more-base-category-and-extra-category]: Wave 1 keeps legacy base_type and extra_category fields alongside canonical category IDs so downstream plans can migrate incrementally.
+- [Phase 14]: Mounted a single sheet-based CategoryManager from the Library header so category CRUD stays separate from ComponentForm.
+- [Phase 14]: Library forms now persist canonical category IDs and resolve labels from live Dexie queries, with legacy string fields only preserved for built-in labels.
+- [Phase 14-add-option-to-create-more-base-category-and-extra-category]: Stored rules use base_category/category_id in persistence while form state keeps base_category_id for explicit UI semantics.
+- [Phase 14-add-option-to-create-more-base-category-and-extra-category]: Rule descriptions and edit rehydration resolve category labels from live Dexie records so rename/delete safety stays in the display layer.
+- [Phase 14]: Generator and picker now use category IDs as the primary compatibility key, with legacy string fields kept only as defensive fallback data.
+- [Phase 14]: Seed fixtures stay human-readable in seed-data.ts and are materialized into category-backed component records during runSeed().
+
+### Roadmap Evolution
+
+- Phase 12 completed: Require extra explicitly instead of excluding extra categories by default
+- Phase 13 added: Only include extras when explicitly required
+- Phase 13 completed: Only include extras when explicitly required
+- Phase 14 added: Add option to create more base category and extra category
+- Phase 14 completed: Add option to create more base category and extra category
+- Phase 15 added: Finalize Phase 11 validation coverage
+- Phase 16 added: Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage
 
 ### Pending Todos
 
-(none — roadmap created, ready to plan Phase 7)
+- Plan Phase 15 from the v1.2 milestone audit debt
+- Plan Phase 16 after Phase 15 scope is locked
 
 ### Quick Tasks Completed
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260321-amx | Enable day of the week in the occasion tag | 2026-03-21 | 671913f | [260321-amx-enable-day-of-the-week-in-the-occasion-t](./quick/260321-amx-enable-day-of-the-week-in-the-occasion-t/) |
+| 260326-w99 | Meal template flexible selector (Base/Tag/Component) | 2026-03-26 | 99efa8f | [260326-w99-meal-template-flexible-selector-base-tag](./quick/260326-w99-meal-template-flexible-selector-base-tag/) |
 
 ### Blockers/Concerns
 
@@ -166,6 +208,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-26T03:16:03.466Z
-Stopped at: Completed 10-01-PLAN.md
+Last session: 2026-03-28T08:08:59.974Z
+Stopped at: Completed 14-04-PLAN.md
 Resume file: None

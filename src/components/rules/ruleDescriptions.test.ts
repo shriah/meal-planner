@@ -1,70 +1,56 @@
-import { describe, it, expect } from 'vitest'
-import { describeRule } from './ruleDescriptions'
+import { describe, expect, it } from 'vitest';
+import { describeRule } from './ruleDescriptions';
+import type { CategoryRecord } from '@/types/category';
+import type { CompiledRule } from '@/types/plan';
+
+function rule(partial: Omit<CompiledRule, 'type'>): CompiledRule {
+  return { type: 'rule', ...partial };
+}
+
+const categories: CategoryRecord[] = [
+  { id: 3, kind: 'base', name: 'Millet-based', created_at: '2026-03-28T00:00:00.000Z' },
+  { id: 7, kind: 'extra', name: 'Pickle', created_at: '2026-03-28T00:00:00.000Z' },
+];
 
 describe('describeRule', () => {
-  it('no-repeat: subzi variant', () => {
+  it('describes non-category rules without needing category context', () => {
     expect(
-      describeRule({ type: 'no-repeat', component_type: 'subzi', within: 'week' })
-    ).toBe('No repeated subzi within the week')
-  })
+      describeRule(
+        rule({
+          target: { mode: 'component_type', component_type: 'base' },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'no_repeat' }],
+        }),
+      ),
+    ).toBe('all bases: No-repeat');
+  });
 
-  it('scheduling-rule: filter-pool with tag match on specific day', () => {
+  it('resolves renamed base and extra labels from category records', () => {
     expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['friday'],
-        slots: null,
-        match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      })
-    ).toBe('Filter pool on Friday: protein: fish')
-  })
+      describeRule(
+        rule({
+          target: { mode: 'base_category', category_id: 3 },
+          scope: { days: null, slots: null },
+          effects: [
+            { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
+            { kind: 'require_extra', category_ids: [7] },
+          ],
+        }),
+        categories,
+      ),
+    ).toBe('Millet-based: allowed at lunch, dinner; require Pickle extra');
+  });
 
-  it('scheduling-rule: require-one with component match on multiple days', () => {
+  it('falls back to deleted-category copy instead of raw ids', () => {
     expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'require-one',
-        days: ['monday', 'wednesday'],
-        slots: ['dinner'],
-        match: { mode: 'component', component_id: 5 },
-      })
-    ).toBe('Require one on Monday, Wednesday (dinner): component #5')
-  })
-
-  it('scheduling-rule: exclude with no days (all days)', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'exclude',
-        days: null,
-        slots: null,
-        match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      })
-    ).toBe('Exclude: dietary: non-veg')
-  })
-
-  it('scheduling-rule: filter-pool with multiple tags', () => {
-    const result = describeRule({
-      type: 'scheduling-rule',
-      effect: 'filter-pool',
-      days: ['friday'],
-      slots: null,
-      match: { mode: 'tag', filter: { dietary_tag: 'non-veg', protein_tag: 'fish' } },
-    })
-    expect(result).toContain('dietary: non-veg')
-    expect(result).toContain('protein: fish')
-  })
-
-  it('scheduling-rule: filter-pool with empty tag filter returns any tag', () => {
-    expect(
-      describeRule({
-        type: 'scheduling-rule',
-        effect: 'filter-pool',
-        days: ['monday'],
-        slots: null,
-        match: { mode: 'tag', filter: {} },
-      })
-    ).toBe('Filter pool on Monday: any tag')
-  })
-})
+      describeRule(
+        rule({
+          target: { mode: 'base_category', category_id: 99 },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'require_extra', category_ids: [98] }],
+        }),
+        categories,
+      ),
+    ).toBe('Deleted base category: require Deleted extra category extra');
+  });
+});

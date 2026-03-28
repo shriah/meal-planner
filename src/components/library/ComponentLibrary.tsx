@@ -1,6 +1,7 @@
 'use client'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { CategoryManager } from './CategoryManager'
 import { ComponentTab } from './ComponentTab'
 import type { ComponentType } from '@/types/component'
 
@@ -14,7 +15,10 @@ const TABS: { value: ComponentType; label: string }[] = [
 export function ComponentLibrary() {
   return (
     <div className="min-w-80 px-4 py-8 sm:px-8">
-      <h1 className="text-[28px] font-semibold leading-[1.2] mb-6">Component Library</h1>
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <h1 className="text-[28px] font-semibold leading-[1.2]">Component Library</h1>
+        <CategoryManager />
+      </div>
       <Tabs defaultValue="base">
         <TabsList>
           {TABS.map(tab => (

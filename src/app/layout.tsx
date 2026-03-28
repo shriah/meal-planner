@@ -4,6 +4,7 @@ import "./globals.css";
 import { cn } from "@/lib/utils";
 import { SeedBootstrap } from "@/db/seed";
 import { AppNav } from "@/components/plan/AppNav";
+import { Toaster } from "sonner";
 
 const notoSansHeading = Noto_Sans({subsets:['latin'],variable:'--font-heading'});
 
@@ -41,6 +42,7 @@ export default function RootLayout({
             {children}
           </main>
         </SeedBootstrap>
+        <Toaster />
       </body>
     </html>
   );

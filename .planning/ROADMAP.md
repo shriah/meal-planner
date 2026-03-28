@@ -3,7 +3,8 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
-- **v1.1 Rule Engine Overhaul** — Phases 7-10 (in progress)
+- ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
+- 🚧 **v1.2 Edit Rule** — Phases 11-16 (active debt cleanup)
 
 ## Phases
 
@@ -19,78 +20,36 @@
 
 </details>
 
-### v1.1 Rule Engine Overhaul
+<details>
+<summary>✅ v1.1 Rule Engine Overhaul (Phases 7-10) — SHIPPED 2026-03-26</summary>
 
-- [ ] **Phase 7: Scheduling Rule Engine** — New unified scheduling-rule type, compiler variants, and generator logic for all three effects and match criteria
-- [x] **Phase 8: Scheduling Rule UI + Migration** — Rule creation form for scheduling-rule; automatic migration of existing day-filter and require-component rules (completed 2026-03-25)
-- [x] **Phase 9: Meal Template Engine** — New meal-template rule type with generator integration for slot assignment and composition constraints (completed 2026-03-26)
-- [x] **Phase 10: Meal Template UI, Settings Removal, and Migration** — Rule creation form for meal-template; remove /settings/slots; migrate existing slot prefs (completed 2026-03-26)
+- [x] Phase 7: Scheduling Rule Engine (3/3 plans) — completed 2026-03-22
+- [x] Phase 8: Scheduling Rule UI + Migration (2/2 plans) — completed 2026-03-25
+- [x] Phase 9: Meal Template Engine (2/2 plans) — completed 2026-03-26
+- [x] Phase 10: Meal Template UI, Settings Removal, and Migration (2/2 plans) — completed 2026-03-26
+
+</details>
+
+### v1.2 Edit Rule
+
+- [x] **Phase 11: Edit Rule** - Add edit capability to the rules list so users can update any existing rule in place (completed 2026-03-27)
 
 ## Phase Details
 
-### Phase 7: Scheduling Rule Engine
-**Goal**: The system can represent, compile, and generate plans using the unified scheduling-rule type with all three effects and both match modes
-**Depends on**: Phase 6 (v1.0 rule compiler and generator as baseline)
-**Requirements**: SCHED-01, SCHED-02, SCHED-03, SCHED-04
+### Phase 11: Edit Rule
+**Goal**: Users can edit any existing rule from the rules list without leaving the page
+**Depends on**: Phase 10 (unified RuleForm exists; rules stored in Dexie with auto-incremented id)
+**Requirements**: EDIT-01, EDIT-02, EDIT-03, EDIT-04
 **Success Criteria** (what must be TRUE):
-  1. A scheduling-rule record can be stored in IndexedDB scoped to any combination of days (Mon–Sun, any subset, or all) and meal slots (breakfast / lunch / dinner, any subset, or all)
-  2. The compiler produces a CompiledFilter variant for scheduling-rule with effect "filter-pool", "require-one", or "exclude" — old day-filter and require-component variants are removed from the CompiledFilter type
-  3. The generator applies filter-pool rules by restricting the eligible component pool to tag- or component-matching items for the target slot
-  4. The generator applies require-one-by-tag rules by selecting any eligible component that matches the tag criteria for the target slot (e.g., "Fridays lunch: require a fish curry" inserts a fish-tagged curry)
-  5. The generator applies exclude rules by removing matching components from the pool before selection; all 22 existing generator TDD tests continue to pass (with updated rule input shapes)
-**Plans:** 2/3 plans executed
-
+  1. Each rule card in the rules list has an Edit button that opens a Sheet overlay
+  2. The Sheet opens with RuleForm pre-populated with the rule's current target, scope, and effects — no fields are blank or reset to defaults
+  3. Saving the edited rule overwrites the original record in Dexie — no duplicate rule is created and the rule count stays the same
+  4. Closing or canceling the Sheet (via close button, Cancel button, or pressing Escape) discards all unsaved edits — the original rule remains unchanged
+**Plans**: 2 plans
 Plans:
-- [x] 07-01-PLAN.md — Types, compiler, and form state types for scheduling-rule
-- [x] 07-02-PLAN.md — Generator filter-pool and exclude effects
-- [x] 07-03-PLAN.md — Generator require-one effect (two-pass mechanism)
-
-### Phase 8: Scheduling Rule UI + Migration
-**Goal**: Users can create scheduling rules through the Rules UI, and all existing rules are automatically migrated to the new type at app startup
-**Depends on**: Phase 7
-**Requirements**: SCHED-05
-**Success Criteria** (what must be TRUE):
-  1. The rule creation form in the Rules UI shows a "Scheduling Rule" option; user can select effect (Filter pool / Require one / Exclude), choose match mode (tag filter or specific component), and scope to days and/or slots
-  2. A rule created through the form appears in the rules list and is applied on the next plan generation
-  3. On first app startup after the Dexie version bump, all existing day-filter and require-component records are converted to scheduling-rule records with equivalent semantics; no rule data is lost
-  4. After migration, the app generates plans correctly using only scheduling-rule CompiledFilter variants — no old variant code paths remain
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 08-01-PLAN.md — Dexie v5 migration + type system cleanup + test fixture updates
-- [x] 08-02-PLAN.md — SchedulingRuleFields component + RuleForm rewire + preset/badge/preview updates
-
-### Phase 9: Meal Template Engine
-**Goal**: The system can represent, compile, and generate plans using the meal-template rule type for slot assignment and composition constraints
-**Depends on**: Phase 7
-**Requirements**: TMPL-01, TMPL-02, TMPL-03, TMPL-04, TMPL-05
-**Success Criteria** (what must be TRUE):
-  1. A meal-template record can be stored in IndexedDB scoped to a base type (rice-based / bread-based / other) with optional meal slot and day context
-  2. The generator respects meal-template slot assignment: a base type only appears in the allowed slots (e.g., rice-based configured for lunch + dinner only never appears at breakfast)
-  3. The generator respects meal-template component exclusions: if a meal-template excludes curry or subzi for a given base type, no component of that type is selected for meals using that base
-  4. The generator respects meal-template extra exclusions: if a meal-template excludes an extra category (e.g., sweet), extras of that category are not picked for meals using that base type
-  5. The generator respects meal-template required extras: if a meal-template requires one extra of a category (e.g., liquid), the generator always includes an eligible extra of that category for meals using that base type
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 09-01-PLAN.md — Types, compiler, Dexie v6, describeRule + RuleRow badge for meal-template
-- [x] 09-02-PLAN.md — Generator integration: slot assignment, component/extra exclusions, required extras
-
-### Phase 10: Meal Template UI, Settings Removal, and Migration
-**Goal**: Users can create meal template rules through the Rules UI; slot settings are managed entirely through rules; existing slot prefs are migrated automatically
-**Depends on**: Phase 9
-**Requirements**: TMPL-06, TMPL-07
-**Success Criteria** (what must be TRUE):
-  1. The rule creation form in the Rules UI shows a "Meal Template" option; user can select a base type, define slot assignments, and set component/extra exclusions and required extras
-  2. The /settings/slots route returns 404 (or redirects); the "Slot Settings" link is removed from AppNav; no dead links exist in the app
-  3. All meal-template constraints visible in the Rules Manager list are togglable and deletable like any other rule
-  4. On first app startup after the Dexie version bump, existing slot_restrictions.base_type_slots and base_type_rules preference data are converted to meal-template rules; no preference data is lost
-  5. After migration, plan generation behavior is equivalent to pre-migration for any user who had slot settings configured
-**Plans:** 2/2 plans complete
-
-Plans:
-- [x] 10-01-PLAN.md — MealTemplateFields form component, RuleForm integration, settings removal
-- [x] 10-02-PLAN.md — Dexie v7 migration + seed update for new users
+- [x] 11-01-PLAN.md — Extract shared form-state and add reversible `decompileRule` coverage for exact pre-population
+- [x] 11-02-PLAN.md — Add the rule-row edit sheet with in-place save, discard/reset behavior, and save-failure feedback
+**UI hint**: yes
 
 ## Progress
 
@@ -102,7 +61,62 @@ Plans:
 | 4. Plan Board UI | v1.0 | 3/3 | Complete | 2026-03-21 |
 | 5. Rules Manager UI | v1.0 | 2/2 | Complete | 2026-03-21 |
 | 6. Save, History, and Export | v1.0 | 3/3 | Complete | 2026-03-22 |
-| 7. Scheduling Rule Engine | v1.1 | 2/3 | In Progress|  |
-| 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete   | 2026-03-25 |
-| 9. Meal Template Engine | v1.1 | 2/2 | Complete    | 2026-03-26 |
-| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete    | 2026-03-26 |
+| 7. Scheduling Rule Engine | v1.1 | 3/3 | Complete | 2026-03-22 |
+| 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete | 2026-03-25 |
+| 9. Meal Template Engine | v1.1 | 2/2 | Complete | 2026-03-26 |
+| 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete | 2026-03-26 |
+| 11. Edit Rule | v1.2 | 2/2 | Complete   | 2026-03-27 |
+| 12. Require extra explicitly instead of excluding extra categories by default | v1.2 | 3/3 | Complete | 2026-03-28 |
+| 13. Only include extras when explicitly required | v1.2 | 1/1 | Complete | 2026-03-28 |
+| 14. Add option to create more base category and extra category | v1.2 | 4/4 | Complete | 2026-03-28 |
+| 15. Finalize Phase 11 validation coverage | v1.2 | 0/0 | Pending | - |
+| 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 0/0 | Pending | - |
+
+### Phase 12: Require extra explicitly instead of excluding extra categories by default
+
+**Goal:** Meal-template rules use explicit require-extra semantics only, with legacy exclude-extra behavior removed from UI, persisted rules, generator warnings, and rule descriptions
+**Requirements**: PH12-01, PH12-02, PH12-03, PH12-04, PH12-05
+**Depends on:** Phase 11
+**Plans:** 3 plans
+
+Plans:
+- [x] 12-01-PLAN.md — Remove exclude-extra from active form state and create/edit UI surfaces
+- [x] 12-02-PLAN.md — Normalize compiler, descriptions, and persisted rule data so exclude-extra cannot survive migration or round-trips
+- [x] 12-03-PLAN.md — Remove runtime exclude-extra support from schema/generator and finalize require-or-none validation
+
+### Phase 13: Only include extras when explicitly required
+
+**Goal:** Unlocked slots include generated extras only when a matching rule explicitly requires them, while locked extra selections and existing require-extra warning semantics remain unchanged
+**Requirements**: PH13-01, PH13-02, PH13-03, PH13-04
+**Depends on:** Phase 12
+**Plans:** 1 plan
+
+Plans:
+- [x] 13-01-PLAN.md — Remove unlocked default extra fill, preserve explicit require-extra and locked extras, then finalize regression coverage and validation
+
+### Phase 14: Add option to create more base category and extra category
+
+**Goal:** Users can manage base and extra categories as real data so new categories flow through library forms, rules, generator behavior, picker filtering, descriptions, and seed defaults without code changes
+**Requirements**: CAT-01, CAT-02, CAT-03, CAT-04, CAT-05, CAT-06, CAT-07, CAT-08
+**Depends on:** Phase 13
+**Plans:** 4/4 plans complete
+
+Plans:
+- [x] 14-01-PLAN.md — Add persisted category records, migrate literals to IDs, and centralize delete normalization in the service/data layer
+- [x] 14-02-PLAN.md — Add the separate Library category manager and dynamic category-backed component forms
+- [x] 14-03-PLAN.md — Convert rule schema, form state, compiler, and descriptions to category IDs with rename/delete-safe labels
+- [x] 14-04-PLAN.md — Propagate dynamic categories through generator, picker, seeds, and finalize validation
+
+### Phase 15: Finalize Phase 11 validation coverage
+
+**Goal:** Close the remaining milestone audit debt for Phase 11 by bringing its validation artifact and Nyquist coverage up to the same standard as later phases
+**Requirements:** none new — closes audit tech debt
+**Depends on:** Phase 14
+**Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`
+
+### Phase 16: Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage
+
+**Goal:** Remove the hidden category-ID ordering dependency from presets and add direct automated coverage for the `PlanBoard -> MealPickerSheet` category handoff
+**Requirements:** none new — closes audit tech debt
+**Depends on:** Phase 15
+**Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`

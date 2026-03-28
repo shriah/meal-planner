@@ -5,12 +5,12 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { getComponentsByType, getExtrasByBaseType } from '@/services/food-db'
+import { getComponentsByType, getExtrasByBaseCategoryId } from '@/services/food-db'
 import { filterComponents } from '@/lib/filter-components'
 import { usePlanStore } from '@/stores/plan-store'
 import type { DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
-import type { ComponentType, DietaryTag, RegionalTag, BaseType } from '@/types/component'
+import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
 
 const ALL_DIETARY_TAGS: DietaryTag[] = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian']
 const ALL_REGIONAL_TAGS: RegionalTag[] = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian']
@@ -35,10 +35,10 @@ interface MealPickerSheetProps {
   day: DayOfWeek
   slot: MealSlot
   componentType: 'base' | 'curry' | 'subzi' | 'extras'
-  currentBaseType?: BaseType  // For extras filtering by compatible base type
+  currentBaseCategoryId?: number
 }
 
-export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, currentBaseType }: MealPickerSheetProps) {
+export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, currentBaseCategoryId }: MealPickerSheetProps) {
   const [searchText, setSearchText] = useState('')
   const [activeDietaryTags, setActiveDietaryTags] = useState<DietaryTag[]>([])
   const [activeRegionalTags, setActiveRegionalTags] = useState<RegionalTag[]>([])
@@ -49,12 +49,15 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
   // For extras, filter by compatible base type. For others, get all of that type.
   const components = useLiveQuery(
     () => {
-      if (componentType === 'extras' && currentBaseType) {
-        return getExtrasByBaseType(currentBaseType)
+      if (componentType === 'extras') {
+        if (currentBaseCategoryId === undefined) {
+          return []
+        }
+        return getExtrasByBaseCategoryId(currentBaseCategoryId)
       }
       return getComponentsByType(dbComponentType)
     },
-    [dbComponentType, componentType, currentBaseType],
+    [dbComponentType, componentType, currentBaseCategoryId],
     [],
   )
 

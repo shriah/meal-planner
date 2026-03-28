@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { MealSlot } from './preferences';
-import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag, ExtraCategory } from './component';
+import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag } from './component';
 
 // Suppress unused type import warnings — these are used via Zod inference only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -13,9 +13,6 @@ type _RegionalTag = RegionalTag;
 type _OccasionTag = OccasionTag;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _MealSlot = MealSlot;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _ExtraCategory = ExtraCategory;
-
 // ─── DayOfWeek ───────────────────────────────────────────────────────────────
 
 export type DayOfWeek =
@@ -74,69 +71,66 @@ export const TagFilterSchema = z.object({
 
 export type TagFilter = z.infer<typeof TagFilterSchema>;
 
-// ─── CompiledFilter (discriminated union) ────────────────────────────────────
+// ─── Target ───────────────────────────────────────────────────────────────────
 
-export const CompiledFilterSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('no-repeat'),
-    component_type: z.enum(['base', 'curry', 'subzi']),
-    within: z.literal('week'),
-  }),
-  z.object({
-    type: z.literal('scheduling-rule'),
-    effect: z.enum(['filter-pool', 'require-one', 'exclude']),
-    days: z.array(DayOfWeekEnum).nullable(),
-    slots: z.array(MealSlotEnum).nullable(),
-    match: z.discriminatedUnion('mode', [
-      z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
-      z.object({ mode: z.literal('component'), component_id: z.number() }),
-    ]),
-  }),
-  z.object({
-    type: z.literal('meal-template'),
-    base_type: z.enum(['rice-based', 'bread-based', 'other']),
-    days: z.array(DayOfWeekEnum).nullable(),
-    slots: z.array(MealSlotEnum).nullable(),
-    allowed_slots: z.array(MealSlotEnum).nullable(),
-    exclude_component_types: z.array(z.enum(['curry', 'subzi'])),
-    exclude_extra_categories: z.array(z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet'])),
-    require_extra_category: z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet']).nullable(),
-  }),
+export const TargetSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('component_type'), component_type: z.enum(['base', 'curry', 'subzi']) }),
+  z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
+  z.object({ mode: z.literal('component'), component_id: z.number() }),
+  z.object({ mode: z.literal('base_category'), category_id: z.number() }),
 ]);
 
-export type CompiledFilter = z.infer<typeof CompiledFilterSchema>;
+export type Target = z.infer<typeof TargetSchema>;
 
-// Concrete type aliases for each variant (used by rule-compiler and generator)
-export type NoRepeatRule = Extract<CompiledFilter, { type: 'no-repeat' }>;
-export type SchedulingRule = Extract<CompiledFilter, { type: 'scheduling-rule' }>;
-export type MealTemplateRule = Extract<CompiledFilter, { type: 'meal-template' }>;
+// ─── RuleScope ────────────────────────────────────────────────────────────────
 
-// ─── RuleDefinition (structured input from Phase 5 form UI) ──────────────────
+export const RuleScopeSchema = z.object({
+  days:  z.array(DayOfWeekEnum).nullable(),
+  slots: z.array(MealSlotEnum).nullable(),
+});
 
-export type RuleDefinition =
-  | {
-      ruleType: 'no-repeat';
-      component_type: 'base' | 'curry' | 'subzi';
-    }
-  | {
-      ruleType: 'scheduling-rule';
-      effect: 'filter-pool' | 'require-one' | 'exclude';
-      days?: DayOfWeek[];
-      slots?: MealSlot[];
-      match:
-        | { mode: 'tag'; filter: TagFilter }
-        | { mode: 'component'; component_id: number };
-    }
-  | {
-      ruleType: 'meal-template';
-      base_type: 'rice-based' | 'bread-based' | 'other';
-      days?: DayOfWeek[];
-      slots?: MealSlot[];
-      allowed_slots?: MealSlot[];
-      exclude_component_types?: ('curry' | 'subzi')[];
-      exclude_extra_categories?: ExtraCategory[];
-      require_extra_category?: ExtraCategory;
-    };
+export type RuleScope = z.infer<typeof RuleScopeSchema>;
+
+// ─── Effects ──────────────────────────────────────────────────────────────────
+
+export const EffectSchema = z.discriminatedUnion('kind', [
+  // Selection effects (mutually exclusive — at most one per rule)
+  z.object({ kind: z.literal('filter_pool') }),
+  z.object({ kind: z.literal('require_one') }),
+  z.object({ kind: z.literal('exclude') }),
+  z.object({ kind: z.literal('no_repeat') }),
+  // Placement effect
+  z.object({ kind: z.literal('allowed_slots'), slots: z.array(MealSlotEnum) }),
+  // Component shape
+  z.object({ kind: z.literal('skip_component'), component_types: z.array(z.enum(['curry', 'subzi'])) }),
+  // Extra effects
+  z.object({ kind: z.literal('require_extra'), category_ids: z.array(z.number()) }),
+]);
+
+export type AnyEffect = z.infer<typeof EffectSchema>;
+
+// Concrete types for each effect variant
+export type FilterPoolEffect   = Extract<AnyEffect, { kind: 'filter_pool' }>;
+export type RequireOneEffect   = Extract<AnyEffect, { kind: 'require_one' }>;
+export type ExcludeEffect      = Extract<AnyEffect, { kind: 'exclude' }>;
+export type NoRepeatEffect     = Extract<AnyEffect, { kind: 'no_repeat' }>;
+export type AllowedSlotsEffect = Extract<AnyEffect, { kind: 'allowed_slots' }>;
+export type SkipComponentEffect = Extract<AnyEffect, { kind: 'skip_component' }>;
+export type RequireExtraEffect = Extract<AnyEffect, { kind: 'require_extra' }>;
+
+export type SelectionEffect = FilterPoolEffect | RequireOneEffect | ExcludeEffect | NoRepeatEffect;
+export type CompositionEffect = AllowedSlotsEffect | SkipComponentEffect | RequireExtraEffect;
+
+// ─── CompiledRule (unified) ───────────────────────────────────────────────────
+
+export const CompiledRuleSchema = z.object({
+  type:    z.literal('rule'),
+  target:  TargetSchema,
+  scope:   RuleScopeSchema,
+  effects: z.array(EffectSchema),
+});
+
+export type CompiledRule = z.infer<typeof CompiledRuleSchema>;
 
 // ─── Generator result types ───────────────────────────────────────────────────
 
