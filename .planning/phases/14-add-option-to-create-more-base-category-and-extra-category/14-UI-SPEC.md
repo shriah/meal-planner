@@ -1,7 +1,7 @@
 ---
 phase: 14
 slug: add-option-to-create-more-base-category-and-extra-category
-status: draft
+status: approved
 shadcn_initialized: true
 preset: radix-mira
 created: 2026-03-28
@@ -43,7 +43,7 @@ Declared values (must be multiples of 4):
 | 2xl | 48px | Empty-state vertical breathing room, sheet section breaks |
 | 3xl | 64px | Page-level top/bottom spacing when needed |
 
-Exceptions: `44px` minimum hit area for icon-only actions; `48px` minimum row height for category list rows and existing library rows.
+Exceptions: `48px` minimum hit area for icon-only actions and `48px` minimum row height for category list rows and existing library rows.
 
 ---
 
@@ -83,7 +83,7 @@ Accent reserved for: `Manage Categories` trigger, `Add Category`, `Save Name`, a
 | Error state | Could not save category changes. Check the name and try again. |
 | Destructive confirmation | Delete category: Delete “{name}”? Components and rules that use it will be cleaned up automatically. |
 
-Rename action label: `Rename`. Delete action label: `Delete`. Secondary safe exit label: `Keep Category`. For duplicate or blank names, use inline field copy: `Enter a unique category name.`
+Rename action label: `Rename Category`. Delete action label: `Delete Category`. Rename exit label: `Stop Renaming`. Draft exit label: `Discard Draft Category`. Destructive safe exit label: `Keep Category`. For duplicate or blank names, use inline field copy: `Enter a unique category name.`
 
 ---
 
@@ -100,6 +100,14 @@ Open a `Sheet` for category management to stay consistent with the existing rule
 - `Base Categories`
 - `Extra Categories`
 
+Visual priority must read in this order:
+
+1. Active section title or active tab
+2. Top `Add Category` control for that section
+3. Category rows beneath it
+
+The active section header plus its `Add Category` control is the focal point on first open. Category rows are supporting management content and should not compete visually with the primary action.
+
 Each section includes:
 
 - A one-line explanation of where the category is used.
@@ -115,7 +123,7 @@ Each category row is a simple management row, not a card. Use:
 - Optional small usage summary on the right in muted text, if available.
 - `Rename` and `Delete` actions aligned to the row end.
 
-Only one row may enter rename mode at a time. Rename mode swaps the static name for a single-line input plus `Save Name` and `Cancel`. Hitting `Escape` cancels rename with no save. Hitting `Enter` saves when valid.
+Only one row may enter rename mode at a time. Rename mode swaps the static name for a single-line input plus `Save Name` and `Stop Renaming`. Hitting `Escape` triggers `Stop Renaming` with no save. Hitting `Enter` saves when valid.
 
 ### Add Flow
 
@@ -123,7 +131,7 @@ Only one row may enter rename mode at a time. Rename mode swaps the static name 
 
 - Empty by default.
 - Save disabled until trimmed name is non-empty and unique within that kind.
-- Cancel removes the draft row entirely.
+- `Discard Draft Category` removes the draft row entirely.
 
 Do not close the sheet after a successful add. Keep the user in context so they can add multiple categories in sequence.
 
@@ -194,11 +202,11 @@ No third-party registries or new block imports are allowed for this phase.
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-03-28
