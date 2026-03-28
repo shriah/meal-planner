@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Edit Rule
-status: executing
-stopped_at: Completed 14-03-PLAN.md
-last_updated: "2026-03-28T07:58:41.930Z"
+status: verifying
+stopped_at: Completed 14-04-PLAN.md
+last_updated: "2026-03-28T08:08:59.976Z"
 last_activity: 2026-03-28
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 Phase: 14 (add-option-to-create-more-base-category-and-extra-category) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-03-28
 
 ## Performance Metrics
@@ -84,6 +84,7 @@ Last activity: 2026-03-28
 | Phase 14-add-option-to-create-more-base-category-and-extra-category P01 | 10min | 2 tasks | 9 files |
 | Phase 14 P02 | 7min | 2 tasks | 6 files |
 | Phase 14-add-option-to-create-more-base-category-and-extra-category P03 | 1h49m | 2 tasks | 15 files |
+| Phase 14 P04 | 8min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -176,6 +177,8 @@ Recent decisions affecting current work:
 - [Phase 14]: Library forms now persist canonical category IDs and resolve labels from live Dexie queries, with legacy string fields only preserved for built-in labels.
 - [Phase 14-add-option-to-create-more-base-category-and-extra-category]: Stored rules use base_category/category_id in persistence while form state keeps base_category_id for explicit UI semantics.
 - [Phase 14-add-option-to-create-more-base-category-and-extra-category]: Rule descriptions and edit rehydration resolve category labels from live Dexie records so rename/delete safety stays in the display layer.
+- [Phase 14]: Generator and picker now use category IDs as the primary compatibility key, with legacy string fields kept only as defensive fallback data.
+- [Phase 14]: Seed fixtures stay human-readable in seed-data.ts and are materialized into category-backed component records during runSeed().
 
 ### Roadmap Evolution
 
@@ -201,6 +204,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-28T07:58:41.927Z
-Stopped at: Completed 14-03-PLAN.md
+Last session: 2026-03-28T08:08:59.974Z
+Stopped at: Completed 14-04-PLAN.md
 Resume file: None
