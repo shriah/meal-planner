@@ -34,7 +34,7 @@
 - [x] **CAT-02**: Component records and Library forms store category IDs instead of hard-coded category names, while extra compatibility keeps the current checklist interaction
 - [ ] **CAT-03**: Rule targets and `require_extra` effects store category IDs and render dynamic category-backed options in create/edit flows
 - [ ] **CAT-04**: Generator behavior and picker filtering resolve compatibility from category data while preserving the explicit-extra runtime contract from Phase 13
-- [ ] **CAT-05**: Users can add, rename, and delete both base and extra categories from a separate category-management UI
+- [x] **CAT-05**: Users can add, rename, and delete both base and extra categories from a separate category-management UI
 - [x] **CAT-06**: Renaming a category cascades automatically across visible labels because identity is the stable ID, not the display name
 - [x] **CAT-07**: Deleting a category normalizes dependent references so no dangling IDs remain in components, rules, or runtime surfaces
 - [ ] **CAT-08**: Seed/default data and regression tests use the category-backed model instead of the old string unions
