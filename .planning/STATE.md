@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Edit Rule
-status: complete
-stopped_at: Completed Phase 15 verification
-last_updated: "2026-03-29T00:55:00Z"
+status: verifying
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-03-28T19:36:17.004Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 11
-  completed_plans: 11
+  completed_phases: 6
+  total_plans: 12
+  completed_plans: 12
 ---
 
 # Project State
@@ -20,20 +20,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.2 debt cleanup — Phase 16 planning next
+**Current focus:** v1.2 milestone verification and closeout
 
 ## Current Position
 
-Phase: 16 (remove-category-id-preset-coupling-and-add-planboard-mealpicker-integration-coverage) — NOT STARTED
-Plan: 0 of 0
-Status: Phase 15 verified and complete
+Phase: 16 (remove-category-id-preset-coupling-and-add-planboard-mealpicker-integration-coverage) — COMPLETE
+Plan: 1 of 1
+Status: Phase 16 executed; milestone ready for verification
 Last activity: 2026-03-29
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: 6min
 - Total execution time: 0.45 hours
 
@@ -86,6 +86,7 @@ Last activity: 2026-03-29
 | Phase 14-add-option-to-create-more-base-category-and-extra-category P03 | 1h49m | 2 tasks | 15 files |
 | Phase 14 P04 | 8min | 2 tasks | 11 files |
 | Phase 15-finalize-phase-11-validation-coverage P01 | 82s | 2 tasks | 2 files |
+| Phase 16-remove-category-id-preset-coupling-and-add-planboard-mealpicker-integration-coverage P01 | 5min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -182,6 +183,7 @@ Recent decisions affecting current work:
 - [Phase 14]: Seed fixtures stay human-readable in seed-data.ts and are materialized into category-backed component records during runSeed().
 - [Phase 15-finalize-phase-11-validation-coverage]: Kept Phase 15 strictly documentation-and-evidence scoped: only the Phase 11 validation artifact changed.
 - [Phase 15-finalize-phase-11-validation-coverage]: Used the actual focused Vitest reruns plus full npm test results as the approval basis instead of relying only on historical summaries.
+- [Phase 16-remove-category-id-preset-coupling-and-add-planboard-mealpicker-integration-coverage]: Covered the PlanBoard extras handoff by mocking MealPickerSheet and asserting received props directly instead of inferring behavior only from picker queries.
 
 ### Roadmap Evolution
 
@@ -195,7 +197,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-- Plan Phase 16 from the remaining v1.2 milestone audit debt
+- Verify and close the v1.2 milestone now that Phase 16 is complete
 
 ### Quick Tasks Completed
 
@@ -210,6 +212,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-28T19:23:07.593Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-03-28T19:36:17.004Z
+Stopped at: Completed 16-01-PLAN.md
 Resume file: None
