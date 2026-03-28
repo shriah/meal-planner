@@ -64,6 +64,17 @@ created: 2026-03-27
 
 ---
 
+## Rerun Evidence
+
+| Date | Command | Result |
+|------|---------|--------|
+| 2026-03-29 | `npx vitest run src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts` | 2 files passed, 11 tests passed |
+| 2026-03-29 | `npx vitest run src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` | 2 files passed, 7 tests passed |
+| 2026-03-29 | `npx vitest run src/components/rules/form-state.test.ts src/services/rule-compiler.test.ts src/services/food-db.test.ts src/components/rules/RuleRow.test.tsx` | 4 files passed, 18 tests passed |
+| 2026-03-29 | `npm test` | 21 files passed, 168 tests passed |
+
+---
+
 ## Validation Sign-Off
 
 - [x] All tasks have `<automated>` verify or Wave 0 dependencies
@@ -73,4 +84,4 @@ created: 2026-03-27
 - [x] Feedback latency < 25s
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** approved 2026-03-29
+**Approval:** approved 2026-03-29 after rerunning the focused Phase 11 suites and full `npm test`
