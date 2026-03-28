@@ -1,164 +1,51 @@
-import { describe, it, expect } from 'vitest';
-import { migrateToCompiledRule, stripLegacyExcludeExtra } from './client';
+import { describe, expect, it } from 'vitest';
+import {
+  BUILT_IN_BASE_CATEGORY_NAMES,
+  BUILT_IN_EXTRA_CATEGORY_NAMES,
+} from '@/types/category';
+import {
+  buildCategoryMigrationFixture,
+  migrateLegacyCategoryData,
+} from './client';
 
-describe('migrateToCompiledRule', () => {
-  it('migrates no-repeat to component_type target + no_repeat effect', () => {
-    const input = { type: 'no-repeat', component_type: 'base', within: 'week' };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'component_type', component_type: 'base' },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'no_repeat' }],
-    });
+describe('Phase 14 categories table migration', () => {
+  it('creates base and extra category records for built-in labels', () => {
+    const fixture = buildCategoryMigrationFixture();
+    const migrated = migrateLegacyCategoryData(fixture);
+
+    expect(migrated.categories.filter((category) => category.kind === 'base').map((category) => category.name))
+      .toEqual([...BUILT_IN_BASE_CATEGORY_NAMES]);
+    expect(migrated.categories.filter((category) => category.kind === 'extra').map((category) => category.name))
+      .toEqual([...BUILT_IN_EXTRA_CATEGORY_NAMES]);
   });
 
-  it('migrates scheduling-rule filter-pool with tag match', () => {
-    const input = {
-      type: 'scheduling-rule',
-      effect: 'filter-pool',
-      days: ['friday'],
-      slots: null,
-      match: { mode: 'tag', filter: { protein_tag: 'fish' } },
-    };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
-      scope: { days: ['friday'], slots: null },
-      effects: [{ kind: 'filter_pool' }],
-    });
+  it('rewrites literal component category fields to numeric IDs in one categories table', () => {
+    const migrated = migrateLegacyCategoryData(buildCategoryMigrationFixture());
+    const lemonRice = migrated.components.find((component) => component.name === 'Lemon Rice');
+    const rasam = migrated.components.find((component) => component.name === 'Rasam');
+
+    expect(lemonRice?.base_category_id).toEqual(expect.any(Number));
+    expect(lemonRice?.base_type).toBe('rice-based');
+    expect(rasam?.extra_category_id).toEqual(expect.any(Number));
+    expect(rasam?.compatible_base_category_ids).toEqual(
+      expect.arrayContaining([expect.any(Number)]),
+    );
   });
 
-  it('migrates scheduling-rule require-one with component match', () => {
-    const input = {
-      type: 'scheduling-rule',
-      effect: 'require-one',
-      days: ['saturday', 'sunday'],
-      slots: ['lunch'],
-      match: { mode: 'component', component_id: 42 },
-    };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'component', component_id: 42 },
-      scope: { days: ['saturday', 'sunday'], slots: ['lunch'] },
-      effects: [{ kind: 'require_one' }],
-    });
-  });
+  it('delete normalization clears component references and disables rules with deleted category targets', () => {
+    const fixture = buildCategoryMigrationFixture();
+    const migrated = migrateLegacyCategoryData(fixture);
+    const deletedBaseCategoryId = migrated.categories.find((category) => category.name === 'bread-based')?.id;
 
-  it('migrates scheduling-rule exclude with tag match', () => {
-    const input = {
-      type: 'scheduling-rule',
-      effect: 'exclude',
-      days: null,
-      slots: null,
-      match: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-    };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'exclude' }],
-    });
-  });
+    expect(deletedBaseCategoryId).toBeDefined();
 
-  it('migrates meal-template base selector with composition effects', () => {
-    const input = {
-      type: 'meal-template',
-      selector: { mode: 'base', base_type: 'rice-based' },
-      days: null,
-      slots: null,
-      allowed_slots: ['lunch', 'dinner'],
-      exclude_component_types: ['curry'],
-      exclude_extra_categories: ['sweet'],
-      require_extra_category: 'condiment',
-    };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'require_extra', categories: ['condiment'] },
-      ],
-    });
-  });
+    const normalized = migrated.normalizeDeletedCategory(deletedBaseCategoryId!);
+    const roti = normalized.components.find((component) => component.name === 'Roti');
+    const pickle = normalized.components.find((component) => component.name === 'Pickle');
+    const breadRule = normalized.rules.find((rule) => rule.name === 'Bread dinner');
 
-  it('migrates meal-template with null allowed_slots (no placement effect)', () => {
-    const input = {
-      type: 'meal-template',
-      selector: { mode: 'base', base_type: 'bread-based' },
-      days: null,
-      slots: null,
-      allowed_slots: null,
-      exclude_component_types: [],
-      exclude_extra_categories: ['sweet'],
-      require_extra_category: null,
-    };
-    const result = migrateToCompiledRule(input) as { effects: unknown[] };
-    expect(result.effects).toEqual([]);
-  });
-
-  it('migrates meal-template tag selector', () => {
-    const input = {
-      type: 'meal-template',
-      selector: { mode: 'tag', filter: { regional_tag: 'south-indian' } },
-      days: null,
-      slots: null,
-      allowed_slots: null,
-      exclude_component_types: ['subzi'],
-      exclude_extra_categories: [],
-      require_extra_category: null,
-    };
-    expect(migrateToCompiledRule(input)).toEqual({
-      type: 'rule',
-      target: { mode: 'tag', filter: { regional_tag: 'south-indian' } },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'skip_component', component_types: ['subzi'] }],
-    });
-  });
-
-  it('passes through already-migrated CompiledRule unchanged', () => {
-    const rule = {
-      type: 'rule',
-      target: { mode: 'component_type', component_type: 'base' },
-      scope: { days: null, slots: null },
-      effects: [{ kind: 'no_repeat' }],
-    };
-    expect(migrateToCompiledRule(rule)).toEqual(rule);
-  });
-
-  it('passes through unknown types unchanged', () => {
-    const unknown = { type: 'unknown-type', data: 'preserved' };
-    expect(migrateToCompiledRule(unknown)).toEqual(unknown);
-  });
-});
-
-describe('stripLegacyExcludeExtra', () => {
-  it('removes exclude_extra effects from already-compiled rules', () => {
-    expect(
-      stripLegacyExcludeExtra({
-        type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
-        scope: { days: null, slots: null },
-        effects: [
-          { kind: 'allowed_slots', slots: ['lunch'] },
-          { kind: 'exclude_extra', categories: ['sweet'] },
-          { kind: 'require_extra', categories: ['condiment'] },
-        ],
-      }),
-    ).toEqual({
-      type: 'rule',
-      target: { mode: 'base_type', base_type: 'rice-based' },
-      scope: { days: null, slots: null },
-      effects: [
-        { kind: 'allowed_slots', slots: ['lunch'] },
-        { kind: 'require_extra', categories: ['condiment'] },
-      ],
-    });
-  });
-
-  it('passes through unrelated shapes unchanged', () => {
-    const unknown = { type: 'unknown-type', data: 'preserved' };
-    expect(stripLegacyExcludeExtra(unknown)).toEqual(unknown);
+    expect(roti?.base_category_id).toBeNull();
+    expect(pickle?.compatible_base_category_ids).not.toContain(deletedBaseCategoryId);
+    expect(breadRule?.enabled).toBe(false);
   });
 });

@@ -1,8 +1,11 @@
-// Base types — DATA-02
-export type BaseType = 'rice-based' | 'bread-based' | 'other';
+import type {
+  BUILT_IN_BASE_CATEGORY_NAMES,
+  BUILT_IN_EXTRA_CATEGORY_NAMES,
+} from './category';
 
-// Extra categories — DATA-03
-export type ExtraCategory = 'liquid' | 'crunchy' | 'condiment' | 'dairy' | 'sweet';
+// Transitional aliases kept for Wave 1 compatibility with still-unmigrated callers.
+export type BaseType = (typeof BUILT_IN_BASE_CATEGORY_NAMES)[number];
+export type ExtraCategory = (typeof BUILT_IN_EXTRA_CATEGORY_NAMES)[number];
 
 // Component type discriminator — DATA-01
 export type ComponentType = 'base' | 'curry' | 'subzi' | 'extra';
@@ -41,6 +44,7 @@ interface BaseComponentFields {
 // Discriminated union members
 export interface BaseRecord extends BaseComponentFields {
   componentType: 'base';
+  base_category_id?: number | null;
   base_type: BaseType;
 }
 
@@ -51,11 +55,14 @@ export interface CurryRecord extends BaseComponentFields {
 
 export interface SubziRecord extends BaseComponentFields {
   componentType: 'subzi';
+  compatible_base_category_ids?: number[];
   compatible_base_types?: BaseType[];
 }
 
 export interface ExtraRecord extends BaseComponentFields {
   componentType: 'extra';
+  extra_category_id?: number | null;
+  compatible_base_category_ids: number[];
   extra_category: ExtraCategory;
   compatible_base_types: BaseType[];
   incompatible_curry_categories?: string[];
@@ -68,9 +75,12 @@ export type Frequency = 'frequent' | 'normal' | 'rare';
 
 // Flat record type for Dexie storage — all fields merged, type-specific fields optional
 export type ComponentRecord = BaseComponentFields & {
+  base_category_id?: number | null;
   base_type?: BaseType;
   curry_category?: string;
+  compatible_base_category_ids?: number[];
   compatible_base_types?: BaseType[];
+  extra_category_id?: number | null;
   extra_category?: ExtraCategory;
   incompatible_curry_categories?: string[];
   frequency?: Frequency; // defaults to 'normal' in generator
