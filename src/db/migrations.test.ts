@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { migrateToCompiledRule } from './client';
+import { migrateToCompiledRule, stripLegacyExcludeExtra } from './client';
 
 describe('migrateToCompiledRule', () => {
   it('migrates no-repeat to component_type target + no_repeat effect', () => {
@@ -78,7 +78,6 @@ describe('migrateToCompiledRule', () => {
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
         { kind: 'skip_component', component_types: ['curry'] },
-        { kind: 'exclude_extra', categories: ['sweet'] },
         { kind: 'require_extra', categories: ['condiment'] },
       ],
     });
@@ -92,7 +91,7 @@ describe('migrateToCompiledRule', () => {
       slots: null,
       allowed_slots: null,
       exclude_component_types: [],
-      exclude_extra_categories: [],
+      exclude_extra_categories: ['sweet'],
       require_extra_category: null,
     };
     const result = migrateToCompiledRule(input) as { effects: unknown[] };
@@ -131,5 +130,35 @@ describe('migrateToCompiledRule', () => {
   it('passes through unknown types unchanged', () => {
     const unknown = { type: 'unknown-type', data: 'preserved' };
     expect(migrateToCompiledRule(unknown)).toEqual(unknown);
+  });
+});
+
+describe('stripLegacyExcludeExtra', () => {
+  it('removes exclude_extra effects from already-compiled rules', () => {
+    expect(
+      stripLegacyExcludeExtra({
+        type: 'rule',
+        target: { mode: 'base_type', base_type: 'rice-based' },
+        scope: { days: null, slots: null },
+        effects: [
+          { kind: 'allowed_slots', slots: ['lunch'] },
+          { kind: 'exclude_extra', categories: ['sweet'] },
+          { kind: 'require_extra', categories: ['condiment'] },
+        ],
+      }),
+    ).toEqual({
+      type: 'rule',
+      target: { mode: 'base_type', base_type: 'rice-based' },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'allowed_slots', slots: ['lunch'] },
+        { kind: 'require_extra', categories: ['condiment'] },
+      ],
+    });
+  });
+
+  it('passes through unrelated shapes unchanged', () => {
+    const unknown = { type: 'unknown-type', data: 'preserved' };
+    expect(stripLegacyExcludeExtra(unknown)).toEqual(unknown);
   });
 });

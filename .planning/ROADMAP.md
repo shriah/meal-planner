@@ -32,7 +32,7 @@
 
 ### v1.2 Edit Rule
 
-- [ ] **Phase 11: Edit Rule** - Add edit capability to the rules list so users can update any existing rule in place
+- [x] **Phase 11: Edit Rule** - Add edit capability to the rules list so users can update any existing rule in place (completed 2026-03-27)
 
 ## Phase Details
 
@@ -45,7 +45,10 @@
   2. The Sheet opens with RuleForm pre-populated with the rule's current target, scope, and effects — no fields are blank or reset to defaults
   3. Saving the edited rule overwrites the original record in Dexie — no duplicate rule is created and the rule count stays the same
   4. Closing or canceling the Sheet (via close button, Cancel button, or pressing Escape) discards all unsaved edits — the original rule remains unchanged
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 11-01-PLAN.md — Extract shared form-state and add reversible `decompileRule` coverage for exact pre-population
+- [x] 11-02-PLAN.md — Add the rule-row edit sheet with in-place save, discard/reset behavior, and save-failure feedback
 **UI hint**: yes
 
 ## Progress
@@ -62,4 +65,17 @@
 | 8. Scheduling Rule UI + Migration | v1.1 | 2/2 | Complete | 2026-03-25 |
 | 9. Meal Template Engine | v1.1 | 2/2 | Complete | 2026-03-26 |
 | 10. Meal Template UI, Settings Removal, and Migration | v1.1 | 2/2 | Complete | 2026-03-26 |
-| 11. Edit Rule | v1.2 | 0/? | Not started | - |
+| 11. Edit Rule | v1.2 | 2/2 | Complete   | 2026-03-27 |
+| 12. Require extra explicitly instead of excluding extra categories by default | v1.2 | 3/3 | Complete | 2026-03-28 |
+
+### Phase 12: Require extra explicitly instead of excluding extra categories by default
+
+**Goal:** Meal-template rules use explicit require-extra semantics only, with legacy exclude-extra behavior removed from UI, persisted rules, generator warnings, and rule descriptions
+**Requirements**: PH12-01, PH12-02, PH12-03, PH12-04, PH12-05
+**Depends on:** Phase 11
+**Plans:** 3 plans
+
+Plans:
+- [x] 12-01-PLAN.md — Remove exclude-extra from active form state and create/edit UI surfaces
+- [x] 12-02-PLAN.md — Normalize compiler, descriptions, and persisted rule data so exclude-extra cannot survive migration or round-trips
+- [x] 12-03-PLAN.md — Remove runtime exclude-extra support from schema/generator and finalize require-or-none validation

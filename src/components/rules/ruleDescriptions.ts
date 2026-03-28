@@ -51,8 +51,6 @@ function describeEffects(effects: AnyEffect[]): string {
       parts.push(`allowed at ${e.slots.join(', ')}`)
     if (e.kind === 'skip_component')
       parts.push(`skip ${e.component_types.join(', ')}`)
-    if (e.kind === 'exclude_extra')
-      parts.push(`exclude ${e.categories.join(', ')} extras`)
     if (e.kind === 'require_extra')
       parts.push(`require ${e.categories.join(', ')} extra`)
   }

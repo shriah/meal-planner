@@ -271,6 +271,49 @@ describe('Meal CRUD with extras', () => {
   });
 });
 
+describe('EDIT-03: updateRule overwrite semantics', () => {
+  it('preserves row count, id, and created_at while overwriting mutable rule fields', async () => {
+    const createdAt = '2026-03-27T00:00:00.000Z';
+    const id = await addRule({
+      name: 'Fish Fridays',
+      enabled: true,
+      created_at: createdAt,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+        scope: { days: ['friday'], slots: ['dinner'] },
+        effects: [{ kind: 'require_one' }],
+      },
+    });
+
+    const before = await getRules();
+
+    await updateRule(id, {
+      name: 'Friday fish dinner',
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+        scope: { days: ['friday'], slots: ['dinner'] },
+        effects: [{ kind: 'exclude' }],
+      },
+    });
+
+    const after = await getRules();
+
+    expect(before.length).toBe(1);
+    expect(after.length).toBe(1);
+    expect(after[0].id === before[0].id).toBe(true);
+    expect(after[0].name).toBe('Friday fish dinner');
+    expect(after[0].compiled_filter).toEqual({
+      type: 'rule',
+      target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+      scope: { days: ['friday'], slots: ['dinner'] },
+      effects: [{ kind: 'exclude' }],
+    });
+    expect(after[0].created_at).toBe(createdAt);
+  });
+});
+
 describe('Preferences singleton', () => {
   it('returns undefined initially, then stores and retrieves prefs', async () => {
     const initial = await getPreferences();

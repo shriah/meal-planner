@@ -31,10 +31,6 @@ export function compileRule(state: RuleFormState): CompiledRule {
     effects.push({ kind: 'skip_component', component_types: state.skip_component_types });
   }
 
-  if (state.exclude_extra_categories.length > 0) {
-    effects.push({ kind: 'exclude_extra', categories: state.exclude_extra_categories });
-  }
-
   if (state.require_extra_categories.length > 0) {
     effects.push({ kind: 'require_extra', categories: state.require_extra_categories });
   }
@@ -48,4 +44,48 @@ export function compileRule(state: RuleFormState): CompiledRule {
     },
     effects,
   };
+}
+
+export function decompileRule(compiled: CompiledRule, name: string): RuleFormState {
+  const target: RuleFormState['target'] =
+    compiled.target.mode === 'component_type'
+      ? { mode: 'component_type', component_type: compiled.target.component_type }
+      : compiled.target.mode === 'tag'
+        ? { mode: 'tag', filter: compiled.target.filter }
+        : compiled.target.mode === 'component'
+          ? { mode: 'component', component_id: compiled.target.component_id }
+          : { mode: 'base_type', base_type: compiled.target.base_type };
+
+  const state: RuleFormState = {
+    name,
+    target,
+    days: compiled.scope.days ?? [],
+    slots: compiled.scope.slots ?? [],
+    selection: '',
+    allowed_slots: [],
+    skip_component_types: [],
+    require_extra_categories: [],
+  };
+
+  for (const effect of compiled.effects) {
+    switch (effect.kind) {
+      case 'filter_pool':
+      case 'require_one':
+      case 'exclude':
+      case 'no_repeat':
+        state.selection = effect.kind;
+        break;
+      case 'allowed_slots':
+        state.allowed_slots = effect.slots;
+        break;
+      case 'skip_component':
+        state.skip_component_types = effect.component_types;
+        break;
+      case 'require_extra':
+        state.require_extra_categories = effect.categories;
+        break;
+    }
+  }
+
+  return state;
 }

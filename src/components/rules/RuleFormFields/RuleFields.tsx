@@ -253,13 +253,6 @@ function EffectsSection({ state, dispatch }: Props) {
     dispatch({ type: 'SET_SKIP_COMPONENT_TYPES', skip_component_types: next });
   };
 
-  const toggleExcludeExtra = (cat: ExtraCategory) => {
-    const next = state.exclude_extra_categories.includes(cat)
-      ? state.exclude_extra_categories.filter(x => x !== cat)
-      : [...state.exclude_extra_categories, cat];
-    dispatch({ type: 'SET_EXCLUDE_EXTRA_CATEGORIES', categories: next });
-  };
-
   const toggleRequireExtra = (cat: ExtraCategory) => {
     const next = state.require_extra_categories.includes(cat)
       ? state.require_extra_categories.filter(x => x !== cat)
@@ -317,21 +310,6 @@ function EffectsSection({ state, dispatch }: Props) {
                   checked={state.skip_component_types.includes(ct)}
                   onCheckedChange={() => toggleSkipType(ct)} />
                 <Label htmlFor={`skip-${ct}`} className="font-normal cursor-pointer capitalize">{ct}</Label>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Exclude extra categories */}
-        <div className="space-y-1">
-          <p className="text-sm text-muted-foreground">Exclude extra categories</p>
-          <div className="flex flex-wrap gap-2">
-            {EXTRA_CATEGORIES.map(cat => (
-              <div key={cat} className="flex items-center space-x-2">
-                <Checkbox id={`excl-${cat}`}
-                  checked={state.exclude_extra_categories.includes(cat)}
-                  onCheckedChange={() => toggleExcludeExtra(cat)} />
-                <Label htmlFor={`excl-${cat}`} className="font-normal cursor-pointer">{cat}</Label>
               </div>
             ))}
           </div>

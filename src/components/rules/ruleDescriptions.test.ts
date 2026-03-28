@@ -43,6 +43,17 @@ describe('describeRule', () => {
     }))).toBe('Rice-based: allowed at lunch, dinner; skip curry; require condiment extra')
   })
 
+  it('ignores legacy exclude-extra effects in user-facing copy', () => {
+    expect(describeRule(rule({
+      target: { mode: 'base_type', base_type: 'rice-based' },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'exclude_extra', categories: ['sweet'] },
+        { kind: 'require_extra', categories: ['condiment'] },
+      ],
+    } as CompiledRule))).toBe('Rice-based: require condiment extra')
+  })
+
   it('describes a rule with no effects', () => {
     expect(describeRule(rule({
       target: { mode: 'base_type', base_type: 'bread-based' },

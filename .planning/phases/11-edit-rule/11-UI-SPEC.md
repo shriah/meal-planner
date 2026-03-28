@@ -51,13 +51,14 @@ Source: Derived from existing RuleRow (min-h-[48px], px-4, py-3), SheetHeader (p
 
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
-| Body | 14px (text-sm) | 400 (regular) | 1.5 (relaxed) |
+| Body | 14px (text-sm) | 500 (medium) | 1.5 (relaxed) |
 | Label | 14px (text-sm) | 500 (medium) | 1.4 |
 | Heading | 28px (text-[28px]) | 600 (semibold) | 1.2 |
 | Sheet title | 14px (text-sm) | 500 (medium) | 1.4 |
 
 Notes:
-- Body text uses `text-xs/relaxed` (12px/relaxed) inside SheetContent per existing sheet.tsx convention.
+- Two weights only: 500 (medium) for body, labels, and sheet titles; 600 (semibold) for headings.
+- Body text uses `text-xs/relaxed` (12px/relaxed) inside SheetContent per existing sheet.tsx convention — rendered at medium weight.
 - Rule name in RuleRow uses `text-sm font-medium`.
 - Page heading uses `text-[28px] font-semibold font-heading` — matches existing RuleList and RuleForm headings exactly.
 - Sheet title uses `font-heading text-sm font-medium` per existing SheetTitle styles.
@@ -72,10 +73,12 @@ Source: Existing `RuleList.tsx`, `RuleRow.tsx`, `RuleForm.tsx`, `sheet.tsx`.
 |------|-------|-------|
 | Dominant (60%) | `--background` oklch(1 0 0) | Page background, SheetContent background |
 | Secondary (30%) | `--card` oklch(1 0 0) / `--muted` oklch(0.966 0.005 106.5) | Rule row hover state, muted text areas |
-| Accent (10%) | `--primary` oklch(0.852 0.199 91.936) | Edit button (primary variant), Save Rule button, enabled toggle thumb |
+| Accent (10%) | `--primary` oklch(0.852 0.199 91.936) | Save Rule button (primary variant), enabled toggle thumb |
 | Destructive | `--destructive` oklch(0.577 0.245 27.325) | Delete confirmation strip only |
 
 Accent reserved for: Save Rule button (primary variant), enabled toggle track (`bg-primary`). Edit button uses `variant="ghost"` with `size="icon"` — NOT accented. The accent primary color appears only on the submit/save action.
+
+Primary focal point: "Save Rule" button in the SheetFooter, primary variant.
 
 Source: Existing globals.css tokens, RuleRow.tsx toggle implementation, RuleForm.tsx Save button.
 
@@ -88,7 +91,7 @@ All components already installed. No new shadcn components required.
 | Component | Source | Usage in Phase 11 |
 |-----------|--------|--------------------|
 | `Sheet`, `SheetContent`, `SheetHeader`, `SheetTitle`, `SheetFooter`, `SheetClose` | shadcn official | Edit Rule overlay |
-| `Button` | shadcn official | Edit icon button on RuleRow; Save Rule + Cancel in sheet footer |
+| `Button` | shadcn official | Edit icon button on RuleRow; Save Rule + Discard Changes in sheet footer |
 | `Input` | shadcn official | Rule name field inside sheet |
 | `Label` | shadcn official | Rule name label inside sheet |
 | `Tooltip`, `TooltipProvider`, `TooltipContent`, `TooltipTrigger` | shadcn official | Tooltip on Edit icon button |
@@ -114,7 +117,7 @@ All components already installed. No new shadcn components required.
 - Structure:
   1. `SheetHeader` → `SheetTitle` "Edit Rule" + `SheetDescription` "Changes are saved when you click Save Rule."
   2. Scrollable body: rule name `Input`, `RuleFields` (reused), `RuleImpactPreview` (reused).
-  3. `SheetFooter` (pinned bottom, `mt-auto`): "Save Rule" button (primary, disabled while saving or invalid) + "Cancel" button (ghost, closes sheet without saving).
+  3. `SheetFooter` (pinned bottom, `mt-auto`): "Save Rule" button (primary, disabled while saving or invalid) + "Discard Changes" button (ghost, closes sheet without saving).
 - The built-in `SheetContent` close button (X, top-right) remains visible and also discards edits (EDIT-04).
 
 ### Pre-population (EDIT-02)
@@ -129,10 +132,11 @@ All components already installed. No new shadcn components required.
 - No navigation away — sheet closes after successful save, user stays on `/rules`.
 - Button label: "Save Rule" (idle) → "Saving..." (in-flight).
 - Disabled when: form is invalid OR save is in-flight.
+- On save failure: display a toast with copy "Failed to save rule. Please try again." Sheet stays open, button re-enables so the user can retry.
 
 ### Cancel / Close Behavior (EDIT-04)
 
-- Cancel button, X close button, and Escape key all close the sheet without calling `updateRule`.
+- "Discard Changes" button, X close button, and Escape key all close the sheet without calling `updateRule`.
 - Sheet local state is re-initialized from the original `rule` prop each time the sheet opens (controlled via `open` prop reset).
 
 ### State Management
@@ -152,9 +156,9 @@ All components already installed. No new shadcn components required.
 | Edit button tooltip | "Edit rule" |
 | Sheet title | "Edit Rule" |
 | Sheet description | "Changes are saved when you click Save Rule." |
-| Cancel button | "Cancel" |
+| Discard Changes button | "Discard Changes" |
 | Close button sr-only | "Close" (existing sheet default) |
-| Error state (save failure) | Not shown inline — save errors are non-critical; sheet stays open, button re-enables (silent retry pattern matching existing RuleForm) |
+| Error state (save failure) | Toast: "Failed to save rule. Please try again." — sheet stays open, Save Rule button re-enables |
 
 No empty state needed — the edit sheet only opens for an existing rule.
 

@@ -111,7 +111,6 @@ export const EffectSchema = z.discriminatedUnion('kind', [
   // Component shape
   z.object({ kind: z.literal('skip_component'), component_types: z.array(z.enum(['curry', 'subzi'])) }),
   // Extra effects
-  z.object({ kind: z.literal('exclude_extra'), categories: z.array(ExtraCategoryEnum) }),
   z.object({ kind: z.literal('require_extra'), categories: z.array(ExtraCategoryEnum) }),
 ]);
 
@@ -124,11 +123,10 @@ export type ExcludeEffect      = Extract<AnyEffect, { kind: 'exclude' }>;
 export type NoRepeatEffect     = Extract<AnyEffect, { kind: 'no_repeat' }>;
 export type AllowedSlotsEffect = Extract<AnyEffect, { kind: 'allowed_slots' }>;
 export type SkipComponentEffect = Extract<AnyEffect, { kind: 'skip_component' }>;
-export type ExcludeExtraEffect = Extract<AnyEffect, { kind: 'exclude_extra' }>;
 export type RequireExtraEffect = Extract<AnyEffect, { kind: 'require_extra' }>;
 
 export type SelectionEffect = FilterPoolEffect | RequireOneEffect | ExcludeEffect | NoRepeatEffect;
-export type CompositionEffect = AllowedSlotsEffect | SkipComponentEffect | ExcludeExtraEffect | RequireExtraEffect;
+export type CompositionEffect = AllowedSlotsEffect | SkipComponentEffect | RequireExtraEffect;
 
 // ─── CompiledRule (unified) ───────────────────────────────────────────────────
 

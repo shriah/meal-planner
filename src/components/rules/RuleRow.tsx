@@ -13,8 +13,9 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { Alert } from '@/components/ui/alert'
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EditRuleSheet } from './EditRuleSheet'
 
 interface RuleRowProps {
   rule: RuleRecord
@@ -22,6 +23,7 @@ interface RuleRowProps {
 
 export function RuleRow({ rule }: RuleRowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [editing, setEditing] = useState(false)
 
   const summary = describeRule(rule.compiled_filter)
 
@@ -64,14 +66,29 @@ export function RuleRow({ rule }: RuleRowProps) {
             'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
             rule.enabled ? 'bg-primary' : 'bg-input',
           )}
-        >
-          <span
+          >
+            <span
             className={cn(
               'pointer-events-none inline-block size-4 rounded-full bg-background shadow transition-transform',
               rule.enabled ? 'translate-x-4' : 'translate-x-0',
             )}
           />
-        </button>
+          </button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Edit rule"
+                onClick={() => setEditing(true)}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit rule</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -109,6 +126,7 @@ export function RuleRow({ rule }: RuleRowProps) {
           </div>
         </Alert>
       )}
+      <EditRuleSheet rule={rule} open={editing} onOpenChange={setEditing} />
     </div>
   )
 }

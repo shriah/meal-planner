@@ -12,7 +12,6 @@ import {
   type AnyEffect,
   type AllowedSlotsEffect,
   type SkipComponentEffect,
-  type ExcludeExtraEffect,
   type RequireExtraEffect,
   type TagFilter,
   type GeneratorResult,
@@ -300,7 +299,7 @@ function compositionEffectsFirstPass(
 // ─── Helper: compositionEffectsSecondPass ────────────────────────────────────
 
 /**
- * Second pass (after all components selected): find exclude_extra and require_extra
+ * Second pass (after all components selected): find require_extra
  * effects from rules whose target matches ANY component in the slot.
  */
 function compositionEffectsSecondPass(
@@ -320,7 +319,7 @@ function compositionEffectsSecondPass(
       return targetMatches(t, base);
     })
     .flatMap(r => r.compiled.effects)
-    .filter(e => e.kind === 'exclude_extra' || e.kind === 'require_extra');
+    .filter(e => e.kind === 'require_extra');
 }
 
 // ─── Helper: getEligibleBases ─────────────────────────────────────────────────
@@ -563,12 +562,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         validatedRules, selectedBase, slotComponentIds, day, meal_slot,
       );
 
-      const excludedExtraCategories = new Set(
-        secondPassEffects
-          .filter((e): e is ExcludeExtraEffect => e.kind === 'exclude_extra')
-          .flatMap(e => e.categories),
-      );
-
       const requiredExtraCategories = [
         ...new Set(
           secondPassEffects
@@ -587,19 +580,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         if (!(e.compatible_base_types ?? []).includes(selectedBaseType)) return false;
         return isOccasionAllowed(e, day);
       });
-
-      if (excludedExtraCategories.size > 0) {
-        const filtered = eligibleExtras.filter(e => !excludedExtraCategories.has(e.extra_category!));
-        if (filtered.length === 0 && eligibleExtras.length > 0) {
-          warnings.push({
-            slot: { day, meal_slot },
-            rule_id: null,
-            message: `exclude_extra removed all eligible extras for ${selectedBaseType ?? 'unknown'} on ${day} ${meal_slot} — constraint relaxed`,
-          });
-        } else {
-          eligibleExtras = filtered;
-        }
-      }
 
       const selectedExtraIds: number[] = [];
 

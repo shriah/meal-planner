@@ -325,11 +325,6 @@ export function migrateToCompiledRule(cf: unknown): unknown {
       effects.push({ kind: 'skip_component', component_types: excludeTypes });
     }
 
-    const excludeExtras = (r.exclude_extra_categories as string[] | undefined) ?? [];
-    if (excludeExtras.length > 0) {
-      effects.push({ kind: 'exclude_extra', categories: excludeExtras });
-    }
-
     if (r.require_extra_category !== null && r.require_extra_category !== undefined) {
       effects.push({ kind: 'require_extra', categories: [r.require_extra_category] });
     }
@@ -345,6 +340,21 @@ export function migrateToCompiledRule(cf: unknown): unknown {
   return cf; // Unknown type — pass through
 }
 
+export function stripLegacyExcludeExtra(cf: unknown): unknown {
+  if (!cf || typeof cf !== 'object' || !('type' in cf)) return cf;
+
+  const record = cf as Record<string, unknown>;
+  if (record.type !== 'rule' || !Array.isArray(record.effects)) return cf;
+
+  return {
+    ...record,
+    effects: record.effects.filter((effect) => {
+      if (!effect || typeof effect !== 'object' || !('kind' in effect)) return true;
+      return (effect as { kind?: unknown }).kind !== 'exclude_extra';
+    }),
+  };
+}
+
 db.version(9).stores({
   components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
   meals: '++id, base_id, curry_id, subzi_id',
@@ -356,6 +366,20 @@ db.version(9).stores({
 }).upgrade(tx => {
   return tx.table('rules').toCollection().modify(rule => {
     rule.compiled_filter = migrateToCompiledRule(rule.compiled_filter);
+  });
+});
+
+db.version(10).stores({
+  components: '++id, componentType, base_type, extra_category, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(tx => {
+  return tx.table('rules').toCollection().modify(rule => {
+    rule.compiled_filter = stripLegacyExcludeExtra(rule.compiled_filter);
   });
 });
 

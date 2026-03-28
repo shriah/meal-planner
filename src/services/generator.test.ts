@@ -1168,8 +1168,10 @@ describe('SCHED: scheduling-rule filter-pool and exclude', () => {
     const result = await generate();
     // Generation must still complete with all 21 slots
     expect(result.plan.slots).toHaveLength(21);
-    // Warning(s) must contain "constraint relaxed"
-    const relaxedWarnings = result.warnings.filter(w => w.message.includes('constraint relaxed'));
+    // Warning(s) must show the filter constraint was relaxed
+    const relaxedWarnings = result.warnings.filter(
+      w => w.message.includes('filter_pool: no components match'),
+    );
     expect(relaxedWarnings.length).toBeGreaterThan(0);
   });
 
@@ -1257,8 +1259,10 @@ describe('SCHED: scheduling-rule filter-pool and exclude', () => {
     const result = await generate();
     // Generation must still complete with 21 slots
     expect(result.plan.slots).toHaveLength(21);
-    // Warning(s) must contain "constraint relaxed"
-    const relaxedWarnings = result.warnings.filter(w => w.message.includes('constraint relaxed'));
+    // Warning(s) must show the exclusion had to be relaxed
+    const relaxedWarnings = result.warnings.filter(
+      w => w.message.includes('exclude: removed all components from pool'),
+    );
     expect(relaxedWarnings.length).toBeGreaterThan(0);
     void ids;
   });
@@ -1798,7 +1802,7 @@ describe('meal-template rules: slot assignment (TMPL-02)', () => {
     const result = await generate();
     // Generation must still complete
     expect(result.plan.slots).toHaveLength(21);
-    // Warnings must mention constraint relaxed (allowed_slots intersection was empty)
+    // Warnings must mention the allowed_slots relaxation path
     const relaxedWarning = result.warnings.find(
       w => w.message.includes('allowed_slots') && w.message.includes('relaxed'),
     );
@@ -1896,13 +1900,32 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
   });
 });
 
-// ─── Meal-template rules: extra exclusions + required extras ──────────────────
+// ─── Meal-template rules: require-or-none extras ─────────────────────────────
 
-describe('meal-template rules: extra exclusions (TMPL-04)', () => {
-  it('TMPL-04-1. meal-template exclude_extra_categories=[sweet] — no sweet extras for that base type', async () => {
-    const ids = await seedMinimalComponents();
-    await seedDefaultPreferences();
-    // Seed a sweet extra compatible with rice-based
+describe('meal-template rules: require-or-none extras', () => {
+  it('without require_extra, compatible extras stay unconstrained and no extra warning is emitted', async () => {
+    await db.components.clear();
+    await db.rules.clear();
+    await db.preferences.clear();
+
+    const riceBaseId = await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      protein_tag: 'dal',
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
     const sweetRiceId = await addComponent({
       name: 'Kheer',
       componentType: 'extra',
@@ -1913,77 +1936,30 @@ describe('meal-template rules: extra exclusions (TMPL-04)', () => {
       occasion_tags: ['everyday'],
       created_at: '',
     });
-    await addRule({
-      name: 'Rice: no sweets',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
-        scope: { days: null, slots: null },
-        effects: [{ kind: 'exclude_extra', categories: ['sweet'] }],
-      },
-      created_at: '',
+    await putPreferences({
+      id: 'prefs',
+      slot_restrictions: { base_type_slots: {}, component_slot_overrides: {} },
+      extra_quantity_limits: { breakfast: 1, lunch: 1, dinner: 1 },
+      base_type_rules: [],
     });
-
-    for (let run = 0; run < 5; run++) {
-      const result = await generate();
-      const riceSlots = result.plan.slots.filter(s => s.base_id === ids.riceBaseId);
-      for (const slot of riceSlots) {
-        expect(slot.extra_ids).not.toContain(sweetRiceId);
-      }
-    }
-  });
-
-  it('TMPL-04-2. meal-template exclude_extra_categories removes all eligible extras — relax with warning (D-10)', async () => {
-    await seedMinimalComponents();
-    await seedDefaultPreferences();
     await addRule({
-      name: 'Rice: exclude all extra categories',
+      name: 'Rice: skip subzi only',
       enabled: true,
       compiled_filter: {
         type: 'rule',
         target: { mode: 'base_type', base_type: 'rice-based' },
         scope: { days: null, slots: null },
-        effects: [{ kind: 'exclude_extra', categories: ['liquid', 'condiment', 'crunchy', 'dairy', 'sweet'] }],
+        effects: [{ kind: 'skip_component', component_types: ['subzi'] }],
       },
       created_at: '',
     });
 
     const result = await generate();
-    // Generation must still complete
-    expect(result.plan.slots).toHaveLength(21);
-    // Warnings must mention relaxed extra exclusion
-    const relaxedWarning = result.warnings.find(
-      w => w.message.includes('exclude_extra') && w.message.includes('relaxed'),
-    );
-    expect(relaxedWarning).toBeDefined();
-  });
 
-  it('TMPL-04-3. extra exclusion scoped by days/slots context', async () => {
-    const ids = await seedMinimalComponents();
-    await seedDefaultPreferences();
-    // Rule scoped to Monday only
-    await addRule({
-      name: 'Rice: no liquid on monday',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_type', base_type: 'rice-based' },
-        scope: { days: ['monday'], slots: null },
-        effects: [{ kind: 'exclude_extra', categories: ['liquid'] }],
-      },
-      created_at: '',
-    });
-
-    for (let run = 0; run < 5; run++) {
-      const result = await generate();
-      // Rice on Monday must not have the liquid extra (Rasam = extraLiquidRiceId)
-      const mondayRiceSlots = result.plan.slots.filter(
-        s => s.day === 'monday' && s.base_id === ids.riceBaseId,
-      );
-      for (const slot of mondayRiceSlots) {
-        expect(slot.extra_ids).not.toContain(ids.extraLiquidRiceId);
-      }
+    expect(result.warnings.filter(w => w.message.includes('require_extra'))).toHaveLength(0);
+    for (const slot of result.plan.slots) {
+      expect(slot.base_id).toBe(riceBaseId);
+      expect(slot.extra_ids).toEqual([sweetRiceId]);
     }
   });
 });

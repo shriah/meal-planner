@@ -24,7 +24,6 @@ export type RuleFormState = {
   // Composition effects
   allowed_slots: MealSlot[];
   skip_component_types: ('curry' | 'subzi')[];
-  exclude_extra_categories: ExtraCategory[];
   require_extra_categories: ExtraCategory[];
 };
 
@@ -42,6 +41,5 @@ export type FormAction =
   | { type: 'SET_SELECTION'; selection: 'filter_pool' | 'require_one' | 'exclude' | 'no_repeat' | '' }
   | { type: 'SET_ALLOWED_SLOTS'; allowed_slots: MealSlot[] }
   | { type: 'SET_SKIP_COMPONENT_TYPES'; skip_component_types: ('curry' | 'subzi')[] }
-  | { type: 'SET_EXCLUDE_EXTRA_CATEGORIES'; categories: ExtraCategory[] }
   | { type: 'SET_REQUIRE_EXTRA_CATEGORIES'; categories: ExtraCategory[] }
   | { type: 'LOAD_PRESET'; state: RuleFormState };

@@ -8,10 +8,18 @@
 
 ### Edit Rule
 
-- [ ] **EDIT-01**: User can open an edit sheet for any existing rule from the rules list
-- [ ] **EDIT-02**: Edit sheet opens with the RuleForm pre-populated with the rule's current target, scope, and effects
-- [ ] **EDIT-03**: Saving overwrites the existing rule record in Dexie (no duplicate created)
-- [ ] **EDIT-04**: Closing or canceling the sheet discards unsaved changes
+- [x] **EDIT-01**: User can open an edit sheet for any existing rule from the rules list
+- [x] **EDIT-02**: Edit sheet opens with the RuleForm pre-populated with the rule's current target, scope, and effects
+- [x] **EDIT-03**: Saving overwrites the existing rule record in Dexie (no duplicate created)
+- [x] **EDIT-04**: Closing or canceling the sheet discards unsaved changes
+
+### Require Extra Explicitly
+
+- [x] **PH12-01**: Create and edit meal-template rules expose require-extra as the only extra-related control; the empty require-extra state means no extras logic
+- [x] **PH12-02**: `compileRule()` and `decompileRule()` no longer emit or hydrate exclude-extra behavior in active rule form state
+- [x] **PH12-03**: Existing stored meal-template rules are normalized so legacy `exclude_extra_categories` and compiled `{ kind: 'exclude_extra' }` effects are stripped during migration
+- [x] **PH12-04**: The generator leaves extras unconstrained unless a rule explicitly requires an extra category, and extra-related warnings only occur when that explicit requirement cannot be satisfied
+- [x] **PH12-05**: Rule descriptions and other user-visible copy mention only explicitly required extras and never excluded extra categories
 
 ## v1.1 Requirements (Complete)
 
@@ -60,10 +68,15 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EDIT-01 | Phase 11 | Pending |
-| EDIT-02 | Phase 11 | Pending |
-| EDIT-03 | Phase 11 | Pending |
-| EDIT-04 | Phase 11 | Pending |
+| EDIT-01 | Phase 11 | Complete |
+| EDIT-02 | Phase 11 | Complete |
+| EDIT-03 | Phase 11 | Complete |
+| EDIT-04 | Phase 11 | Complete |
+| PH12-01 | Phase 12 | Complete |
+| PH12-02 | Phase 12 | Complete |
+| PH12-03 | Phase 12 | Complete |
+| PH12-04 | Phase 12 | Complete |
+| PH12-05 | Phase 12 | Complete |
 | SCHED-01 | Phase 7 | Complete |
 | SCHED-02 | Phase 7 | Complete |
 | SCHED-03 | Phase 7 | Complete |
@@ -78,10 +91,10 @@
 | TMPL-07 | Phase 10 | Complete |
 
 **Coverage:**
-- v1.2 requirements: 4 total
-- Mapped to phases: 4/4
+- v1.2 requirements: 9 total
+- Mapped to phases: 9/9
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-22*
-*Last updated: 2026-03-27 — v1.2 roadmap created; all 4 requirements mapped to Phase 11*
+*Last updated: 2026-03-28 — Phase 12 require-extra normalization completed*

@@ -2,14 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Edit Rule
-status: roadmap created
-stopped_at: Phase 11 roadmap written — ready to plan
-last_updated: "2026-03-27T00:00:00.000Z"
+status: complete
+stopped_at: Phase 12 executed and verified
+last_updated: "2026-03-28T03:55:00.000Z"
+last_activity: 2026-03-28
 progress:
-  total_phases: 1
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 2
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,33 +20,34 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-27 — v1.2 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.2 Edit Rule — Phase 11 roadmapped, ready to plan
+**Current focus:** Phase 12 complete — require-extra normalization shipped
 
 ## Current Position
 
-Phase: 11 — Edit Rule (not started)
-Plan: —
-Status: Roadmap created; awaiting `/gsd:plan-phase 11`
-Last activity: 2026-03-27 — v1.2 roadmap written
+Phase: 12 (require-extra-explicitly-instead-of-excluding-extra-categories-by-default) — COMPLETE
+Plan: 3 of 3
+Status: Phase execution and verification complete
+Last activity: 2026-03-28
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: 0 hours
+- Total plans completed: 5
+- Average duration: 6min
+- Total execution time: 0.45 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 11-edit-rule | 2 | 16min | 8min |
+| 12-require-extra-explicitly-instead-of-excluding-extra-categories-by-default | 3 | 11min | 4min |
 
 **Recent Trend:**
 
-- Last 5 plans: —
-- Trend: —
+- Last 5 plans: 11-edit-rule P01 (5min), 11-edit-rule P02 (11min), 12-require-extra P01 (3min), 12-require-extra P02 (3min), 12-require-extra P03 (5min)
+- Trend: steady
 
 *Updated after each plan completion*
 | Phase 01-data-foundation P01 | 2 | 2 tasks | 8 files |
@@ -73,6 +75,11 @@ Last activity: 2026-03-27 — v1.2 roadmap written
 | Phase 09-meal-template-engine P02 | 31min | 2 tasks | 2 files |
 | Phase 10 P02 | 79s | 2 tasks | 2 files |
 | Phase 10-meal-template-ui-settings-removal-migration P01 | ~15min | 2 tasks | 10 files |
+| Phase 11-edit-rule P01 | 5min | 2 tasks | 6 files |
+| Phase 11-edit-rule P02 | 11min | 2 tasks | 10 files |
+| Phase 12-require-extra P01 | 3min | 2 tasks | 6 files |
+| Phase 12-require-extra P02 | 3min | 2 tasks | 6 files |
+| Phase 12-require-extra P03 | 5min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -152,10 +159,21 @@ Recent decisions affecting current work:
 - [Phase 10-meal-template-ui-settings-removal-migration]: MealTemplateFormState follows flat pattern of SchedulingRuleFormState — no nested discriminated union needed
 - [Phase 10-meal-template-ui-settings-removal-migration]: Toggle (shadcn) used for allowed_slots chip group per UI-SPEC; installed as it was absent
 - [v1.2 Roadmap]: All 4 edit-rule requirements are tightly coupled (UI entry point, pre-population, save, cancel) — collapsed into single Phase 11
+- [Phase 11]: compileRule and decompileRule now form a reversible service-layer pair for persisted rule rehydration.
+- [Phase 11]: Mounted a single app-level Toaster in layout so rule save failures surface globally.
+- [Phase 11]: EditRuleSheet reseeds reducer state from the persisted rule on every open, so close and discard never keep abandoned drafts.
+- [Phase 11]: Used a file-based local sonner shim because registry install was blocked in the execution environment.
+- [Phase 12]: Meal-template rule editing is now require-or-none for extras; the form no longer exposes exclude-extra controls.
+- [Phase 12]: Dexie v10 strips legacy compiled `exclude_extra` effects so old rule rows normalize on upgrade and on edit round-trips.
+- [Phase 12]: Runtime effect schema and generator now treat `require_extra` as the only extra-specific rule effect, so extra warnings only fire for unsatisfied explicit requirements.
+
+### Roadmap Evolution
+
+- Phase 12 completed: Require extra explicitly instead of excluding extra categories by default
 
 ### Pending Todos
 
-(none — roadmap created, ready to plan Phase 11)
+(none — v1.2 phase work complete)
 
 ### Quick Tasks Completed
 
@@ -170,6 +188,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-03-27T00:00:00Z
-Stopped at: v1.2 roadmap created — Phase 11 ready to plan
-Resume file: None
+Last session: 2026-03-28T03:55:00.000Z
+Stopped at: Phase 12 executed and verified
+Resume file: .planning/phases/12-require-extra-explicitly-instead-of-excluding-extra-categories-by-default/12-VERIFICATION.md
