@@ -9,7 +9,7 @@ export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
     selection: 'require_one',
     allowed_slots: [],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   },
   'no-repeat-subzi': {
     name: 'No repeat subzi',
@@ -19,7 +19,7 @@ export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
     selection: 'no_repeat',
     allowed_slots: [],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   },
   'weekend-special': {
     name: 'Weekend special',
@@ -29,7 +29,7 @@ export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
     selection: 'filter_pool',
     allowed_slots: [],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   },
   'no-paneer-weekdays': {
     name: 'No paneer weekdays',
@@ -39,17 +39,17 @@ export const EXAMPLE_PRESETS: Record<string, RuleFormState> = {
     selection: 'exclude',
     allowed_slots: [],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   },
   'rice-lunch-dinner': {
     name: 'Rice: lunch and dinner only',
-    target: { mode: 'base_type', base_type: 'rice-based' },
+    target: { mode: 'base_category', base_category_id: 1 },
     days: [],
     slots: [],
     selection: '',
     allowed_slots: ['lunch', 'dinner'],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   },
 };
 
@@ -61,7 +61,7 @@ export const EMPTY_RULE_FORM_STATE: RuleFormState = {
   selection: '',
   allowed_slots: [],
   skip_component_types: [],
-  require_extra_categories: [],
+  require_extra_category_ids: [],
 };
 
 export function formReducer(state: RuleFormState, action: FormAction): RuleFormState {
@@ -76,7 +76,7 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
         selection: state.selection,
         allowed_slots: state.allowed_slots,
         skip_component_types: state.skip_component_types,
-        require_extra_categories: state.require_extra_categories,
+        require_extra_category_ids: state.require_extra_category_ids,
       };
 
       if (action.mode === 'component_type') {
@@ -91,7 +91,7 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
         return { ...base, target: { mode: 'component', component_id: null } };
       }
 
-      return { ...base, target: { mode: 'base_type', base_type: '' } };
+      return { ...base, target: { mode: 'base_category', base_category_id: null } };
     }
     case 'SET_TARGET_COMPONENT_TYPE':
       if (state.target.mode !== 'component_type') return state;
@@ -102,9 +102,9 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
     case 'SET_TARGET_COMPONENT_ID':
       if (state.target.mode !== 'component') return state;
       return { ...state, target: { mode: 'component', component_id: action.component_id } };
-    case 'SET_TARGET_BASE_TYPE':
-      if (state.target.mode !== 'base_type') return state;
-      return { ...state, target: { mode: 'base_type', base_type: action.base_type } };
+    case 'SET_TARGET_BASE_CATEGORY_ID':
+      if (state.target.mode !== 'base_category') return state;
+      return { ...state, target: { mode: 'base_category', base_category_id: action.base_category_id } };
     case 'SET_DAYS':
       return { ...state, days: action.days };
     case 'SET_SLOTS':
@@ -115,8 +115,8 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
       return { ...state, allowed_slots: action.allowed_slots };
     case 'SET_SKIP_COMPONENT_TYPES':
       return { ...state, skip_component_types: action.skip_component_types };
-    case 'SET_REQUIRE_EXTRA_CATEGORIES':
-      return { ...state, require_extra_categories: action.categories };
+    case 'SET_REQUIRE_EXTRA_CATEGORY_IDS':
+      return { ...state, require_extra_category_ids: action.category_ids };
     case 'LOAD_PRESET':
       return action.state;
     default:
@@ -133,12 +133,12 @@ export function isFormValid(state: RuleFormState): boolean {
     return false;
   }
   if (state.target.mode === 'component' && state.target.component_id === null) return false;
-  if (state.target.mode === 'base_type' && state.target.base_type === '') return false;
+  if (state.target.mode === 'base_category' && state.target.base_category_id === null) return false;
 
   return (
     state.selection !== '' ||
     state.allowed_slots.length > 0 ||
     state.skip_component_types.length > 0 ||
-    state.require_extra_categories.length > 0
+    state.require_extra_category_ids.length > 0
   );
 }

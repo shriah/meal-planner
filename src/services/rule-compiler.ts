@@ -1,6 +1,11 @@
 import type { RuleFormState } from '@/components/rules/types';
 import type { CompiledRule, Target } from '@/types/plan';
 
+interface DecompileCategoryContext {
+  baseCategoryIds?: number[];
+  extraCategoryIds?: number[];
+}
+
 export function compileRule(state: RuleFormState): CompiledRule {
   // Build target
   const tf = state.target;
@@ -11,8 +16,8 @@ export function compileRule(state: RuleFormState): CompiledRule {
     target = { mode: 'tag', filter: tf.filter };
   } else if (tf.mode === 'component') {
     target = { mode: 'component', component_id: tf.component_id! };
-  } else if (tf.mode === 'base_type') {
-    target = { mode: 'base_type', base_type: tf.base_type as 'rice-based' | 'bread-based' | 'other' };
+  } else if (tf.mode === 'base_category') {
+    target = { mode: 'base_category', category_id: tf.base_category_id! };
   } else {
     throw new Error('compileRule called with empty target mode');
   }
@@ -31,8 +36,8 @@ export function compileRule(state: RuleFormState): CompiledRule {
     effects.push({ kind: 'skip_component', component_types: state.skip_component_types });
   }
 
-  if (state.require_extra_categories.length > 0) {
-    effects.push({ kind: 'require_extra', categories: state.require_extra_categories });
+  if (state.require_extra_category_ids.length > 0) {
+    effects.push({ kind: 'require_extra', category_ids: state.require_extra_category_ids });
   }
 
   return {
@@ -46,7 +51,16 @@ export function compileRule(state: RuleFormState): CompiledRule {
   };
 }
 
-export function decompileRule(compiled: CompiledRule, name: string): RuleFormState {
+export function decompileRule(
+  compiled: CompiledRule,
+  name: string,
+  context?: DecompileCategoryContext,
+): RuleFormState {
+  const baseCategoryIds = context?.baseCategoryIds;
+  const extraCategoryIds = context?.extraCategoryIds;
+  const hasBaseCategory = (id: number) => !baseCategoryIds || baseCategoryIds.includes(id);
+  const hasExtraCategory = (id: number) => !extraCategoryIds || extraCategoryIds.includes(id);
+
   const target: RuleFormState['target'] =
     compiled.target.mode === 'component_type'
       ? { mode: 'component_type', component_type: compiled.target.component_type }
@@ -54,7 +68,9 @@ export function decompileRule(compiled: CompiledRule, name: string): RuleFormSta
         ? { mode: 'tag', filter: compiled.target.filter }
         : compiled.target.mode === 'component'
           ? { mode: 'component', component_id: compiled.target.component_id }
-          : { mode: 'base_type', base_type: compiled.target.base_type };
+          : compiled.target.mode === 'base_category' && hasBaseCategory(compiled.target.category_id)
+            ? { mode: 'base_category', base_category_id: compiled.target.category_id }
+            : { mode: '' };
 
   const state: RuleFormState = {
     name,
@@ -64,7 +80,7 @@ export function decompileRule(compiled: CompiledRule, name: string): RuleFormSta
     selection: '',
     allowed_slots: [],
     skip_component_types: [],
-    require_extra_categories: [],
+    require_extra_category_ids: [],
   };
 
   for (const effect of compiled.effects) {
@@ -82,7 +98,7 @@ export function decompileRule(compiled: CompiledRule, name: string): RuleFormSta
         state.skip_component_types = effect.component_types;
         break;
       case 'require_extra':
-        state.require_extra_categories = effect.categories;
+        state.require_extra_category_ids = effect.category_ids.filter(hasExtraCategory);
         break;
     }
   }

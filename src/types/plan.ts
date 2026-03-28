@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { MealSlot } from './preferences';
-import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag, ExtraCategory } from './component';
+import type { DietaryTag, ProteinTag, RegionalTag, OccasionTag } from './component';
 
 // Suppress unused type import warnings — these are used via Zod inference only
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -13,9 +13,6 @@ type _RegionalTag = RegionalTag;
 type _OccasionTag = OccasionTag;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _MealSlot = MealSlot;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-type _ExtraCategory = ExtraCategory;
-
 // ─── DayOfWeek ───────────────────────────────────────────────────────────────
 
 export type DayOfWeek =
@@ -74,17 +71,13 @@ export const TagFilterSchema = z.object({
 
 export type TagFilter = z.infer<typeof TagFilterSchema>;
 
-// ─── ExtraCategoryEnum (shared) ───────────────────────────────────────────────
-
-const ExtraCategoryEnum = z.enum(['liquid', 'crunchy', 'condiment', 'dairy', 'sweet']);
-
 // ─── Target ───────────────────────────────────────────────────────────────────
 
 export const TargetSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('component_type'), component_type: z.enum(['base', 'curry', 'subzi']) }),
   z.object({ mode: z.literal('tag'), filter: TagFilterSchema }),
   z.object({ mode: z.literal('component'), component_id: z.number() }),
-  z.object({ mode: z.literal('base_type'), base_type: z.enum(['rice-based', 'bread-based', 'other']) }),
+  z.object({ mode: z.literal('base_category'), category_id: z.number() }),
 ]);
 
 export type Target = z.infer<typeof TargetSchema>;
@@ -111,7 +104,7 @@ export const EffectSchema = z.discriminatedUnion('kind', [
   // Component shape
   z.object({ kind: z.literal('skip_component'), component_types: z.array(z.enum(['curry', 'subzi'])) }),
   // Extra effects
-  z.object({ kind: z.literal('require_extra'), categories: z.array(ExtraCategoryEnum) }),
+  z.object({ kind: z.literal('require_extra'), category_ids: z.array(z.number()) }),
 ]);
 
 export type AnyEffect = z.infer<typeof EffectSchema>;
