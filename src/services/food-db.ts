@@ -14,9 +14,13 @@ export async function getComponentsByType(type: ComponentType): Promise<Componen
   return db.components.where('componentType').equals(type).toArray();
 }
 
-export async function getExtrasByBaseType(baseType: BaseType): Promise<ComponentRecord[]> {
+export async function getExtrasByBaseType(baseType: BaseType | number): Promise<ComponentRecord[]> {
   const extras = await db.components.where('componentType').equals('extra').toArray();
-  return extras.filter(e => (e.compatible_base_types ?? []).includes(baseType));
+  if (typeof baseType === 'number') {
+    return extras.filter((extra) => (extra.compatible_base_category_ids ?? []).includes(baseType));
+  }
+
+  return extras.filter((extra) => (extra.compatible_base_types ?? []).includes(baseType));
 }
 
 export async function addComponent(component: Omit<ComponentRecord, 'id'>): Promise<number> {

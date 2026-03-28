@@ -1,4 +1,4 @@
-import type {
+import {
   BUILT_IN_BASE_CATEGORY_NAMES,
   BUILT_IN_EXTRA_CATEGORY_NAMES,
 } from './category';
