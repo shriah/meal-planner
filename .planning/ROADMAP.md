@@ -69,7 +69,7 @@ Plans:
 | 12. Require extra explicitly instead of excluding extra categories by default | v1.2 | 3/3 | Complete | 2026-03-28 |
 | 13. Only include extras when explicitly required | v1.2 | 1/1 | Complete | 2026-03-28 |
 | 14. Add option to create more base category and extra category | v1.2 | 4/4 | Complete | 2026-03-28 |
-| 15. Finalize Phase 11 validation coverage | v1.2 | 0/0 | Pending | - |
+| 15. Finalize Phase 11 validation coverage | v1.2 | 0/1 | Pending | - |
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 0/0 | Pending | - |
 
 ### Phase 12: Require extra explicitly instead of excluding extra categories by default
@@ -113,6 +113,10 @@ Plans:
 **Requirements:** none new — closes audit tech debt
 **Depends on:** Phase 14
 **Gap Closure:** Closes milestone audit debt from `v1.2-MILESTONE-AUDIT.md`
+**Plans:** 1 plan
+
+Plans:
+- [ ] 15-01-PLAN.md — Approve and align `11-VALIDATION.md` with the completed Phase 11 test surface and rerun evidence
 
 ### Phase 16: Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage
 
