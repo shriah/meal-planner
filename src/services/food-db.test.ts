@@ -80,6 +80,7 @@ describe('Phase 14 category services', () => {
 
   it('delete normalization strips deleted IDs, clears direct refs, and disables invalid rules', async () => {
     const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
+    const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
     const condimentId = await addCategory({ kind: 'extra', name: 'condiment' });
 
     const rotiId = await addComponent({
@@ -106,6 +107,26 @@ describe('Phase 14 category services', () => {
       created_at: '',
     });
 
+    const mixedVegCurryId = await addComponent({
+      name: 'Mixed Veg Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [breadId, riceId],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    const choleId = await addComponent({
+      name: 'Chole',
+      componentType: 'curry',
+      compatible_base_category_ids: [breadId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
     await addRule({
       name: 'Bread dinner',
       enabled: true,
@@ -118,13 +139,20 @@ describe('Phase 14 category services', () => {
       },
     });
 
+    await renameCategory(breadId, 'flatbread');
     await deleteCategory(breadId);
 
-    const [baseComponent] = await db.components.bulkGet([rotiId]);
+    const [baseComponent, mixedVegCurry, chole] = await db.components.bulkGet([
+      rotiId,
+      mixedVegCurryId,
+      choleId,
+    ]);
     const [extraComponent] = await getComponentsByType('extra');
     const [rule] = await getRules();
 
     expect(baseComponent?.base_category_id).toBeNull();
+    expect(mixedVegCurry?.compatible_base_category_ids).toEqual([riceId]);
+    expect(chole?.compatible_base_category_ids).toEqual([]);
     expect(extraComponent.compatible_base_category_ids).toEqual([]);
     expect(rule.enabled).toBe(false);
   });

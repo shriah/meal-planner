@@ -464,7 +464,14 @@ function normalizeComponentCategoryRefs(
       delete nextComponent.base_type;
     }
 
-    if (Array.isArray(nextComponent.compatible_base_category_ids)) {
+    if (
+      nextComponent.componentType === 'curry'
+      && Array.isArray(nextComponent.compatible_base_category_ids)
+    ) {
+      nextComponent.compatible_base_category_ids = nextComponent.compatible_base_category_ids.filter(
+        (id) => id !== category.id,
+      );
+    } else if (Array.isArray(nextComponent.compatible_base_category_ids)) {
       nextComponent.compatible_base_category_ids = nextComponent.compatible_base_category_ids.filter(
         (id) => id !== category.id,
       );
