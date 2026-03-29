@@ -62,7 +62,11 @@
   1. User can create or edit any curry in the Library and assign one or more compatible base categories
   2. After upgrading to v1.3, existing curry records already have editable compatibility data without requiring the user to recreate the library
   3. Curry compatibility remains stable when base categories are renamed, and deleted base categories are normalized out of stored compatibility data
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 17-01-PLAN.md — Define the curry compatibility storage contract and curated seeded mapping seam
+- [ ] 17-02-PLAN.md — Backfill legacy curry rows through Dexie migration and normalize deleted base IDs
+- [ ] 17-03-PLAN.md — Expose curry compatibility editing/summaries in the Library and add phase validation coverage
 **UI hint**: yes
 
 ### Phase 18: Generator Compatibility Contract
@@ -116,7 +120,7 @@
 | 14. Add option to create more base category and extra category | v1.2 | 4/4 | Complete | 2026-03-28 |
 | 15. Finalize Phase 11 validation coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
-| 17. Curry Compatibility Data | v1.3 | 0/TBD | Not started | - |
+| 17. Curry Compatibility Data | v1.3 | 0/3 | Not started | - |
 | 18. Generator Compatibility Contract | v1.3 | 0/TBD | Not started | - |
 | 19. Explicit Override Paths | v1.3 | 0/TBD | Not started | - |
 | 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
