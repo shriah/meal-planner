@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
+import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getPreferences } from '@/services/food-db';
 import type { CurryRecord } from '@/types/component';
@@ -85,6 +86,27 @@ describe('runSeed', () => {
     };
 
     expect(intentionallyIneligibleCurry.compatible_base_category_ids).toEqual([]);
+  });
+
+  it('resolves curated curry compatibility only for exact seeded names', () => {
+    const categoryLookup = {
+      base: {
+        'bread-based': 1,
+        other: 2,
+        'rice-based': 3,
+      },
+      extra: {
+        condiment: 4,
+        crunchy: 5,
+        dairy: 6,
+        liquid: 7,
+        sweet: 8,
+      },
+    } as const;
+
+    expect(resolveSeededCurryCompatibilityIds('Sambar', categoryLookup)).toEqual([3, 2]);
+    expect(resolveSeededCurryCompatibilityIds('Rasam', categoryLookup)).toEqual([]);
+    expect(resolveSeededCurryCompatibilityIds('Sambar Deluxe', categoryLookup)).toBeUndefined();
   });
 
   it('creates preferences with empty slot_restrictions and seeds base-category default rules', async () => {
