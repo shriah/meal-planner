@@ -1,524 +1,385 @@
-# Architecture Research
+# Architecture Patterns
 
-**Domain:** Personal meal planning web app (Indian cuisine, single user)
-**Researched:** 2026-03-19
-**Confidence:** MEDIUM-HIGH
+**Domain:** Curry base compatibility in an existing Indian meal planner
+**Researched:** 2026-03-29
+**Confidence:** HIGH
 
----
+## Recommended Architecture
 
-## Standard Architecture
+Curry compatibility should be modeled exactly where extra compatibility already lives: on the component record, keyed by stable base category IDs. Do not create a separate join table, separate override table, or generator-only lookup. The existing architecture already has the right seams:
 
-### System Overview
+- `ComponentRecord` carries compatibility data.
+- Category IDs are stable and already survive rename/delete safely.
+- The generator selects base first, then chooses other components.
+- Rules compile to structured effects and already contain one explicit override path: `require_one`.
+- Locked/manual selections already bypass auto-selection pools.
 
+The clean integration is:
+
+1. Add curry compatibility as `compatible_base_category_ids` on curry records.
+2. Apply that constraint only when building the automatic curry pool after base selection.
+3. Keep override semantics out of the data model.
+4. Treat explicit `require_one` rules and manual lock/swap flows as the override boundary.
+5. Backfill existing curry records in-app, idempotently, before normal generation runs.
+
+This keeps the system aligned with the current extras architecture and avoids inventing a second rule language just for compatibility.
+
+### Recommended Architecture Diagram
+
+```text
+Library Form / Backfill
+        |
+        v
+components[curry].compatible_base_category_ids
+        |
+        v
+Generator
+  1. pick base
+  2. derive compatible curry pool from base_category_id
+  3. apply normal rule filtering inside that pool
+  4. allow explicit override only via require_one or locked/manual pick
+        |
+        v
+Plan slot { base_id, curry_id?, ... }
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                        UI Layer (React)                          │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │  Food Library│  │  Plan Board  │  │   Rules Manager      │   │
-│  │  (CRUD UI)   │  │  (weekly     │  │   (natural language  │   │
-│  │              │  │   grid +     │  │    rule editor)      │   │
-│  │              │  │   lock/swap) │  │                      │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
-│         │                │                      │               │
-├─────────┴────────────────┴──────────────────────┴───────────────┤
-│                     Application Layer                            │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
-│  │  Food DB     │  │  Plan        │  │   Rule Engine        │   │
-│  │  Service     │  │  Generator   │  │   (compile NL rules  │   │
-│  │  (CRUD for   │  │  (randomize +│  │    to filter fns     │   │
-│  │   meals/     │  │   lock logic)│  │    via LLM)          │   │
-│  │   components)│  │              │  │                      │   │
-│  └──────┬───────┘  └──────┬───────┘  └──────────┬───────────┘   │
-│         │                │                      │               │
-├─────────┴────────────────┴──────────────────────┴───────────────┤
-│                     Data Layer                                   │
-│                                                                  │
-│  ┌──────────────────┐  ┌──────────────┐  ┌────────────────────┐ │
-│  │  SQLite (local)  │  │  Plan Store  │  │  Rule Store        │ │
-│  │  meals, comps,   │  │  (saved      │  │  (compiled filter  │ │
-│  │  categories      │  │   weekly     │  │   JSON + NL text)  │ │
-│  │                  │  │   plans)     │  │                    │ │
-│  └──────────────────┘  └──────────────┘  └────────────────────┘ │
-├──────────────────────────────────────────────────────────────────┤
-│                     External Services                            │
-│  ┌────────────────────────────────────────────────────────────┐  │
-│  │  Claude API (LLM) — NL rule → structured filter JSON       │  │
-│  └────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Communicates With |
-|-----------|---------------|-------------------|
-| Food Library UI | Add/edit/delete meals and their components | Food DB Service |
-| Plan Board UI | Display weekly grid, handle lock/unlock, trigger regenerate, swap meals | Plan Generator, Plan Store |
-| Rules Manager UI | Text editor for natural language rules, trigger LLM compilation | Rule Engine |
-| Food DB Service | CRUD operations for meals, components, tags, categories | SQLite |
-| Plan Generator | Randomize meal selection per slot, apply compiled filters, respect locks | Food DB Service, Rule Engine, Plan Store |
-| Rule Engine | Send NL rules to LLM, receive structured filter JSON, persist compiled rules | Claude API, Rule Store |
-| SQLite (local) | Durable local storage: meals, components, saved plans, compiled rules | All services |
-| Claude API | Translate natural language rules into structured filter predicates | Rule Engine only |
-| Export Pipeline | Render weekly grid to PDF or image for download/share | Plan Board UI, browser APIs |
-
----
-
-## Recommended Project Structure
-
-```
-src/
-├── components/            # React UI components
-│   ├── food-library/      # Meal and component CRUD
-│   ├── plan-board/        # Weekly grid, lock controls, swap UI
-│   ├── rules-manager/     # NL rule input, rule list display
-│   └── export/            # Export trigger and print-ready layout
-│
-├── services/              # Business logic, no React dependencies
-│   ├── food-db.ts         # Meal/component CRUD, tag queries
-│   ├── plan-generator.ts  # Randomization + filter application
-│   ├── rule-engine.ts     # LLM call, filter compilation, caching
-│   └── export.ts          # html2canvas + jsPDF orchestration
-│
-├── db/                    # Data access layer
-│   ├── schema.ts          # Table definitions (Drizzle or raw SQL)
-│   ├── migrations/        # Versioned schema migrations
-│   └── client.ts          # SQLite connection singleton
-│
-├── types/                 # Shared TypeScript types
-│   ├── meal.ts            # Meal, MealComponent, MealSlot
-│   ├── plan.ts            # WeeklyPlan, DayPlan, SlotState
-│   └── rule.ts            # NLRule, CompiledFilter
-│
-├── store/                 # Client-side state (Zustand or similar)
-│   ├── plan-store.ts      # Current week plan state, lock state
-│   └── ui-store.ts        # UI state (selected slot, modal open)
-│
-└── lib/
-    ├── llm-client.ts      # Claude API wrapper with retry logic
-    └── randomizer.ts      # Weighted random selection utilities
-```
-
-### Structure Rationale
-
-- **services/:** Pure TypeScript business logic, independently testable without React. The plan generator and rule engine are the most complex parts — keeping them out of components makes them testable and replaceable.
-- **db/:** Isolating the data access layer means the rest of the app never writes raw SQL. If the storage engine changes, only this folder changes.
-- **types/:** Shared types prevent interface drift between layers. Define them once, import everywhere.
-- **store/:** Only UI-session state lives here (current week view, which slot is selected, which meals are locked). Persisted state lives in SQLite.
-
----
-
-## Architectural Patterns
-
-### Pattern 1: NL Rules Compiled to Filter Predicates (One-Time LLM Call)
-
-**What:** When a user writes a natural language rule, the Rule Engine calls the LLM once to translate it into a structured JSON filter. That filter is stored in the database. At plan generation time, only the stored filters are used — no LLM calls during generation.
-
-**When to use:** Any time you need LLM intelligence at configuration time but deterministic, fast behavior at runtime.
-
-**Trade-offs:** LLM is called only on rule save/edit, not on every generation — generation is fast and offline-capable. The compiled filter must be expressive enough to cover all rule types. Rules that change meaning with context (e.g., "no repeats this week") need to be re-evaluated against live plan state, not purely as static filters.
-
-**Example:**
-```typescript
-// NL rule: "Fridays are fish days"
-// LLM outputs structured filter:
-interface CompiledFilter {
-  scope: "slot";             // applies per slot
-  conditions: {
-    dayOfWeek: ["friday"];   // only evaluate on Fridays
-    requiredTags: ["fish"];  // meal must have this tag
-  };
-}
-
-// NL rule: "Never repeat the same subzi twice in a week"
-interface CompiledFilter {
-  scope: "week";
-  conditions: {
-    uniqueField: "subzi_id"; // subzi must be unique across all slots this week
-  };
-}
-```
-
-The LLM prompt should include:
-1. The full filter JSON schema (so output is constrained)
-2. A catalog of available tags and field names from the food database
-3. A few-shot example mapping NL rules to filter JSON
-
-**LLM prompt pattern:**
-```
-You convert meal scheduling rules to JSON filters.
-Available tags: [fish, vegetarian, rice-based, ...]
-Available fields: base_id, curry_id, subzi_id, extras_ids, tags
-JSON schema: [CompiledFilter schema]
-
-Rule: "Fridays are fish days"
-Filter: { ... }
-
-Rule: "{user_input}"
-Filter:
-```
-
-### Pattern 2: Compositional Meal Model (Components, Not Monolithic Recipes)
-
-**What:** A "meal" is not a single record — it is a named slot configuration composed of independently stored components: a Base (required), a Curry (optional), a Subzi (optional), and Extras (zero or many). Components are shared across meals.
-
-**When to use:** This is the correct model for Indian cuisine where the same rice can appear with 20 different curry combinations. The variation is in the combination, not in creating 20 separate "rice meals."
-
-**Trade-offs:** Slightly more complex schema than a monolithic recipe table, but allows precise de-duplication rules ("no repeated subzi") and flexible randomization at the component level. You can randomize just the curry while locking the base.
-
-**Example schema:**
-```typescript
-// Components are first-class entities
-interface MealComponent {
-  id: string;
-  name: string;                          // "Sambar", "Palak Paneer", "Jeera Rice"
-  type: "base" | "curry" | "subzi" | "extra";
-  tags: string[];                        // ["vegetarian", "south-indian", "dal-based"]
-  notes?: string;
-}
-
-// A meal is a named combination of components
-interface Meal {
-  id: string;
-  name: string;                          // "South Indian Lunch" — optional display name
-  baseId: string;                        // required
-  curryId?: string;
-  subziId?: string;
-  extraIds: string[];                    // rasam, pappad, pickle, etc.
-  tags: string[];                        // union of component tags + meal-level tags
-}
-
-// A plan slot references a meal (or is empty/locked-empty)
-interface SlotState {
-  day: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun";
-  mealType: "breakfast" | "lunch" | "dinner";
-  mealId: string | null;
-  locked: boolean;
-}
-```
-
-### Pattern 3: Plan as Mutable Session State, Saved Plans as Snapshots
-
-**What:** The current working weekly plan lives in client-side state (Zustand). It is mutable — users can swap meals, lock slots, regenerate freely. When the user explicitly saves, a snapshot is written to SQLite. Saved plans are read-only records.
-
-**When to use:** Any planner-style UI where the working state is temporary and the save action is deliberate. This avoids accidental overwrites and keeps the UX responsive.
-
-**Trade-offs:** Unsaved work can be lost on browser close. For a personal app, this is acceptable — add a "You have unsaved changes" indicator. Do not auto-save to a named plan without user intent.
-
-**State model:**
-```typescript
-// In-memory Zustand store (current working plan)
-interface PlanStore {
-  slots: SlotState[];                    // 7 days × 3 meals = 21 slots
-  generatedAt: Date | null;
-  isDirty: boolean;                      // true after any change since last save
-  generate: () => Promise<void>;
-  lockSlot: (day, mealType) => void;
-  unlockSlot: (day, mealType) => void;
-  swapMeal: (day, mealType, newMealId) => void;
-  save: (name: string) => Promise<void>;
-}
-
-// Persisted snapshot in SQLite
-interface SavedPlan {
-  id: string;
-  name: string;
-  createdAt: Date;
-  slots: SlotState[];                    // JSON blob — denormalized snapshot
-}
-```
-
----
-
-## Database Schema
-
-### Core Tables
-
-```sql
--- Individual meal components (base, curry, subzi, extra)
-CREATE TABLE components (
-  id          TEXT PRIMARY KEY,          -- uuid
-  name        TEXT NOT NULL,
-  type        TEXT NOT NULL              -- 'base' | 'curry' | 'subzi' | 'extra'
-                CHECK(type IN ('base','curry','subzi','extra')),
-  tags        TEXT NOT NULL DEFAULT '[]', -- JSON array of tag strings
-  notes       TEXT,
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Named meal combinations
-CREATE TABLE meals (
-  id          TEXT PRIMARY KEY,
-  name        TEXT,                      -- display name, nullable
-  base_id     TEXT NOT NULL REFERENCES components(id),
-  curry_id    TEXT REFERENCES components(id),
-  subzi_id    TEXT REFERENCES components(id),
-  tags        TEXT NOT NULL DEFAULT '[]', -- JSON array
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Many-to-many: meals → extras
-CREATE TABLE meal_extras (
-  meal_id     TEXT NOT NULL REFERENCES meals(id) ON DELETE CASCADE,
-  component_id TEXT NOT NULL REFERENCES components(id),
-  PRIMARY KEY (meal_id, component_id)
-);
-
--- Natural language rules + their compiled filter JSON
-CREATE TABLE rules (
-  id            TEXT PRIMARY KEY,
-  nl_text       TEXT NOT NULL,           -- "Fridays are fish days"
-  compiled_json TEXT NOT NULL,           -- CompiledFilter as JSON string
-  is_active     BOOLEAN NOT NULL DEFAULT 1,
-  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
--- Saved weekly plans (read-only snapshots)
-CREATE TABLE saved_plans (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  slots_json  TEXT NOT NULL,             -- JSON array of SlotState
-  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-### Index Strategy
-
-```sql
--- Filter components by type (most common query during generation)
-CREATE INDEX idx_components_type ON components(type);
-
--- Find meals by base (for randomization constrained to a base)
-CREATE INDEX idx_meals_base ON meals(base_id);
-
--- List active rules (always small table, but explicit is better)
-CREATE INDEX idx_rules_active ON rules(is_active);
-```
-
-### Schema Notes
-
-- Tags stored as JSON strings in SQLite. For a single-user personal app, full-text or array operators are unnecessary — deserialize in application code and filter in memory. The dataset is small (hundreds of meals at most).
-- `saved_plans.slots_json` is a denormalized snapshot. It captures meal names and component names at save time so the plan remains readable even if underlying meals are later edited or deleted.
-- No user ID columns anywhere. Single-user scope means no row-level isolation needed.
-
----
-
-## Data Flow
-
-### Flow 1: Plan Generation
-
-```
-User clicks "Generate"
-    │
-    ▼
-PlanStore.generate()
-    │  reads locked slots from current state
-    ▼
-PlanGenerator.generatePlan(lockedSlots, activeRules)
-    │
-    ├─ 1. Load all meals from Food DB Service
-    │
-    ├─ 2. Load active CompiledFilters from Rule Store
-    │
-    ├─ 3. For each unlocked slot (day × mealType):
-    │       a. Apply slot-scoped filters (e.g., "Fridays → fish tag required")
-    │       b. Apply week-scoped filters (e.g., "unique subzi per week")
-    │          — evaluated against already-assigned slots
-    │       c. From remaining candidates, pick one at random (weighted if needed)
-    │       d. Assign to slot, update week-scope filter state
-    │
-    └─ 4. Return completed SlotState[21]
-         │
-         ▼
-    PlanStore updates in-memory state → React re-renders Plan Board
-```
-
-### Flow 2: Rule Compilation (LLM)
-
-```
-User types rule: "Fridays are fish days" → clicks Save
-    │
-    ▼
-Rule Engine.compileRule(nlText)
-    │
-    ├─ 1. Fetch current tag catalog from Food DB Service
-    │       (so LLM knows what tags are available)
-    │
-    ├─ 2. Build LLM prompt:
-    │       - System: filter JSON schema + few-shot examples
-    │       - User: the NL rule text + available tags
-    │
-    ├─ 3. Call Claude API with structured output enforcement
-    │       (JSON schema mode or function calling)
-    │
-    ├─ 4. Validate returned JSON against CompiledFilter schema
-    │       — if validation fails, surface error to user with raw LLM explanation
-    │
-    └─ 5. Persist { nl_text, compiled_json } to rules table
-         │
-         ▼
-    Rules Manager UI shows rule as active
-```
-
-### Flow 3: Export
-
-```
-User clicks "Export as PDF"
-    │
-    ▼
-Export Service.exportPDF()
-    │
-    ├─ 1. Render print-optimized React component (hidden, full-week grid)
-    │       with current plan state injected as props
-    │
-    ├─ 2. html2canvas captures the rendered DOM element → Canvas
-    │
-    ├─ 3. jsPDF receives canvas as image, builds PDF document
-    │
-    └─ 4. Trigger browser download: `meal-plan-YYYY-MM-DD.pdf`
-```
-
-### State Management Flow
-
-```
-SQLite (persistent)
-    │  read on app load
-    ▼
-Zustand PlanStore (in-memory session state)
-    │  subscribed to by
-    ▼
-React components (re-render on state change)
-    │
-    │  user actions (lock, swap, generate)
-    ▼
-Zustand actions → update PlanStore state
-    │
-    │  on explicit "Save"
-    ▼
-SQLite saved_plans table (persisted snapshot)
-```
-
----
-
-## Component Build Order (Dependency Graph)
-
-Build in this order — each layer depends on the one above it being stable:
-
-```
-1. DB schema + migrations       ← foundation, everything else reads/writes here
-        │
-        ▼
-2. Food DB Service (CRUD)       ← Plan Generator needs queryable meals
-        │
-        ▼
-3. Food Library UI              ← seed the database before generation works
-        │
-        ▼
-4. Rule Engine (LLM)            ← needs tag catalog from Food DB Service
-        │
-        ▼
-5. Plan Generator               ← needs meals + compiled rules
-        │
-        ▼
-6. Plan Board UI                ← needs generator + Zustand store
-        │
-        ▼
-7. Save / Saved Plans UI        ← needs working plan board first
-        │
-        ▼
-8. Export Pipeline              ← needs stable plan board rendering
-```
-
-Rationale: You cannot test the generator without meals in the database. You cannot test rules without a tag catalog. The Plan Board is useless without the generator. Export is the last thing to build because it depends on the Plan Board rendering being pixel-stable.
-
----
 
 ## Integration Points
 
-### External Services
+### Model Changes
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| Claude API | REST call from Rule Engine only — never from UI directly | Keep API key server-side if deployed; for local-only app, `.env` is acceptable. Add retry with exponential backoff. |
-| html2canvas | Client-side DOM capture | Fonts and custom CSS must be loaded before capture. Avoid transforms on the target element. |
-| jsPDF | Client-side PDF construction from canvas | Pair with html2canvas; set `useCORS: true` if any external images (e.g., meal photos) are present. |
+Use the existing `ComponentRecord.compatible_base_category_ids` field for curries as well as extras/subzis.
 
-### Internal Boundaries
+**Recommendation:**
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| UI → Services | Direct function calls (not REST) — this is a local app | Services are plain TypeScript modules, not HTTP handlers |
-| Services → DB | Drizzle ORM query builder or raw SQL via `better-sqlite3` | Never raw string interpolation; use parameterized queries |
-| Plan Generator → Rule Engine | Rule Engine exposes `getActiveFilters(): CompiledFilter[]` — generator reads these, no callbacks | Rules are pre-compiled; generator is pure and synchronous |
-| Rule Engine → Claude API | One async call per rule save/edit | Debounce UI input; show "Compiling..." state |
-| Export → Plan Board | Export renders a separate, hidden print layout component | Do not screenshot the interactive grid — create a dedicated `PrintablePlan` component with fixed dimensions |
+- Curry records should persist `compatible_base_category_ids: number[]`.
+- Keep `compatible_base_types` only as a temporary legacy mirror if needed for transitional helpers or tests.
+- Do not add a curry-specific category system. Base compatibility is about base categories, not curry categories.
+- Do not add a rule-owned compatibility map. Compatibility is intrinsic component metadata.
 
----
+**Why this boundary is correct:**
 
-## Architectural Patterns
+- Rename safety is already solved by category IDs.
+- Delete cleanup already strips deleted base IDs from `compatible_base_category_ids` in `normalizeComponentCategoryRefs`.
+- Extras already proved this pattern works in forms, services, and generator code.
 
-### Anti-Pattern 1: Calling LLM on Every Plan Generation
+**Data model rule:**
 
-**What people do:** Send the user's rules as plain text to the LLM with each generation request and ask it to select meals.
+- `undefined` means legacy/unbackfilled only during migration work.
+- Persisted steady-state should always be an explicit array.
+- `[]` means compatible with no bases and should be treated as intentionally unusable until edited.
 
-**Why it's wrong:** Generation becomes slow (1-5 seconds LLM latency), expensive (API cost per generation), and non-deterministic. You lose the ability to show the user what rules are doing.
+That avoids a permanent tri-state runtime model.
 
-**Do this instead:** Compile rules once (LLM call on save) into a deterministic JSON filter. Generation is then synchronous, free, and fast. The user can edit a rule and recompile at any time.
+### Generator Changes
 
-### Anti-Pattern 2: Storing Meals as Monolithic Recipe Blobs
+The current generator order is already the correct insertion point:
 
-**What people do:** Store each meal as a flat text description: "Rice, sambar, rasam, papad" with no structure.
+1. select base
+2. derive first-pass composition effects from base
+3. select curry
+4. select subzi
+5. derive extra requirements
+6. select extras
 
-**Why it's wrong:** You cannot apply de-duplication rules ("no repeated subzi") because you have no machine-readable component identity. You cannot filter by component tag. Swapping only the curry while keeping the base is impossible.
+Insert curry compatibility between base selection and curry pool rule filtering.
 
-**Do this instead:** Use the compositional model — components are first-class rows with IDs and tags. Meals reference them by foreign key.
+**Recommended curry pool flow:**
 
-### Anti-Pattern 3: Auto-Saving Working Plan State to a Named Plan
+```typescript
+const compatibleCurries = curries.filter((curry) => {
+  if (!isOccasionAllowed(curry, day)) return false;
+  if (selectedBase.base_category_id == null) return false;
+  return (curry.compatible_base_category_ids ?? []).includes(selectedBase.base_category_id);
+});
 
-**What people do:** Continuously persist every change to the "current plan" as a named saved record.
+const noRepeatPool = noRepeatCurry
+  ? compatibleCurries.filter((curry) => !usedCurryIds.has(curry.id!))
+  : compatibleCurries;
 
-**Why it's wrong:** The user loses the ability to compare generated options. Regenerating overwrites the previous version silently. The plan history becomes meaningless.
+let curryPool = applyFilterPool(noRepeatPool, validatedRules, day, meal_slot, warnings);
+curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
+```
 
-**Do this instead:** Keep the working plan as session state (Zustand). Require explicit user action to save. Show an "unsaved changes" indicator.
+**Behavioral rules:**
 
-### Anti-Pattern 4: Using Full-Text Search for Tag Filtering
+- Compatibility is a hard default constraint for automatic curry selection.
+- `filter_pool` and `exclude` narrow the compatible pool. They do not lift compatibility.
+- If the compatible curry pool is empty, emit a warning and leave `curry_id` unset.
+- Do not relax to the full curry pool automatically. That would violate the milestone requirement.
 
-**What people do:** Store tags as a comma-separated string and use LIKE queries.
+This is important: compatibility should behave more like slot eligibility than like a soft preference.
 
-**Why it's wrong:** LIKE '%fish%' matches "fishcake" and "starfish". Tag queries become ambiguous and slow to reason about.
+### Rule Override Behavior
 
-**Do this instead:** Store tags as a JSON array. Deserialize in application code and filter with Array methods. For this dataset size (hundreds of records), in-memory filtering is instant and requires no index.
+Do not add a new override effect unless milestone scope expands. The current rule model already has the right override primitive: `require_one`.
 
----
+**Recommended override contract:**
 
-## Scaling Considerations
+- Automatic selection obeys compatibility.
+- `require_one` remains the only rule-level explicit override because it already pulls from the full library via `applyRequireOne`.
+- Locked curries also override compatibility because locked slots are applied before pool construction.
+- Manual swaps should be treated as explicit user override, not auto-generation.
 
-This is a single-user personal app. Scaling is not a real concern. The architecture is sized correctly.
+This produces a clear semantics split:
 
-| Scale | Architecture |
-|-------|-------------|
-| 1 user, local data | Current design is correct. SQLite + local state is the right choice. |
-| 10 users (shared household) | Add user ID column to all tables, add login. No architectural change needed. |
-| 1,000+ users | Move to PostgreSQL + server-side API. LLM calls move to a queue. This would be a significant rewrite — don't pre-optimize for this. |
+| Mechanism | Compatible-by-default? | Can override? | Notes |
+|-----------|-------------------------|---------------|-------|
+| Normal generator curry pick | Yes | No | Uses compatible pool only |
+| `filter_pool` rule | Yes | No | Narrows within compatible pool |
+| `exclude` rule | Yes | No | Narrows within compatible pool |
+| `require_one` rule | No | Yes | Explicit override from full curry library |
+| Locked curry | No | Yes | Preserves user intent during regenerate |
+| Manual picker swap | No | Yes | Explicit user action |
 
-The first bottleneck for a personal app is not scale — it is data quality. The app is only as good as the meals in the library. Design the Food Library UI to make data entry fast.
+**Why this is the right model:**
 
----
+- It matches existing generator semantics. `applyRequireOne` already bypasses the filtered pool.
+- It keeps “override” meaning explicit and rare.
+- It avoids adding a new effect like `ignore_compatibility`, which would expand compiler, UI, validation, and migration scope for little gain.
+
+### Manual Picker Boundary
+
+The plan board should pass the current slot base category into the curry picker the same way it already does for extras.
+
+**Recommendation:**
+
+- Default curry picker view shows only compatible curries for the selected base.
+- Add an explicit `Show incompatible curries` toggle for manual override.
+- Keep the resulting swap path unchanged. `swapComponent` already writes whatever component ID the user picked.
+
+This preserves a strong default while still allowing exceptional pairings without rule authoring.
+
+### Migration and Backfill Pipeline
+
+Use a two-part pipeline:
+
+1. Dexie schema/version upgrade for storage shape and indexes.
+2. App-level idempotent backfill for existing curry records.
+
+Do not try to encode all backfill logic inside the Dexie upgrade callback. The milestone explicitly says backfill is normal in-app work, and this data needs domain-aware matching.
+
+**Recommended migration shape:**
+
+- Add or confirm `*compatible_base_category_ids` is indexed for curries.
+- No new table.
+- No rule migration required if override uses existing `require_one`.
+
+**Recommended backfill service boundary:**
+
+- New service: `backfillCurryCompatibility()`
+- Called during bootstrap after categories exist and before the app is considered ready.
+- Safe to run repeatedly.
+
+**Backfill algorithm:**
+
+1. Load current base categories.
+2. Load all curry components.
+3. For each curry with missing compatibility:
+   - If it matches a curated shipped preset, write the preset category IDs.
+   - Otherwise, assign all current base category IDs as a permissive fallback.
+4. Never overwrite a curry that already has an explicit compatibility array.
+
+**Why “fallback to all current bases” is the right default for unmatched legacy curries:**
+
+- It preserves pre-v1.3 behavior for unknown user-created curries.
+- It avoids silently breaking generation for legacy libraries.
+- It keeps runtime simple because every curry ends in an explicit array.
+
+**What not to do:**
+
+- Do not leave unmatched curries with `undefined` forever.
+- Do not infer compatibility from fuzzy name parsing at generation time.
+- Do not auto-append future newly-created base categories to old curries. That changes user intent implicitly.
+
+### Category Delete / Rename Implications
+
+This feature should reuse existing category normalization behavior.
+
+**Rename:**
+
+- No data rewrite needed.
+- Curry compatibility stays valid because IDs remain stable.
+
+**Delete base category:**
+
+- Existing `normalizeComponentCategoryRefs` should strip deleted IDs from curry compatibility arrays.
+- Any curry that becomes `[]` after deletion remains valid data but no longer auto-selects for any base.
+
+This is a good outcome. It exposes missing compatibility rather than hiding it.
+
+## Component Boundaries
+
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| `src/types/component.ts` | Add curry compatibility typing | Library form, generator, migration |
+| `src/components/library/ComponentForm.tsx` | Edit curry compatibility arrays | Category service, food DB service |
+| `src/components/library/ComponentRow.tsx` | Display curry compatibility labels | Category service |
+| `src/services/food-db.ts` | Curry query helpers if needed | Dexie |
+| `src/services/generator.ts` | Enforce default curry compatibility and warnings | Components, rules |
+| `src/db/client.ts` | Schema versioning and data normalization reuse | Dexie |
+| Bootstrap path (`src/db/seed.tsx` or adjacent bootstrap service) | Run idempotent curry backfill before ready | Dexie, backfill service |
+| `src/components/plan/MealPickerSheet.tsx` | Compatible-by-default curry manual selection, optional override toggle | Plan store, food DB |
+
+## Data Flow
+
+### Automatic Generation
+
+```text
+Load components + enabled rules
+  -> pick base
+  -> read base.base_category_id
+  -> filter curries by compatible_base_category_ids
+  -> apply no-repeat / filter_pool / exclude
+  -> pick curry
+  -> apply require_one override from full library if explicitly configured
+  -> write curry_id or leave empty with warning
+```
+
+### Rule Override Path
+
+```text
+Compiled rule with effect require_one
+  -> selected curry does not satisfy rule
+  -> applyRequireOne searches full curry library
+  -> chosen curry may be incompatible with base
+  -> slot records explicit override result
+```
+
+### Backfill Path
+
+```text
+App bootstrap
+  -> ensure categories exist
+  -> run backfillCurryCompatibility()
+  -> write explicit arrays onto legacy curry records
+  -> app becomes ready
+```
+
+## Patterns to Follow
+
+### Pattern 1: Default Constraint in Generator, Not in Rules
+
+**What:** Curry compatibility is enforced as a generator invariant, not as a generated rule.
+
+**When:** Always, unless user intent is explicit via `require_one`, lock, or manual swap.
+
+**Why:** This keeps the default behavior predictable and avoids hidden auto-created rules that users cannot reason about.
+
+### Pattern 2: Explicit Overrides Only Punch Through One Boundary
+
+**What:** Only `require_one`, locks, and manual swaps can bypass compatibility.
+
+**When:** Exceptional pairing scenarios.
+
+**Why:** If every rule type can implicitly bypass compatibility, the constraint stops being meaningful.
+
+### Pattern 3: Backfill to Stable Runtime State
+
+**What:** Migration may temporarily observe legacy/null data, but steady-state runtime should not.
+
+**When:** During v1.3 rollout only.
+
+**Why:** Generator code stays simple if it only has to reason about explicit arrays.
+
+## Anti-Patterns to Avoid
+
+### Anti-Pattern 1: Making Compatibility a Soft Warning
+
+**What:** Falling back to any curry when no compatible curry exists.
+
+**Why bad:** It defeats the milestone goal and hides broken data quality.
+
+**Instead:** Leave curry empty, warn, and let user fix compatibility or add an explicit override.
+
+### Anti-Pattern 2: Adding a New Rule Effect for v1.3
+
+**What:** Effects like `ignore_curry_compatibility` or `allow_incompatible_curry`.
+
+**Why bad:** It expands rule schema, compiler UI, validation, migration, and test surface unnecessarily.
+
+**Instead:** Reuse `require_one` as the explicit override.
+
+### Anti-Pattern 3: Permanent Tri-State Compatibility
+
+**What:** Treating `undefined`, `[]`, and populated arrays as long-term runtime states.
+
+**Why bad:** It makes generator behavior ambiguous and hard to test.
+
+**Instead:** Backfill to explicit arrays and reserve `undefined` for migration only.
+
+## Scalability Considerations
+
+| Concern | At current scale | At larger library scale | Recommendation |
+|---------|------------------|-------------------------|----------------|
+| Curry compatibility lookup | In-memory filter is fine | Still fine for local IndexedDB app | Keep generator in-memory |
+| Backfill cost | One-time small write set | Still bounded by component count | Keep idempotent and startup-scoped |
+| Picker filtering | Simple compatible subset | May need memoized helper later | No new indexing layer yet |
+| Override semantics | Easy to reason about | Remains understandable | Keep override mechanisms limited |
+
+## Build Order
+
+1. **Model and schema**
+   - Extend curry typing and persistence to use `compatible_base_category_ids`.
+   - Add Dexie version bump only if schema/index metadata needs to change.
+   - Reuse existing category normalization for delete safety.
+
+2. **Backfill pipeline**
+   - Add curated preset map for shipped curries.
+   - Add idempotent `backfillCurryCompatibility()` bootstrap step.
+   - Verify unmatched legacy curries receive all-current-base fallback.
+
+3. **Generator integration**
+   - Insert compatibility filtering into curry pool construction.
+   - Preserve `require_one` as explicit override.
+   - Warn and leave curry empty when no compatible curry exists.
+
+4. **Library and picker UI**
+   - Add curry compatibility editing to the library form.
+   - Show compatibility labels in library rows.
+   - Filter curry picker by current base, with explicit “show incompatible” manual override.
+
+5. **Regression tests**
+   - Cover migration/backfill, generator defaults, override behavior, picker behavior, and category delete cleanup.
+
+This order matters because generator behavior depends on stable migrated data, and UI should sit on top of settled semantics rather than define them.
+
+## Test Boundaries
+
+### Model / Migration Tests
+
+- Curry records persist numeric base category IDs.
+- Backfill is idempotent.
+- Preset-matched curries get expected category arrays.
+- Unmatched legacy curries get all current base category IDs.
+- Deleting a base category strips it from curry compatibility arrays.
+
+### Generator Tests
+
+- Auto-generation only selects curries compatible with the chosen base.
+- `filter_pool` does not bypass compatibility.
+- `exclude` does not bypass compatibility.
+- `require_one` by component overrides compatibility intentionally.
+- `require_one` by tag overrides compatibility intentionally.
+- Locked incompatible curry survives regenerate unchanged.
+- Empty compatible curry pool leaves `curry_id` unset and emits warning.
+
+### UI Tests
+
+- Curry form loads and saves compatibility checklist values.
+- Curry row renders compatibility labels using category names.
+- Plan board passes current base category to curry picker.
+- Curry picker defaults to compatible options only.
+- Manual override toggle reveals incompatible curries.
 
 ## Sources
 
-- [Database Design for Meal Plans — SitePoint Forums](https://www.sitepoint.com/community/t/database-design-for-meal-plans/26572)
-- [Constraint Satisfaction for Meal Planning — DIVA portal](https://www.diva-portal.org/smash/get/diva2:21100/FULLTEXT01.pdf)
-- [Structured Outputs and Function Calling with LLMs — Agenta](https://agenta.ai/blog/the-guide-to-structured-outputs-and-function-calling-with-llms)
-- [Practical Techniques to Constrain LLM Output in JSON — Medium](https://mychen76.medium.com/practical-techniques-to-constraint-llm-output-in-json-format-e3e72396c670)
-- [SQLite in 2025: Appropriate Uses — sqlite.org](https://sqlite.org/whentouse.html)
-- [Offline-First Frontend Apps in 2025 — LogRocket](https://blog.logrocket.com/offline-first-frontend-apps-2025-indexeddb-sqlite/)
-- [PDF Generation with html2canvas + jsPDF — HackMD](https://hackmd.io/@n6kGXbvAST2zb6hPLZ6sNQ/HJTVYZz8n)
-- [INDoRI: Indian Dataset of Recipes and Ingredients — arXiv](https://arxiv.org/abs/2309.10403)
-
----
-
-*Architecture research for: Indian meal planning web app (single-user, personal)*
-*Researched: 2026-03-19*
+- `/Users/harish/workspace/food-planner/.planning/PROJECT.md`
+- `/Users/harish/workspace/food-planner/src/types/component.ts`
+- `/Users/harish/workspace/food-planner/src/types/plan.ts`
+- `/Users/harish/workspace/food-planner/src/db/client.ts`
+- `/Users/harish/workspace/food-planner/src/services/generator.ts`
+- `/Users/harish/workspace/food-planner/src/services/food-db.ts`
+- `/Users/harish/workspace/food-planner/src/services/category-db.ts`
+- `/Users/harish/workspace/food-planner/src/components/library/ComponentForm.tsx`
+- `/Users/harish/workspace/food-planner/src/components/plan/MealPickerSheet.tsx`
+- `/Users/harish/workspace/food-planner/src/stores/plan-store.ts`

@@ -1,155 +1,178 @@
-# Stack Research
+# Technology Stack
 
-**Domain:** Personal meal planning web app with LLM integration (Indian cuisine)
-**Researched:** 2026-03-19
-**Confidence:** HIGH (all core choices verified against official docs or npm registry)
+**Project:** Indian Food Planner v1.3 curry base compatibility
+**Researched:** 2026-03-29
 
 ## Recommended Stack
 
-### Core Technologies
+This milestone does not need a stack expansion. Stay on the existing stack from `PROJECT.md`: Next.js 16.2.0, React 19.2.4, TypeScript 5.x, Dexie 4.3.0, Zustand 5.0.12, Zod 4.3.6, shadcn/ui.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Next.js | 16.2.0 | Full-stack React framework | Dominant React meta-framework in 2025-2026; App Router handles both UI and API routes in one project, eliminating the need for a separate backend. `create-next-app` defaults now include TypeScript, Tailwind, ESLint, and Turbopack out of the box. Personal app needs no server complexity — API routes for LLM calls live alongside the UI. |
-| TypeScript | 5.x (bundled) | Type safety across the stack | Next.js 16 includes TS out of the box. Zod schemas for LLM structured outputs flow naturally into typed domain models (Meal, MealPlan, Rule). Prevents silent bugs in the randomization and rule-evaluation logic. |
-| Tailwind CSS | 4.x (bundled) | Utility-first styling | Bundled with `create-next-app` defaults. v4's `@theme` directive makes design tokens easy to customize. No context-switching between CSS files and components — fast to build drag-drop weekly grid UIs. |
-| shadcn/ui | latest | Accessible component library | Copy-paste components built on Radix UI primitives. Officially supports Tailwind v4 and React 19. Provides Dialog, Select, Table, Popover, and DnD-ready Card components needed for meal slot editing. Owned in the project, not a node_modules black box. |
-| Zustand | 5.0.12 | Client-side state management | Minimal boilerplate, no providers needed. Ideal for single-user apps where the weekly plan, locked meals, and meal library live in memory. Persist middleware syncs slices to localStorage or Dexie automatically. Far simpler than Redux or React Context for this use case. |
-| Dexie.js | 4.3.0 | Local database (IndexedDB wrapper) | Single-user app with no backend — all meal library, rules, and saved plans live in the browser. Dexie provides a clean TypeScript API over raw IndexedDB, with the `useLiveQuery` hook for reactive UI updates. v4 adds Suspense integration. SQLite WASM is overkill; localStorage 5 MB cap is too small for a growing meal library. |
+The work is a data-model and service-layer extension inside the current local-first architecture:
 
-### LLM Integration
+1. Add curry compatibility data to `ComponentRecord`.
+2. Ship a Dexie `version(12)` upgrade that backfills existing curry rows.
+3. Enforce compatibility in generator curry selection as a default hard constraint.
+4. Add one minimal rule-level override seam for intentional incompatibility.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Vercel AI SDK | 6.0.116 (package: `ai`) | LLM orchestration layer | Unified TypeScript API for calling Claude (and other providers) from Next.js API routes. `generateObject` with a Zod schema returns fully typed, schema-validated JSON — no manual JSON parsing or retry logic. Works with both `@ai-sdk/anthropic` and direct Anthropic SDK. |
-| `@ai-sdk/anthropic` | latest | Anthropic provider for AI SDK | Official provider adapter. Plugs Claude models into `generateObject` cleanly. Swap model IDs without changing call structure. |
-| Claude Haiku 4.5 (`claude-haiku-4-5`) | — | Rule parsing and meal filter generation | At $1/$5 per million tokens and fastest latency, Haiku is the right tier for this task. Rule parsing is a single, constrained prompt ("translate this English rule into a JSON filter object") — not an agentic reasoning task. Haiku's intelligence is sufficient; Sonnet's cost premium is not justified for interactive, user-triggered calls. |
+### Core Framework
 
-**Model selection rationale:** The LLM task here is narrow — parse a natural language rule like "Fridays are fish days" into a structured filter object. This is a classification/extraction task, not complex reasoning. Claude Haiku 4.5 handles it reliably at 5x lower cost than Sonnet. If rule parsing quality is unsatisfactory in testing, the upgrade path to `claude-sonnet-4-6` is a one-line model ID change.
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| Next.js | 16.2.0 | Existing app shell and route structure | No new framework concern exists here. This feature is local schema, UI form, and generator logic. |
+| TypeScript | 5.x | Type/model safety across schema, generator, and rules | The change is mostly type-driven. Keep it typed end to end so migration, UI, and generator semantics cannot drift. |
+| Dexie | 4.3.0 | IndexedDB schema evolution and backfill | The app already depends on versioned upgrades. Curry compatibility is exactly the kind of additive field plus upgrade callback Dexie is designed for. |
+| Zod | 4.3.6 | Rule contract validation | If a new rule effect is introduced for override semantics, it should be added to the existing compiled-rule schema instead of creating an ad hoc flag outside validation. |
+| Zustand | 5.0.12 | Existing plan-board/manual swap flow | No store redesign is needed. At most, picker inputs gain `currentBaseCategoryId`-aware curry filtering. |
 
-### Food Database
+### Database
 
-| Approach | Version | Purpose | Why Recommended |
-|----------|---------|---------|-----------------|
-| Custom Dexie database seeded from curated JSON | — | Indian meal library | No existing open dataset structures meals as Base + Curry + Subzi + Extras — the app's core data model. Edamam and USDA databases are Western-nutrition-focused and lack this compositional structure. The 6000+ Indian recipe datasets on Kaggle and Mendeley are recipe datasets, not meal-component libraries. The app needs 50-150 curated Indian meals (rice, roti, dosa as bases; dal, sabzi, curry as sides) — build it manually or seed from a curated JSON file. This is 1-2 days of data entry, not an engineering problem. |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| Dexie `components` table | v12 schema upgrade | Persist curry compatibility on the existing component record | Do not add a new table. Compatibility belongs on the curry row the same way extra compatibility already lives on the extra row. |
+| Existing `categories` table | v11 shape retained | Source of stable base-category IDs for curry compatibility | Stable category IDs are already the project rule. Reuse them; do not reintroduce label-based compatibility as the primary source of truth. |
 
-### Export Libraries
+### Infrastructure
 
-| Library | Version | Purpose | Why Recommended |
-|---------|---------|---------|-----------------|
-| `@react-pdf/renderer` | 4.3.2 | PDF export of weekly meal plan | Produces real vector PDFs with selectable text — not rasterized screenshots. Uses React-like JSX primitives (`View`, `Text`, `Image`) to compose a weekly plan grid. Runs client-side (no server needed). 860K weekly downloads, actively maintained. `react-pdf-table` companion library handles tabular weekly plan layout. |
-| `html-to-image` | latest | Image export / share | Converts a DOM element to PNG/JPEG/SVG without a server. More modern API than html2canvas (uses `foreignObject` SVG rendering, handles modern CSS better). Ideal for "share as image" feature where users export the week grid as a PNG for WhatsApp/messaging. |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| IndexedDB local migration | Dexie upgrade callback | Backfill existing curry rows in-app | `PROJECT.md` requires backwards-compatible app-side migration with no library rebuild. |
+| Existing synchronous generator | Current service layer | Apply compatibility during automatic selection | The generator already loads components and rules synchronously. Keep compatibility enforcement inside that flow. |
 
-### Development Tools
+### Supporting Libraries
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| Biome | Linting + formatting | `create-next-app` now offers Biome as an alternative to ESLint. Faster than ESLint + Prettier combo. Single config, single tool. |
-| Vitest | Unit testing | Faster than Jest in Next.js projects. Critical for testing the meal randomization and rule-evaluation logic in isolation. |
+| Library | Version | Purpose | When to Use |
+|---------|---------|---------|-------------|
+| `dexie-react-hooks` | 4.2.0 | Live-update curry edit UI and filtered picker UI | Use for the curry form checklist and any category-aware picker queries. No extra state library is needed. |
+| Existing shadcn `Checkbox`/`Select` components | current repo versions | Curry compatibility editing UI | Reuse the extra-category checklist pattern already present in `ComponentForm`. |
 
-## Installation
+## Schema And Service Changes
 
-```bash
-# Scaffold project (App Router, TypeScript, Tailwind, Turbopack defaults)
-npx create-next-app@latest food-planner --yes
+### 1. `ComponentRecord` changes
 
-# LLM integration
-npm install ai @ai-sdk/anthropic zod
+Recommended addition:
 
-# Local database
-npm install dexie
+| Field | Type | Applies To | Why |
+|-------|------|------------|-----|
+| `compatible_base_category_ids` | `number[]` | `curry` | Numeric base-category IDs match the current category system and existing extra/subzi compatibility pattern. |
 
-# State management
-npm install zustand
+Recommended shape decisions:
 
-# UI components (shadcn/ui uses CLI-based installation)
-npx shadcn@latest init
+| Decision | Recommendation | Reason |
+|----------|----------------|--------|
+| Curry compatibility requiredness | Persist as an array and normalize to `[]` only during migration staging, then backfill to a non-empty set for existing rows | Generator logic is simpler and safer when curry compatibility is always an array. |
+| Legacy string alias | Do not add `compatible_base_types` for curry | That field is legacy carryover for pre-category migrations. Adding a new string alias now expands migration and delete/rename surface area for no gain. |
+| New table | Do not add a join table like `curry_base_compatibility` | Overkill for a small local-first app. The existing record-level array plus multiEntry index is enough. |
 
-# Export
-npm install @react-pdf/renderer html-to-image
+### 2. Dexie migration
 
-# PDF table helper
-npm install react-pdf-table
+Ship `db.version(12)` with the same table layout pattern unless you decide to query curries by compatibility via Dexie index more often. The critical part is the upgrade callback, not a structural redesign.
 
-# Dev dependencies
-npm install -D vitest @vitest/ui
-```
+Backfill recommendation:
+
+| Case | Backfill value |
+|------|----------------|
+| Existing curry with no compatibility data | All current base category IDs |
+| New curry created after v1.3 | User-selected `compatible_base_category_ids` from the Library form |
+| Curry whose referenced category gets deleted later | Remove the deleted ID from the array, same normalization pattern as extras/subzi |
+
+Why default to all base categories on backfill:
+
+- It preserves current generator behavior for old data until the user refines compatibility.
+- It avoids accidental empty curry pools right after migration.
+- It matches the milestone requirement that existing rows become editable without rebuilding the library.
+
+Migration guardrails:
+
+- Read base categories from the `categories` table inside the upgrade transaction.
+- Backfill only rows where `componentType === 'curry'`.
+- Normalize missing arrays to a concrete array value during the upgrade.
+- Add migration tests covering v11 -> v12 upgrade, empty category edge case, and delete-normalization behavior.
+
+### 3. Service-layer seams
+
+Recommended additions:
+
+| Service | Change | Why |
+|---------|--------|-----|
+| `food-db.ts` | Add `getCurriesByBaseCategoryId(baseCategoryId: number)` | Gives the UI the same category-aware query seam that extras already use. |
+| `generator.ts` | Add `isCurryCompatibleWithBase(curry, base)` helper | Keeps generator enforcement explicit and testable. Mirror `isExtraCompatibleWithBase()`. |
+| `generator.ts` | Filter automatic curry pool by compatibility before weighted selection | Compatibility is the new hard default constraint. This is the core behavior change. |
+| `ComponentForm.tsx` | Add curry compatibility checklist using live base categories | Existing curry rows become editable through the same pattern already used for extras. |
+| `MealPickerSheet.tsx` | If touched, default curry picker to base-aware results | Keeps manual selection aligned with generator defaults without redesigning the planner. |
+
+Recommended query path:
+
+- Prefer `db.components.where('compatible_base_category_ids').equals(baseCategoryId).distinct()` for curries if you add a dedicated service helper.
+- This works with the existing multiEntry index pattern already declared on `components`.
+
+### 4. Rule override semantics
+
+The current rule model is not quite enough if “override compatibility” means more than “force one specific incompatible curry”. `require_one` can override to a named component, but it does not express “allow incompatible curries for this scoped case” as a first-class rule.
+
+Recommended minimal addition:
+
+| Layer | Change | Why |
+|-------|--------|-----|
+| `types/plan.ts` | Add one new effect, e.g. `allow_incompatible_curry` | Makes override intent explicit and keeps it inside the validated rule system. |
+| Rule compiler/form | Surface that single effect only where relevant | Smallest possible extension to existing rule UX. |
+| Generator | When scoped rule matches, skip compatibility filtering for curry selection in that slot | This preserves “hard default, explicit override” exactly. |
+
+Scope recommendation:
+
+- Target should stay on existing rule targets, preferably base-category-targeted rules.
+- Do not build a generic compatibility matrix rule language in this milestone.
+- Do not add override behavior for subzi or extras now.
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| Next.js 16 | SvelteKit 2 | If the team has strong Svelte experience or bundle size is a primary constraint (Svelte ships 50-70% less JS). For this project, the React ecosystem (shadcn/ui, Dexie hooks, AI SDK) justifies staying on Next.js. |
-| Next.js 16 | Remix v2 | If progressive enhancement and web standards primitives matter more than ecosystem breadth. Remix has excellent form handling but a smaller component library ecosystem than React/Next.js. |
-| Claude Haiku 4.5 | GPT-4o mini | If OpenAI is already in use elsewhere. For a greenfield project with no vendor lock-in, Claude Haiku 4.5's pricing ($1/$5 per MTok) matches GPT-4o mini ($0.15/$0.6 per MTok — cheaper, but requires OpenAI account). Claude's structured outputs are natively constrained via grammar decoding, while OpenAI's JSON mode relies on prompting. Either works. |
-| Claude Haiku 4.5 | Claude Sonnet 4.6 | If rule parsing quality proves insufficient for complex multi-condition rules during testing. One-line model ID change. |
-| Dexie.js | SQLite WASM (OPFS) | If complex SQL queries (full-text search, multi-table JOINs) are needed later. For this app's data model, Dexie's query API is sufficient. SQLite WASM adds 30-40ms startup overhead and OPFS browser support constraints. |
-| `@react-pdf/renderer` | html2canvas + jsPDF | If pixel-faithful screenshot exports are preferred over structured PDFs. html2canvas produces rasterized images embedded in PDF — text is not selectable or searchable. Avoid for a plan document users may want to copy-paste from. |
-| `@react-pdf/renderer` | Puppeteer (server-side) | If PDF fidelity of complex CSS layouts is critical. Puppeteer renders real Chromium — perfect pixel match — but requires a server/lambda, adding infrastructure complexity inappropriate for a personal app. |
-| Zustand | Jotai | If atomic state granularity is needed per meal slot. Zustand stores are sufficient for this app's data shape. Jotai adds complexity without benefit at this scale. |
-| Custom curated DB | Edamam Food API | If nutritional data becomes a requirement in v2. Edamam has good Indian food coverage for nutrition lookups. For v1 (scheduling only, no calorie tracking), it's unnecessary API cost and complexity. |
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Curry compatibility storage | `compatible_base_category_ids` on curry record | Separate compatibility table | Too much schema and migration complexity for a single-user IndexedDB app. |
+| Backfill strategy | Default old curries to all current base categories | Leave old curries empty and force users to edit everything | Creates immediate generator regressions and migration friction. |
+| Override semantics | One explicit rule effect for compatibility bypass | Reuse `require_one` only | Too narrow if users want scoped override without naming one fixed curry. |
+| UI editing | Reuse checklist pattern in `ComponentForm` | New dedicated “compatibility manager” screen | Scope creep. The data lives on the curry row; edit it there. |
+| Picker behavior | Optional thin curry-by-base service helper | Broad planner-side override UI | Not needed to deliver the milestone goal. |
 
-## What NOT to Use
+## Installation
+
+No new packages are recommended.
+
+```bash
+# No dependency additions for this milestone
+npm test
+```
+
+## Explicit Non-Goals For This Milestone
+
+Do not add the following:
 
 | Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| Redux Toolkit | Massive boilerplate for a single-user app with no server synchronization. The meal library, plan state, and locked meals fit cleanly in 2-3 Zustand stores. | Zustand 5 |
-| html2canvas + jsPDF | Produces image-based PDFs where text cannot be selected or searched. The meal plan is a document users will read repeatedly — searchable text matters. Also, html2canvas has known rendering issues with modern CSS (grid, flexbox, custom properties). | `@react-pdf/renderer` |
-| Prisma + PostgreSQL | A full relational database and ORM is architectural overkill for a single-user personal app. All data lives in one browser session. | Dexie.js (IndexedDB) |
-| Firebase / Supabase | Real-time database sync and auth services are unnecessary when there is exactly one user and no backend needed. Adds vendor dependency, egress costs, and complexity. | Dexie.js (IndexedDB) |
-| React Query / TanStack Query | Designed for server state (cache, refetch, optimistic updates). This app has no server state — all data is local. Adds unnecessary complexity. | Zustand + Dexie |
-| Claude Opus 4.6 | $5/$25 per MTok for a rule-parsing task is 5x the cost of Sonnet and 25x Haiku with no quality improvement for this specific, narrow task. | Claude Haiku 4.5 |
-| Claude 3 Haiku (`claude-3-haiku-20240307`) | Deprecated — retirement date April 19, 2026. Do not start new projects on this model. | Claude Haiku 4.5 (`claude-haiku-4-5`) |
-| localStorage for meal data | 5 MB hard cap. A meal library with images or even moderate metadata (50+ meals, saved plans, rule history) will hit this limit. | Dexie.js (IndexedDB) |
-| Webpack (explicit) | Next.js 16 uses Turbopack by default. Forcing Webpack loses 40-70% faster HMR speeds in development. | Turbopack (Next.js default) |
+|------|-----|-------------|
+| New database tables for compatibility | Unnecessary normalization for a local app with small records | Store compatibility directly on curry records |
+| New backend/API layer | Compatibility is local data plus local generation | Keep using Dexie + synchronous generator |
+| Subzi compatibility expansion | `PROJECT.md` explicitly keeps subzi composition out of scope | Touch only curry compatibility |
+| General meal-composition engine rewrite | The existing generator already has component-specific selection stages | Add a small curry compatibility filter plus explicit override seam |
+| Category-label-based curry compatibility as primary storage | Category IDs are the current stable identity | Store numeric IDs only |
+| Rich override UX for arbitrary per-slot manual exceptions | Too broad for this milestone | If needed, a single scoped rule effect is enough |
+| Bulk “smart inference” or AI pairing suggestions | No LLM/runtime complexity is needed | Backfill to all categories, then let users edit |
 
-## Stack Patterns by Variant
+## Implementation Notes
 
-**If deploying to Vercel (recommended for personal use):**
-- Use Next.js API routes for LLM calls (keeps API key server-side)
-- Free tier covers hobby usage; no server management needed
-- Because Vercel is the natural deployment target for Next.js with zero config
-
-**If deploying as a purely static/local app (no server):**
-- Move LLM calls to a server-side proxy or use Anthropic SDK from the browser with a CORS-safe endpoint
-- All Dexie data stays local anyway — no architecture changes needed
-- Because browser security prevents exposing API keys in client-side code
-
-**If the meal library grows beyond 500 items:**
-- Add Dexie full-text search (`dexie-full-text-search`) plugin for meal lookup
-- Because IndexedDB has no native full-text search; Dexie plugin fills this gap efficiently
-
-**If sharing/collaboration becomes a requirement (v2+):**
-- Add a backend (Supabase or Convex) with plan export/import via URL
-- Current Dexie-first architecture does not need to change — add sync layer on top
-- Because the local-first model is forward compatible with cloud sync
-
-## Version Compatibility
-
-| Package | Compatible With | Notes |
-|---------|-----------------|-------|
-| Next.js 16.x | React 19, TypeScript 5.x, Tailwind CSS 4.x | All bundled via `create-next-app` defaults |
-| shadcn/ui (latest) | Tailwind CSS 4.x, React 19 | Full v4 support confirmed in shadcn docs |
-| Zustand 5.x | React 18+ and React 19 | Uses `useSyncExternalStore`; compatible with React 19 concurrent features |
-| Dexie 4.x | React 18+, TypeScript 5.x | `useLiveQuery` hook is stable; `useSuspendingLiveQuery` is experimental |
-| `@react-pdf/renderer` 4.x | React 18+, Node 18+ | Runs in browser and Node; compatible with Next.js API routes for server-side PDF generation if needed |
-| Vercel AI SDK 6.x (`ai`) | Next.js 15+, TypeScript 5.x | `generateObject` works with `@ai-sdk/anthropic` and `zod` schemas |
-| Claude Haiku 4.5 | Anthropic API, Vercel AI SDK 6 | Use model ID `claude-haiku-4-5`; structured outputs beta header optional when using Vercel AI SDK's `generateObject` |
+- Treat compatibility as a default hard constraint only for automatic curry selection.
+- Locked/manual selections should not silently rewrite stored plan data during migration.
+- If a rule explicitly overrides compatibility, log a warning only when the override still produces no eligible curry.
+- Keep delete/rename safety symmetric with extras:
+  - rename: no row churn because IDs remain stable
+  - delete: strip removed category IDs from curry compatibility arrays
+- Add generator tests for:
+  - compatible curry selected by default
+  - incompatible curry excluded by default
+  - backfilled curry remains eligible after migration
+  - override rule allows otherwise incompatible curry
 
 ## Sources
 
-- [Anthropic Models Overview](https://platform.claude.com/docs/en/about-claude/models/overview) — Model IDs, pricing, context windows (HIGH confidence, official docs, fetched 2026-03-19)
-- [Next.js Installation Docs](https://nextjs.org/docs/app/getting-started/installation) — Version 16.2.0, default stack confirmed (HIGH confidence, official docs, fetched 2026-03-19)
-- [Vercel AI SDK Introduction](https://ai-sdk.dev/docs/introduction) — v6, Anthropic provider, `generateObject` capability (HIGH confidence, official docs)
-- [Anthropic Structured Outputs Docs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs) — Constrained decoding, Zod/JSON Schema support (HIGH confidence, official docs)
-- [Dexie.js npm registry](https://www.npmjs.com/package/dexie) — v4.3.0, confirmed via `npm show` (HIGH confidence)
-- [Zustand npm registry](https://www.npmjs.com/package/zustand) — v5.0.12, confirmed via `npm show` (HIGH confidence)
-- [@react-pdf/renderer npm](https://www.npmjs.com/package/@react-pdf/renderer) — v4.3.2, confirmed via `npm show` (HIGH confidence)
-- [shadcn/ui Tailwind v4 docs](https://ui.shadcn.com/docs/tailwind-v4) — Full v4 support, React 19 compatibility (HIGH confidence, official docs)
-- WebSearch: Next.js vs Remix vs SvelteKit 2025 comparison — Framework selection rationale (MEDIUM confidence, multiple sources agree)
-- WebSearch: Indian food datasets (Kaggle, Mendeley, arxiv Khana) — No suitable structured open dataset for Base+Curry+Subzi model (MEDIUM confidence, surveyed available datasets)
-- WebSearch: html-to-image vs html2canvas 2025 — Image export approach (MEDIUM confidence, community sources)
+- `PROJECT.md` in this repo, updated 2026-03-29: milestone scope, existing stack, and out-of-scope constraints. Confidence: HIGH.
+- Dexie docs, `Version.upgrade()`: official upgrade callback pattern for in-place schema/data migration. https://old.dexie.org/docs/Version/Version.upgrade() Confidence: HIGH.
+- Dexie docs, `MultiEntry Index`: array properties can be indexed and queried directly with `where(...).equals(...)`; use `distinct()` where relevant. https://dexie.org/docs/MultiEntry-Index Confidence: HIGH.
 
----
-*Stack research for: Indian food meal planner web app with LLM rule parsing*
-*Researched: 2026-03-19*
