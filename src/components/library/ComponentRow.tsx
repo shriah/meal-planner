@@ -45,6 +45,11 @@ export function ComponentRow({
   const compatibleBaseLabels = (component.compatible_base_category_ids ?? []).map((id) =>
     getBaseCategoryLabel(baseCategoriesById, id),
   )
+  const showsCompatibleBaseSummary =
+    (component.componentType === 'extra' || component.componentType === 'curry')
+    && compatibleBaseLabels.length > 0
+  const showsZeroCompatibleWarning =
+    component.componentType === 'curry' && compatibleBaseLabels.length === 0
 
   function handleRowClick() {
     if (expanded) {
@@ -107,9 +112,15 @@ export function ComponentRow({
           </Badge>
         )}
 
-        {component.componentType === 'extra' && compatibleBaseLabels.length > 0 && (
+        {showsCompatibleBaseSummary && (
           <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
             {compatibleBaseLabels.join(', ')}
+          </Badge>
+        )}
+
+        {showsZeroCompatibleWarning && (
+          <Badge variant="destructive" className="shrink-0 text-sm px-2 py-0.5">
+            Not auto-selected
           </Badge>
         )}
 

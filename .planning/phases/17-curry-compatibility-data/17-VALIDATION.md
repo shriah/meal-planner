@@ -1,8 +1,8 @@
 ---
 phase: 17-curry-compatibility-data
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 last_updated: 2026-03-29
 ---
 
@@ -44,20 +44,28 @@ npx vitest run src/db/seed.test.ts src/db/migrations.test.ts src/services/food-d
 npm test
 ```
 
-## Wave 0 Gaps
+## Wave 0 Coverage
 
-- [ ] `src/db/seed.test.ts` proves seeded/default curries materialize explicit curated compatibility arrays
-- [ ] `src/db/migrations.test.ts` proves curated upgrade, all-base fallback, and preservation of explicit `[]`
-- [ ] `src/services/food-db.test.ts` proves delete normalization strips deleted base IDs from curry compatibility arrays
-- [ ] `src/components/library/ComponentForm.test.tsx` proves curry checklist editing and zero-compatible warning behavior
-- [ ] `src/components/library/ComponentRow.test.tsx` proves collapsed curry summaries and zero-compatible badge state
+- [x] `src/db/seed.test.ts` proves seeded/default curries materialize explicit curated compatibility arrays
+- [x] `src/db/migrations.test.ts` proves curated upgrade, all-base fallback, and preservation of explicit `[]`
+- [x] `src/services/food-db.test.ts` proves delete normalization strips deleted base IDs from curry compatibility arrays
+- [x] `src/components/library/ComponentForm.test.tsx` proves curry checklist editing and zero-compatible warning behavior
+- [x] `src/components/library/ComponentRow.test.tsx` proves collapsed curry summaries and zero-compatible badge state
 
 ## Approval Standard
 
-This phase is ready for execution when:
-- the focused DB and Library UI tests above exist and pass
+This phase is approved when:
+- the focused DB and Library UI tests above pass
 - the phase gate command passes
-- the phase summary updates this file to approved Nyquist state with rerun evidence
+- the rerun evidence below is current for the shipped code
+
+## Rerun Evidence
+
+- `npx vitest run src/db/seed.test.ts` — passed on 2026-03-29
+- `npx vitest run src/db/migrations.test.ts src/services/food-db.test.ts` — passed on 2026-03-29
+- `npx vitest run src/components/library/ComponentForm.test.tsx src/components/library/ComponentRow.test.tsx` — passed on 2026-03-29
+- `npx vitest run src/db/seed.test.ts src/db/migrations.test.ts src/services/food-db.test.ts src/components/library/ComponentForm.test.tsx src/components/library/ComponentRow.test.tsx` — passed on 2026-03-29
+- `npm test` — passed on 2026-03-29
 
 ---
 *Validation contract created: 2026-03-29*
