@@ -10,7 +10,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ## Current State
 
-Shipped through `v1.2`, with `v1.3` in progress. The app now also stores curry/base compatibility in the Library and enforces compatible-by-default auto curry selection with skipped-curry warnings, while explicit override paths remain scoped to later v1.3 phases.
+Shipped through `v1.2`, with `v1.3` in progress. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, and supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings.
 
 ## Current Milestone: v1.3 Curry Base Compatibility
 
@@ -55,10 +55,11 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now also stores curry/b
 - ✓ Curry records can define compatible base categories in the Library — validated in Phase 17 (v1.3)
 - ✓ Existing curry data can be populated with compatibility information without rebuilding the library from scratch — validated in Phase 17 (v1.3)
 - ✓ Generator treats curry/base compatibility as a hard default constraint during automatic selection — validated in Phase 18 (v1.3)
+- ✓ Rules can explicitly override curry/base compatibility when users need exceptional pairings — validated in Phase 19 (v1.3)
 
 ### Active
 
-- [ ] Rules can explicitly override curry/base compatibility when users need exceptional pairings
+- [ ] Compatibility regression coverage proves migration, library, generator, picker, and override flows all follow one curry compatibility contract
 
 ### Out of Scope
 
@@ -77,7 +78,7 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now also stores curry/b
 - Shipped v1.2 with ~12,500 LOC TypeScript in 2 days (2026-03-27 → 2026-03-29)
 - Tech stack: Next.js 16, Dexie.js (IndexedDB, v11), Zustand, shadcn/ui, satori + @resvg/resvg-js, local `sonner` shim for toast feedback
 - Rule system now supports inline edit, explicit-only extras, no-random-extra defaults, and category-backed rule targets/effects; generation remains synchronous and LLM-free
-- 168 tests passing after v1.2 debt closure, including focused validation reruns for Phase 11 and direct PlanBoard→MealPicker handoff coverage
+- 197 tests passing after Phase 19, including curry compatibility migration, picker override grouping, manual/locked persistence, and scoped `require_one` override regressions
 - Dexie schema now includes full migration history through v11, including unified rules, meal-template migration, legacy exclude-extra cleanup, and dynamic category records
 
 ## Constraints
@@ -114,6 +115,7 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now also stores curry/b
 | Categories use stable IDs instead of names | Supports rename/delete safety and user-extensible categories across the full system | ✓ Good — shipped in v1.2 with full generator/picker propagation |
 | Presets resolve built-in category identity at the RuleForm boundary | Removes seed-order coupling while keeping `form-state.ts` pure | ✓ Good — closed the final v1.2 audit debt |
 | Curry compatibility is a hard automatic-generator constraint, not a relaxable rule-helper effect | Prevents silent incompatible pairings while keeping explicit override seams for later phases | ✓ Good — shipped in Phase 18 with existing warning UI reused |
+| Explicit curry compatibility overrides reuse existing picker/store and `require_one` seams | Preserves compatible-by-default behavior without introducing new override-only metadata or rule vocabulary | ✓ Good — shipped in Phase 19 with manual/locked precedence and compatibility-first tag fallback |
 
 ## Evolution
 
@@ -133,4 +135,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after completing Phase 18*
+*Last updated: 2026-03-30 after completing Phase 19*

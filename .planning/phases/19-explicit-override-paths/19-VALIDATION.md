@@ -1,8 +1,8 @@
 ---
 phase: 19-explicit-override-paths
-status: pending
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 last_updated: 2026-03-30
 ---
 
@@ -37,7 +37,7 @@ npx vitest run src/components/plan/MealPickerSheet.test.tsx
 npx vitest run src/stores/plan-store.test.ts
 npx vitest run src/services/generator.test.ts
 npx vitest run src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts src/services/generator.test.ts
-rg -n "status: pending|CURRY-05|CURRY-06|MealPickerSheet.test.tsx|plan-store.test.ts|generator.test.ts|npm test" .planning/phases/19-explicit-override-paths/19-VALIDATION.md
+rg -n "status: approved|CURRY-05|CURRY-06|MealPickerSheet.test.tsx|plan-store.test.ts|generator.test.ts|npm test" .planning/phases/19-explicit-override-paths/19-VALIDATION.md
 ```
 
 ### Phase gate
@@ -49,9 +49,9 @@ npm test
 
 ## Wave 0 Coverage
 
-- [ ] `src/components/plan/MealPickerSheet.test.tsx` proves grouped compatible/incompatible curry sections and flat-list fallback when no compatible curries exist
-- [ ] `src/stores/plan-store.test.ts` proves manual incompatible curry persistence and regenerate lock wiring
-- [ ] `src/services/generator.test.ts` proves specific-component and tag-based `require_one` override semantics while default compatibility remains strict
+- [x] `src/components/plan/MealPickerSheet.test.tsx` proves grouped compatible/incompatible curry sections and flat-list fallback when no compatible curries exist
+- [x] `src/stores/plan-store.test.ts` proves manual incompatible curry persistence and regenerate lock wiring
+- [x] `src/services/generator.test.ts` proves specific-component and tag-based `require_one` override semantics while default compatibility remains strict
 
 ## Approval Standard
 
@@ -63,7 +63,8 @@ This phase is approved when:
 ## Rerun Evidence
 
 - 2026-03-30: `npx vitest run src/services/generator.test.ts` passed during `19-02-PLAN.md` execution, covering exact-component override, compatibility-first tag fallback, and broad-rule guardrails for CURRY-06.
-- Pending phase verification reruns: `npx vitest run src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts src/services/generator.test.ts` and `npm test`.
+- 2026-03-30: `npx vitest run src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts src/services/generator.test.ts` passed during phase verification with 92 tests green.
+- 2026-03-30: `npm test` passed during phase verification with 22 files and 197 tests green.
 
 ---
 *Validation contract created: 2026-03-30*

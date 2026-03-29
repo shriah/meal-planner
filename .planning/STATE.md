@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
-status: verifying
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-03-29T19:24:20.418Z"
+status: active
+stopped_at: Phase 19 complete
+last_updated: "2026-03-30T01:08:00.000Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 6
   completed_plans: 6
   percent: 100
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Phase 19 — explicit-override-paths
+**Current focus:** Phase 20 — compatibility-regression-coverage
 
 ## Current Position
 
-Phase: 19 (explicit-override-paths) — VERIFYING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
+Phase: 20
+Plan: Not started
+Status: Ready for planning
 Last activity: 2026-03-29
 Progress: [██████████] 100%
 
@@ -85,6 +85,7 @@ Recent decisions affecting current work:
 - [Phase 19]: Store behavior stayed on the existing swapComponent/regenerate seam because manual incompatible curry ids already persisted correctly without new override metadata.
 - [Phase 19]: Scoped require_one overrides stay on the existing curry generator seam instead of adding new rule vocabulary or override flags.
 - [Phase 19]: Tag-based curry require_one stays compatibility-first and only falls back to incompatible eligible curries when no compatible match satisfies the explicit rule.
+- [Phase 19]: Explicit override precedence is manual/locked selection first, then scoped require_one overrides, with default compatibility enforced otherwise.
 
 ### Pending Todos
 
@@ -92,11 +93,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Backfill policy still needs concrete planning detail for curated seed mappings versus all-base fallback on unmatched legacy curries
-- Override messaging should stay consistent across required incompatible curry, manual incompatible selection, and empty compatible pools
+- Phase 20 still needs to lock milestone-wide regression coverage across migration, library, generator, picker, and override paths
 
 ## Session Continuity
 
-Last session: 2026-03-29T19:24:20.416Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-03-30T01:08:00.000Z
+Stopped at: Phase 19 verification complete
 Resume file: None
