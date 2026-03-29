@@ -10,7 +10,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ## Current State
 
-Shipped through `v1.2`. The app now supports in-place rule editing, explicit-only extra semantics, no-random-extra default behavior, and dynamic user-managed base/extra categories that flow through library forms, rules, generator behavior, picker filtering, descriptions, and seeded defaults.
+Shipped through `v1.2`, with `v1.3` in progress. The app now also stores curry/base compatibility in the Library and enforces compatible-by-default auto curry selection with skipped-curry warnings, while explicit override paths remain scoped to later v1.3 phases.
 
 ## Current Milestone: v1.3 Curry Base Compatibility
 
@@ -52,12 +52,12 @@ Shipped through `v1.2`. The app now supports in-place rule editing, explicit-onl
 - ✓ Edit existing rules in place from the rules list with exact persisted prefill, overwrite save, discard-on-close, and failure feedback — v1.2
 - ✓ Meal-template extras now use explicit require-only semantics, and unlocked generation adds no extras unless a rule requires them — v1.2
 - ✓ Base and extra categories are persisted dynamic records with separate category management UI and full propagation through rules, generator, picker, and seeds — v1.2
+- ✓ Curry records can define compatible base categories in the Library — validated in Phase 17 (v1.3)
+- ✓ Existing curry data can be populated with compatibility information without rebuilding the library from scratch — validated in Phase 17 (v1.3)
+- ✓ Generator treats curry/base compatibility as a hard default constraint during automatic selection — validated in Phase 18 (v1.3)
 
 ### Active
 
-- [ ] Curry records can define compatible base categories in the Library
-- [ ] Existing curry data can be populated with compatibility information without rebuilding the library from scratch
-- [ ] Generator treats curry/base compatibility as a hard default constraint during automatic selection
 - [ ] Rules can explicitly override curry/base compatibility when users need exceptional pairings
 
 ### Out of Scope
@@ -113,6 +113,7 @@ Shipped through `v1.2`. The app now supports in-place rule editing, explicit-onl
 | Extras are explicit-only at runtime | Optional extras should not appear unless the user explicitly requires them | ✓ Good — simpler generator semantics and clearer warnings |
 | Categories use stable IDs instead of names | Supports rename/delete safety and user-extensible categories across the full system | ✓ Good — shipped in v1.2 with full generator/picker propagation |
 | Presets resolve built-in category identity at the RuleForm boundary | Removes seed-order coupling while keeping `form-state.ts` pure | ✓ Good — closed the final v1.2 audit debt |
+| Curry compatibility is a hard automatic-generator constraint, not a relaxable rule-helper effect | Prevents silent incompatible pairings while keeping explicit override seams for later phases | ✓ Good — shipped in Phase 18 with existing warning UI reused |
 
 ## Evolution
 
@@ -132,4 +133,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after starting v1.3 milestone*
+*Last updated: 2026-03-29 after completing Phase 18*
