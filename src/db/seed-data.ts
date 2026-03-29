@@ -17,6 +17,47 @@ export type SeedCategoryLookup = {
   extra: Record<ExtraCategory, number>;
 };
 
+const CURRY_COMPATIBILITY_BY_SEED_NAME: Record<string, BaseType[]> = {
+  Sambar: ['rice-based', 'other'],
+  Rasam: [],
+  'Dal Tadka': ['rice-based', 'bread-based'],
+  'Dal Makhani': ['rice-based', 'bread-based'],
+  Rajma: ['rice-based'],
+  Chole: ['bread-based'],
+  'Palak Paneer': ['bread-based'],
+  'Paneer Butter Masala': ['bread-based'],
+  'Kadai Paneer': ['bread-based'],
+  'Butter Chicken': ['bread-based'],
+  'Chicken Curry': ['rice-based', 'bread-based'],
+  'Mutton Curry': ['rice-based', 'bread-based'],
+  'Fish Curry (South Indian)': ['rice-based', 'other'],
+  'Fish Curry (Coastal)': ['rice-based', 'other'],
+  'Prawn Curry': ['rice-based', 'other'],
+  'Egg Curry': ['rice-based', 'bread-based'],
+  'Mixed Veg Curry': ['rice-based', 'bread-based'],
+  'Aloo Matar': ['bread-based'],
+  'Chana Masala': ['bread-based'],
+  'Korma (Veg)': ['rice-based', 'bread-based'],
+  'Kerala Stew (Veg)': ['other'],
+  'Kerala Stew (Non-Veg)': ['other'],
+  Aviyal: ['rice-based'],
+  Kootu: ['rice-based'],
+  Kadhi: ['rice-based'],
+};
+
+export function resolveSeededCurryCompatibilityIds(
+  curryName: string,
+  categoryLookup: SeedCategoryLookup,
+): number[] | undefined {
+  const curatedBaseTypes = CURRY_COMPATIBILITY_BY_SEED_NAME[curryName];
+
+  if (!curatedBaseTypes) {
+    return undefined;
+  }
+
+  return curatedBaseTypes.map((baseType) => categoryLookup.base[baseType]);
+}
+
 // ─── Factory helpers ──────────────────────────────────────────────────────────
 
 const CREATED_AT = '2026-03-20T00:00:00.000Z';
@@ -126,6 +167,16 @@ function applySeedCategoryIds(
       extra_category_id: categoryLookup.extra[component.extra_category],
       compatible_base_category_ids: (component.compatible_base_types ?? []).map(
         (baseType) => categoryLookup.base[baseType],
+      ),
+    };
+  }
+
+  if (component.componentType === 'curry') {
+    return {
+      ...component,
+      compatible_base_category_ids: resolveSeededCurryCompatibilityIds(
+        component.name,
+        categoryLookup,
       ),
     };
   }
