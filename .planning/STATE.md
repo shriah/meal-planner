@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
 status: executing
-stopped_at: Completed 17-curry-compatibility-data-01-PLAN.md
-last_updated: "2026-03-29T05:19:26.947Z"
+stopped_at: Completed 17-curry-compatibility-data-02-PLAN.md
+last_updated: "2026-03-29T05:26:13.151Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
   percent: 33
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 ## Current Position
 
 Phase: 17 (curry-compatibility-data) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-03-29
 Progress: [███░░░░░░░] 33%
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 33%
 - Trend: stable
 
 | Phase 17-curry-compatibility-data P01 | 10min | 2 tasks | 3 files |
+| Phase 17-curry-compatibility-data P02 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Recent decisions affecting current work:
 - [v1.3 roadmap]: Override boundary stays explicit and narrow: rule override plus manual/locked exceptions only
 - [Phase 17]: Curated curry compatibility is keyed only by exact seeded curry names to avoid narrowing renamed or user-created curries.
 - [Phase 17]: An empty compatible_base_category_ids array remains a valid persisted curry state and is not conflated with legacy missing data.
+- [Phase 17]: Legacy curries only backfill when compatible_base_category_ids is undefined; actual arrays, including [], are preserved as-is.
+- [Phase 17]: Unmatched legacy curries fall back to all current base category IDs so existing libraries remain editable after upgrade.
+- [Phase 17]: Category delete normalization continues to be ID-based, with explicit curry coverage locking the zero-compatible state.
 
 ### Pending Todos
 
@@ -78,6 +82,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-29T05:19:26.945Z
-Stopped at: Completed 17-curry-compatibility-data-01-PLAN.md
+Last session: 2026-03-29T05:26:13.148Z
+Stopped at: Completed 17-curry-compatibility-data-02-PLAN.md
 Resume file: None
