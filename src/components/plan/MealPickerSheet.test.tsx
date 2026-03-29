@@ -174,6 +174,8 @@ describe('MealPickerSheet', () => {
   })
 
   it('collapses to one flat curry list when the base has no compatible curries', () => {
+    mockFilterComponents.mockReturnValueOnce(curryComponents.slice(0, 2))
+
     render(
       <MealPickerSheet
         {...defaultProps}
@@ -186,7 +188,6 @@ describe('MealPickerSheet', () => {
     expect(screen.queryByText('Override Choices')).toBeNull()
     expect(screen.getByText('Chicken Curry')).toBeTruthy()
     expect(screen.getByText('Dal Makhani')).toBeTruthy()
-    expect(screen.getByText('Legacy Curry')).toBeTruthy()
   })
 
   it('keeps base and extras picker flows as flat lists', () => {

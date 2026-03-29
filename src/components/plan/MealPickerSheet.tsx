@@ -29,6 +29,21 @@ const PICKER_TITLES: Record<'base' | 'curry' | 'subzi' | 'extras', string> = {
   extras: 'Pick Extras',
 }
 
+function isCompatibleCurryForBase(
+  compatibleBaseCategoryIds: number[] | undefined,
+  baseCategoryId: number | undefined,
+): boolean {
+  if (baseCategoryId === undefined) {
+    return compatibleBaseCategoryIds === undefined
+  }
+
+  if (compatibleBaseCategoryIds === undefined) {
+    return true
+  }
+
+  return compatibleBaseCategoryIds.includes(baseCategoryId)
+}
+
 interface MealPickerSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -65,6 +80,28 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
     () => filterComponents(components ?? [], searchText, activeDietaryTags, activeRegionalTags),
     [components, searchText, activeDietaryTags, activeRegionalTags],
   )
+
+  const currySections = useMemo(() => {
+    if (componentType !== 'curry') {
+      return null
+    }
+
+    const compatible = filtered.filter(component =>
+      isCompatibleCurryForBase(component.compatible_base_category_ids, currentBaseCategoryId),
+    )
+    const overrides = filtered.filter(component =>
+      !isCompatibleCurryForBase(component.compatible_base_category_ids, currentBaseCategoryId),
+    )
+
+    if (compatible.length === 0 || overrides.length === 0) {
+      return null
+    }
+
+    return [
+      { title: 'Compatible Curries', items: compatible },
+      { title: 'Override Choices', items: overrides },
+    ]
+  }, [componentType, currentBaseCategoryId, filtered])
 
   function toggleDietaryTag(tag: DietaryTag) {
     setActiveDietaryTags(prev =>
@@ -138,6 +175,37 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
             <p className="text-sm text-muted-foreground text-center py-8">
               No {dbComponentType}s match your filters. Try clearing a tag.
             </p>
+          ) : currySections ? (
+            <div className="space-y-4">
+              {currySections.map(section => (
+                <section key={section.title} className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {section.title}
+                  </p>
+                  {section.items.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => handleSelect(c.id!)}
+                      className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent/10 transition-colors"
+                    >
+                      <span className="font-medium">{c.name}</span>
+                      <div className="flex gap-1 shrink-0">
+                        {c.dietary_tags.map(tag => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                        {c.regional_tags.map(tag => (
+                          <Badge key={tag} variant="outline" className="text-xs">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </button>
+                  ))}
+                </section>
+              ))}
+            </div>
           ) : (
             <div className="space-y-1">
               {filtered.map(c => (
