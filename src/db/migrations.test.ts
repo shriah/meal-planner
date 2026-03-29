@@ -48,4 +48,61 @@ describe('Phase 14 categories table migration', () => {
     expect(pickle?.compatible_base_category_ids).not.toContain(deletedBaseCategoryId);
     expect(breadRule?.enabled).toBe(false);
   });
+
+  it('backfills legacy seeded curries with curated compatible base category IDs', () => {
+    const fixture = buildCategoryMigrationFixture();
+    fixture.components.push({
+      name: 'Sambar',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    const migrated = migrateLegacyCategoryData(fixture);
+    const sambar = migrated.components.find((component) => component.name === 'Sambar');
+    const riceBaseId = migrated.categories.find((category) => category.name === 'rice-based')?.id;
+    const otherBaseId = migrated.categories.find((category) => category.name === 'other')?.id;
+
+    expect(sambar?.compatible_base_category_ids).toEqual([riceBaseId, otherBaseId]);
+  });
+
+  it('backfills unmatched legacy curries to all current base category IDs', () => {
+    const fixture = buildCategoryMigrationFixture();
+    fixture.components.push({
+      name: 'House Special Curry',
+      componentType: 'curry',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    const migrated = migrateLegacyCategoryData(fixture);
+    const customCurry = migrated.components.find((component) => component.name === 'House Special Curry');
+    const allBaseIds = migrated.categories
+      .filter((category) => category.kind === 'base')
+      .map((category) => category.id);
+
+    expect(customCurry?.compatible_base_category_ids).toEqual(allBaseIds);
+  });
+
+  it('preserves explicit empty curry compatibility arrays during migration', () => {
+    const fixture = buildCategoryMigrationFixture();
+    fixture.components.push({
+      name: 'Rasam',
+      componentType: 'curry',
+      compatible_base_category_ids: [],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    const migrated = migrateLegacyCategoryData(fixture);
+    const rasam = migrated.components.find((component) => component.name === 'Rasam');
+
+    expect(rasam?.compatible_base_category_ids).toEqual([]);
+  });
 });
