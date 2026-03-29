@@ -38,19 +38,19 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CURRY-01 | TBD | Planned |
-| CURRY-02 | TBD | Planned |
-| CURRY-03 | TBD | Planned |
-| CURRY-04 | TBD | Planned |
-| CURRY-05 | TBD | Planned |
-| CURRY-06 | TBD | Planned |
-| CURRY-07 | TBD | Planned |
-| CURRY-08 | TBD | Planned |
+| CURRY-01 | Phase 17 | Planned |
+| CURRY-02 | Phase 17 | Planned |
+| CURRY-03 | Phase 18 | Planned |
+| CURRY-04 | Phase 18 | Planned |
+| CURRY-05 | Phase 19 | Planned |
+| CURRY-06 | Phase 19 | Planned |
+| CURRY-07 | Phase 17 | Planned |
+| CURRY-08 | Phase 20 | Planned |
 
 **Coverage:**
 - v1.3 requirements: 8 total
-- Mapped to phases: 0/8
-- Unmapped: 8
+- Mapped to phases: 8/8
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-29*
