@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db } from '@/db/client';
 import { usePlanStore } from './plan-store';
 import { saveActivePlan } from '@/services/plan-db';
 import { getISOWeekStart, addWeeks } from '@/services/week-utils';
 import type { WeeklyPlan } from '@/types/plan';
+import * as generatorService from '@/services/generator';
 
 // ─── Helper: make a minimal valid WeeklyPlan ───────────────────────────────────
 
@@ -38,6 +39,10 @@ beforeEach(async () => {
     currentWeekStart: getISOWeekStart(new Date()),
     isReadOnly: false,
   });
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ─── Store tests ──────────────────────────────────────────────────────────────
@@ -119,6 +124,57 @@ describe('plan-store', () => {
     expect(state.hydrated).toBe(true);
     expect(state.plan).toBeNull();
     expect(state.locks).toEqual({});
+  });
+
+  it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {
+    const plan = makePlan();
+    usePlanStore.setState({ plan });
+
+    usePlanStore.getState().swapComponent('monday', 'lunch', 'curry', 999);
+
+    expect(usePlanStore.getState().plan?.slots.find(
+      slot => slot.day === 'monday' && slot.meal_slot === 'lunch',
+    )?.curry_id).toBe(999);
+
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    const record = await db.active_plan.get('current');
+    expect(record?.plan.slots.find(
+      slot => slot.day === 'monday' && slot.meal_slot === 'lunch',
+    )?.curry_id).toBe(999);
+  });
+
+  it('regenerate forwards locked incompatible curry selections back into generate unchanged', async () => {
+    const plan = makePlan();
+    plan.slots = plan.slots.map((slot) => (
+      slot.day === 'monday' && slot.meal_slot === 'lunch'
+        ? { ...slot, curry_id: 999 }
+        : slot
+    ));
+
+    const generateSpy = vi.spyOn(generatorService, 'generate').mockResolvedValue({
+      plan,
+      warnings: [],
+    });
+
+    usePlanStore.setState({
+      plan,
+      locks: {
+        'monday-lunch-base': true,
+        'monday-lunch-curry': true,
+      },
+    });
+
+    await usePlanStore.getState().regenerate();
+
+    expect(generateSpy).toHaveBeenCalledWith({
+      lockedSlots: {
+        'monday-lunch': {
+          base_id: 1,
+          curry_id: 999,
+        },
+      },
+    });
   });
 });
 
