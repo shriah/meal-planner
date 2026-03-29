@@ -40,8 +40,8 @@
 |-------------|-------|--------|
 | CURRY-01 | Phase 17 | Complete |
 | CURRY-02 | Phase 17 | Complete |
-| CURRY-03 | Phase 18 | Planned |
-| CURRY-04 | Phase 18 | Planned |
+| CURRY-03 | Phase 18 | Complete |
+| CURRY-04 | Phase 18 | Complete |
 | CURRY-05 | Phase 19 | Planned |
 | CURRY-06 | Phase 19 | Planned |
 | CURRY-07 | Phase 17 | Complete |

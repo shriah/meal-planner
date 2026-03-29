@@ -123,7 +123,7 @@ Plans:
 | 15. Finalize Phase 11 validation coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
-| 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete   | 2026-03-29 |
+| 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 0/TBD | Not started | - |
 | 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
 
@@ -133,7 +133,7 @@ Plans:
 
 **Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
 **Requirements:** TBD
-**Plans:** 1/1 plans complete
+**Plans:** 0 plans
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)
