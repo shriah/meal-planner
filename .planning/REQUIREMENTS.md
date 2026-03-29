@@ -38,13 +38,13 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CURRY-01 | Phase 17 | Planned |
-| CURRY-02 | Phase 17 | Planned |
+| CURRY-01 | Phase 17 | Complete |
+| CURRY-02 | Phase 17 | Complete |
 | CURRY-03 | Phase 18 | Planned |
 | CURRY-04 | Phase 18 | Planned |
 | CURRY-05 | Phase 19 | Planned |
 | CURRY-06 | Phase 19 | Planned |
-| CURRY-07 | Phase 17 | Planned |
+| CURRY-07 | Phase 17 | Complete |
 | CURRY-08 | Phase 20 | Planned |
 
 **Coverage:**

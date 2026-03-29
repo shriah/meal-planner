@@ -131,7 +131,7 @@ Plans:
 
 **Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
 **Requirements:** TBD
-**Plans:** 3/3 plans complete
+**Plans:** 0 plans
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)
