@@ -62,3 +62,14 @@
 | 14. Add option to create more base category and extra category | v1.2 | 4/4 | Complete | 2026-03-28 |
 | 15. Finalize Phase 11 validation coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
+
+## Backlog
+
+### Phase 999.1: Add meal composition modes for curry-vs-subzi defaults and overrides (BACKLOG)
+
+**Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with `$gsd-review-backlog` when ready)
