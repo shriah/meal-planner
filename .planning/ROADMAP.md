@@ -77,7 +77,9 @@ Plans:
   1. Newly generated meal slots only auto-select curries that are compatible with the base chosen for that slot
   2. If a slot has no compatible curry candidates, the generator does not silently insert an incompatible curry
   3. Compatibility-respecting auto-generation behavior remains the default across normal generator flows rather than becoming an optional hint
-**Plans**: TBD
+**Plans**: 1 plan
+Plans:
+- [ ] 18-01-PLAN.md — Enforce compatibility-scoped auto curry selection, preserve skip-and-warn behavior, and draft Phase 18 validation coverage
 
 ### Phase 19: Explicit Override Paths
 **Goal**: Exceptional incompatible curry/base pairings remain possible, but only through explicit rule or user override paths that preserve the compatible-by-default contract
