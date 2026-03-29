@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
-status: in_progress
-stopped_at: Completed Phase 17 verification
-last_updated: "2026-03-29T05:34:50Z"
+status: verifying
+stopped_at: Completed 18-generator-compatibility-contract-01-PLAN.md
+last_updated: "2026-03-29T18:39:39.174Z"
 last_activity: 2026-03-29
 progress:
   total_phases: 5
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 33
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Phase 18 ready to plan — generator compatibility contract
+**Current focus:** Phase 18 — generator-compatibility-contract
 
 ## Current Position
 
-Phase: 18 of 20 (Generator Compatibility Contract)
-Plan: —
-Status: Phase 17 complete — next phase ready to plan
+Phase: 18 (generator-compatibility-contract) — EXECUTING
+Plan: 1 of 1
+Status: Phase complete — ready for verification
 Last activity: 2026-03-29
 Progress: [███░░░░░░░] 33%
 
@@ -55,6 +55,7 @@ Progress: [███░░░░░░░] 33%
 | Phase 17-curry-compatibility-data P01 | 10min | 2 tasks | 3 files |
 | Phase 17-curry-compatibility-data P02 | 3min | 2 tasks | 3 files |
 | Phase 17-curry-compatibility-data P03 | 4min | 2 tasks | 5 files |
+| Phase 18-generator-compatibility-contract P01 | 13min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -75,6 +76,9 @@ Recent decisions affecting current work:
 - [Phase 17-curry-compatibility-data]: Zero-compatible curries stay editable and visible through explicit warning copy in both expanded and collapsed Library states.
 - [Phase 17-curry-compatibility-data]: Phase validation artifacts should be promoted to approved state only after rerunning focused commands and the phase gate.
 - [Phase 17-curry-compatibility-data]: Manual verification approved the Library edit persistence flow and zero-compatible warning clarity.
+- [Phase 18-generator-compatibility-contract]: Automatic curry compatibility is enforced as a dedicated hard narrowing step instead of reusing relaxable rule helpers.
+- [Phase 18-generator-compatibility-contract]: When compatibility leaves no curry candidates, the generator leaves curry_id unset and reuses the existing warning objects and UI.
+- [Phase 18-generator-compatibility-contract]: Bases without a category ID only allow curries with missing compatibility metadata, preserving legacy tests without weakening explicit [] semantics.
 
 ### Pending Todos
 
@@ -87,6 +91,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-29T05:34:50Z
-Stopped at: Completed Phase 17 verification
+Last session: 2026-03-29T18:39:39.170Z
+Stopped at: Completed 18-generator-compatibility-contract-01-PLAN.md
 Resume file: None
