@@ -8,8 +8,8 @@
 
 ### Curry Compatibility
 
-- [ ] **CURRY-01**: User can assign one or more compatible base categories to each curry in the Library
-- [ ] **CURRY-02**: Existing curry records are backfilled in-app with editable compatibility data so the current library remains usable after upgrade
+- [x] **CURRY-01**: User can assign one or more compatible base categories to each curry in the Library
+- [x] **CURRY-02**: Existing curry records are backfilled in-app with editable compatibility data so the current library remains usable after upgrade
 - [ ] **CURRY-03**: Automatic generation only selects curries compatible with the chosen base by default
 - [ ] **CURRY-04**: If no compatible curry exists for a slot, the generator does not silently pick an incompatible curry
 - [ ] **CURRY-05**: Manual picker and locked/manual selections can still use an incompatible curry as an explicit user override
