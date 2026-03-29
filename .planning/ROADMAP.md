@@ -49,7 +49,7 @@
 
 - [x] **Phase 17: Curry Compatibility Data** - Curry records store editable compatible base categories and existing libraries upgrade safely. (completed 2026-03-29)
 - [x] **Phase 18: Generator Compatibility Contract** - Automatic generation enforces compatible curries and never silently relaxes the constraint. (completed 2026-03-29)
-- [ ] **Phase 19: Explicit Override Paths** - Manual, locked, and rule-scoped exceptions can bypass compatibility only through explicit user intent.
+- [x] **Phase 19: Explicit Override Paths** - Manual, locked, and rule-scoped exceptions can bypass compatibility only through explicit user intent. (completed 2026-03-29)
 - [ ] **Phase 20: Compatibility Regression Coverage** - Migration, generator, picker, and override behavior stay aligned under tests.
 
 ## Phase Details
@@ -93,7 +93,7 @@ Plans:
 **UI hint**: yes
 Plans:
 - [x] 19-01-PLAN.md — Group the curry picker into compatible vs explicit override choices and preserve manual incompatible selections through store/regenerate flows
-- [ ] 19-02-PLAN.md — Extend scoped `require_one` rules into explicit override paths and draft the Phase 19 validation contract
+- [x] 19-02-PLAN.md — Extend scoped `require_one` rules into explicit override paths and draft the Phase 19 validation contract
 
 ### Phase 20: Compatibility Regression Coverage
 **Goal**: The milestone ships with regression coverage proving the migration, library, generator, picker, and override flows all follow the same curry compatibility contract
@@ -127,7 +127,7 @@ Plans:
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
-| 19. Explicit Override Paths | v1.3 | 1/2 | In Progress|  |
+| 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
 
 ## Backlog
@@ -136,7 +136,7 @@ Plans:
 
 **Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
 **Requirements:** TBD
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)
