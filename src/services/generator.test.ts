@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db } from '@/db/client';
 import { generate } from './generator';
 import { addComponent, putPreferences, addRule } from '@/services/food-db';
@@ -151,6 +151,10 @@ beforeEach(async () => {
   await db.components.clear();
   await db.rules.clear();
   await db.preferences.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 // ─── PLAN-01: Full 21-slot generation ─────────────────────────────────────────
@@ -2239,6 +2243,234 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
         expect(slot.extra_ids).toContain(ids.extraCondimentAllId);
       }
     }
+  });
+});
+
+describe('curry compatibility contract', () => {
+  it('only auto-selects curries compatible with the chosen base category', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const riceBaseId = await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const riceCurryId = await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const breadOnlyCurryId = await addComponent({
+      name: 'Paneer Butter Masala',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    vi.spyOn(Math, 'random').mockReturnValue(0.99);
+
+    const result = await generate();
+
+    for (const slot of result.plan.slots) {
+      expect(slot.base_id).toBe(riceBaseId);
+      expect(slot.curry_id).toBe(riceCurryId);
+      expect(slot.curry_id).not.toBe(breadOnlyCurryId);
+    }
+  });
+
+  it('omits curry and records a warning when no compatible curry exists for the selected base', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const riceBaseId = await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Paneer Butter Masala',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    const result = await generate();
+
+    for (const slot of result.plan.slots) {
+      expect(slot.base_id).toBe(riceBaseId);
+      expect(slot.curry_id).toBeUndefined();
+    }
+    expect(result.warnings.some((warning) => warning.message.includes('no compatible curry'))).toBe(true);
+  });
+
+  it('never auto-selects a curry with an explicit empty compatibility array', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const zeroCompatibleCurryId = await addComponent({
+      name: 'Never Auto Pick',
+      componentType: 'curry',
+      compatible_base_category_ids: [],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const riceCurryId = await addComponent({
+      name: 'Rice Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    const result = await generate();
+
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).toBe(riceCurryId);
+      expect(slot.curry_id).not.toBe(zeroCompatibleCurryId);
+    }
+  });
+
+  it('keeps require_one curry overrides inside the compatibility-scoped curry library', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const compatibleCurryId = await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['veg'],
+      protein_tag: 'dal',
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const incompatibleRequiredCurryId = await addComponent({
+      name: 'Fish Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['non-veg'],
+      protein_tag: 'fish',
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Require non-veg curry',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+        scope: { days: null, slots: null },
+        effects: [{ kind: 'require_one' }],
+      },
+      created_at: '',
+    });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    const result = await generate();
+
+    for (const slot of result.plan.slots) {
+      expect(slot.curry_id).toBe(compatibleCurryId);
+      expect(slot.curry_id).not.toBe(incompatibleRequiredCurryId);
+    }
+    expect(
+      result.warnings.some((warning) => warning.message.includes('require_one: no component in library matches target')),
+    ).toBe(true);
+  });
+
+  it('preserves locked incompatible curry selections as explicit user intent', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const riceBaseId = await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const incompatibleLockedCurryId = await addComponent({
+      name: 'Paneer Butter Masala',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': {
+          base_id: riceBaseId,
+          curry_id: incompatibleLockedCurryId,
+        },
+      },
+    });
+
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+    expect(mondayBreakfast?.base_id).toBe(riceBaseId);
+    expect(mondayBreakfast?.curry_id).toBe(incompatibleLockedCurryId);
   });
 });
 
