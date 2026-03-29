@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PlanBoard } from './PlanBoard'
 import type { ComponentRecord } from '@/types/component'
-import type { WeeklyPlan } from '@/types/plan'
+import type { WeeklyPlan, Warning } from '@/types/plan'
 
 // Mock next/link
 vi.mock('next/link', () => ({
@@ -33,6 +33,7 @@ function buildFullPlan(): WeeklyPlan {
 // Control state via these variables
 let mockPlan: WeeklyPlan | null = null
 let mockAllComponents: ComponentRecord[] = []
+let mockWarnings: Warning[] = []
 const mockInitFromDB = vi.fn()
 const mockGenerateFresh = vi.fn()
 const mockRegenerate = vi.fn()
@@ -42,7 +43,7 @@ vi.mock('@/stores/plan-store', () => ({
   usePlanStore: vi.fn((selector) => {
     const state = {
       plan: mockPlan,
-      warnings: [],
+      warnings: mockWarnings,
       hydrated: true,
       isGenerating: false,
       isReadOnly: false,
@@ -76,6 +77,7 @@ describe('PlanBoard', () => {
   beforeEach(() => {
     mockPlan = null
     mockAllComponents = []
+    mockWarnings = []
     mockInitFromDB.mockClear()
     mockGenerateFresh.mockClear()
     mockMealPickerSheet.mockClear()
@@ -259,5 +261,44 @@ describe('PlanBoard', () => {
         slot: 'lunch',
       }),
     )
+  })
+
+  it('surfaces omitted-curry warnings through the existing banner and highlighted cell path', () => {
+    mockPlan = {
+      slots: [
+        {
+          day: 'monday',
+          meal_slot: 'lunch',
+          base_id: 101,
+          extra_ids: [],
+        },
+      ],
+    }
+    mockAllComponents = [
+      {
+        id: 101,
+        name: 'Plain Rice',
+        componentType: 'base',
+        base_type: 'rice-based',
+        base_category_id: 42,
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+    ]
+    mockWarnings = [
+      {
+        slot: { day: 'monday', meal_slot: 'lunch' },
+        rule_id: null,
+        message: 'no compatible curry available for base "Plain Rice" on monday lunch - skipped',
+      },
+    ]
+
+    render(<PlanBoard />)
+
+    expect(screen.getByText('1 slot could not be filled — see highlighted cell')).toBeTruthy()
+    expect(screen.getByText('Warning')).toBeTruthy()
+    expect(screen.getByText('Plain Rice')).toBeTruthy()
   })
 })

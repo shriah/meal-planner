@@ -35,12 +35,12 @@ Explicit incompatible overrides remain out of scope for this phase:
 ```bash
 npx vitest run src/services/generator.test.ts
 npx vitest run src/components/plan/PlanBoard.test.tsx src/components/plan/MealPickerSheet.test.tsx
+rg -n "status: pending|CURRY-03|CURRY-04|npm test" .planning/phases/18-generator-compatibility-contract/18-VALIDATION.md
 ```
 
 ### Phase gate
 
 ```bash
-npx vitest run src/services/generator.test.ts src/components/plan/PlanBoard.test.tsx src/components/plan/MealPickerSheet.test.tsx
 npm test
 ```
 
@@ -59,7 +59,10 @@ This phase is approved when:
 
 ## Rerun Evidence
 
-- Pending execution
+- 2026-03-29: `npx vitest run src/services/generator.test.ts`
+- 2026-03-29: `npx vitest run src/components/plan/PlanBoard.test.tsx src/components/plan/MealPickerSheet.test.tsx`
+- 2026-03-29: `npm test`
+- Status remains `pending` during plan execution; Phase 19 override behavior and final approval promotion stay for dedicated phase verification.
 
 ---
 *Validation contract created: 2026-03-29*
