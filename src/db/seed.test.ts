@@ -3,6 +3,7 @@ import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getPreferences } from '@/services/food-db';
+import type { CurryRecord } from '@/types/component';
 
 describe('runSeed', () => {
   beforeEach(async () => {
@@ -54,6 +55,36 @@ describe('runSeed', () => {
       expect(extra.compatible_base_category_ids).toBeDefined();
       expect(extra.compatible_base_category_ids!.length).toBeGreaterThan(0);
     }
+
+    const baseCategories = await getCategoriesByKind('base');
+    const baseIdsByName = Object.fromEntries(
+      baseCategories.map((category) => [category.name, category.id]),
+    );
+    const sambar = curries.find((component) => component.name === 'Sambar');
+    const rasam = curries.find((component) => component.name === 'Rasam');
+
+    expect(sambar?.compatible_base_category_ids).toEqual([
+      baseIdsByName['rice-based'],
+      baseIdsByName['other'],
+    ]);
+    expect(sambar?.compatible_base_category_ids).toEqual(
+      expect.arrayContaining([expect.any(Number)]),
+    );
+    expect(rasam?.compatible_base_category_ids).toEqual([]);
+  });
+
+  it('keeps an explicit empty curry compatibility array distinct from legacy missing data', () => {
+    const intentionallyIneligibleCurry: CurryRecord = {
+      name: 'Explicitly Ineligible Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '2026-03-20T00:00:00.000Z',
+    };
+
+    expect(intentionallyIneligibleCurry.compatible_base_category_ids).toEqual([]);
   });
 
   it('creates preferences with empty slot_restrictions and seeds base-category default rules', async () => {

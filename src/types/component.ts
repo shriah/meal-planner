@@ -51,6 +51,7 @@ export interface BaseRecord extends BaseComponentFields {
 export interface CurryRecord extends BaseComponentFields {
   componentType: 'curry';
   curry_category?: string;
+  compatible_base_category_ids: number[];
 }
 
 export interface SubziRecord extends BaseComponentFields {
