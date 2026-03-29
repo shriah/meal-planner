@@ -117,6 +117,10 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
   return categories?.find((category) => String(category.id) === id)
 }
 
+function showsCompatibleBaseChecklist(componentType: ComponentType) {
+  return componentType === 'extra' || componentType === 'curry'
+}
+
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode }: ComponentFormProps) {
   const [form, setForm] = useState<FormState>(() => initialFormState(component, componentType))
   const [saving, setSaving] = useState(false)
@@ -150,6 +154,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   )
   const canSaveBase = componentType !== 'base' || Boolean(form.base_category_id)
   const canSaveExtra = componentType !== 'extra' || Boolean(form.extra_category_id)
+  const hasZeroCompatibleBases =
+    componentType === 'curry' && form.compatible_base_category_ids.length === 0
 
   async function handleSave() {
     setSaving(true)
@@ -174,6 +180,11 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
               compatible_base_category_ids: form.compatible_base_category_ids,
               extra_category: getBuiltInExtraCategory(selectedExtraCategory?.name),
               compatible_base_types: legacyCompatibleBaseTypes,
+            }
+          : {}),
+        ...(componentType === 'curry'
+          ? {
+              compatible_base_category_ids: form.compatible_base_category_ids,
             }
           : {}),
       }
@@ -248,7 +259,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       )}
 
       {/* Compatible base types (Extra only) */}
-      {componentType === 'extra' && (
+      {showsCompatibleBaseChecklist(componentType) && (
         <fieldset className="space-y-2">
           <legend className="text-xs font-semibold">Compatible Base Categories</legend>
           <div className="flex flex-wrap gap-3">
@@ -273,10 +284,15 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           {baseCategories === undefined && (
             <p className="text-xs text-muted-foreground">Loading compatible base categories...</p>
           )}
+          {hasZeroCompatibleBases && (
+            <p className="text-xs text-amber-700">
+              No compatible base categories selected. This curry will not be auto-selected.
+            </p>
+          )}
         </fieldset>
       )}
 
-      {(componentType === 'base' || componentType === 'extra') && (
+      {(componentType === 'base' || showsCompatibleBaseChecklist(componentType)) && (
         <Separator />
       )}
 

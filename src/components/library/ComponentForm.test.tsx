@@ -139,8 +139,8 @@ describe('ComponentForm dynamic category wiring', () => {
     );
 
     expect(await screen.findByText('Compatible Base Categories')).toBeInTheDocument();
-    expect(screen.getByText('Rice Plates')).toBeInTheDocument();
-    expect(screen.getByText('Flatbreads')).toBeInTheDocument();
+    expect(await screen.findByText('Rice Plates')).toBeInTheDocument();
+    expect(await screen.findByText('Flatbreads')).toBeInTheDocument();
 
     await userEvent.click(screen.getByText('Rice Plates'));
     await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
