@@ -2371,7 +2371,121 @@ describe('curry compatibility contract', () => {
     }
   });
 
-  it('keeps require_one curry overrides inside the compatibility-scoped curry library', async () => {
+  it('allows a component-targeted require_one curry rule to force an incompatible curry for the scoped slot', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const riceBaseId = await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const incompatibleRequiredCurryId = await addComponent({
+      name: 'Fish Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['non-veg'],
+      protein_tag: 'fish',
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Require fish curry on monday breakfast',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'component', component_id: incompatibleRequiredCurryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_one' }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.base_id).toBe(riceBaseId);
+    expect(mondayBreakfast?.curry_id).toBe(incompatibleRequiredCurryId);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('keeps tag-based require_one curry rules compatibility-first and only falls back to incompatible matches when needed', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    await addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      base_category_id: ids.riceBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const compatibleFishCurryId = await addComponent({
+      name: 'Fish Curry Kerala',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['non-veg'],
+      protein_tag: 'fish',
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const incompatibleFishCurryId = await addComponent({
+      name: 'Fish Curry Goan',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['non-veg'],
+      protein_tag: 'fish',
+      regional_tags: ['coastal-konkan'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Require fish curry',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'tag', filter: { protein_tag: 'fish' } },
+        scope: { days: null, slots: null },
+        effects: [{ kind: 'require_one' }],
+      },
+      created_at: '',
+    });
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+
+    const compatibleResult = await generate();
+
+    for (const slot of compatibleResult.plan.slots) {
+      expect(slot.curry_id).toBe(compatibleFishCurryId);
+      expect(slot.curry_id).not.toBe(incompatibleFishCurryId);
+    }
+
+    await db.components.delete(compatibleFishCurryId);
+
+    const fallbackResult = await generate();
+
+    for (const slot of fallbackResult.plan.slots) {
+      expect(slot.curry_id).toBe(incompatibleFishCurryId);
+    }
+    expect(fallbackResult.warnings).toEqual([]);
+  });
+
+  it('keeps broad component_type curry require_one rules inside the compatibility-scoped pool', async () => {
     const ids = await seedMinimalComponents();
     await db.components.clear();
 
@@ -2395,40 +2509,39 @@ describe('curry compatibility contract', () => {
       occasion_tags: ['everyday'],
       created_at: '',
     });
-    const incompatibleRequiredCurryId = await addComponent({
-      name: 'Fish Curry',
+    const incompatibleCurryId = await addComponent({
+      name: 'Paneer Butter Masala',
       componentType: 'curry',
       compatible_base_category_ids: [ids.breadBaseCategoryId],
-      dietary_tags: ['non-veg'],
-      protein_tag: 'fish',
-      regional_tags: ['coastal-konkan'],
+      dietary_tags: ['veg'],
+      protein_tag: 'paneer',
+      regional_tags: ['north-indian'],
       occasion_tags: ['everyday'],
       created_at: '',
     });
 
     await seedDefaultPreferences();
     await addRule({
-      name: 'Require non-veg curry',
+      name: 'Require one curry',
       enabled: true,
       compiled_filter: {
         type: 'rule',
-        target: { mode: 'tag', filter: { dietary_tag: 'non-veg' } },
+        target: { mode: 'component_type', component_type: 'curry' },
         scope: { days: null, slots: null },
         effects: [{ kind: 'require_one' }],
       },
       created_at: '',
     });
-    vi.spyOn(Math, 'random').mockReturnValue(0);
 
     const result = await generate();
 
     for (const slot of result.plan.slots) {
       expect(slot.curry_id).toBe(compatibleCurryId);
-      expect(slot.curry_id).not.toBe(incompatibleRequiredCurryId);
+      expect(slot.curry_id).not.toBe(incompatibleCurryId);
     }
     expect(
       result.warnings.some((warning) => warning.message.includes('require_one: no component in library matches target')),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('preserves locked incompatible curry selections as explicit user intent', async () => {
