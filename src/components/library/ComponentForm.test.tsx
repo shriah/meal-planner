@@ -125,6 +125,58 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
+  it('reuses the compatible-base checklist when creating a curry and persists selected base category ids', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
+
+    render(
+      <ComponentForm
+        componentType="curry"
+        mode="add"
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('Compatible Base Categories')).toBeInTheDocument();
+    expect(screen.getByText('Rice Plates')).toBeInTheDocument();
+    expect(screen.getByText('Flatbreads')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Rice Plates'));
+    await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+
+    await waitFor(async () => {
+      const curries = await getComponentsByType('curry');
+      expect(curries).toHaveLength(1);
+      expect(curries[0].compatible_base_category_ids).toEqual([riceId]);
+    });
+  });
+
+  it('keeps zero-compatible curries editable, persists an empty array, and shows a warning that they will not be auto-selected', async () => {
+    await addCategory({ kind: 'base', name: 'Rice Plates' });
+
+    render(
+      <ComponentForm
+        componentType="curry"
+        mode="add"
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText(/will not be auto-selected/i)).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Plain Tomato Curry');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+
+    await waitFor(async () => {
+      const curries = await getComponentsByType('curry');
+      expect(curries).toHaveLength(1);
+      expect(curries[0].compatible_base_category_ids).toEqual([]);
+    });
+  });
+
   it('refreshes form and row labels after a category rename without rewriting stored references', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice-based' });
     const liquidId = await addCategory({ kind: 'extra', name: 'Liquid' });
@@ -164,5 +216,40 @@ describe('ComponentForm dynamic category wiring', () => {
     const [storedExtra] = await getComponentsByType('extra');
     expect(storedExtra.extra_category_id).toBe(liquidId);
     expect(storedExtra.compatible_base_category_ids).toEqual([riceId]);
+  });
+
+  it('refreshes curry checklist labels after a base-category rename without rewriting stored ids', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice-based' });
+    const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
+    const curryId = await db.components.add({
+      name: 'Sambar',
+      componentType: 'curry',
+      compatible_base_category_ids: [riceId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: new Date().toISOString(),
+    });
+
+    render(
+      <>
+        <LiveEditForm componentId={curryId} />
+        <LiveComponentRow componentId={curryId} />
+      </>,
+    );
+
+    expect(await screen.findAllByText('Rice-based')).not.toHaveLength(0);
+    expect(screen.getByText('Flatbreads')).toBeInTheDocument();
+
+    await renameCategory(riceId, 'Steamed rice');
+    await renameCategory(breadId, 'Rotis');
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Steamed rice').length).toBeGreaterThan(0);
+    });
+    expect(screen.getByText('Rotis')).toBeInTheDocument();
+
+    const [storedCurry] = await getComponentsByType('curry');
+    expect(storedCurry.compatible_base_category_ids).toEqual([riceId]);
   });
 });
