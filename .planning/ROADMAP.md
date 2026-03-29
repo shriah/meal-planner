@@ -92,7 +92,7 @@ Plans:
 **Plans**: 2 plans
 **UI hint**: yes
 Plans:
-- [ ] 19-01-PLAN.md — Group the curry picker into compatible vs explicit override choices and preserve manual incompatible selections through store/regenerate flows
+- [x] 19-01-PLAN.md — Group the curry picker into compatible vs explicit override choices and preserve manual incompatible selections through store/regenerate flows
 - [ ] 19-02-PLAN.md — Extend scoped `require_one` rules into explicit override paths and draft the Phase 19 validation contract
 
 ### Phase 20: Compatibility Regression Coverage
@@ -127,7 +127,7 @@ Plans:
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
-| 19. Explicit Override Paths | v1.3 | 0/2 | Not started | - |
+| 19. Explicit Override Paths | v1.3 | 1/2 | In Progress|  |
 | 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
 
 ## Backlog
@@ -136,7 +136,7 @@ Plans:
 
 **Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
 **Requirements:** TBD
-**Plans:** 0 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)

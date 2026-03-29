@@ -12,7 +12,7 @@
 - [x] **CURRY-02**: Existing curry records are backfilled in-app with editable compatibility data so the current library remains usable after upgrade
 - [x] **CURRY-03**: Automatic generation only selects curries compatible with the chosen base by default
 - [x] **CURRY-04**: If no compatible curry exists for a slot, the generator does not silently pick an incompatible curry
-- [ ] **CURRY-05**: Manual picker and locked/manual selections can still use an incompatible curry as an explicit user override
+- [x] **CURRY-05**: Manual picker and locked/manual selections can still use an incompatible curry as an explicit user override
 - [ ] **CURRY-06**: Rule behavior can explicitly override curry/base compatibility for scoped exceptions without changing the default compatibility contract
 - [x] **CURRY-07**: Curry compatibility remains category-ID based and stays safe across category rename/delete normalization
 - [ ] **CURRY-08**: Library, generator, picker, migration, and regression tests all use the new curry compatibility model consistently
