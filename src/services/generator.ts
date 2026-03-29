@@ -151,6 +151,21 @@ function isExtraCompatibleWithBase(
   return false;
 }
 
+function isCurryCompatibleWithBase(
+  curry: ComponentRecord,
+  base: ComponentRecord,
+): boolean {
+  if (base.base_category_id === undefined || base.base_category_id === null) {
+    return curry.compatible_base_category_ids === undefined;
+  }
+
+  if (curry.compatible_base_category_ids === undefined) {
+    return true;
+  }
+
+  return curry.compatible_base_category_ids.includes(base.base_category_id);
+}
+
 // ─── Helper: scopeMatches ─────────────────────────────────────────────────────
 
 function scopeMatches(scope: RuleScope, day: DayOfWeek, slot: MealSlot): boolean {
@@ -525,19 +540,37 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
         }
       } else if (!skipCurry && curries.length > 0) {
-        const eligible = curries.filter(c => isOccasionAllowed(c, day));
-        const curryPoolBase = noRepeatCurry
-          ? eligible.filter(c => !usedCurryIds.has(c.id!))
-          : eligible;
-        let curryPool = applyFilterPool(curryPoolBase, validatedRules, day, meal_slot, warnings);
-        curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
+        const compatibleCurries = curries.filter(
+          c => isOccasionAllowed(c, day) && isCurryCompatibleWithBase(c, selectedBase),
+        );
 
-        if (curryPool.length > 0) {
-          let picked = pickFromPool(curryPool, usageCount)!;
-          picked = applyRequireOne(picked, validatedRules, curries, day, meal_slot, warnings);
-          selectedCurry = picked;
-          usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-          if (noRepeatCurry) usedCurryIds.add(picked.id!);
+        if (compatibleCurries.length === 0) {
+          warnings.push({
+            slot: { day, meal_slot },
+            rule_id: null,
+            message: `no compatible curry available for base "${selectedBase.name}" on ${day} ${meal_slot} — skipped`,
+          });
+        } else {
+          const curryPoolBase = noRepeatCurry
+            ? compatibleCurries.filter(c => !usedCurryIds.has(c.id!))
+            : compatibleCurries;
+          let curryPool = applyFilterPool(curryPoolBase, validatedRules, day, meal_slot, warnings);
+          curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
+
+          if (curryPool.length > 0) {
+            let picked = pickFromPool(curryPool, usageCount)!;
+            picked = applyRequireOne(
+              picked,
+              validatedRules,
+              compatibleCurries,
+              day,
+              meal_slot,
+              warnings,
+            );
+            selectedCurry = picked;
+            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
+            if (noRepeatCurry) usedCurryIds.add(picked.id!);
+          }
         }
       }
 
