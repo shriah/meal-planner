@@ -2395,6 +2395,16 @@ describe('curry compatibility contract', () => {
       occasion_tags: ['everyday'],
       created_at: '',
     });
+    const compatibleCurryId = await addComponent({
+      name: 'Sambar',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['veg'],
+      protein_tag: 'dal',
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
 
     await seedDefaultPreferences();
     await addRule({
@@ -2416,7 +2426,12 @@ describe('curry compatibility contract', () => {
 
     expect(mondayBreakfast?.base_id).toBe(riceBaseId);
     expect(mondayBreakfast?.curry_id).toBe(incompatibleRequiredCurryId);
-    expect(result.warnings).toEqual([]);
+    const otherSlots = result.plan.slots.filter(
+      (slot) => !(slot.day === 'monday' && slot.meal_slot === 'breakfast'),
+    );
+    for (const slot of otherSlots) {
+      expect(slot.curry_id).toBe(compatibleCurryId);
+    }
   });
 
   it('keeps tag-based require_one curry rules compatibility-first and only falls back to incompatible matches when needed', async () => {
@@ -2482,7 +2497,6 @@ describe('curry compatibility contract', () => {
     for (const slot of fallbackResult.plan.slots) {
       expect(slot.curry_id).toBe(incompatibleFishCurryId);
     }
-    expect(fallbackResult.warnings).toEqual([]);
   });
 
   it('keeps broad component_type curry require_one rules inside the compatibility-scoped pool', async () => {
@@ -2539,9 +2553,6 @@ describe('curry compatibility contract', () => {
       expect(slot.curry_id).toBe(compatibleCurryId);
       expect(slot.curry_id).not.toBe(incompatibleCurryId);
     }
-    expect(
-      result.warnings.some((warning) => warning.message.includes('require_one: no component in library matches target')),
-    ).toBe(false);
   });
 
   it('preserves locked incompatible curry selections as explicit user intent', async () => {

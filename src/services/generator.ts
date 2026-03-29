@@ -273,31 +273,53 @@ function applyExclude(
  * override from the FULL library (bypassing filter_pool — D-06).
  * Uses uniform random for override pick.
  */
+function canOverrideCurryCompatibility(target: Target): boolean {
+  return target.mode === 'component' || target.mode === 'tag';
+}
+
 function applyRequireOne(
-  selected: ComponentRecord,
+  selected: ComponentRecord | undefined,
   rules: ValidatedRule[],
-  fullLibrary: ComponentRecord[],
+  preferredLibrary: ComponentRecord[],
   day: DayOfWeek,
   slot: MealSlot,
   warnings: Warning[],
-): ComponentRecord {
+  options?: {
+    componentType?: ComponentRecord['componentType'];
+    overrideLibrary?: ComponentRecord[];
+  },
+): ComponentRecord | undefined {
   const requireRules = rules.filter(r =>
     scopeMatches(r.compiled.scope, day, slot) &&
     r.compiled.effects.some(e => e.kind === 'require_one'),
   );
   for (const r of requireRules) {
-    if (targetMatches(r.compiled.target, selected)) continue; // already satisfied
-    const candidates = fullLibrary.filter(c => targetMatches(r.compiled.target, c));
-    if (candidates.length === 0) {
-      warnings.push({
-        slot: { day, meal_slot: slot },
-        rule_id: r.id,
-        message: `require_one: no component in library matches target on ${day} ${slot} — skipped`,
-      });
+    if (selected && targetMatches(r.compiled.target, selected)) continue;
+
+    const candidates = preferredLibrary.filter(c => targetMatches(r.compiled.target, c));
+    if (candidates.length > 0) {
+      selected = candidates[Math.floor(Math.random() * candidates.length)];
       continue;
     }
-    // Uniform random (not weighted) — explicit requirement override
-    return candidates[Math.floor(Math.random() * candidates.length)];
+
+    const canUseOverride =
+      options?.componentType === 'curry' &&
+      options.overrideLibrary !== undefined &&
+      canOverrideCurryCompatibility(r.compiled.target);
+
+    if (canUseOverride) {
+      const overrideCandidates = options.overrideLibrary!.filter(c => targetMatches(r.compiled.target, c));
+      if (overrideCandidates.length > 0) {
+        selected = overrideCandidates[Math.floor(Math.random() * overrideCandidates.length)];
+        continue;
+      }
+    }
+
+    warnings.push({
+      slot: { day, meal_slot: slot },
+      rule_id: r.id,
+      message: `require_one: no component in library matches target on ${day} ${slot} — skipped`,
+    });
   }
   return selected;
 }
@@ -540,17 +562,12 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
         }
       } else if (!skipCurry && curries.length > 0) {
-        const compatibleCurries = curries.filter(
-          c => isOccasionAllowed(c, day) && isCurryCompatibleWithBase(c, selectedBase),
+        const eligibleCurries = curries.filter(c => isOccasionAllowed(c, day));
+        const compatibleCurries = eligibleCurries.filter(
+          c => isCurryCompatibleWithBase(c, selectedBase),
         );
 
-        if (compatibleCurries.length === 0) {
-          warnings.push({
-            slot: { day, meal_slot },
-            rule_id: null,
-            message: `no compatible curry available for base "${selectedBase.name}" on ${day} ${meal_slot} — skipped`,
-          });
-        } else {
+        if (compatibleCurries.length > 0) {
           const curryPoolBase = noRepeatCurry
             ? compatibleCurries.filter(c => !usedCurryIds.has(c.id!))
             : compatibleCurries;
@@ -558,19 +575,32 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
           curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
 
           if (curryPool.length > 0) {
-            let picked = pickFromPool(curryPool, usageCount)!;
-            picked = applyRequireOne(
-              picked,
-              validatedRules,
-              compatibleCurries,
-              day,
-              meal_slot,
-              warnings,
-            );
-            selectedCurry = picked;
-            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-            if (noRepeatCurry) usedCurryIds.add(picked.id!);
+            selectedCurry = pickFromPool(curryPool, usageCount)!;
           }
+        }
+
+        selectedCurry = applyRequireOne(
+          selectedCurry,
+          validatedRules,
+          compatibleCurries,
+          day,
+          meal_slot,
+          warnings,
+          {
+            componentType: 'curry',
+            overrideLibrary: eligibleCurries,
+          },
+        );
+
+        if (selectedCurry) {
+          usageCount.set(selectedCurry.id!, (usageCount.get(selectedCurry.id!) ?? 0) + 1);
+          if (noRepeatCurry) usedCurryIds.add(selectedCurry.id!);
+        } else if (compatibleCurries.length === 0) {
+          warnings.push({
+            slot: { day, meal_slot },
+            rule_id: null,
+            message: `no compatible curry available for base "${selectedBase.name}" on ${day} ${meal_slot} — skipped`,
+          });
         }
       }
 
