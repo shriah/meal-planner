@@ -89,8 +89,11 @@ Plans:
   1. User can deliberately pick and keep an incompatible curry for a slot through the manual picker or locked/manual state without the app treating it as a normal auto-generated pairing
   2. User can create a scoped rule exception that intentionally produces an incompatible curry/base pairing when needed
   3. Outside those explicit override paths, generator behavior continues to reject incompatible curry/base pairings by default
-**Plans**: TBD
+**Plans**: 2 plans
 **UI hint**: yes
+Plans:
+- [ ] 19-01-PLAN.md — Group the curry picker into compatible vs explicit override choices and preserve manual incompatible selections through store/regenerate flows
+- [ ] 19-02-PLAN.md — Extend scoped `require_one` rules into explicit override paths and draft the Phase 19 validation contract
 
 ### Phase 20: Compatibility Regression Coverage
 **Goal**: The milestone ships with regression coverage proving the migration, library, generator, picker, and override flows all follow the same curry compatibility contract
@@ -124,7 +127,7 @@ Plans:
 | 16. Remove category ID preset coupling and add PlanBoard/MealPicker integration coverage | v1.2 | 1/1 | Complete | 2026-03-29 |
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
-| 19. Explicit Override Paths | v1.3 | 0/TBD | Not started | - |
+| 19. Explicit Override Paths | v1.3 | 0/2 | Not started | - |
 | 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
 
 ## Backlog
