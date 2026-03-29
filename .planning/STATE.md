@@ -1,32 +1,32 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.2
-milestone_name: Edit Rule
-status: complete
-stopped_at: Completed milestone v1.2 archival
-last_updated: "2026-03-28T19:43:03Z"
+milestone: v1.3
+milestone_name: Curry Base Compatibility
+status: in_progress
+stopped_at: Defining milestone v1.3 requirements
+last_updated: "2026-03-29T00:00:00Z"
 last_activity: 2026-03-29
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 12
-  completed_plans: 12
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-29 — v1.2 complete)
+See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** v1.2 complete — ready for next milestone
+**Current focus:** Defining milestone v1.3 Curry Base Compatibility
 
 ## Current Position
 
-Phase: 16 (remove-category-id-preset-coupling-and-add-planboard-mealpicker-integration-coverage) — COMPLETE
-Plan: 1 of 1
-Status: Milestone v1.2 archived and complete
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
 Last activity: 2026-03-29
 
 ## Performance Metrics

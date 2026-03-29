@@ -12,6 +12,16 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 Shipped through `v1.2`. The app now supports in-place rule editing, explicit-only extra semantics, no-random-extra default behavior, and dynamic user-managed base/extra categories that flow through library forms, rules, generator behavior, picker filtering, descriptions, and seeded defaults.
 
+## Current Milestone: v1.3 Curry Base Compatibility
+
+**Goal:** Add curry-to-base compatibility as a default generator constraint while keeping rule-based overrides available.
+
+**Target features:**
+- Curry records store compatible base categories in the Library model and editing UI
+- Existing curry records are backfilled with compatibility data inside the app
+- Auto-generation only selects curries compatible with the chosen base unless a rule explicitly overrides that default
+- Subzi remains out of scope; curry-vs-subzi composition modes stay deferred to backlog
+
 ## Requirements
 
 ### Validated
@@ -45,16 +55,10 @@ Shipped through `v1.2`. The app now supports in-place rule editing, explicit-onl
 
 ### Active
 
-- [ ] PDF export of the weekly plan
-- [ ] Export the meal library to JSON for backup
-- [ ] Import meals from JSON
-- [ ] Cross-week rotation rules
-
-## Next Milestone Goals
-
-- Extend export beyond PNG where it materially helps reuse and sharing
-- Add data portability for the meal library
-- Add longer-horizon planning constraints such as cross-week rotation
+- [ ] Curry records can define compatible base categories in the Library
+- [ ] Existing curry data can be populated with compatibility information without rebuilding the library from scratch
+- [ ] Generator treats curry/base compatibility as a hard default constraint during automatic selection
+- [ ] Rules can explicitly override curry/base compatibility when users need exceptional pairings
 
 ### Out of Scope
 
@@ -128,4 +132,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-29 after v1.2 milestone*
+*Last updated: 2026-03-29 after starting v1.3 milestone*
