@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
+import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
@@ -428,6 +429,29 @@ function migrateRuleCategoryRefs(compiledFilter: unknown, categoryLookup: Catego
   return nextRule;
 }
 
+function backfillLegacyCurryCompatibility(
+  component: ComponentRecord,
+  categoryLookup: CategoryLookup,
+): number[] | undefined {
+  if (component.compatible_base_category_ids !== undefined) {
+    return component.compatible_base_category_ids;
+  }
+
+  if (component.componentType !== 'curry') {
+    return component.compatible_base_types
+      ?.map((name) => categoryLookup.base.get(name) ?? null)
+      .filter((id): id is number => id !== null);
+  }
+
+  const seedCategoryLookup = {
+    base: Object.fromEntries(categoryLookup.base.entries()),
+    extra: Object.fromEntries(categoryLookup.extra.entries()),
+  };
+
+  return resolveSeededCurryCompatibilityIds(component.name, seedCategoryLookup)
+    ?? [...categoryLookup.base.values()];
+}
+
 function normalizeComponentCategoryRefs(
   component: ComponentRecord,
   category: CategoryRecord & { id: number },
@@ -550,11 +574,7 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
     extra_category_id:
       component.extra_category_id
       ?? (component.extra_category ? categoryLookup.extra.get(component.extra_category) ?? null : undefined),
-    compatible_base_category_ids:
-      component.compatible_base_category_ids
-      ?? component.compatible_base_types
-        ?.map((name) => categoryLookup.base.get(name) ?? null)
-        .filter((id): id is number => id !== null),
+    compatible_base_category_ids: backfillLegacyCurryCompatibility(component, categoryLookup),
   }));
 
   const rules = fixture.rules.map((rule) => ({
@@ -719,6 +739,29 @@ db.version(11).stores({
   await rulesTable.toCollection().modify((rule) => {
     rule.compiled_filter = migrateRuleCategoryRefs(rule.compiled_filter, categoryLookup);
   });
+});
+
+db.version(12).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *compatible_base_types, *compatible_base_category_ids, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(async (tx) => {
+  const categoryLookup = buildCategoryLookup(await tx.table('categories').toArray());
+
+  await tx.table('components')
+    .where('componentType')
+    .equals('curry')
+    .modify((component) => {
+      component.compatible_base_category_ids = backfillLegacyCurryCompatibility(
+        component as ComponentRecord,
+        categoryLookup,
+      );
+    });
 });
 
 export { db, normalizeComponentCategoryRefs, normalizeRuleCategoryRefs };

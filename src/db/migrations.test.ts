@@ -61,7 +61,9 @@ describe('Phase 14 categories table migration', () => {
     });
 
     const migrated = migrateLegacyCategoryData(fixture);
-    const sambar = migrated.components.find((component) => component.name === 'Sambar');
+    const sambar = migrated.components.find(
+      (component) => component.componentType === 'curry' && component.name === 'Sambar',
+    );
     const riceBaseId = migrated.categories.find((category) => category.name === 'rice-based')?.id;
     const otherBaseId = migrated.categories.find((category) => category.name === 'other')?.id;
 
@@ -80,7 +82,9 @@ describe('Phase 14 categories table migration', () => {
     });
 
     const migrated = migrateLegacyCategoryData(fixture);
-    const customCurry = migrated.components.find((component) => component.name === 'House Special Curry');
+    const customCurry = migrated.components.find(
+      (component) => component.componentType === 'curry' && component.name === 'House Special Curry',
+    );
     const allBaseIds = migrated.categories
       .filter((category) => category.kind === 'base')
       .map((category) => category.id);
@@ -101,7 +105,9 @@ describe('Phase 14 categories table migration', () => {
     });
 
     const migrated = migrateLegacyCategoryData(fixture);
-    const rasam = migrated.components.find((component) => component.name === 'Rasam');
+    const rasam = migrated.components.find(
+      (component) => component.componentType === 'curry' && component.name === 'Rasam',
+    );
 
     expect(rasam?.compatible_base_category_ids).toEqual([]);
   });
