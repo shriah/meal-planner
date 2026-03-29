@@ -30,6 +30,7 @@ const curryComponents = [
     id: 1,
     name: 'Chicken Curry',
     componentType: 'curry',
+    compatible_base_category_ids: [20],
     dietary_tags: ['non-veg'],
     regional_tags: ['north-indian'],
     occasion_tags: ['everyday'],
@@ -39,8 +40,18 @@ const curryComponents = [
     id: 2,
     name: 'Dal Makhani',
     componentType: 'curry',
+    compatible_base_category_ids: [10],
     dietary_tags: ['veg'],
     regional_tags: ['north-indian'],
+    occasion_tags: ['everyday'],
+    created_at: '2026-01-01',
+  },
+  {
+    id: 3,
+    name: 'Legacy Curry',
+    componentType: 'curry',
+    dietary_tags: ['veg'],
+    regional_tags: ['pan-indian'],
     occasion_tags: ['everyday'],
     created_at: '2026-01-01',
   },
@@ -141,5 +152,78 @@ describe('MealPickerSheet', () => {
     render(<MealPickerSheet {...defaultProps} componentType="extras" />)
     expect(mockGetExtrasByBaseCategoryId).not.toHaveBeenCalled()
     expect(screen.getByText(/no extras match your filters/i)).toBeTruthy()
+  })
+
+  it('groups compatible and explicit override curries when both sets exist', () => {
+    render(
+      <MealPickerSheet
+        {...defaultProps}
+        componentType="curry"
+        currentBaseCategoryId={10}
+      />,
+    )
+
+    expect(screen.getByText('Compatible Curries')).toBeTruthy()
+    expect(screen.getByText('Override Choices')).toBeTruthy()
+    expect(screen.getByText('Dal Makhani')).toBeTruthy()
+    expect(screen.getByText('Chicken Curry')).toBeTruthy()
+
+    fireEvent.click(screen.getByText('Chicken Curry'))
+
+    expect(mockSwapComponent).toHaveBeenCalledWith('monday', 'lunch', 'curry', 1)
+  })
+
+  it('collapses to one flat curry list when the base has no compatible curries', () => {
+    render(
+      <MealPickerSheet
+        {...defaultProps}
+        componentType="curry"
+        currentBaseCategoryId={99}
+      />,
+    )
+
+    expect(screen.queryByText('Compatible Curries')).toBeNull()
+    expect(screen.queryByText('Override Choices')).toBeNull()
+    expect(screen.getByText('Chicken Curry')).toBeTruthy()
+    expect(screen.getByText('Dal Makhani')).toBeTruthy()
+    expect(screen.getByText('Legacy Curry')).toBeTruthy()
+  })
+
+  it('keeps base and extras picker flows as flat lists', () => {
+    mockGetComponentsByType.mockImplementation((type: string) => {
+      if (type === 'base') {
+        return [{
+          id: 21,
+          name: 'Chapati',
+          componentType: 'base',
+          dietary_tags: ['veg'],
+          regional_tags: ['north-indian'],
+          occasion_tags: ['everyday'],
+          created_at: '2026-01-01',
+        }]
+      }
+
+      return curryComponents
+    })
+
+    const { unmount } = render(<MealPickerSheet {...defaultProps} componentType="base" />)
+
+    expect(screen.getByText('Chapati')).toBeTruthy()
+    expect(screen.queryByText('Compatible Curries')).toBeNull()
+    expect(screen.queryByText('Override Choices')).toBeNull()
+
+    unmount()
+
+    render(
+      <MealPickerSheet
+        {...defaultProps}
+        componentType="extras"
+        currentBaseCategoryId={42}
+      />,
+    )
+
+    expect(screen.getByText('Pickle')).toBeTruthy()
+    expect(screen.queryByText('Compatible Curries')).toBeNull()
+    expect(screen.queryByText('Override Choices')).toBeNull()
   })
 })
