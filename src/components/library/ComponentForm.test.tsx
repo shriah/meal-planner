@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
-import { addCategory, renameCategory } from '@/services/category-db';
+import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
 import { getComponentsByType } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
 import { ComponentRow } from './ComponentRow';
@@ -251,5 +251,33 @@ describe('ComponentForm dynamic category wiring', () => {
 
     const [storedCurry] = await getComponentsByType('curry');
     expect(storedCurry.compatible_base_category_ids).toEqual([riceId]);
+  });
+
+  it('keeps curry edit state aligned when category delete normalization removes its last compatible base', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice-based' });
+    const curryId = await db.components.add({
+      name: 'Sambar',
+      componentType: 'curry',
+      compatible_base_category_ids: [riceId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: new Date().toISOString(),
+    });
+
+    render(<LiveEditForm componentId={curryId} />);
+
+    expect(await screen.findByText('Rice-based')).toBeInTheDocument();
+    expect(screen.queryByText(/will not be auto-selected/i)).not.toBeInTheDocument();
+
+    await deleteCategory(riceId);
+
+    await waitFor(() => {
+      expect(screen.getByText(/will not be auto-selected/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Rice-based')).not.toBeInTheDocument();
+
+    const [storedCurry] = await getComponentsByType('curry');
+    expect(storedCurry.compatible_base_category_ids).toEqual([]);
   });
 });

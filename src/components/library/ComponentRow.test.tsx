@@ -1,10 +1,11 @@
 /** @vitest-environment happy-dom */
 
 import '@testing-library/jest-dom/vitest';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
-import { addCategory, renameCategory } from '@/services/category-db';
+import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
 import { ComponentRow } from './ComponentRow';
 
 afterEach(() => {
@@ -107,5 +108,50 @@ describe('ComponentRow curry compatibility summary', () => {
     );
 
     expect(await screen.findByText(/not auto-selected/i)).toBeInTheDocument();
+  });
+
+  it('switches from a category summary to the zero-compatible warning after delete normalization', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const curryId = await db.components.add({
+      name: 'Tomato Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [riceId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: new Date().toISOString(),
+    });
+
+    function LiveRow() {
+      const component = useLiveQuery(() => db.components.get(curryId), [curryId], undefined);
+
+      if (!component) {
+        return null;
+      }
+
+      return (
+        <ComponentRow
+          component={component}
+          expanded={false}
+          confirmingDelete={false}
+          onExpand={() => {}}
+          onCollapse={() => {}}
+          onRequestDelete={() => {}}
+          onCancelDelete={() => {}}
+          onDelete={() => {}}
+        />
+      );
+    }
+
+    render(<LiveRow />);
+
+    expect(await screen.findByText('Rice Plates')).toBeInTheDocument();
+
+    await deleteCategory(riceId);
+
+    await waitFor(() => {
+      expect(screen.getByText(/not auto-selected/i)).toBeInTheDocument();
+    });
+    expect(screen.queryByText('Rice Plates')).not.toBeInTheDocument();
   });
 });

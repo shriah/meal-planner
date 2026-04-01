@@ -176,6 +176,37 @@ describe('plan-store', () => {
       },
     });
   });
+
+  it('regenerate forwards a locked incompatible curry even when the base itself is not locked', async () => {
+    const plan = makePlan();
+    plan.slots = plan.slots.map((slot) => (
+      slot.day === 'monday' && slot.meal_slot === 'lunch'
+        ? { ...slot, curry_id: 999 }
+        : slot
+    ));
+
+    const generateSpy = vi.spyOn(generatorService, 'generate').mockResolvedValue({
+      plan,
+      warnings: [],
+    });
+
+    usePlanStore.setState({
+      plan,
+      locks: {
+        'monday-lunch-curry': true,
+      },
+    });
+
+    await usePlanStore.getState().regenerate();
+
+    expect(generateSpy).toHaveBeenCalledWith({
+      lockedSlots: {
+        'monday-lunch': {
+          curry_id: 999,
+        },
+      },
+    });
+  });
 });
 
 // ─── Week navigation tests ────────────────────────────────────────────────────

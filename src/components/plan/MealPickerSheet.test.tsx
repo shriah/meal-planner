@@ -190,6 +190,21 @@ describe('MealPickerSheet', () => {
     expect(screen.getByText('Dal Makhani')).toBeTruthy()
   })
 
+  it('treats legacy curries as the only compatible section when the base has no category id', () => {
+    render(
+      <MealPickerSheet
+        {...defaultProps}
+        componentType="curry"
+      />,
+    )
+
+    expect(screen.getByText('Compatible Curries')).toBeTruthy()
+    expect(screen.getByText('Override Choices')).toBeTruthy()
+    expect(screen.getByText('Legacy Curry')).toBeTruthy()
+    expect(screen.getByText('Chicken Curry')).toBeTruthy()
+    expect(screen.getByText('Dal Makhani')).toBeTruthy()
+  })
+
   it('keeps base and extras picker flows as flat lists', () => {
     mockGetComponentsByType.mockImplementation((type: string) => {
       if (type === 'base') {
