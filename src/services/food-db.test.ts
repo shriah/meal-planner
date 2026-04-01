@@ -156,4 +156,57 @@ describe('Phase 14 category services', () => {
     expect(extraComponent.compatible_base_category_ids).toEqual([]);
     expect(rule.enabled).toBe(false);
   });
+
+  it('rename keeps category-ID compatibility stable and delete preserves explicit zero-compatible curries without inventing fallback', async () => {
+    const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
+    const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
+
+    await addComponent({
+      name: 'Mixed Veg Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [breadId, riceId],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Never Auto Pick',
+      componentType: 'curry',
+      compatible_base_category_ids: [],
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Bread Only Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [breadId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await renameCategory(breadId, 'flatbread');
+
+    const afterRename = await getComponentsByType('curry');
+    expect(afterRename.find((component) => component.name === 'Mixed Veg Curry')?.compatible_base_category_ids)
+      .toEqual([breadId, riceId]);
+    expect(afterRename.find((component) => component.name === 'Bread Only Curry')?.compatible_base_category_ids)
+      .toEqual([breadId]);
+    expect(afterRename.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids)
+      .toEqual([]);
+
+    await deleteCategory(breadId);
+
+    const afterDelete = await getComponentsByType('curry');
+    expect(afterDelete.find((component) => component.name === 'Mixed Veg Curry')?.compatible_base_category_ids)
+      .toEqual([riceId]);
+    expect(afterDelete.find((component) => component.name === 'Bread Only Curry')?.compatible_base_category_ids)
+      .toEqual([]);
+    expect(afterDelete.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids)
+      .toEqual([]);
+  });
 });

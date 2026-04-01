@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db } from '@/db/client';
 import { generate } from './generator';
 import { addComponent, putPreferences, addRule } from '@/services/food-db';
-import { addCategory } from '@/services/category-db';
+import { addCategory, deleteCategory } from '@/services/category-db';
 import type { ComponentRecord } from '@/types/component';
 import type { UserPreferencesRecord } from '@/types/preferences';
 
@@ -2595,6 +2595,110 @@ describe('curry compatibility contract', () => {
     );
     expect(mondayBreakfast?.base_id).toBe(riceBaseId);
     expect(mondayBreakfast?.curry_id).toBe(incompatibleLockedCurryId);
+  });
+
+  it('stops auto-selection from behaving as if deleted base-category compatibility still exists after normalization', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const breadBaseId = await addComponent({
+      name: 'Chapati',
+      componentType: 'base',
+      base_type: 'bread-based',
+      base_category_id: ids.breadBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const staleBreadCurryId = await addComponent({
+      name: 'Bread Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    await addComponent({
+      name: 'Rice Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.riceBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['south-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+
+    const beforeDelete = await generate();
+    for (const slot of beforeDelete.plan.slots) {
+      expect(slot.base_id).toBe(breadBaseId);
+      expect(slot.curry_id).toBe(staleBreadCurryId);
+    }
+
+    await deleteCategory(ids.breadBaseCategoryId);
+
+    const afterDelete = await generate();
+    for (const slot of afterDelete.plan.slots) {
+      expect(slot.base_id).toBe(breadBaseId);
+      expect(slot.curry_id).toBeUndefined();
+    }
+    expect(afterDelete.warnings.some((warning) => warning.message.includes('no compatible curry'))).toBe(true);
+  });
+
+  it('keeps post-normalization explicit curry overrides narrow instead of broadening default behavior', async () => {
+    const ids = await seedMinimalComponents();
+    await db.components.clear();
+
+    const breadBaseId = await addComponent({
+      name: 'Chapati',
+      componentType: 'base',
+      base_type: 'bread-based',
+      base_category_id: ids.breadBaseCategoryId,
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const explicitOnlyCurryId = await addComponent({
+      name: 'Bread Curry',
+      componentType: 'curry',
+      compatible_base_category_ids: [ids.breadBaseCategoryId],
+      dietary_tags: ['veg'],
+      regional_tags: ['north-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+
+    await seedDefaultPreferences();
+    await deleteCategory(ids.breadBaseCategoryId);
+    await addRule({
+      name: 'Force deleted-category curry only on monday breakfast',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'component', component_id: explicitOnlyCurryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_one' }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate();
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.base_id).toBe(breadBaseId);
+    expect(mondayBreakfast?.curry_id).toBe(explicitOnlyCurryId);
+    for (const slot of result.plan.slots.filter(
+      (candidate) => !(candidate.day === 'monday' && candidate.meal_slot === 'breakfast'),
+    )) {
+      expect(slot.base_id).toBe(breadBaseId);
+      expect(slot.curry_id).toBeUndefined();
+    }
   });
 });
 
