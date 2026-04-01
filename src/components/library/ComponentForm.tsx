@@ -126,6 +126,30 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const [saving, setSaving] = useState(false)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
+  const sourceFormState = useMemo(
+    () => initialFormState(component, componentType),
+    [
+      componentType,
+      component?.id,
+      component?.name,
+      component?.base_category_id,
+      component?.extra_category_id,
+      component?.created_at,
+      component?.protein_tag,
+      component?.dietary_tags.join('|'),
+      component?.regional_tags.join('|'),
+      component?.occasion_tags.join('|'),
+      component?.compatible_base_category_ids?.join('|'),
+    ],
+  )
+
+  useEffect(() => {
+    if (!component) {
+      return
+    }
+
+    setForm(sourceFormState)
+  }, [component, sourceFormState])
 
   useEffect(() => {
     if (componentType !== 'base' || !baseCategories?.length || form.base_category_id) {
