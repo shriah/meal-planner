@@ -103,7 +103,10 @@ Plans:
   1. Upgrade-path tests prove legacy curry records become usable compatibility-aware records after v1.3 migration/backfill
   2. Regression tests prove auto-generation, manual picker behavior, and explicit override flows all agree on when incompatible curries are allowed
   3. Regression tests prove category rename/delete normalization does not leave stale curry compatibility behavior behind
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 20-01-PLAN.md — Add the CURRY-08 backbone regression harness and prove rename/delete normalization through service and generator runtime tests
+- [ ] 20-02-PLAN.md — Expand supporting library, picker, and store regressions and pre-create the Phase 20 validation contract
 
 ## Progress
 
