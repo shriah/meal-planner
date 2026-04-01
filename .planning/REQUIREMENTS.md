@@ -15,7 +15,7 @@
 - [x] **CURRY-05**: Manual picker and locked/manual selections can still use an incompatible curry as an explicit user override
 - [x] **CURRY-06**: Rule behavior can explicitly override curry/base compatibility for scoped exceptions without changing the default compatibility contract
 - [x] **CURRY-07**: Curry compatibility remains category-ID based and stays safe across category rename/delete normalization
-- [ ] **CURRY-08**: Library, generator, picker, migration, and regression tests all use the new curry compatibility model consistently
+- [x] **CURRY-08**: Library, generator, picker, migration, and regression tests all use the new curry compatibility model consistently
 
 ## Future Requirements
 
@@ -45,7 +45,7 @@
 | CURRY-05 | Phase 19 | Complete |
 | CURRY-06 | Phase 19 | Complete |
 | CURRY-07 | Phase 17 | Complete |
-| CURRY-08 | Phase 20 | Planned |
+| CURRY-08 | Phase 20 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 8 total

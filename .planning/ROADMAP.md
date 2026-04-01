@@ -50,7 +50,7 @@
 - [x] **Phase 17: Curry Compatibility Data** - Curry records store editable compatible base categories and existing libraries upgrade safely. (completed 2026-03-29)
 - [x] **Phase 18: Generator Compatibility Contract** - Automatic generation enforces compatible curries and never silently relaxes the constraint. (completed 2026-03-29)
 - [x] **Phase 19: Explicit Override Paths** - Manual, locked, and rule-scoped exceptions can bypass compatibility only through explicit user intent. (completed 2026-03-29)
-- [ ] **Phase 20: Compatibility Regression Coverage** - Migration, generator, picker, and override behavior stay aligned under tests.
+- [x] **Phase 20: Compatibility Regression Coverage** - Migration, generator, picker, and override behavior stay aligned under tests. (completed 2026-04-01)
 
 ## Phase Details
 
@@ -105,8 +105,8 @@ Plans:
   3. Regression tests prove category rename/delete normalization does not leave stale curry compatibility behavior behind
 **Plans**: 2 plans
 Plans:
-- [ ] 20-01-PLAN.md — Add the CURRY-08 backbone regression harness and prove rename/delete normalization through service and generator runtime tests
-- [ ] 20-02-PLAN.md — Expand supporting library, picker, and store regressions and pre-create the Phase 20 validation contract
+- [x] 20-01-PLAN.md — Add the CURRY-08 backbone regression harness and prove rename/delete normalization through service and generator runtime tests
+- [x] 20-02-PLAN.md — Expand supporting library, picker, and store regressions and pre-create the Phase 20 validation contract
 
 ## Progress
 
@@ -131,7 +131,7 @@ Plans:
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
-| 20. Compatibility Regression Coverage | v1.3 | 0/TBD | Not started | - |
+| 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete   | 2026-04-01 |
 
 ## Backlog
 

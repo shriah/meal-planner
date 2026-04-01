@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
-status: active
-stopped_at: Phase 19 complete
-last_updated: "2026-03-30T01:08:00.000Z"
-last_activity: 2026-03-29
+status: verifying
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-04-01T17:35:11.962Z"
+last_activity: 2026-04-01
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 8
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 ## Current Position
 
-Phase: 20
-Plan: Not started
-Status: Ready for planning
-Last activity: 2026-03-29
+Phase: 20 (compatibility-regression-coverage) — VERIFYING
+Plan: 2 of 2
+Status: Phase complete — ready for verification
+Last activity: 2026-04-01 -- Phase 20 execution complete
 Progress: [██████████] 100%
 
 ## Performance Metrics
@@ -58,6 +58,8 @@ Progress: [██████████] 100%
 | Phase 18-generator-compatibility-contract P01 | 13min | 2 tasks | 4 files |
 | Phase 19-explicit-override-paths P01 | 7min | 2 tasks | 3 files |
 | Phase 19 P02 | 4min | 2 tasks | 3 files |
+| Phase 20-compatibility-regression-coverage P01 | 3min | 2 tasks | 4 files |
+| Phase 20-compatibility-regression-coverage P02 | 4min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -86,6 +88,10 @@ Recent decisions affecting current work:
 - [Phase 19]: Scoped require_one overrides stay on the existing curry generator seam instead of adding new rule vocabulary or override flags.
 - [Phase 19]: Tag-based curry require_one stays compatibility-first and only falls back to incompatible eligible curries when no compatible match satisfies the explicit rule.
 - [Phase 19]: Explicit override precedence is manual/locked selection first, then scoped require_one overrides, with default compatibility enforced otherwise.
+- [Phase 20-compatibility-regression-coverage]: Kept the Phase 20 backbone service-first and Dexie-backed so CURRY-08 evidence stays readable without UI-heavy coupling.
+- [Phase 20-compatibility-regression-coverage]: Proved rename/delete normalization in existing service and generator seams instead of adding new production helpers or fallback behavior.
+- [Phase 20]: Used existing seam-specific tests as CURRY-08 support proofs so the dedicated backbone remains the primary milestone contract artifact.
+- [Phase 20]: Library edit forms that derive from live Dexie records must resync when normalization changes persisted compatibility ids.
 
 ### Pending Todos
 
@@ -93,10 +99,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phase 20 still needs to lock milestone-wide regression coverage across migration, library, generator, picker, and override paths
+- None currently. Phase 20 coverage is implemented and ready for verification.
 
 ## Session Continuity
 
-Last session: 2026-03-30T01:08:00.000Z
-Stopped at: Phase 19 verification complete
+Last session: 2026-04-01T17:35:11.960Z
+Stopped at: Completed 20-02-PLAN.md
 Resume file: None
