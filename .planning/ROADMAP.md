@@ -131,7 +131,7 @@ Plans:
 | 17. Curry Compatibility Data | v1.3 | 3/3 | Complete   | 2026-03-29 |
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
-| 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete   | 2026-04-01 |
+| 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete    | 2026-04-01 |
 
 ## Backlog
 

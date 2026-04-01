@@ -10,7 +10,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ## Current State
 
-Shipped through `v1.2`, with `v1.3` in progress. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, and supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings.
+Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone audit/archive. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings, and has milestone-level regression coverage locking the full contract across migration, library, generator, picker, and overrides.
 
 ## Current Milestone: v1.3 Curry Base Compatibility
 
@@ -56,10 +56,11 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now stores curry/base c
 - ✓ Existing curry data can be populated with compatibility information without rebuilding the library from scratch — validated in Phase 17 (v1.3)
 - ✓ Generator treats curry/base compatibility as a hard default constraint during automatic selection — validated in Phase 18 (v1.3)
 - ✓ Rules can explicitly override curry/base compatibility when users need exceptional pairings — validated in Phase 19 (v1.3)
+- ✓ Compatibility regression coverage proves migration, library, generator, picker, and override flows all follow one curry compatibility contract — validated in Phase 20 (v1.3)
 
 ### Active
 
-- [ ] Compatibility regression coverage proves migration, library, generator, picker, and override flows all follow one curry compatibility contract
+- [ ] Milestone v1.3 audit/archive
 
 ### Out of Scope
 
@@ -78,7 +79,7 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now stores curry/base c
 - Shipped v1.2 with ~12,500 LOC TypeScript in 2 days (2026-03-27 → 2026-03-29)
 - Tech stack: Next.js 16, Dexie.js (IndexedDB, v11), Zustand, shadcn/ui, satori + @resvg/resvg-js, local `sonner` shim for toast feedback
 - Rule system now supports inline edit, explicit-only extras, no-random-extra defaults, and category-backed rule targets/effects; generation remains synchronous and LLM-free
-- 197 tests passing after Phase 19, including curry compatibility migration, picker override grouping, manual/locked persistence, and scoped `require_one` override regressions
+- 207 tests passing after Phase 20, including milestone-level curry compatibility migration, runtime normalization, library, picker, store, and override regressions
 - Dexie schema now includes full migration history through v11, including unified rules, meal-template migration, legacy exclude-extra cleanup, and dynamic category records
 
 ## Constraints
@@ -116,6 +117,7 @@ Shipped through `v1.2`, with `v1.3` in progress. The app now stores curry/base c
 | Presets resolve built-in category identity at the RuleForm boundary | Removes seed-order coupling while keeping `form-state.ts` pure | ✓ Good — closed the final v1.2 audit debt |
 | Curry compatibility is a hard automatic-generator constraint, not a relaxable rule-helper effect | Prevents silent incompatible pairings while keeping explicit override seams for later phases | ✓ Good — shipped in Phase 18 with existing warning UI reused |
 | Explicit curry compatibility overrides reuse existing picker/store and `require_one` seams | Preserves compatible-by-default behavior without introducing new override-only metadata or rule vocabulary | ✓ Good — shipped in Phase 19 with manual/locked precedence and compatibility-first tag fallback |
+| Curry compatibility contract is locked by one backbone regression plus seam-specific support tests | Keeps milestone proof readable while still covering migration, normalization, UI seams, and explicit override boundaries | ✓ Good — shipped in Phase 20 with 207 tests green |
 
 ## Evolution
 
@@ -135,4 +137,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after completing Phase 19*
+*Last updated: 2026-04-01 after completing Phase 20*
