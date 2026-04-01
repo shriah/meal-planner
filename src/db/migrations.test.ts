@@ -111,4 +111,63 @@ describe('Phase 14 categories table migration', () => {
 
     expect(rasam?.compatible_base_category_ids).toEqual([]);
   });
+
+  it('keeps curated backfill, unmatched fallback, and explicit empty arrays intact in one migrated runtime fixture', () => {
+    const fixture = buildCategoryMigrationFixture();
+    fixture.components.push(
+      {
+        name: 'Sambar',
+        componentType: 'curry',
+        dietary_tags: ['veg'],
+        regional_tags: ['south-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '',
+      },
+      {
+        name: 'House Special Curry',
+        componentType: 'curry',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '',
+      },
+      {
+        name: 'Never Auto Pick',
+        componentType: 'curry',
+        compatible_base_category_ids: [],
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '',
+      },
+    );
+
+    const migrated = migrateLegacyCategoryData(fixture);
+    const riceBaseId = migrated.categories.find((category) => category.name === 'rice-based')?.id;
+    const breadBaseId = migrated.categories.find((category) => category.name === 'bread-based')?.id;
+    const otherBaseId = migrated.categories.find((category) => category.name === 'other')?.id;
+    const allBaseIds = migrated.categories
+      .filter((category) => category.kind === 'base')
+      .map((category) => category.id);
+
+    expect(migrated.components.find((component) => component.name === 'Sambar')?.compatible_base_category_ids)
+      .toEqual([riceBaseId, otherBaseId]);
+    expect(
+      migrated.components.find((component) => component.name === 'House Special Curry')?.compatible_base_category_ids,
+    ).toEqual(allBaseIds);
+    expect(
+      migrated.components.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids,
+    ).toEqual([]);
+
+    const normalized = migrated.normalizeDeletedCategory(breadBaseId!);
+
+    expect(normalized.components.find((component) => component.name === 'Sambar')?.compatible_base_category_ids)
+      .toEqual([riceBaseId, otherBaseId]);
+    expect(
+      normalized.components.find((component) => component.name === 'House Special Curry')?.compatible_base_category_ids,
+    ).toEqual([riceBaseId, otherBaseId]);
+    expect(
+      normalized.components.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids,
+    ).toEqual([]);
+  });
 });
