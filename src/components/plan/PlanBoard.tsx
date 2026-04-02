@@ -59,6 +59,12 @@ export function PlanBoard() {
   const hasPlan = plan !== null && plan.slots.length > 0
   const isPastWeek = isReadOnly
   const isFutureWeek = !isReadOnly && currentWeekStart > getISOWeekStart(new Date())
+  const selectedPlanSlot = pickerState
+    ? plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
+    : undefined
+  const selectedBaseCategoryId = selectedPlanSlot
+    ? componentsMap.get(selectedPlanSlot.base_id)?.base_category_id
+    : undefined
 
   return (
     <div className="px-4 py-8 sm:px-8">
@@ -152,12 +158,8 @@ export function PlanBoard() {
           slot={pickerState.slot}
           componentType={pickerState.componentType}
           currentBaseCategoryId={
-            pickerState.componentType === 'extras'
-              ? (() => {
-                  const ps = plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
-                  const baseComp = ps ? componentsMap.get(ps.base_id) : undefined
-                  return baseComp?.base_category_id ?? undefined
-                })()
+            pickerState.componentType === 'curry' || pickerState.componentType === 'extras'
+              ? selectedBaseCategoryId
               : undefined
           }
         />
