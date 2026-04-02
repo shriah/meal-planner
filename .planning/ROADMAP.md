@@ -5,7 +5,7 @@
 - ✅ **v1.0 MVP** — Phases 1-6 (shipped 2026-03-22) — see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 - ✅ **v1.2 Edit Rule** — Phases 11-16 (shipped 2026-03-29) — see [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
-- 🚧 **v1.3 Curry Base Compatibility** — Phases 17-20 (in progress)
+- 🚧 **v1.3 Curry Base Compatibility** — Phases 17-21 (ready for re-audit)
 
 ## Phases
 
@@ -43,7 +43,7 @@
 
 </details>
 
-### 🚧 v1.3 Curry Base Compatibility (In Progress)
+### 🚧 v1.3 Curry Base Compatibility (Ready for Re-audit)
 
 **Milestone Goal:** Auto-generation respects curry-to-base compatibility by default, while explicit rules and manual/locked exceptions remain possible.
 
