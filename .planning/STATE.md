@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
 status: active
-stopped_at: Phase 20 complete
-last_updated: "2026-04-01T17:45:00.000Z"
-last_activity: 2026-04-01
+stopped_at: Gap closure phases created after v1.3 audit
+last_updated: "2026-04-02T02:25:31Z"
+last_activity: 2026-04-02
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
   total_plans: 8
   completed_plans: 8
-  percent: 100
+  percent: 83
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Milestone v1.3 — ready for audit/archive
+**Current focus:** Milestone v1.3 — gap closure planning after audit
 
 ## Current Position
 
-Phase: Complete
-Plan: All complete
-Status: Ready for milestone audit
-Last activity: 2026-04-01
-Progress: [██████████] 100%
+Phase: 21
+Plan: Not planned
+Status: Gap closure phase added from v1.3 audit
+Last activity: 2026-04-02
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -95,14 +95,14 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- Plan and execute Phase 21 to close the PlanBoard -> MealPickerSheet curry override handoff gap.
 
 ### Blockers/Concerns
 
-- None currently. v1.3 is ready for milestone audit and completion.
+- v1.3 audit found a real end-to-end gap: PlanBoard does not pass base-category context into the curry picker, so CURRY-05 and CURRY-08 remain open until Phase 21 lands.
 
 ## Session Continuity
 
-Last session: 2026-04-01T17:45:00.000Z
-Stopped at: Phase 20 verification complete
+Last session: 2026-04-02T02:25:31Z
+Stopped at: Gap closure phases created after milestone audit
 Resume file: None

@@ -51,6 +51,7 @@
 - [x] **Phase 18: Generator Compatibility Contract** - Automatic generation enforces compatible curries and never silently relaxes the constraint. (completed 2026-03-29)
 - [x] **Phase 19: Explicit Override Paths** - Manual, locked, and rule-scoped exceptions can bypass compatibility only through explicit user intent. (completed 2026-03-29)
 - [x] **Phase 20: Compatibility Regression Coverage** - Migration, generator, picker, and override behavior stay aligned under tests. (completed 2026-04-01)
+- [ ] **Phase 21: Wire PlanBoard Curry Override Flow** - The real board entrypoint passes base context into the curry picker and regression coverage closes the missed seam from the v1.3 audit.
 
 ## Phase Details
 
@@ -108,6 +109,18 @@ Plans:
 - [x] 20-01-PLAN.md — Add the CURRY-08 backbone regression harness and prove rename/delete normalization through service and generator runtime tests
 - [x] 20-02-PLAN.md — Expand supporting library, picker, and store regressions and pre-create the Phase 20 validation contract
 
+### Phase 21: Wire PlanBoard Curry Override Flow
+**Goal**: The primary plan-board picker flow fully delivers explicit curry overrides by passing base-category context into the curry picker and closing the missed board-to-picker regression seam
+**Depends on**: Phase 20
+**Requirements**: CURRY-05, CURRY-08
+**Gap Closure**: Closes gaps from [v1.3-MILESTONE-AUDIT.md](v1.3-MILESTONE-AUDIT.md)
+**Success Criteria** (what must be TRUE):
+  1. Opening the curry picker from the weekly plan board provides the selected slot's base-category context, so compatible and override sections render correctly from the real entrypoint
+  2. Manual curry override behavior remains explicit and persists through the existing lock/regenerate flow after the board handoff is corrected
+  3. Regression coverage fails if the board-to-picker curry context handoff breaks again
+**Plans**: 0 plans
+**UI hint**: yes
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -132,6 +145,7 @@ Plans:
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete    | 2026-04-01 |
+| 21. Wire PlanBoard Curry Override Flow | v1.3 | 0/0 | Pending | - |
 
 ## Backlog
 
