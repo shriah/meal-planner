@@ -129,7 +129,6 @@ function makeSubzi(
 function makeExtra(
   name: string,
   extra_category: ExtraCategory,
-  compatible_base_types: BaseType[],
   tags: {
     dietary_tags: DietaryTag[];
     protein_tag?: ProteinTag;
@@ -141,7 +140,6 @@ function makeExtra(
     name,
     componentType: 'extra',
     extra_category,
-    compatible_base_types,
     dietary_tags: tags.dietary_tags,
     protein_tag: tags.protein_tag,
     regional_tags: tags.regional_tags,
@@ -165,9 +163,6 @@ function applySeedCategoryIds(
     return {
       ...component,
       extra_category_id: categoryLookup.extra[component.extra_category],
-      compatible_base_category_ids: (component.compatible_base_types ?? []).map(
-        (baseType) => categoryLookup.base[baseType],
-      ),
     };
   }
 
@@ -714,7 +709,6 @@ const capsicumStirFry = makeSubzi('Capsicum Stir Fry', {
 const sambarExtra = makeExtra(
   'Sambar',
   'liquid',
-  ['rice-based'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'dal',
@@ -726,7 +720,6 @@ const sambarExtra = makeExtra(
 const rasamExtra = makeExtra(
   'Rasam',
   'liquid',
-  ['rice-based'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -738,7 +731,6 @@ const rasamExtra = makeExtra(
 const papad = makeExtra(
   'Papad',
   'crunchy',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -750,7 +742,6 @@ const papad = makeExtra(
 const fryums = makeExtra(
   'Fryums',
   'crunchy',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -762,7 +753,6 @@ const fryums = makeExtra(
 const mangoPickle = makeExtra(
   'Mango Pickle',
   'condiment',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -774,7 +764,6 @@ const mangoPickle = makeExtra(
 const limePickle = makeExtra(
   'Lime Pickle',
   'condiment',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -786,7 +775,6 @@ const limePickle = makeExtra(
 const mixedPickle = makeExtra(
   'Mixed Pickle',
   'condiment',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -798,7 +786,6 @@ const mixedPickle = makeExtra(
 const coconutChutney = makeExtra(
   'Coconut Chutney',
   'condiment',
-  ['rice-based', 'other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -810,7 +797,6 @@ const coconutChutney = makeExtra(
 const tomatoChutney = makeExtra(
   'Tomato Chutney',
   'condiment',
-  ['other'],
   {
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
@@ -822,7 +808,6 @@ const tomatoChutney = makeExtra(
 const curdYogurt = makeExtra(
   'Curd / Yogurt',
   'dairy',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -834,7 +819,6 @@ const curdYogurt = makeExtra(
 const buttermilk = makeExtra(
   'Buttermilk',
   'dairy',
-  ['rice-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -846,7 +830,6 @@ const buttermilk = makeExtra(
 const ghee = makeExtra(
   'Ghee',
   'dairy',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -858,7 +841,6 @@ const ghee = makeExtra(
 const raita = makeExtra(
   'Raita',
   'dairy',
-  ['bread-based', 'rice-based'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -870,7 +852,6 @@ const raita = makeExtra(
 const kheer = makeExtra(
   'Kheer',
   'sweet',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -882,7 +863,6 @@ const kheer = makeExtra(
 const payasam = makeExtra(
   'Payasam',
   'sweet',
-  ['rice-based'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -894,7 +874,6 @@ const payasam = makeExtra(
 const halwa = makeExtra(
   'Halwa',
   'sweet',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',
@@ -906,7 +885,6 @@ const halwa = makeExtra(
 const gulabJamun = makeExtra(
   'Gulab Jamun',
   'sweet',
-  ['rice-based', 'bread-based', 'other'],
   {
     dietary_tags: ['veg'],
     protein_tag: 'none',

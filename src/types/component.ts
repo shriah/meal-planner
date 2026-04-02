@@ -63,9 +63,7 @@ export interface SubziRecord extends BaseComponentFields {
 export interface ExtraRecord extends BaseComponentFields {
   componentType: 'extra';
   extra_category_id?: number | null;
-  compatible_base_category_ids: number[];
   extra_category: ExtraCategory;
-  compatible_base_types: BaseType[];
   incompatible_curry_categories?: string[];
 }
 

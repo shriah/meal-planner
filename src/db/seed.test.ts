@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getPreferences } from '@/services/food-db';
-import type { CurryRecord } from '@/types/component';
+import type { CurryRecord, ExtraRecord } from '@/types/component';
 
 describe('runSeed', () => {
   beforeEach(async () => {
@@ -53,8 +53,8 @@ describe('runSeed', () => {
 
     for (const extra of extras) {
       expect(extra.extra_category_id).toEqual(expect.any(Number));
-      expect(extra.compatible_base_category_ids).toBeDefined();
-      expect(extra.compatible_base_category_ids!.length).toBeGreaterThan(0);
+      expect(extra).not.toHaveProperty('compatible_base_category_ids');
+      expect(extra).not.toHaveProperty('compatible_base_types');
     }
 
     const baseCategories = await getCategoriesByKind('base');
@@ -72,6 +72,11 @@ describe('runSeed', () => {
       expect.arrayContaining([expect.any(Number)]),
     );
     expect(rasam?.compatible_base_category_ids).toEqual([]);
+  });
+
+  it('keeps extra records flat in the domain type contract', () => {
+    expectTypeOf<ExtraRecord>().not.toHaveProperty('compatible_base_category_ids');
+    expectTypeOf<ExtraRecord>().not.toHaveProperty('compatible_base_types');
   });
 
   it('keeps an explicit empty curry compatibility array distinct from legacy missing data', () => {
