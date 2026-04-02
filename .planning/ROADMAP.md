@@ -51,7 +51,7 @@
 - [x] **Phase 18: Generator Compatibility Contract** - Automatic generation enforces compatible curries and never silently relaxes the constraint. (completed 2026-03-29)
 - [x] **Phase 19: Explicit Override Paths** - Manual, locked, and rule-scoped exceptions can bypass compatibility only through explicit user intent. (completed 2026-03-29)
 - [x] **Phase 20: Compatibility Regression Coverage** - Migration, generator, picker, and override behavior stay aligned under tests. (completed 2026-04-01)
-- [ ] **Phase 21: Wire PlanBoard Curry Override Flow** - The real board entrypoint passes base context into the curry picker and regression coverage closes the missed seam from the v1.3 audit.
+- [x] **Phase 21: Wire PlanBoard Curry Override Flow** - The real board entrypoint passes base context into the curry picker and regression coverage closes the missed seam from the v1.3 audit. (completed 2026-04-02)
 
 ## Phase Details
 
@@ -121,7 +121,7 @@ Plans:
 **Plans**: 1 plan
 **UI hint**: yes
 Plans:
-- [ ] 21-01-PLAN.md — Wire the PlanBoard curry picker handoff and pre-create the Phase 21 validation contract
+- [x] 21-01-PLAN.md — Wire the PlanBoard curry picker handoff and pre-create the Phase 21 validation contract
 
 ## Progress
 
@@ -147,7 +147,7 @@ Plans:
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete    | 2026-04-01 |
-| 21. Wire PlanBoard Curry Override Flow | v1.3 | 0/1 | Pending | - |
+| 21. Wire PlanBoard Curry Override Flow | v1.3 | 1/1 | Complete   | 2026-04-02 |
 
 ## Backlog
 
@@ -155,7 +155,7 @@ Plans:
 
 **Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
 **Requirements:** TBD
-**Plans:** 2/2 plans complete
+**Plans:** 1/1 plans complete
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)

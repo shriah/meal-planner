@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
 status: active
-stopped_at: Gap closure phases created after v1.3 audit
-last_updated: "2026-04-02T02:25:31Z"
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-04-02T02:38:09.938Z"
 last_activity: 2026-04-02
 progress:
   total_phases: 6
-  completed_phases: 5
-  total_plans: 8
-  completed_plans: 8
-  percent: 83
+  completed_phases: 6
+  total_plans: 9
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-29 — v1.3 started)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Milestone v1.3 — gap closure planning after audit
+**Current focus:** Milestone v1.3 — ready for audit/archive after Phase 21 gap closure
 
 ## Current Position
 
 Phase: 21
-Plan: Not planned
-Status: Gap closure phase added from v1.3 audit
+Plan: 01
+Status: Complete
 Last activity: 2026-04-02
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 83%
 | Phase 19 P02 | 4min | 2 tasks | 3 files |
 | Phase 20-compatibility-regression-coverage P01 | 3min | 2 tasks | 4 files |
 | Phase 20-compatibility-regression-coverage P02 | 4min | 2 tasks | 6 files |
+| Phase 21 P01 | 3min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -92,17 +93,19 @@ Recent decisions affecting current work:
 - [Phase 20-compatibility-regression-coverage]: Proved rename/delete normalization in existing service and generator seams instead of adding new production helpers or fallback behavior.
 - [Phase 20]: Used existing seam-specific tests as CURRY-08 support proofs so the dedicated backbone remains the primary milestone contract artifact.
 - [Phase 20]: Library edit forms that derive from live Dexie records must resync when normalization changes persisted compatibility ids.
+- [Phase 21]: Kept the fix inside PlanBoard by deriving the selected slot base category once and reusing the existing MealPickerSheet prop for curry and extras only.
+- [Phase 21]: Phase 21 validation stays narrow: one board seam regression command, one supporting picker/store proof, and the standard phase gate.
 
 ### Pending Todos
 
-- Plan and execute Phase 21 to close the PlanBoard -> MealPickerSheet curry override handoff gap.
+- None.
 
 ### Blockers/Concerns
 
-- v1.3 audit found a real end-to-end gap: PlanBoard does not pass base-category context into the curry picker, so CURRY-05 and CURRY-08 remain open until Phase 21 lands.
+- None.
 
 ## Session Continuity
 
-Last session: 2026-04-02T02:25:31Z
-Stopped at: Gap closure phases created after milestone audit
+Last session: 2026-04-02T02:38:09.936Z
+Stopped at: Completed 21-01-PLAN.md
 Resume file: None
