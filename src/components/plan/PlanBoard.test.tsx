@@ -196,7 +196,74 @@ describe('PlanBoard', () => {
     )
   })
 
-  it('keeps currentBaseCategoryId undefined for non-extras pickers', () => {
+  it('passes the selected slot base_category_id into MealPickerSheet for curry pickers', () => {
+    mockPlan = {
+      slots: [
+        {
+          day: 'monday',
+          meal_slot: 'lunch',
+          base_id: 101,
+          curry_id: 102,
+          subzi_id: 103,
+          extra_ids: [104],
+        },
+      ],
+    }
+    mockAllComponents = [
+      {
+        id: 101,
+        name: 'Plain Rice',
+        componentType: 'base',
+        base_type: 'rice-based',
+        base_category_id: 42,
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 102,
+        name: 'Dal',
+        componentType: 'curry',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 103,
+        name: 'Beans',
+        componentType: 'subzi',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 104,
+        name: 'Pickle',
+        componentType: 'extra',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+    ]
+
+    render(<PlanBoard />)
+    fireEvent.click(screen.getByText('Dal'))
+
+    expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        componentType: 'curry',
+        currentBaseCategoryId: 42,
+        day: 'monday',
+        slot: 'lunch',
+      }),
+    )
+  })
+
+  it('keeps currentBaseCategoryId undefined for base pickers', () => {
     mockPlan = {
       slots: [
         {
@@ -256,6 +323,73 @@ describe('PlanBoard', () => {
     expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
       expect.objectContaining({
         componentType: 'base',
+        currentBaseCategoryId: undefined,
+        day: 'monday',
+        slot: 'lunch',
+      }),
+    )
+  })
+
+  it('keeps currentBaseCategoryId undefined for subzi pickers', () => {
+    mockPlan = {
+      slots: [
+        {
+          day: 'monday',
+          meal_slot: 'lunch',
+          base_id: 101,
+          curry_id: 102,
+          subzi_id: 103,
+          extra_ids: [104],
+        },
+      ],
+    }
+    mockAllComponents = [
+      {
+        id: 101,
+        name: 'Plain Rice',
+        componentType: 'base',
+        base_type: 'rice-based',
+        base_category_id: 42,
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 102,
+        name: 'Dal',
+        componentType: 'curry',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 103,
+        name: 'Beans',
+        componentType: 'subzi',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+      {
+        id: 104,
+        name: 'Pickle',
+        componentType: 'extra',
+        dietary_tags: ['veg'],
+        regional_tags: ['pan-indian'],
+        occasion_tags: ['everyday'],
+        created_at: '2026-03-28T00:00:00.000Z',
+      },
+    ]
+
+    render(<PlanBoard />)
+    fireEvent.click(screen.getByText('Beans'))
+
+    expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        componentType: 'subzi',
         currentBaseCategoryId: undefined,
         day: 'monday',
         slot: 'lunch',
