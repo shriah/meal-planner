@@ -10,22 +10,23 @@ last_updated: 2026-04-02
 
 ## Scope
 
-Phase 21 validates the narrow audit gap in the real PlanBoard curry override entrypoint:
-- the weekly board passes the selected slot's base-category context into the curry picker
-- the picker continues to classify compatible vs explicit override curries using that board-provided context
-- the existing manual/locked store path continues to preserve explicit incompatible curry intent after the board handoff is corrected
+Phase 21 validates the missed PlanBoard-to-picker seam from the v1.3 audit:
+- opening the curry picker from the real weekly board forwards the selected slot's base-category context
+- extras continue to reuse the same slot-derived base context after the board seam is corrected
+- existing explicit override grouping and persisted manual override behavior remain proven by the picker and store regression suites already added in earlier phases
 
 Out of scope for this phase:
-- new compatibility features or broader picker redesign
-- Phase 18 validation debt cleanup
-- Phase 20 malformed metadata cleanup
+- new picker props, override metadata, or store semantics
+- broad compatibility cleanup outside the PlanBoard handoff
+- Phase 20 metadata cleanup or milestone-wide test reshaping
 
 ## Requirement Map
 
-| Requirement | Validation Target | Command |
-|---|---|---|
-| CURRY-05 | Real board -> picker curry flow passes `currentBaseCategoryId`, while the existing picker/store seams still allow explicit incompatible overrides to be chosen and preserved | `npx vitest run src/components/plan/PlanBoard.test.tsx` plus `npx vitest run src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts` |
-| CURRY-08 | Regression coverage explicitly includes the board-to-picker seam that the v1.3 audit found missing | `npx vitest run src/components/plan/PlanBoard.test.tsx` |
+| Requirement | Proof Layer | Validation Target | Command |
+|---|---|---|---|
+| CURRY-05 | Board seam regression | PlanBoard forwards slot base context into curry and extras pickers while base/subzi stay unchanged | `npx vitest run src/components/plan/PlanBoard.test.tsx` |
+| CURRY-05 | Supporting override proof | Picker grouping and persisted manual override behavior still hold after the board handoff fix | `npx vitest run src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts` |
+| CURRY-08 | Phase gate | The corrected board seam plus supporting picker/store proofs stay green in focused runs and the normal suite gate | `npx vitest run src/components/plan/PlanBoard.test.tsx src/components/plan/MealPickerSheet.test.tsx src/stores/plan-store.test.ts && npm test` |
 
 ## Validation Commands
 
@@ -46,9 +47,9 @@ npm test
 
 ## Wave 0 Coverage
 
-- [ ] `src/components/plan/PlanBoard.test.tsx` proves the board forwards slot base-category context into the curry picker instead of only wiring extras
-- [ ] `src/components/plan/MealPickerSheet.test.tsx` proves the picker still renders compatible vs override sections when it receives base context
-- [ ] `src/stores/plan-store.test.ts` proves explicit incompatible curry selections still persist and flow through locked regenerate unchanged
+- [ ] `src/components/plan/PlanBoard.test.tsx` proves the real board entrypoint forwards the selected slot base category into curry and extras picker flows while leaving base and subzi untouched
+- [ ] `src/components/plan/MealPickerSheet.test.tsx` proves explicit override grouping still classifies compatible and incompatible curries correctly
+- [ ] `src/stores/plan-store.test.ts` proves manual incompatible curry selections still persist through the existing swap and regenerate seams
 
 ## Approval Standard
 
@@ -60,7 +61,7 @@ This phase is approved when:
 
 ## Rerun Evidence
 
-- 2026-04-02: Pending execution
+- Pending - rerun the focused commands above and replace this section with dated evidence before approval.
 
 ---
 *Validation contract created: 2026-04-02*
