@@ -159,3 +159,18 @@ Plans:
 
 Plans:
 - [ ] TBD (promote with `$gsd-review-backlog` when ready)
+
+### Phase 1000: remove the compatability base for Extras
+
+**Goal**: Extras no longer store or use base-compatibility anywhere in the product, and explicit-only extra runtime behavior remains the sole automatic path
+**Depends on**: Phase 21
+**Requirements**: PH1000-01, PH1000-02, PH1000-03, PH1000-04, PH1000-05, PH1000-06
+**Success Criteria** (what must be TRUE):
+  1. Users can create, edit, browse, and manually pick extras without seeing or depending on any base-compatibility concept
+  2. Existing extra rows upgrade safely in Dexie and no longer retain live compatibility fields, while curry compatibility behavior remains unchanged
+  3. Automatic generation only adds extras through explicit `require_extra` rules and never restores fallback auto-fill behavior after compatibility removal
+**Plans**: 3 plans
+Plans:
+- [ ] 1000-01-PLAN.md — Remove extra compatibility from the type, seed, migration, and service contracts
+- [ ] 1000-02-PLAN.md — Remove extra compatibility UI and make manual extra picking unfiltered
+- [ ] 1000-03-PLAN.md — Simplify generator extras to explicit-only runtime behavior and finalize validation
