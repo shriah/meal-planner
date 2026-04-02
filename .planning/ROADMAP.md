@@ -118,8 +118,10 @@ Plans:
   1. Opening the curry picker from the weekly plan board provides the selected slot's base-category context, so compatible and override sections render correctly from the real entrypoint
   2. Manual curry override behavior remains explicit and persists through the existing lock/regenerate flow after the board handoff is corrected
   3. Regression coverage fails if the board-to-picker curry context handoff breaks again
-**Plans**: 0 plans
+**Plans**: 1 plan
 **UI hint**: yes
+Plans:
+- [ ] 21-01-PLAN.md — Wire the PlanBoard curry picker handoff and pre-create the Phase 21 validation contract
 
 ## Progress
 
@@ -145,7 +147,7 @@ Plans:
 | 18. Generator Compatibility Contract | v1.3 | 1/1 | Complete    | 2026-03-29 |
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete    | 2026-04-01 |
-| 21. Wire PlanBoard Curry Override Flow | v1.3 | 0/0 | Pending | - |
+| 21. Wire PlanBoard Curry Override Flow | v1.3 | 0/1 | Pending | - |
 
 ## Backlog
 
