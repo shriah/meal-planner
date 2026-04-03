@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
 status: active
-stopped_at: Completed Phase 21 verification and validation approval
-last_updated: "2026-04-02T02:40:16Z"
-last_activity: 2026-04-02
+stopped_at: Completed Phase 1000 verification
+last_updated: "2026-04-03T03:25:00Z"
+last_activity: 2026-04-03 -- Phase 1000 complete
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 9
-  completed_plans: 9
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 12
+  completed_plans: 12
   percent: 100
 ---
 
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-02 — Phase 21 verified, v1.3 ready for re-audit)
+See: .planning/PROJECT.md (updated 2026-04-03 — Phase 1000 verified, v1.3 ready for re-audit)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Milestone v1.3 — ready for re-audit after Phase 21 gap closure
+**Current focus:** Milestone v1.3 — ready for re-audit after Phase 1000 cleanup
 
 ## Current Position
 
-Phase: 21
-Plan: 01
+Phase: 1000 (remove-the-compatability-base-for-extras)
+Plan: 3 of 3
 Status: Complete
-Last activity: 2026-04-02
+Last activity: 2026-04-03 -- Phase 1000 complete
 Progress: [██████████] 100%
 
 ## Performance Metrics
@@ -64,6 +64,10 @@ Progress: [██████████] 100%
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 1000 added: remove the compatability base for Extras
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
@@ -95,6 +99,8 @@ Recent decisions affecting current work:
 - [Phase 20]: Library edit forms that derive from live Dexie records must resync when normalization changes persisted compatibility ids.
 - [Phase 21]: Kept the fix inside PlanBoard by deriving the selected slot base category once and reusing the existing MealPickerSheet prop for curry and extras only.
 - [Phase 21]: Phase 21 validation stays narrow: one board seam regression command, one supporting picker/store proof, and the standard phase gate.
+- [Phase 1000]: Extras no longer store or use base compatibility in persistence, Library UI, picker flows, or generator behavior.
+- [Phase 1000]: Manual extras now always use the flat extra list, while automatic extras remain explicit-only through `require_extra`.
 
 ### Pending Todos
 
@@ -106,6 +112,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-04-02T02:40:16Z
-Stopped at: Completed Phase 21 verification and validation approval
+Last session: 2026-04-03T03:25:00Z
+Stopped at: Completed Phase 1000 verification
 Resume file: None

@@ -19,12 +19,12 @@
 
 ## Phase 1000 Requirements
 
-- [ ] **PH1000-01**: Library create/edit flows for extras no longer show or persist any base-compatibility controls
-- [ ] **PH1000-02**: Manual extra picking shows the full extra library and does not filter by selected base
-- [ ] **PH1000-03**: Automatic generation adds extras only when an explicit `require_extra` rule matches
-- [ ] **PH1000-04**: Required extras are selected by matching extra category only, without extra/base compatibility gating
-- [ ] **PH1000-05**: Existing extra rows migrate cleanly so legacy compatibility fields no longer survive as live data
-- [ ] **PH1000-06**: Removing extra compatibility does not alter the shipped curry compatibility contract
+- [x] **PH1000-01**: Library create/edit flows for extras no longer show or persist any base-compatibility controls
+- [x] **PH1000-02**: Manual extra picking shows the full extra library and does not filter by selected base
+- [x] **PH1000-03**: Automatic generation adds extras only when an explicit `require_extra` rule matches
+- [x] **PH1000-04**: Required extras are selected by matching extra category only, without extra/base compatibility gating
+- [x] **PH1000-05**: Existing extra rows migrate cleanly so legacy compatibility fields no longer survive as live data
+- [x] **PH1000-06**: Removing extra compatibility does not alter the shipped curry compatibility contract
 
 ## Future Requirements
 
@@ -55,12 +55,12 @@
 | CURRY-06 | Phase 19 | Complete |
 | CURRY-07 | Phase 17 | Complete |
 | CURRY-08 | Phase 21 | Complete |
-| PH1000-01 | Phase 1000 | Planned |
-| PH1000-02 | Phase 1000 | Planned |
-| PH1000-03 | Phase 1000 | Planned |
-| PH1000-04 | Phase 1000 | Planned |
-| PH1000-05 | Phase 1000 | Planned |
-| PH1000-06 | Phase 1000 | Planned |
+| PH1000-01 | Phase 1000 | Complete |
+| PH1000-02 | Phase 1000 | Complete |
+| PH1000-03 | Phase 1000 | Complete |
+| PH1000-04 | Phase 1000 | Complete |
+| PH1000-05 | Phase 1000 | Complete |
+| PH1000-06 | Phase 1000 | Complete |
 
 **Coverage:**
 - v1.3 requirements: 8 total

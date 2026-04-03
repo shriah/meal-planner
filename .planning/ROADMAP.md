@@ -171,6 +171,6 @@ Plans:
   3. Automatic generation only adds extras through explicit `require_extra` rules and never restores fallback auto-fill behavior after compatibility removal
 **Plans**: 3 plans
 Plans:
-- [ ] 1000-01-PLAN.md — Remove extra compatibility from the type, seed, migration, and service contracts
-- [ ] 1000-02-PLAN.md — Remove extra compatibility UI and make manual extra picking unfiltered
-- [ ] 1000-03-PLAN.md — Simplify generator extras to explicit-only runtime behavior and finalize validation
+- [x] 1000-01-PLAN.md — Remove extra compatibility from the type, seed, migration, and service contracts
+- [x] 1000-02-PLAN.md — Remove extra compatibility UI and make manual extra picking unfiltered
+- [x] 1000-03-PLAN.md — Simplify generator extras to explicit-only runtime behavior and finalize validation

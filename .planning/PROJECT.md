@@ -10,7 +10,7 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ## Current State
 
-Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re-audit/archive. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings, and now closes the real PlanBoard-to-picker seam so the primary manual override flow matches the compatibility contract end to end.
+Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re-audit/archive. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings, closes the real PlanBoard-to-picker seam, and no longer treats extras as base-bound anywhere in the product.
 
 ## Current Milestone: v1.3 Curry Base Compatibility
 
@@ -57,6 +57,7 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 - ✓ Generator treats curry/base compatibility as a hard default constraint during automatic selection — validated in Phase 18 (v1.3)
 - ✓ Rules and manual picker flows can explicitly override curry/base compatibility when users need exceptional pairings, including from the real PlanBoard entrypoint — validated through Phases 19 and 21 (v1.3)
 - ✓ Compatibility regression coverage proves migration, library, generator, picker, override, and board-entry flows all follow one curry compatibility contract — validated through Phases 20 and 21 (v1.3)
+- ✓ Extras no longer store or use base compatibility in data model, Library UI, picker, or generator behavior; extras remain explicit-only rule-driven add-ons and curry compatibility is unchanged — validated in Phase 1000
 
 ### Active
 
@@ -79,8 +80,8 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 - Shipped v1.2 with ~12,500 LOC TypeScript in 2 days (2026-03-27 → 2026-03-29)
 - Tech stack: Next.js 16, Dexie.js (IndexedDB, v11), Zustand, shadcn/ui, satori + @resvg/resvg-js, local `sonner` shim for toast feedback
 - Rule system now supports inline edit, explicit-only extras, no-random-extra defaults, and category-backed rule targets/effects; generation remains synchronous and LLM-free
-- 209 tests passing after Phase 21, including milestone-level curry compatibility migration, runtime normalization, library, picker, store, override, and board-entry regressions
-- Dexie schema now includes full migration history through v11, including unified rules, meal-template migration, legacy exclude-extra cleanup, and dynamic category records
+- 211 tests passing after Phase 1000, including curry compatibility migration/regression coverage plus extra-compatibility removal across data, UI, picker, and generator seams
+- Dexie schema now includes full migration history through v13, including unified rules, meal-template migration, legacy exclude-extra cleanup, dynamic category records, and extra-compatibility field removal
 
 ## Constraints
 
@@ -118,6 +119,7 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 | Curry compatibility is a hard automatic-generator constraint, not a relaxable rule-helper effect | Prevents silent incompatible pairings while keeping explicit override seams for later phases | ✓ Good — shipped in Phase 18 with existing warning UI reused |
 | Explicit curry compatibility overrides reuse existing picker/store and `require_one` seams | Preserves compatible-by-default behavior without introducing new override-only metadata or rule vocabulary | ✓ Good — shipped in Phase 19 with manual/locked precedence and compatibility-first tag fallback |
 | Curry compatibility contract is locked by one backbone regression plus seam-specific support tests | Keeps milestone proof readable while still covering migration, normalization, UI seams, and explicit override boundaries | ✓ Good — extended in Phase 21 with 209 tests green and the PlanBoard seam closed |
+| Extras are not base-bound data | Extra selection is explicit-only and category-based; removing base compatibility simplifies the model without touching curry constraints | ✓ Good — shipped in Phase 1000 with migration, UI, picker, and generator cleanup |
 
 ## Evolution
 
@@ -137,4 +139,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after verifying Phase 21*
+*Last updated: 2026-04-03 after verifying Phase 1000*
