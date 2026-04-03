@@ -10,17 +10,13 @@ Generate a complete, realistic Indian weekly meal plan in one click — with sma
 
 ## Current State
 
-Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re-audit/archive. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings, closes the real PlanBoard-to-picker seam, and no longer treats extras as base-bound anywhere in the product.
+Shipped through `v1.3`, with the curry compatibility milestone archived and the extra-compatibility cleanup follow-up completed. The app now stores curry/base compatibility in the Library, enforces compatible-by-default auto curry selection with skipped-curry warnings, supports explicit manual, locked, and scoped-rule override paths for exceptional incompatible pairings, closes the real PlanBoard-to-picker seam, and treats extras as explicit-only category-based add-ons with no base-compatibility concept.
 
-## Current Milestone: v1.3 Curry Base Compatibility
+## Next Milestone Goals
 
-**Goal:** Add curry-to-base compatibility as a default generator constraint while keeping rule-based overrides available.
-
-**Target features:**
-- Curry records store compatible base categories in the Library model and editing UI
-- Existing curry records are backfilled with compatibility data inside the app
-- Auto-generation only selects curries compatible with the chosen base unless a rule explicitly overrides that default
-- Subzi remains out of scope; curry-vs-subzi composition modes stay deferred to backlog
+- Decide whether the next milestone should target meal composition modes, PDF export, library JSON import/export, or cross-week rotation
+- Start a fresh scoped requirements doc instead of carrying `v1.3` milestone requirements forward
+- Keep curry compatibility stable while simplifying any duplicated helper logic and deciding whether browser-level E2E is worth the cost
 
 ## Requirements
 
@@ -61,7 +57,7 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 
 ### Active
 
-- [ ] Milestone v1.3 re-audit/archive
+- None. Define the next milestone with `$gsd-new-milestone`.
 
 ### Out of Scope
 
@@ -78,6 +74,7 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 - Shipped v1.0 with ~8,600 LOC TypeScript in 3 days (2026-03-19 → 2026-03-22)
 - Shipped v1.1 with ~11,300 LOC TypeScript in 4 days (2026-03-22 → 2026-03-26)
 - Shipped v1.2 with ~12,500 LOC TypeScript in 2 days (2026-03-27 → 2026-03-29)
+- Shipped v1.3 with ~14,300 LOC TypeScript in 5 days (2026-03-29 → 2026-04-03)
 - Tech stack: Next.js 16, Dexie.js (IndexedDB, v11), Zustand, shadcn/ui, satori + @resvg/resvg-js, local `sonner` shim for toast feedback
 - Rule system now supports inline edit, explicit-only extras, no-random-extra defaults, and category-backed rule targets/effects; generation remains synchronous and LLM-free
 - 211 tests passing after Phase 1000, including curry compatibility migration/regression coverage plus extra-compatibility removal across data, UI, picker, and generator seams
@@ -89,7 +86,7 @@ Shipped through `v1.2`, with `v1.3` fully implemented and ready for milestone re
 - **Tech stack**: Next.js 16 + Dexie.js + Zustand + shadcn/ui (confirmed)
 - **Nutrition**: Explicitly out of scope — do not track calories or macros
 - **Backwards compatibility**: Dexie auto-migration handles all upgrade paths — no data loss on upgrade
-- **Test coverage**: All generator and compiler refactors covered by TDD; ~160 tests passing
+- **Test coverage**: Generator, compiler, picker, and migration refactors stay under TDD; 211 tests passing at the v1.3 archive point
 - **User-defined categories**: Category identity is stable ID, not label; rename/delete safety must be preserved across UI and persistence
 
 ## Key Decisions
@@ -139,4 +136,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after verifying Phase 1000*
+*Last updated: 2026-04-03 after archiving v1.3*

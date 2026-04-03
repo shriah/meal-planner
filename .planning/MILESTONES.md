@@ -1,5 +1,31 @@
 # Milestones
 
+## v1.3 Curry Base Compatibility (Shipped: 2026-04-03)
+
+**Phases completed:** 5 phases, 9 plans, 18 tasks
+**Timeline:** 2026-03-29 → 2026-04-03 (5 days)
+**TypeScript LOC:** ~14,300 (+1,800 from v1.2)
+**Git:** 82 commits, 80 files changed, +9,618 / -1,526 lines
+
+**Key accomplishments:**
+
+- Curry records now store compatible base category IDs in the Library, with curated seed mappings and safe upgrade backfill for existing curry data
+- Automatic generation now enforces curry compatibility as a hard default constraint and skips curry with warnings instead of silently picking incompatible pairings
+- Manual, locked, and scoped `require_one` rule paths now provide explicit override seams for intentional incompatible curry/base combinations
+- The real PlanBoard entrypoint now passes base context into the curry picker so override grouping works from the actual weekly board, not just isolated picker tests
+- Milestone regression coverage now ties migration, library, generator, picker, store, and board-entry flows to one shared curry compatibility contract
+- Extras are no longer base-bound anywhere in the product; extra selection is now explicit-only and category-based without affecting curry compatibility
+
+**Tech debt accepted:**
+
+- Phase 18 validation remains marked pending in its validation artifact even though the runtime contract is shipped and verified
+- Curry compatibility classification logic is duplicated between generator and picker helpers
+- There is still no browser-level E2E for the full IndexedDB -> board -> picker -> regenerate flow
+
+**Archive:** `.planning/milestones/v1.3-ROADMAP.md` · `.planning/milestones/v1.3-REQUIREMENTS.md` · `.planning/milestones/v1.3-MILESTONE-AUDIT.md`
+
+---
+
 ## v1.2 Edit Rule (Shipped: 2026-03-29)
 
 **Phases completed:** 6 phases, 12 plans, 16 tasks

@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Curry Base Compatibility
-status: active
-stopped_at: Completed Phase 1000 verification
-last_updated: "2026-04-03T03:25:00Z"
-last_activity: 2026-04-03 -- Phase 1000 complete
+status: archived
+stopped_at: Archived milestone v1.3
+last_updated: "2026-04-03T16:20:00Z"
+last_activity: 2026-04-03 -- v1.3 archived
 progress:
   total_phases: 7
   completed_phases: 7
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03 — Phase 1000 verified, v1.3 ready for re-audit)
+See: .planning/PROJECT.md (updated 2026-04-03 — v1.3 archived)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Milestone v1.3 — ready for re-audit after Phase 1000 cleanup
+**Current focus:** Start the next milestone with `$gsd-new-milestone`
 
 ## Current Position
 
-Phase: 1000 (remove-the-compatability-base-for-extras)
-Plan: 3 of 3
-Status: Complete
-Last activity: 2026-04-03 -- Phase 1000 complete
+Phase: None
+Plan: 0 of 0
+Status: Milestone archived
+Last activity: 2026-04-03 -- v1.3 archived
 Progress: [██████████] 100%
 
 ## Performance Metrics
@@ -112,6 +112,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-04-03T03:25:00Z
-Stopped at: Completed Phase 1000 verification
+Last session: 2026-04-03T16:20:00Z
+Stopped at: Archived milestone v1.3
 Resume file: None
