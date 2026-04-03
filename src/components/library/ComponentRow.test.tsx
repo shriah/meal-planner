@@ -19,6 +19,37 @@ beforeEach(async () => {
 });
 
 describe('ComponentRow curry compatibility summary', () => {
+  it('shows only the extra-category summary for extra rows', async () => {
+    const liquidId = await addCategory({ kind: 'extra', name: 'Liquid' });
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+
+    render(
+      <ComponentRow
+        component={{
+          id: 1,
+          name: 'Rasam',
+          componentType: 'extra',
+          extra_category_id: liquidId,
+          compatible_base_category_ids: [riceId],
+          dietary_tags: ['veg'],
+          regional_tags: ['south-indian'],
+          occasion_tags: ['everyday'],
+          created_at: new Date().toISOString(),
+        }}
+        expanded={false}
+        confirmingDelete={false}
+        onExpand={() => {}}
+        onCollapse={() => {}}
+        onRequestDelete={() => {}}
+        onCancelDelete={() => {}}
+        onDelete={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText('Liquid')).toBeInTheDocument();
+    expect(screen.queryByText('Rice Plates')).toBeNull();
+  });
+
   it('shows collapsed compatible base labels for curry rows', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });

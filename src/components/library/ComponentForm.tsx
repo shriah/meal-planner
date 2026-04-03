@@ -118,7 +118,7 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
 }
 
 function showsCompatibleBaseChecklist(componentType: ComponentType) {
-  return componentType === 'extra' || componentType === 'curry'
+  return componentType === 'curry'
 }
 
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode }: ComponentFormProps) {
@@ -169,13 +169,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
   const selectedBaseCategory = findCategory(baseCategories, form.base_category_id)
   const selectedExtraCategory = findCategory(extraCategories, form.extra_category_id)
-  const legacyCompatibleBaseTypes = useMemo(
-    () => form.compatible_base_category_ids
-      .map((id) => baseCategories?.find((category) => category.id === id)?.name)
-      .map((name) => getBuiltInBaseType(name))
-      .filter((value): value is BaseType => value !== undefined),
-    [baseCategories, form.compatible_base_category_ids],
-  )
   const canSaveBase = componentType !== 'base' || Boolean(form.base_category_id)
   const canSaveExtra = componentType !== 'extra' || Boolean(form.extra_category_id)
   const hasZeroCompatibleBases =
@@ -201,9 +194,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         ...(componentType === 'extra'
           ? {
               extra_category_id: form.extra_category_id ? Number(form.extra_category_id) : null,
-              compatible_base_category_ids: form.compatible_base_category_ids,
               extra_category: getBuiltInExtraCategory(selectedExtraCategory?.name),
-              compatible_base_types: legacyCompatibleBaseTypes,
             }
           : {}),
         ...(componentType === 'curry'

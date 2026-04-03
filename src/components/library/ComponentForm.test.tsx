@@ -91,9 +91,7 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
-  it('uses live extra categories and compatible-base checklist options, persisting numeric IDs on save', async () => {
-    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
+  it('uses live extra categories without any compatible-base checklist, persisting only the extra category id on save', async () => {
     const liquidId = await addCategory({ kind: 'extra', name: 'Brothy' });
     await addCategory({ kind: 'extra', name: 'Crunchy' });
 
@@ -106,14 +104,10 @@ describe('ComponentForm dynamic category wiring', () => {
       />,
     );
 
-    expect(await screen.findByText('Compatible Base Categories')).toBeInTheDocument();
-    expect(await screen.findByText('Rice Plates')).toBeInTheDocument();
-    expect(await screen.findByText('Flatbreads')).toBeInTheDocument();
+    expect(screen.queryByText('Compatible Base Categories')).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('combobox', { name: 'Extra Category' }));
     await userEvent.click(screen.getByRole('option', { name: 'Brothy' }));
-    await userEvent.click(screen.getByText('Rice Plates'));
-    await userEvent.click(screen.getByText('Flatbreads'));
     await userEvent.type(screen.getByLabelText('Name'), 'Rasam');
     await userEvent.click(screen.getByRole('button', { name: 'Save Extra' }));
 
@@ -121,7 +115,8 @@ describe('ComponentForm dynamic category wiring', () => {
       const extras = await getComponentsByType('extra');
       expect(extras).toHaveLength(1);
       expect(extras[0].extra_category_id).toBe(liquidId);
-      expect(extras[0].compatible_base_category_ids).toEqual([riceId, breadId]);
+      expect(extras[0]).not.toHaveProperty('compatible_base_category_ids');
+      expect(extras[0]).not.toHaveProperty('compatible_base_types');
     });
   });
 
@@ -184,7 +179,6 @@ describe('ComponentForm dynamic category wiring', () => {
       name: 'Rasam',
       componentType: 'extra',
       extra_category_id: liquidId,
-      compatible_base_category_ids: [riceId],
       dietary_tags: ['veg'],
       regional_tags: ['south-indian'],
       occasion_tags: ['everyday'],
@@ -201,21 +195,17 @@ describe('ComponentForm dynamic category wiring', () => {
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: 'Extra Category' })).toHaveTextContent('Liquid');
     });
-    expect(screen.getAllByText('Rice-based').length).toBeGreaterThan(0);
 
     await renameCategory(liquidId, 'Brothy');
-    await renameCategory(riceId, 'Steamed rice');
 
     await waitFor(() => {
       expect(screen.getByRole('combobox', { name: 'Extra Category' })).toHaveTextContent('Brothy');
     });
-    await waitFor(() => {
-      expect(screen.getAllByText('Steamed rice').length).toBeGreaterThan(0);
-    });
 
     const [storedExtra] = await getComponentsByType('extra');
     expect(storedExtra.extra_category_id).toBe(liquidId);
-    expect(storedExtra.compatible_base_category_ids).toEqual([riceId]);
+    expect(storedExtra).not.toHaveProperty('compatible_base_category_ids');
+    expect(storedExtra).not.toHaveProperty('compatible_base_types');
   });
 
   it('refreshes curry checklist labels after a base-category rename without rewriting stored ids', async () => {

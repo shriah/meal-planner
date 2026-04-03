@@ -46,7 +46,7 @@ export function ComponentRow({
     getBaseCategoryLabel(baseCategoriesById, id),
   )
   const showsCompatibleBaseSummary =
-    (component.componentType === 'extra' || component.componentType === 'curry')
+    component.componentType === 'curry'
     && compatibleBaseLabels.length > 0
   const showsZeroCompatibleWarning =
     component.componentType === 'curry' && compatibleBaseLabels.length === 0
