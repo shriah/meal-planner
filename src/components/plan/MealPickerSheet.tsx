@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { getComponentsByType, getExtrasByBaseCategoryId } from '@/services/food-db'
+import { getComponentsByType } from '@/services/food-db'
 import { filterComponents } from '@/lib/filter-components'
 import { usePlanStore } from '@/stores/plan-store'
 import type { DayOfWeek } from '@/types/plan'
@@ -61,18 +61,14 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
 
   const dbComponentType = COMPONENT_TYPE_MAP[componentType]
 
-  // For extras, filter by compatible base type. For others, get all of that type.
   const components = useLiveQuery(
     () => {
       if (componentType === 'extras') {
-        if (currentBaseCategoryId === undefined) {
-          return []
-        }
-        return getExtrasByBaseCategoryId(currentBaseCategoryId)
+        return getComponentsByType('extra')
       }
       return getComponentsByType(dbComponentType)
     },
-    [dbComponentType, componentType, currentBaseCategoryId],
+    [dbComponentType, componentType],
     [],
   )
 

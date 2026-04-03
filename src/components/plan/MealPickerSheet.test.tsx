@@ -5,7 +5,6 @@ import { MealPickerSheet } from './MealPickerSheet'
 
 const mockSwapComponent = vi.fn()
 const mockGetComponentsByType = vi.fn()
-const mockGetExtrasByBaseCategoryId = vi.fn()
 const mockFilterComponents = vi.fn((components) => components)
 
 vi.mock('@/stores/plan-store', () => ({
@@ -18,7 +17,6 @@ vi.mock('dexie-react-hooks', () => ({
 
 vi.mock('@/services/food-db', () => ({
   getComponentsByType: (...args: unknown[]) => mockGetComponentsByType(...args),
-  getExtrasByBaseCategoryId: (...args: unknown[]) => mockGetExtrasByBaseCategoryId(...args),
 }))
 
 vi.mock('@/lib/filter-components', () => ({
@@ -81,15 +79,14 @@ describe('MealPickerSheet', () => {
   beforeEach(() => {
     mockSwapComponent.mockClear()
     mockGetComponentsByType.mockReset()
-    mockGetExtrasByBaseCategoryId.mockReset()
     mockFilterComponents.mockClear()
     defaultProps.onOpenChange = vi.fn()
 
     mockGetComponentsByType.mockImplementation((type: string) => {
       if (type === 'curry') return curryComponents
+      if (type === 'extra') return extraComponents
       return []
     })
-    mockGetExtrasByBaseCategoryId.mockReturnValue(extraComponents)
   })
 
   afterEach(() => {
@@ -134,7 +131,7 @@ describe('MealPickerSheet', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('filters extras through the category-aware query path', () => {
+  it('loads extras through the flat extra query path even when a base category is present', () => {
     render(
       <MealPickerSheet
         {...defaultProps}
@@ -143,15 +140,14 @@ describe('MealPickerSheet', () => {
       />,
     )
 
-    expect(mockGetExtrasByBaseCategoryId).toHaveBeenCalledWith(42)
-    expect(mockGetComponentsByType).not.toHaveBeenCalledWith('extra')
+    expect(mockGetComponentsByType).toHaveBeenCalledWith('extra')
     expect(screen.getByText('Pickle')).toBeTruthy()
   })
 
-  it("renders 'No extras match your filters' when no base category is available", () => {
+  it('still loads extras when no base category is available', () => {
     render(<MealPickerSheet {...defaultProps} componentType="extras" />)
-    expect(mockGetExtrasByBaseCategoryId).not.toHaveBeenCalled()
-    expect(screen.getByText(/no extras match your filters/i)).toBeTruthy()
+    expect(mockGetComponentsByType).toHaveBeenCalledWith('extra')
+    expect(screen.getByText('Pickle')).toBeTruthy()
   })
 
   it('groups compatible and explicit override curries when both sets exist', () => {
@@ -217,6 +213,10 @@ describe('MealPickerSheet', () => {
           occasion_tags: ['everyday'],
           created_at: '2026-01-01',
         }]
+      }
+
+      if (type === 'extra') {
+        return extraComponents
       }
 
       return curryComponents
