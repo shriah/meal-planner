@@ -60,6 +60,17 @@ async function seedBackboneFixture() {
     created_at: '',
   });
 
+  await addComponent({
+    name: 'Pickle',
+    componentType: 'extra',
+    extra_category_id: await addCategory({ kind: 'extra', name: 'condiment' }),
+    extra_category: 'condiment',
+    dietary_tags: ['veg'],
+    regional_tags: ['pan-indian'],
+    occasion_tags: ['everyday'],
+    created_at: '',
+  });
+
   await putPreferences({
     id: 'prefs',
     slot_restrictions: {
@@ -100,6 +111,7 @@ describe('CURRY-08 backbone regression', () => {
       expect(slot.curry_id).toBe(ids.sambarId);
       expect(slot.curry_id).not.toBe(ids.breadOnlyCurryId);
       expect(slot.curry_id).not.toBe(ids.zeroCompatibleCurryId);
+      expect(slot.extra_ids).toEqual([]);
     }
 
     await addRule({
