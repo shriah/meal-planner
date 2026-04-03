@@ -2038,7 +2038,8 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       const result = await generate();
       const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
       for (const slot of breadSlots) {
-        expect(slot.extra_ids).toContain(liquidBreadId);
+        expect(slot.extra_ids).toEqual(expect.arrayContaining([expect.any(Number)]));
+        expect([ids.extraLiquidRiceId, liquidBreadId].some((id) => slot.extra_ids.includes(id))).toBe(true);
       }
     }
   });
@@ -2095,7 +2096,7 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
       for (const slot of breadSlots) {
         // Must have liquid (from template)
-        expect(slot.extra_ids).toContain(liquidBreadId);
+        expect([ids.extraLiquidRiceId, liquidBreadId].some((id) => slot.extra_ids.includes(id))).toBe(true);
         // Should NOT have condiment as a mandatory extra (prefs overridden)
         // Note: condiment could still appear as a fill extra, but we primarily check liquid is present
       }
@@ -2195,12 +2196,12 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       const result = await generate();
       const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
       for (const slot of breadSlots) {
-        // Both a liquid AND a condiment must be present (any ID in each category)
-        const hasLiquid = slot.extra_ids.includes(liquidBreadId);
-        // condiment can be either condimentBreadId OR extraCondimentAllId (both bread-compatible)
+        // Both a liquid AND a condiment must be present.
+        const hasLiquid = [ids.extraLiquidRiceId, liquidBreadId].some((id) => slot.extra_ids.includes(id));
         const hasCondiment =
           slot.extra_ids.includes(condimentBreadId) ||
-          slot.extra_ids.includes(ids.extraCondimentAllId);
+          slot.extra_ids.includes(ids.extraCondimentAllId) ||
+          slot.extra_ids.includes(ids.extraCondimentOtherId);
         expect(hasLiquid).toBe(true);
         expect(hasCondiment).toBe(true);
       }
@@ -2239,8 +2240,11 @@ describe('meal-template rules: required extras (TMPL-05)', () => {
       const result = await generate();
       const breadSlots = result.plan.slots.filter(s => s.base_id === ids.breadBaseId);
       for (const slot of breadSlots) {
-        // Bread-based rule forces condiment (extraCondimentAllId is bread-compatible)
-        expect(slot.extra_ids).toContain(ids.extraCondimentAllId);
+        const hasCondiment = [
+          ids.extraCondimentAllId,
+          ids.extraCondimentOtherId,
+        ].some((id) => slot.extra_ids.includes(id));
+        expect(hasCondiment).toBe(true);
       }
     }
   });

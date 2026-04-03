@@ -136,21 +136,6 @@ function targetMatches(target: Target, component: ComponentRecord): boolean {
   }
 }
 
-function isExtraCompatibleWithBase(
-  extra: ComponentRecord,
-  base: ComponentRecord,
-): boolean {
-  if (base.base_category_id !== undefined && base.base_category_id !== null) {
-    return (extra.compatible_base_category_ids ?? []).includes(base.base_category_id);
-  }
-
-  if (base.base_type) {
-    return (extra.compatible_base_types ?? []).includes(base.base_type);
-  }
-
-  return false;
-}
-
 function isCurryCompatibleWithBase(
   curry: ComponentRecord,
   base: ComponentRecord,
@@ -651,9 +636,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
       // ── Extras selection ────────────────────────────────────────────────────
 
-      const eligibleExtras = extras.filter(
-        (extra) => isOccasionAllowed(extra, day) && isExtraCompatibleWithBase(extra, selectedBase),
-      );
+      const eligibleExtras = extras.filter((extra) => isOccasionAllowed(extra, day));
 
       const selectedExtraIds: number[] = [];
 
