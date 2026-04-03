@@ -6,6 +6,7 @@
 - ✅ **v1.1 Rule Engine Overhaul** — Phases 7-10 (shipped 2026-03-26) — see [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 - ✅ **v1.2 Edit Rule** — Phases 11-16 (shipped 2026-03-29) — see [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 - ✅ **v1.3 Curry Base Compatibility** — Phases 17-21 (shipped 2026-04-03) — see [milestones/v1.3-ROADMAP.md](milestones/v1.3-ROADMAP.md)
+- 🚧 **v1.4 Collaboration + Meal Composition** — Phases 999.1, 1001-1003
 
 ## Phases
 
@@ -56,6 +57,15 @@
 
 </details>
 
+### 🚧 v1.4 Collaboration + Meal Composition
+
+**Milestone Goal:** Add explicit meal-composition modeling plus the first multi-user foundations needed for login and sharing.
+
+- [ ] **Phase 999.1: Add meal composition modes for curry-vs-subzi defaults and overrides** - Model composition defaults such as subzi-only, curry-only, both, or one-of for base contexts.
+- [ ] **Phase 1001: Add base-linked meal combo rules for exact companion dishes** - Allow specific bases such as Pongal to bring exact companion dishes like Sambar and Coconut chutney.
+- [ ] **Phase 1002: add user login** - Add the authentication foundation required for user-specific and shared data.
+- [ ] **Phase 1003: Allow users to share their plan with other users** - Add plan sharing across authenticated users.
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -81,19 +91,15 @@
 | 19. Explicit Override Paths | v1.3 | 2/2 | Complete   | 2026-03-29 |
 | 20. Compatibility Regression Coverage | v1.3 | 2/2 | Complete    | 2026-04-01 |
 | 21. Wire PlanBoard Curry Override Flow | v1.3 | 1/1 | Complete   | 2026-04-02 |
+| 1000. remove the compatability base for Extras | v1.3 | 3/3 | Complete | 2026-04-03 |
+| 999.1. Add meal composition modes for curry-vs-subzi defaults and overrides | v1.4 | 0/0 | Not Planned | — |
+| 1001. Add base-linked meal combo rules for exact companion dishes | v1.4 | 0/0 | Not Planned | — |
+| 1002. add user login | v1.4 | 0/0 | Not Planned | — |
+| 1003. Allow users to share their plan with other users | v1.4 | 0/0 | Not Planned | — |
 
-## Backlog
+## Follow-Up Work
 
-### Phase 999.1: Add meal composition modes for curry-vs-subzi defaults and overrides (BACKLOG)
-
-**Goal:** Capture a future extension for modeling meal composition defaults such as subzi-only, curry-only, both, or one-of, so bases like chapati can express "subzi instead of curry" without overloading curry compatibility.
-**Requirements:** TBD
-**Plans:** 1/1 plans complete
-
-Plans:
-- [ ] TBD (promote with `$gsd-review-backlog` when ready)
-
-### Phase 1000: remove the compatability base for Extras
+### Phase 1000: remove the compatability base for Extras (v1.3 follow-up)
 
 **Goal**: Extras no longer store or use base-compatibility anywhere in the product, and explicit-only extra runtime behavior remains the sole automatic path
 **Depends on**: Phase 21
@@ -107,3 +113,14 @@ Plans:
 - [x] 1000-01-PLAN.md — Remove extra compatibility from the type, seed, migration, and service contracts
 - [x] 1000-02-PLAN.md — Remove extra compatibility UI and make manual extra picking unfiltered
 - [x] 1000-03-PLAN.md — Simplify generator extras to explicit-only runtime behavior and finalize validation
+
+## Backlog
+
+### Phase 999.2: Support multiple components in any category per meal slot (BACKLOG)
+
+**Goal:** [Captured for future planning]
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with `$gsd-review-backlog` when ready)
