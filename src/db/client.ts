@@ -437,10 +437,14 @@ function backfillLegacyCurryCompatibility(
     return component.compatible_base_category_ids;
   }
 
-  if (component.componentType !== 'curry') {
+  if (component.componentType === 'subzi') {
     return component.compatible_base_types
       ?.map((name) => categoryLookup.base.get(name) ?? null)
       .filter((id): id is number => id !== null);
+  }
+
+  if (component.componentType !== 'curry') {
+    return undefined;
   }
 
   const seedCategoryLookup = {
@@ -457,6 +461,11 @@ function normalizeComponentCategoryRefs(
   category: CategoryRecord & { id: number },
 ): ComponentRecord {
   const nextComponent: ComponentRecord = { ...component };
+
+  if (nextComponent.componentType === 'extra') {
+    delete nextComponent.compatible_base_category_ids;
+    delete nextComponent.compatible_base_types;
+  }
 
   if (category.kind === 'base') {
     if (nextComponent.base_category_id === category.id) {
@@ -573,16 +582,30 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
   const categories = seedBuiltInCategories(new Date().toISOString());
   const categoryLookup = buildCategoryLookup(categories);
 
-  const components = fixture.components.map((component) => ({
-    ...component,
-    base_category_id:
-      component.base_category_id
-      ?? (component.base_type ? categoryLookup.base.get(component.base_type) ?? null : undefined),
-    extra_category_id:
-      component.extra_category_id
-      ?? (component.extra_category ? categoryLookup.extra.get(component.extra_category) ?? null : undefined),
-    compatible_base_category_ids: backfillLegacyCurryCompatibility(component, categoryLookup),
-  }));
+  const components = fixture.components.map((component) => {
+    const nextComponent: ComponentRecord = {
+      ...component,
+      base_category_id:
+        component.base_category_id
+        ?? (component.base_type ? categoryLookup.base.get(component.base_type) ?? null : undefined),
+      extra_category_id:
+        component.extra_category_id
+        ?? (component.extra_category ? categoryLookup.extra.get(component.extra_category) ?? null : undefined),
+    };
+
+    if (component.componentType === 'extra') {
+      delete nextComponent.compatible_base_category_ids;
+      delete nextComponent.compatible_base_types;
+      return nextComponent;
+    }
+
+    const compatibleBaseCategoryIds = backfillLegacyCurryCompatibility(component, categoryLookup);
+    if (compatibleBaseCategoryIds !== undefined) {
+      nextComponent.compatible_base_category_ids = compatibleBaseCategoryIds;
+    }
+
+    return nextComponent;
+  });
 
   const rules = fixture.rules.map((rule) => ({
     ...rule,
@@ -768,6 +791,25 @@ db.version(12).stores({
         component as ComponentRecord,
         categoryLookup,
       );
+    });
+});
+
+db.version(13).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *compatible_base_types, *compatible_base_category_ids, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+}).upgrade(async (tx) => {
+  await tx.table('components')
+    .where('componentType')
+    .equals('extra')
+    .modify((component) => {
+      delete component.compatible_base_category_ids;
+      delete component.compatible_base_types;
     });
 });
 

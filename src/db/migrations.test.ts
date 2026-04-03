@@ -27,9 +27,8 @@ describe('Phase 14 categories table migration', () => {
     expect(lemonRice?.base_category_id).toEqual(expect.any(Number));
     expect(lemonRice?.base_type).toBe('rice-based');
     expect(rasam?.extra_category_id).toEqual(expect.any(Number));
-    expect(rasam?.compatible_base_category_ids).toEqual(
-      expect.arrayContaining([expect.any(Number)]),
-    );
+    expect(rasam).not.toHaveProperty('compatible_base_category_ids');
+    expect(rasam).not.toHaveProperty('compatible_base_types');
   });
 
   it('delete normalization clears component references and disables rules with deleted category targets', () => {
@@ -45,7 +44,8 @@ describe('Phase 14 categories table migration', () => {
     const breadRule = normalized.rules.find((rule) => rule.name === 'Bread dinner');
 
     expect(roti?.base_category_id).toBeNull();
-    expect(pickle?.compatible_base_category_ids).not.toContain(deletedBaseCategoryId);
+    expect(pickle).not.toHaveProperty('compatible_base_category_ids');
+    expect(pickle).not.toHaveProperty('compatible_base_types');
     expect(breadRule?.enabled).toBe(false);
   });
 

@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import type { ComponentRecord, ComponentType, BaseType } from '@/types/component';
+import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
 
@@ -12,20 +12,6 @@ export async function getAllComponents(): Promise<ComponentRecord[]> {
 
 export async function getComponentsByType(type: ComponentType): Promise<ComponentRecord[]> {
   return db.components.where('componentType').equals(type).toArray();
-}
-
-export async function getExtrasByBaseCategoryId(baseCategoryId: number): Promise<ComponentRecord[]> {
-  const extras = await db.components.where('componentType').equals('extra').toArray();
-  return extras.filter((extra) => (extra.compatible_base_category_ids ?? []).includes(baseCategoryId));
-}
-
-export async function getExtrasByBaseType(baseType: BaseType | number): Promise<ComponentRecord[]> {
-  if (typeof baseType === 'number') {
-    return getExtrasByBaseCategoryId(baseType);
-  }
-
-  const extras = await db.components.where('componentType').equals('extra').toArray();
-  return extras.filter((extra) => (extra.compatible_base_types ?? []).includes(baseType));
 }
 
 export async function addComponent(component: Omit<ComponentRecord, 'id'>): Promise<number> {

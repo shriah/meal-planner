@@ -11,7 +11,6 @@ import {
   addComponent,
   addRule,
   getComponentsByType,
-  getExtrasByBaseType,
   getRules,
 } from '@/services/food-db';
 
@@ -45,8 +44,6 @@ describe('Phase 14 category services', () => {
       componentType: 'extra',
       extra_category_id: liquidId,
       extra_category: 'liquid',
-      compatible_base_category_ids: [riceId],
-      compatible_base_types: ['rice-based'],
       dietary_tags: ['veg'],
       regional_tags: ['south-indian'],
       occasion_tags: ['everyday'],
@@ -56,13 +53,12 @@ describe('Phase 14 category services', () => {
     const bases = await getCategoriesByKind('base');
     const extras = await getCategoriesByKind('extra');
     const storedExtras = await getComponentsByType('extra');
-    const compatibleExtras = await getExtrasByBaseType(riceId);
 
     expect(bases.map((category) => category.id)).toContain(riceId);
     expect(extras.map((category) => category.id)).toContain(liquidId);
     expect(storedExtras[0].extra_category_id).toBe(liquidId);
-    expect(storedExtras[0].compatible_base_category_ids).toEqual([riceId]);
-    expect(compatibleExtras.map((component) => component.name)).toEqual(['Rasam']);
+    expect(storedExtras[0]).not.toHaveProperty('compatible_base_category_ids');
+    expect(storedExtras[0]).not.toHaveProperty('compatible_base_types');
   });
 
   it('rename resolves via labels without stored ID churn', async () => {
@@ -99,8 +95,6 @@ describe('Phase 14 category services', () => {
       componentType: 'extra',
       extra_category_id: condimentId,
       extra_category: 'condiment',
-      compatible_base_category_ids: [breadId],
-      compatible_base_types: ['bread-based'],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
       occasion_tags: ['everyday'],
@@ -153,7 +147,8 @@ describe('Phase 14 category services', () => {
     expect(baseComponent?.base_category_id).toBeNull();
     expect(mixedVegCurry?.compatible_base_category_ids).toEqual([riceId]);
     expect(chole?.compatible_base_category_ids).toEqual([]);
-    expect(extraComponent.compatible_base_category_ids).toEqual([]);
+    expect(extraComponent).not.toHaveProperty('compatible_base_category_ids');
+    expect(extraComponent).not.toHaveProperty('compatible_base_types');
     expect(rule.enabled).toBe(false);
   });
 
