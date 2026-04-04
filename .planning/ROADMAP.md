@@ -66,6 +66,20 @@
 - [ ] **Phase 1002: add user login** - Add the authentication foundation required for user-specific and shared data.
 - [ ] **Phase 1003: Allow users to share their plan with other users** - Add plan sharing across authenticated users.
 
+### Phase 1001: Add base-linked meal combo rules for exact companion dishes (v1.4)
+
+**Goal**: Users can define dedicated combo rules that bind exact companion dishes to a base component or base category, with base-specific combos winning over broader category combos and manual picks still taking precedence.
+**Requirements**: PH1001-COMPILER, PH1001-FORM, PH1001-GENERATOR, PH1001-MANUAL, PH1001-RULE-LIST
+**Success Criteria** (what must be TRUE):
+  1. Users can create and edit a dedicated combo rule that targets a specific base or base category and assigns exact curry, subzi, and/or extra companions without using generic scheduling or meal-template effects.
+  2. Automatic generation applies the winning combo immediately after base selection, preserves explicitly named companions against downstream rule rewrites, and warns while partially degrading if a referenced companion has been deleted.
+  3. Explicit manual companion selections still win over combo-driven choices on regenerate, and the Rules list can summarize, toggle, edit, and validate combo rules alongside existing rule families.
+**Plans**: 3 plans
+Plans:
+- [ ] 1001-01-PLAN.md — Introduce the combo-rule contract and create/edit form flow
+- [ ] 1001-02-PLAN.md — Apply winning combos in the generator and preserve manual companion ownership
+- [ ] 1001-03-PLAN.md — Render combo rules in the list/summary surfaces and finalize validation
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -93,7 +107,7 @@
 | 21. Wire PlanBoard Curry Override Flow | v1.3 | 1/1 | Complete   | 2026-04-02 |
 | 1000. remove the compatability base for Extras | v1.3 | 3/3 | Complete | 2026-04-03 |
 | 999.1. Add meal composition modes for curry-vs-subzi defaults and overrides | v1.4 | 0/0 | Not Planned | — |
-| 1001. Add base-linked meal combo rules for exact companion dishes | v1.4 | 0/0 | Not Planned | — |
+| 1001. Add base-linked meal combo rules for exact companion dishes | v1.4 | 0/3 | Planned | — |
 | 1002. add user login | v1.4 | 0/0 | Not Planned | — |
 | 1003. Allow users to share their plan with other users | v1.4 | 0/0 | Not Planned | — |
 
