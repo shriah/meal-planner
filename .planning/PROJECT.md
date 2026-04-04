@@ -14,9 +14,9 @@ Shipped through `v1.3`, with the curry compatibility milestone archived and the 
 
 ## Next Milestone Goals
 
-- Decide whether the next milestone should target meal composition modes, PDF export, library JSON import/export, or cross-week rotation
-- Start a fresh scoped requirements doc instead of carrying `v1.3` milestone requirements forward
-- Keep curry compatibility stable while simplifying any duplicated helper logic and deciding whether browser-level E2E is worth the cost
+- Define `v1.4` around meal composition modes, exact base-linked meal combos, user login, and plan sharing
+- Start with composition semantics first so combo rules land on top of a clean meal-shape model
+- Add authentication before shared-plan flows so ownership and access rules have a real foundation
 
 ## Requirements
 
@@ -57,7 +57,7 @@ Shipped through `v1.3`, with the curry compatibility milestone archived and the 
 
 ### Active
 
-- None. Define the next milestone with `$gsd-new-milestone`.
+- `v1.4` scope assigned in the roadmap; next step is discuss/plan the milestone phases.
 
 ### Out of Scope
 
@@ -136,4 +136,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after archiving v1.3*
+*Last updated: 2026-04-03 after assigning v1.4 scope*

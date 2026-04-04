@@ -1,35 +1,35 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Curry Base Compatibility
-status: archived
-stopped_at: Archived milestone v1.3
-last_updated: "2026-04-03T16:20:00Z"
-last_activity: 2026-04-03 -- v1.3 archived
+milestone: v1.4
+milestone_name: Collaboration + Meal Composition
+status: active
+stopped_at: Assigned phases 999.1, 1001-1003 to v1.4
+last_updated: "2026-04-03T16:45:00Z"
+last_activity: 2026-04-03 -- v1.4 scope assigned
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 12
-  completed_plans: 12
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03 — v1.3 archived)
+See: .planning/PROJECT.md (updated 2026-04-03 — v1.4 scope assigned)
 
 **Core value:** Generate a complete, realistic Indian weekly meal plan in one click — with smart randomization that respects personal rules and locked meals.
-**Current focus:** Start the next milestone with `$gsd-new-milestone`
+**Current focus:** Milestone v1.4 — assign context and plans for meal composition plus collaboration foundations
 
 ## Current Position
 
-Phase: None
+Phase: 999.1 (add-meal-composition-modes-for-curry-vs-subzi-defaults-and-overrides)
 Plan: 0 of 0
-Status: Milestone archived
-Last activity: 2026-04-03 -- v1.3 archived
-Progress: [██████████] 100%
+Status: Not planned
+Last activity: 2026-04-03 -- v1.4 scope assigned
+Progress: [----------] 0%
 
 ## Performance Metrics
 
@@ -67,6 +67,11 @@ Progress: [██████████] 100%
 ### Roadmap Evolution
 
 - Phase 1000 added: remove the compatability base for Extras
+- Phase 1001 added: Add base-linked meal combo rules for exact companion dishes
+- Phase 1002 added: add user login
+- Phase 1003 added: Allow users to share their plan with other users
+- Phases 999.1, 1001, 1002, and 1003 assigned to milestone v1.4
+- Phase 1000 tagged as completed v1.3 follow-up work
 
 ### Decisions
 
@@ -112,6 +117,6 @@ Recent decisions affecting current work:
 
 ## Session Continuity
 
-Last session: 2026-04-03T16:20:00Z
-Stopped at: Archived milestone v1.3
+Last session: 2026-04-03T16:45:00Z
+Stopped at: Assigned phases 999.1, 1001-1003 to v1.4
 Resume file: None
