@@ -7,26 +7,24 @@ import {
 export type BaseType = (typeof BUILT_IN_BASE_CATEGORY_NAMES)[number];
 export type ExtraCategory = (typeof BUILT_IN_EXTRA_CATEGORY_NAMES)[number];
 
-// Component type discriminator — DATA-01
-export type ComponentType = 'base' | 'curry' | 'subzi' | 'extra';
+// Runtime vocabularies are the single source of truth; the planner validates against them.
 
-// Tag string literal unions — DATA-05
-export type DietaryTag = 'veg' | 'non-veg' | 'vegan' | 'jain' | 'eggetarian';
-export type ProteinTag = 'fish' | 'chicken' | 'mutton' | 'egg' | 'paneer' | 'dal' | 'none';
-export type RegionalTag = 'south-indian' | 'north-indian' | 'coastal-konkan' | 'pan-indian';
-export type OccasionTag =
-  | 'everyday'
-  | 'weekday'
-  | 'weekend'
-  | 'fasting'
-  | 'festive'
-  | 'monday'
-  | 'tuesday'
-  | 'wednesday'
-  | 'thursday'
-  | 'friday'
-  | 'saturday'
-  | 'sunday';
+// Component type discriminator — DATA-01
+export const COMPONENT_TYPES = ['base', 'curry', 'subzi', 'extra'] as const;
+export type ComponentType = (typeof COMPONENT_TYPES)[number];
+
+// Tag vocabularies — DATA-05
+export const DIETARY_TAGS = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian'] as const;
+export type DietaryTag = (typeof DIETARY_TAGS)[number];
+export const PROTEIN_TAGS = ['fish', 'chicken', 'mutton', 'egg', 'paneer', 'dal', 'none'] as const;
+export type ProteinTag = (typeof PROTEIN_TAGS)[number];
+export const REGIONAL_TAGS = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian'] as const;
+export type RegionalTag = (typeof REGIONAL_TAGS)[number];
+export const OCCASION_TAGS = [
+  'everyday', 'weekday', 'weekend', 'fasting', 'festive',
+  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+] as const;
+export type OccasionTag = (typeof OCCASION_TAGS)[number];
 
 // Shared base for all components
 interface BaseComponentFields {
@@ -69,8 +67,9 @@ export interface ExtraRecord extends BaseComponentFields {
 
 export type MealComponent = BaseRecord | CurryRecord | SubziRecord | ExtraRecord;
 
-// Frequency preference for weighted randomization in the generator
-export type Frequency = 'frequent' | 'normal' | 'rare';
+// Frequency preference: how often the planner should favour a component
+export const FREQUENCIES = ['frequent', 'normal', 'rare'] as const;
+export type Frequency = (typeof FREQUENCIES)[number];
 
 // Flat record type for Dexie storage — all fields merged, type-specific fields optional
 export type ComponentRecord = BaseComponentFields & {
