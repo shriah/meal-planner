@@ -5,7 +5,7 @@ export {
   type SlotPins, type Pins,
 } from './types';
 export {
-  all, any, not, is, oneOf, TRUE, compileMatcher, matcherFields, MatcherSchema, FIELDS, FIELD_KEYS, OPS_BY_KIND,
+  all, any, not, is, oneOf, TRUE, isLeaf, compileMatcher, matcherFields, MatcherSchema, FIELDS, FIELD_KEYS, OPS_BY_KIND,
   type Matcher, type Leaf, type FieldKey, type FieldKind, type FieldValues, type MatchFn,
 } from './matcher';
 export {

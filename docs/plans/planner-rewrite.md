@@ -31,19 +31,26 @@ Each phase ends with eslint 0, tsc 0, all tests green, and a check-in.
    justifications, built-ins, solver with real score levels and early stop. Ported from spike D and
    reviewed line by line; the spike's legacy adapter and weight-based hard priorities are dropped.
    The spike's evaluation scenarios become a permanent regression suite.
-2. **Rule templates + storage**: template registry (exclude, allow only, require, limit — covering
-   no-repeat / max per week / spacing —, allowed meals, skip component when, require with, prefer /
-   avoid). New `RuleRecord` shape `{ template, params }`. Dexie migration converts old rules whose
-   meaning maps exactly and drops the rest, reporting what was dropped.
-3. **Generation wiring**: plan store calls the planner in a Web Worker; locks become pins; the plan
-   view shows justifications instead of ad hoc warnings. Old generator, rule compiler and effect
-   types are deleted.
+2. **Rule templates** (`src/rules/`, pure): template registry (exclude, only allow, require, limit
+   per meal/day/week, no repeats in the week or within k days, allowed meals, leave out when, also
+   include when, prefer/avoid), each with a must/prefer strength. Stored rule shape
+   `{ name, enabled, spec: { template, params } }`, compilation to constraints that skips and reports
+   invalid rules or rules referring to deleted components/categories, and a pure converter for old
+   rules. Storage is not touched yet.
+3. **Storage + generation wiring**: Dexie migration runs the converter (converted rules mean what the
+   old form said; unconvertible rules are dropped and listed once). Plan store calls the planner in a
+   Web Worker; locks become pins; the plan view shows justifications instead of ad hoc warnings.
+   Category deletion cleans up rule references through `specReferences`. Old generator, rule
+   compiler and effect types are deleted.
 4. **Rules UI**: template picker, params form generated from template metadata, live description,
    impact preview powered by the scorer. Old form state and fields are deleted.
 5. **Cleanup**: seed rules as templates, update `docs/architecture.md`, remove dead code.
 
 ## Decisions (defaults; change before the phase that uses them)
 
-- Old stored rules: converted when the mapping is exact, otherwise dropped and listed once (phase 2).
+- Old stored rules: converted when the mapping is exact, otherwise dropped and listed once (decided).
+  "Exact" means the old form's stated meaning: old generator quirks (e.g. no-repeat ignoring its days,
+  skip rules on a specific component doing nothing) are fixed, not preserved. Dropped: unreadable,
+  no effect, references to deleted components/categories, empty tag filter, scope selecting nothing.
 - Per-meal extras limit from preferences becomes a real hard constraint.
 - `require` beats `skip` when both apply (both are hard; the solver reports the conflict).
