@@ -24,7 +24,7 @@ export function PlanActionBar() {
   const handleExport = () => {
     const names: Record<number, string> = {}
     for (const c of allComponents ?? []) {
-      if (c.id !== undefined) names[c.id] = c.name
+      names[c.id] = c.name
     }
     exportPlan(names)
   }

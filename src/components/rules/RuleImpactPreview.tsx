@@ -7,17 +7,21 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getAllComponents } from '@/services/food-db';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getBaseCategoryLabel } from '@/lib/category-labels';
+import type { ComponentRecord } from '@/types/component';
 import type { RuleFormState } from './types';
+
+// Stable fallback so the memo deps don't change on every render while the query is loading.
+const NO_COMPONENTS: ComponentRecord[] = [];
 
 interface RuleImpactPreviewProps {
   formState: RuleFormState;
 }
 
 export function RuleImpactPreview({ formState }: RuleImpactPreviewProps) {
-  const allComponents = useLiveQuery(() => getAllComponents()) ?? [];
+  const allComponents = useLiveQuery(() => getAllComponents(), [], NO_COMPONENTS);
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
   const baseCategoriesById = useMemo(
-    () => new Map(baseCategories.filter((category) => category.id !== undefined).map((category) => [category.id!, category])),
+    () => new Map(baseCategories.map((category) => [category.id, category])),
     [baseCategories],
   );
 

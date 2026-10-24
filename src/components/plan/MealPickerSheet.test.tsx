@@ -5,7 +5,7 @@ import { MealPickerSheet } from './MealPickerSheet'
 
 const mockSwapComponent = vi.fn()
 const mockGetComponentsByType = vi.fn()
-const mockFilterComponents = vi.fn((components) => components)
+const mockFilterComponents = vi.fn((...args: unknown[]) => args[0])
 
 vi.mock('@/stores/plan-store', () => ({
   usePlanStore: vi.fn((selector) => selector({ swapComponent: mockSwapComponent })),

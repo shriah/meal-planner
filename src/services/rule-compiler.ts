@@ -4,6 +4,7 @@ import type { CompiledRule, Target } from '@/types/plan';
 interface DecompileCategoryContext {
   baseCategoryIds?: number[];
   extraCategoryIds?: number[];
+  componentIds?: number[];
 }
 
 export function compileRule(state: RuleFormState): CompiledRule {
@@ -36,6 +37,10 @@ export function compileRule(state: RuleFormState): CompiledRule {
     effects.push({ kind: 'skip_component', component_types: state.skip_component_types });
   }
 
+  if (state.require_component_ids.length > 0) {
+    effects.push({ kind: 'require_component', component_ids: state.require_component_ids });
+  }
+
   if (state.require_extra_category_ids.length > 0) {
     effects.push({ kind: 'require_extra', category_ids: state.require_extra_category_ids });
   }
@@ -58,8 +63,10 @@ export function decompileRule(
 ): RuleFormState {
   const baseCategoryIds = context?.baseCategoryIds;
   const extraCategoryIds = context?.extraCategoryIds;
+  const componentIds = context?.componentIds;
   const hasBaseCategory = (id: number) => !baseCategoryIds || baseCategoryIds.includes(id);
   const hasExtraCategory = (id: number) => !extraCategoryIds || extraCategoryIds.includes(id);
+  const hasComponent = (id: number) => !componentIds || componentIds.includes(id);
 
   const target: RuleFormState['target'] =
     compiled.target.mode === 'component_type'
@@ -80,6 +87,7 @@ export function decompileRule(
     selection: '',
     allowed_slots: [],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   };
 
@@ -96,6 +104,9 @@ export function decompileRule(
         break;
       case 'skip_component':
         state.skip_component_types = effect.component_types;
+        break;
+      case 'require_component':
+        state.require_component_ids = effect.component_ids.filter(hasComponent);
         break;
       case 'require_extra':
         state.require_extra_category_ids = effect.category_ids.filter(hasExtraCategory);

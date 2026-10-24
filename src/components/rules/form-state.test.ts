@@ -3,7 +3,6 @@ import type { CategoryRecord } from '@/types/category';
 import type { RuleFormState } from './types';
 import {
   EMPTY_RULE_FORM_STATE,
-  EXAMPLE_PRESETS,
   formReducer,
   isFormValid,
   resolveExamplePreset,
@@ -19,6 +18,7 @@ describe('formReducer', () => {
       selection: 'exclude',
       allowed_slots: ['lunch'],
       skip_component_types: ['subzi'],
+      require_component_ids: [10],
       require_extra_category_ids: [42],
     };
 
@@ -30,7 +30,19 @@ describe('formReducer', () => {
       selection: 'exclude',
       allowed_slots: ['lunch'],
       skip_component_types: ['subzi'],
+      require_component_ids: [10],
       require_extra_category_ids: [42],
+    });
+  });
+
+  it('updates required component IDs', () => {
+    expect(
+      formReducer(EMPTY_RULE_FORM_STATE, {
+        type: 'SET_REQUIRE_COMPONENT_IDS',
+        component_ids: [3, 5],
+      }),
+    ).toMatchObject({
+      require_component_ids: [3, 5],
     });
   });
 

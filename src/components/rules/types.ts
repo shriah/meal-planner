@@ -1,6 +1,8 @@
 import type { DayOfWeek, TagFilter } from '@/types/plan';
 import type { MealSlot } from '@/types/preferences';
 
+export type SkippableComponentType = 'curry' | 'subzi' | 'extra';
+
 // ─── Target form state ────────────────────────────────────────────────────────
 
 export type TargetFormState =
@@ -22,7 +24,8 @@ export type RuleFormState = {
   selection: 'filter_pool' | 'require_one' | 'exclude' | 'no_repeat' | '';
   // Composition effects
   allowed_slots: MealSlot[];
-  skip_component_types: ('curry' | 'subzi')[];
+  skip_component_types: SkippableComponentType[];
+  require_component_ids: number[];
   require_extra_category_ids: number[];
 };
 
@@ -39,6 +42,7 @@ export type FormAction =
   | { type: 'SET_SLOTS'; slots: MealSlot[] }
   | { type: 'SET_SELECTION'; selection: 'filter_pool' | 'require_one' | 'exclude' | 'no_repeat' | '' }
   | { type: 'SET_ALLOWED_SLOTS'; allowed_slots: MealSlot[] }
-  | { type: 'SET_SKIP_COMPONENT_TYPES'; skip_component_types: ('curry' | 'subzi')[] }
+  | { type: 'SET_SKIP_COMPONENT_TYPES'; skip_component_types: SkippableComponentType[] }
+  | { type: 'SET_REQUIRE_COMPONENT_IDS'; component_ids: number[] }
   | { type: 'SET_REQUIRE_EXTRA_CATEGORY_IDS'; category_ids: number[] }
   | { type: 'LOAD_PRESET'; state: RuleFormState };

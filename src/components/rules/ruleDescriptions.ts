@@ -1,4 +1,4 @@
-import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel, getCategoryLabel } from '@/lib/category-labels';
+import { buildCategoryMap, getBaseCategoryLabel, getCategoryLabel } from '@/lib/category-labels';
 import type { CategoryRecord } from '@/types/category';
 import type { CompiledRule, Target, AnyEffect } from '@/types/plan';
 
@@ -53,6 +53,8 @@ function describeEffects(effects: AnyEffect[], categoriesById: Map<number, Categ
       parts.push(`allowed at ${e.slots.join(', ')}`);
     if (e.kind === 'skip_component')
       parts.push(`skip ${e.component_types.join(', ')}`);
+    if (e.kind === 'require_component')
+      parts.push(`require component ${e.component_ids.map((id) => `#${id}`).join(', ')}`);
     if (e.kind === 'require_extra')
       parts.push(`require ${e.category_ids.map((id) => getCategoryLabel(categoriesById, id, 'Deleted extra category')).join(', ')} extra`);
   }

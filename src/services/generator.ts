@@ -1,7 +1,6 @@
-import { getAllComponents, getPreferences, getEnabledRules } from '@/services/food-db';
+import { getAllComponents, getEnabledRules } from '@/services/food-db';
 import type { ComponentRecord } from '@/types/component';
-import type { UserPreferencesRecord, MealSlot } from '@/types/preferences';
-import type { RuleRecord } from '@/db/client';
+import type { MealSlot } from '@/types/preferences';
 import {
   CompiledRuleSchema,
   ALL_DAYS,
@@ -12,6 +11,7 @@ import {
   type AnyEffect,
   type AllowedSlotsEffect,
   type SkipComponentEffect,
+  type RequireComponentEffect,
   type RequireExtraEffect,
   type TagFilter,
   type GeneratorResult,
@@ -86,7 +86,7 @@ function effectiveWeight(
 ): number {
   const freq = component.frequency ?? 'normal';
   const freqWeight = FREQUENCY_WEIGHT[freq] ?? 1;
-  const uses = usageCount.get(component.id!) ?? 0;
+  const uses = usageCount.get(component.id) ?? 0;
   return freqWeight * Math.pow(0.5, uses);
 }
 
@@ -341,22 +341,53 @@ function compositionEffectsFirstPass(
  */
 function compositionEffectsSecondPass(
   rules: ValidatedRule[],
-  base: ComponentRecord,
-  slotComponentIds: number[],
+  slotComponents: ComponentRecord[],
   day: DayOfWeek,
   slot: MealSlot,
 ): AnyEffect[] {
   return rules
     .filter(r => {
       if (!scopeMatches(r.compiled.scope, day, slot)) return false;
-      const t = r.compiled.target;
-      if (t.mode === 'component') {
-        return slotComponentIds.includes(t.component_id);
-      }
-      return targetMatches(t, base);
+      return slotComponents.some((component) => targetMatches(r.compiled.target, component));
     })
     .flatMap(r => r.compiled.effects)
     .filter(e => e.kind === 'require_extra');
+}
+
+function getRequiredComponentEntries(
+  rules: ValidatedRule[],
+  slotComponents: ComponentRecord[],
+  day: DayOfWeek,
+  slot: MealSlot,
+): { ruleId: number; componentId: number }[] {
+  return rules
+    .filter(r =>
+      scopeMatches(r.compiled.scope, day, slot) &&
+      slotComponents.some((component) => targetMatches(r.compiled.target, component)),
+    )
+    .flatMap(r =>
+      r.compiled.effects
+        .filter((effect): effect is RequireComponentEffect => effect.kind === 'require_component')
+        .flatMap((effect) => effect.component_ids.map((componentId) => ({
+          ruleId: r.id,
+          componentId,
+        }))),
+    );
+}
+
+function warnRequiredComponentSkipped(
+  warnings: Warning[],
+  day: DayOfWeek,
+  slot: MealSlot,
+  ruleId: number,
+  componentId: number,
+  reason: string,
+) {
+  warnings.push({
+    slot: { day, meal_slot: slot },
+    rule_id: ruleId,
+    message: `require_component component_id '${componentId}' ${reason} on ${day} ${slot} — skipped`,
+  });
 }
 
 // ─── Helper: getEligibleBases ─────────────────────────────────────────────────
@@ -403,9 +434,8 @@ function pickFromPool(
 
 export async function generate(options?: GenerateOptions): Promise<GeneratorResult> {
   // 1. Load data
-  const [allComponents, prefs, enabledRules] = await Promise.all([
+  const [allComponents, enabledRules] = await Promise.all([
     getAllComponents(),
-    getPreferences(),
     getEnabledRules(),
   ]);
 
@@ -416,7 +446,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
   for (const ruleRecord of enabledRules) {
     const parsed = CompiledRuleSchema.safeParse(ruleRecord.compiled_filter);
     if (parsed.success) {
-      validatedRules.push({ compiled: parsed.data, id: ruleRecord.id! });
+      validatedRules.push({ compiled: parsed.data, id: ruleRecord.id });
     } else {
       warnings.push({
         slot: { day: 'monday', meal_slot: 'breakfast' },
@@ -426,17 +456,6 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
     }
   }
 
-  // Default permissive preferences if none exist
-  const resolvedPrefs: UserPreferencesRecord = prefs ?? {
-    id: 'prefs',
-    slot_restrictions: {
-      base_type_slots: {},
-      component_slot_overrides: {},
-    },
-    extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 2 },
-    base_type_rules: [],
-  };
-
   // 3. Partition components by type
   const bases = allComponents.filter(c => c.componentType === 'base');
   const curries = allComponents.filter(c => c.componentType === 'curry');
@@ -445,26 +464,21 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
   // 4. Initialize tracking state
   const usageCount = new Map<number, number>();
-  const usedBaseIds = new Set<number>();
-  const usedCurryIds = new Set<number>();
-  const usedSubziIds = new Set<number>();
 
-  // Extract per-type no-repeat flags
-  const noRepeatBase = validatedRules.some(r =>
-    r.compiled.target.mode === 'component_type' &&
-    r.compiled.target.component_type === 'base' &&
+  // no_repeat applies to every component matched by the rule's target (any target mode):
+  // such a component may appear at most once per plan. Rule scope is ignored, and only
+  // bases, curries and subzis are tracked (extras are placed by require_extra rules).
+  const noRepeatRules = validatedRules.filter(r =>
     r.compiled.effects.some(e => e.kind === 'no_repeat'),
   );
-  const noRepeatCurry = validatedRules.some(r =>
-    r.compiled.target.mode === 'component_type' &&
-    r.compiled.target.component_type === 'curry' &&
-    r.compiled.effects.some(e => e.kind === 'no_repeat'),
-  );
-  const noRepeatSubzi = validatedRules.some(r =>
-    r.compiled.target.mode === 'component_type' &&
-    r.compiled.target.component_type === 'subzi' &&
-    r.compiled.effects.some(e => e.kind === 'no_repeat'),
-  );
+  const usedNoRepeatIds = new Set<number>();
+  const withoutRepeats = (pool: ComponentRecord[]) =>
+    noRepeatRules.length === 0 ? pool : pool.filter(c => !usedNoRepeatIds.has(c.id));
+  const markUsed = (component: ComponentRecord) => {
+    if (noRepeatRules.some(r => targetMatches(r.compiled.target, component))) {
+      usedNoRepeatIds.add(component.id);
+    }
+  };
 
   // 5. Fill order: breakfasts, then lunches, then dinners (all 7 days each)
   const MEAL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner'];
@@ -479,7 +493,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       // ── Base selection ──────────────────────────────────────────────────────
 
       let eligibleBases = getEligibleBases(meal_slot, bases, validatedRules, warnings, day);
-      let selectedBase: ComponentRecord | null = null;
+      let selectedBase: ComponentRecord | undefined;
 
       if (locked?.base_id !== undefined) {
         const lockedBase = bases.find(b => b.id === locked.base_id);
@@ -506,9 +520,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         }
 
         // No-repeat filter
-        const noRepeatPool = noRepeatBase
-          ? eligibleBases.filter(b => !usedBaseIds.has(b.id!))
-          : eligibleBases;
+        const noRepeatPool = withoutRepeats(eligibleBases);
         let basePool = noRepeatPool.length > 0 ? noRepeatPool : eligibleBases;
 
         // Selection effects
@@ -519,15 +531,25 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         selectedBase = applyRequireOne(selectedBase, validatedRules, bases, day, meal_slot, warnings);
       }
 
+      if (!selectedBase) {
+        warnings.push({
+          slot: { day, meal_slot },
+          rule_id: null,
+          message: `No base selected for ${day} ${meal_slot} — slot skipped`,
+        });
+        continue;
+      }
+      const initialSelectedBase = selectedBase;
+
       // Track base usage
-      const selectedBaseId = selectedBase.id!;
+      let selectedBaseId = selectedBase.id;
       usageCount.set(selectedBaseId, (usageCount.get(selectedBaseId) ?? 0) + 1);
-      if (noRepeatBase) usedBaseIds.add(selectedBaseId);
+      markUsed(selectedBase);
 
       // ── Meal composition constraints (first pass) ────────────────────────────
 
       const firstPassEffects = compositionEffectsFirstPass(
-        validatedRules, selectedBase, day, meal_slot,
+        validatedRules, initialSelectedBase, day, meal_slot,
       );
       const skippedComponentTypes = new Set(
         firstPassEffects
@@ -536,6 +558,7 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
       );
       const skipCurry = skippedComponentTypes.has('curry');
       const skipSubzi = skippedComponentTypes.has('subzi');
+      const skipExtras = skippedComponentTypes.has('extra');
 
       // ── Curry selection ─────────────────────────────────────────────────────
 
@@ -544,18 +567,16 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         const lockedCurry = curries.find(c => c.id === locked.curry_id);
         if (lockedCurry) {
           selectedCurry = lockedCurry;
-          usageCount.set(lockedCurry.id!, (usageCount.get(lockedCurry.id!) ?? 0) + 1);
+          usageCount.set(lockedCurry.id, (usageCount.get(lockedCurry.id) ?? 0) + 1);
         }
       } else if (!skipCurry && curries.length > 0) {
         const eligibleCurries = curries.filter(c => isOccasionAllowed(c, day));
         const compatibleCurries = eligibleCurries.filter(
-          c => isCurryCompatibleWithBase(c, selectedBase),
+          c => isCurryCompatibleWithBase(c, initialSelectedBase),
         );
 
         if (compatibleCurries.length > 0) {
-          const curryPoolBase = noRepeatCurry
-            ? compatibleCurries.filter(c => !usedCurryIds.has(c.id!))
-            : compatibleCurries;
+          const curryPoolBase = withoutRepeats(compatibleCurries);
           let curryPool = applyFilterPool(curryPoolBase, validatedRules, day, meal_slot, warnings);
           curryPool = applyExclude(curryPool, validatedRules, day, meal_slot, warnings);
 
@@ -578,13 +599,13 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         );
 
         if (selectedCurry) {
-          usageCount.set(selectedCurry.id!, (usageCount.get(selectedCurry.id!) ?? 0) + 1);
-          if (noRepeatCurry) usedCurryIds.add(selectedCurry.id!);
+          usageCount.set(selectedCurry.id, (usageCount.get(selectedCurry.id) ?? 0) + 1);
+          markUsed(selectedCurry);
         } else if (compatibleCurries.length === 0) {
           warnings.push({
             slot: { day, meal_slot },
             rule_id: null,
-            message: `no compatible curry available for base "${selectedBase.name}" on ${day} ${meal_slot} — skipped`,
+            message: `no compatible curry available for base "${initialSelectedBase.name}" on ${day} ${meal_slot} — skipped`,
           });
         }
       }
@@ -596,33 +617,149 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         const lockedSubzi = subzis.find(s => s.id === locked.subzi_id);
         if (lockedSubzi) {
           selectedSubzi = lockedSubzi;
-          usageCount.set(lockedSubzi.id!, (usageCount.get(lockedSubzi.id!) ?? 0) + 1);
+          usageCount.set(lockedSubzi.id, (usageCount.get(lockedSubzi.id) ?? 0) + 1);
         }
       } else if (!skipSubzi && subzis.length > 0) {
         const eligible = subzis.filter(s => isOccasionAllowed(s, day));
-        const subziPoolBase = noRepeatSubzi
-          ? eligible.filter(s => !usedSubziIds.has(s.id!))
-          : eligible;
+        const subziPoolBase = withoutRepeats(eligible);
         let subziPool = applyFilterPool(subziPoolBase, validatedRules, day, meal_slot, warnings);
         subziPool = applyExclude(subziPool, validatedRules, day, meal_slot, warnings);
 
         if (subziPool.length > 0) {
-          let picked = pickFromPool(subziPool, usageCount)!;
-          picked = applyRequireOne(picked, validatedRules, subzis, day, meal_slot, warnings);
-          selectedSubzi = picked;
-          usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
-          if (noRepeatSubzi) usedSubziIds.add(picked.id!);
+          const picked = applyRequireOne(
+            pickFromPool(subziPool, usageCount) ?? undefined,
+            validatedRules,
+            subzis,
+            day,
+            meal_slot,
+            warnings,
+          );
+          if (picked) {
+            selectedSubzi = picked;
+            usageCount.set(picked.id, (usageCount.get(picked.id) ?? 0) + 1);
+            markUsed(picked);
+          }
+        }
+      }
+
+      // ── Required specific components ────────────────────────────────────────
+
+      const triggerComponents = [selectedBase, selectedCurry, selectedSubzi].filter(
+        (component): component is ComponentRecord => component !== undefined,
+      );
+      const requiredComponentEntries = getRequiredComponentEntries(
+        validatedRules,
+        triggerComponents,
+        day,
+        meal_slot,
+      );
+      const requiredExtraComponentIds: number[] = [];
+
+      for (const entry of requiredComponentEntries) {
+        const requiredComponent = allComponents.find((component) => component.id === entry.componentId);
+        if (!requiredComponent) {
+          warnRequiredComponentSkipped(
+            warnings,
+            day,
+            meal_slot,
+            entry.ruleId,
+            entry.componentId,
+            'was not found',
+          );
+          continue;
+        }
+
+        if (!isOccasionAllowed(requiredComponent, day)) {
+          warnRequiredComponentSkipped(
+            warnings,
+            day,
+            meal_slot,
+            entry.ruleId,
+            entry.componentId,
+            'is not eligible',
+          );
+          continue;
+        }
+
+        if (requiredComponent.componentType === 'base') {
+          if (locked?.base_id !== undefined && locked.base_id !== requiredComponent.id) {
+            warnRequiredComponentSkipped(
+              warnings,
+              day,
+              meal_slot,
+              entry.ruleId,
+              entry.componentId,
+              'was blocked by a locked base',
+            );
+            continue;
+          }
+          selectedBase = requiredComponent;
+          selectedBaseId = requiredComponent.id;
+          usageCount.set(selectedBaseId, (usageCount.get(selectedBaseId) ?? 0) + 1);
+          markUsed(requiredComponent);
+          continue;
+        }
+
+        if (requiredComponent.componentType === 'curry') {
+          if (locked?.curry_id !== undefined && locked.curry_id !== requiredComponent.id) {
+            warnRequiredComponentSkipped(
+              warnings,
+              day,
+              meal_slot,
+              entry.ruleId,
+              entry.componentId,
+              'was blocked by a locked curry',
+            );
+            continue;
+          }
+          selectedCurry = requiredComponent;
+          usageCount.set(requiredComponent.id, (usageCount.get(requiredComponent.id) ?? 0) + 1);
+          markUsed(requiredComponent);
+          continue;
+        }
+
+        if (requiredComponent.componentType === 'subzi') {
+          if (locked?.subzi_id !== undefined && locked.subzi_id !== requiredComponent.id) {
+            warnRequiredComponentSkipped(
+              warnings,
+              day,
+              meal_slot,
+              entry.ruleId,
+              entry.componentId,
+              'was blocked by a locked subzi',
+            );
+            continue;
+          }
+          selectedSubzi = requiredComponent;
+          usageCount.set(requiredComponent.id, (usageCount.get(requiredComponent.id) ?? 0) + 1);
+          markUsed(requiredComponent);
+          continue;
+        }
+
+        if (locked?.extra_ids !== undefined && !locked.extra_ids.includes(requiredComponent.id)) {
+          warnRequiredComponentSkipped(
+            warnings,
+            day,
+            meal_slot,
+            entry.ruleId,
+            entry.componentId,
+            'was blocked by locked extras',
+          );
+          continue;
+        }
+        if (!requiredExtraComponentIds.includes(requiredComponent.id)) {
+          requiredExtraComponentIds.push(requiredComponent.id);
         }
       }
 
       // ── Second pass: composition effects for extras ──────────────────────────
 
-      const slotComponentIds: number[] = [selectedBase.id!];
-      if (selectedCurry?.id !== undefined) slotComponentIds.push(selectedCurry.id);
-      if (selectedSubzi?.id !== undefined) slotComponentIds.push(selectedSubzi.id);
+      const finalSlotComponents = [selectedBase, selectedCurry, selectedSubzi].filter(
+        (component): component is ComponentRecord => component !== undefined,
+      );
 
       const secondPassEffects = compositionEffectsSecondPass(
-        validatedRules, selectedBase, slotComponentIds, day, meal_slot,
+        validatedRules, finalSlotComponents, day, meal_slot,
       );
 
       const requiredExtraCategories = [
@@ -642,22 +779,29 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
 
       if (locked?.extra_ids !== undefined) {
         selectedExtraIds.push(...locked.extra_ids);
-      } else {
+      } else if (!skipExtras) {
         // Fill required extra categories first
         for (const categoryId of requiredExtraCategories) {
           const candidates = eligibleExtras.filter(
-            (extra) => extra.extra_category_id === categoryId && !selectedExtraIds.includes(extra.id!),
+            (extra) => extra.extra_category_id === categoryId && !selectedExtraIds.includes(extra.id),
           );
           if (candidates.length > 0) {
             const picked = weightedRandom(candidates, c => effectiveWeight(c, usageCount));
-            selectedExtraIds.push(picked.id!);
-            usageCount.set(picked.id!, (usageCount.get(picked.id!) ?? 0) + 1);
+            selectedExtraIds.push(picked.id);
+            usageCount.set(picked.id, (usageCount.get(picked.id) ?? 0) + 1);
           } else {
             warnings.push({
               slot: { day, meal_slot },
               rule_id: null,
               message: `require_extra category_id '${categoryId}' has no eligible extras on ${day} ${meal_slot} — skipped`,
             });
+          }
+        }
+
+        for (const extraId of requiredExtraComponentIds) {
+          if (!selectedExtraIds.includes(extraId)) {
+            selectedExtraIds.push(extraId);
+            usageCount.set(extraId, (usageCount.get(extraId) ?? 0) + 1);
           }
         }
       }
@@ -670,8 +814,8 @@ export async function generate(options?: GenerateOptions): Promise<GeneratorResu
         base_id: selectedBaseId,
         extra_ids: selectedExtraIds,
       };
-      if (selectedCurry) planSlot.curry_id = selectedCurry.id!;
-      if (selectedSubzi) planSlot.subzi_id = selectedSubzi.id!;
+      if (selectedCurry) planSlot.curry_id = selectedCurry.id;
+      if (selectedSubzi) planSlot.subzi_id = selectedSubzi.id;
 
       slots.push(planSlot);
     }

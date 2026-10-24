@@ -151,9 +151,9 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
                 component={item}
                 expanded={item.id === expandedId}
                 confirmingDelete={item.id === confirmingDeleteId}
-                onExpand={() => setExpandedId(item.id ?? null)}
+                onExpand={() => setExpandedId(item.id)}
                 onCollapse={() => setExpandedId(null)}
-                onRequestDelete={() => setConfirmingDeleteId(item.id ?? null)}
+                onRequestDelete={() => setConfirmingDeleteId(item.id)}
                 onCancelDelete={() => setConfirmingDeleteId(null)}
                 onDelete={() => {
                   setConfirmingDeleteId(null)

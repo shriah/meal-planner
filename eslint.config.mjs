@@ -12,7 +12,14 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Agent worktrees are separate checkouts, linted in their own tree.
+    ".claude/worktrees/**",
   ]),
+  {
+    // Satori JSX is rendered once to an image (no reconciliation) and its types reject `key`.
+    files: ["src/services/export-template.tsx"],
+    rules: { "react/jsx-key": "off" },
+  },
 ]);
 
 export default eslintConfig;

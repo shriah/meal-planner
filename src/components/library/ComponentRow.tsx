@@ -146,7 +146,7 @@ export function ComponentRow({
       </div>
 
       {/* Delete confirmation strip */}
-      {confirmingDelete && component.id !== undefined && (
+      {confirmingDelete && (
         <DeleteConfirmStrip
           componentName={component.name}
           componentId={component.id}

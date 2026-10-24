@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { db } from '@/db/client';
 import type { ComponentRecord } from '@/types/component';
-import type { CategoryKind, CategoryRecord } from '@/types/category';
+import type { CategoryKind } from '@/types/category';
 
 async function ensureSeedCategories(): Promise<{
   base: Record<string, number>;
@@ -17,7 +17,6 @@ async function ensureSeedCategories(): Promise<{
   const categories = await db.categories.toArray();
   const byKey = new Map(
     categories
-      .filter((category): category is CategoryRecord & { id: number } => category.id !== undefined)
       .map((category) => [`${category.kind}:${category.name}`, category.id]),
   );
 

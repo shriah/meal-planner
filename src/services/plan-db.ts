@@ -32,7 +32,7 @@ export async function saveWeekPlan(
 ): Promise<void> {
   const existing = await db.saved_plans.where('week_start').equals(weekStart).first();
   if (existing) {
-    await db.saved_plans.update(existing.id!, {
+    await db.saved_plans.update(existing.id, {
       slots: plan,
       locks,
       created_at: new Date().toISOString(),

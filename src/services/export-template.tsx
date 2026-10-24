@@ -70,6 +70,7 @@ export function buildPlanElement(payload: ExportPlanPayload) {
         display: 'flex',
         flexDirection: 'column',
         width: 390,
+        boxSizing: 'border-box',
         backgroundColor: '#ffffff',
         fontFamily: 'Inter',
         padding: 24,

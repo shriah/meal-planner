@@ -29,7 +29,8 @@ describe('CompiledRuleSchema', () => {
       scope: { days: null, slots: null },
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
+        { kind: 'skip_component', component_types: ['curry', 'extra'] },
+        { kind: 'require_component', component_ids: [9] },
         { kind: 'require_extra', category_ids: [7] },
       ],
     };

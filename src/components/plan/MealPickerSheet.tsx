@@ -181,7 +181,7 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
                   {section.items.map(c => (
                     <button
                       key={c.id}
-                      onClick={() => handleSelect(c.id!)}
+                      onClick={() => handleSelect(c.id)}
                       className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent/10 transition-colors"
                     >
                       <span className="font-medium">{c.name}</span>
@@ -207,7 +207,7 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
               {filtered.map(c => (
                 <button
                   key={c.id}
-                  onClick={() => handleSelect(c.id!)}
+                  onClick={() => handleSelect(c.id)}
                   className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent/10 transition-colors"
                 >
                   <span className="font-medium">{c.name}</span>

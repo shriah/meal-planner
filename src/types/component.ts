@@ -30,7 +30,7 @@ export type OccasionTag =
 
 // Shared base for all components
 interface BaseComponentFields {
-  id?: number;
+  id: number;
   name: string;
   componentType: ComponentType;
   dietary_tags: DietaryTag[];

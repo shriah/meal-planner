@@ -1,7 +1,7 @@
 export type CategoryKind = 'base' | 'extra';
 
 export interface CategoryRecord {
-  id?: number;
+  id: number;
   kind: CategoryKind;
   name: string;
   created_at: string;

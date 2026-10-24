@@ -81,6 +81,7 @@ describe('runSeed', () => {
 
   it('keeps an explicit empty curry compatibility array distinct from legacy missing data', () => {
     const intentionallyIneligibleCurry: CurryRecord = {
+      id: 1,
       name: 'Explicitly Ineligible Curry',
       componentType: 'curry',
       compatible_base_category_ids: [],

@@ -202,6 +202,161 @@ describe('PLAN-01: Full 21-slot generation', () => {
   });
 });
 
+describe('require_component composition effects', () => {
+  it('adds a required specific extra when the target appears', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice gets pickle',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_component', component_ids: [ids.extraCondimentAllId] }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: ids.riceBaseId },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.extra_ids).toContain(ids.extraCondimentAllId);
+  });
+
+  it('replaces curry and subzi with required specific components when the target appears', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice gets selected sides',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_component', component_ids: [ids.curry2Id, ids.subzi2Id] }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: ids.riceBaseId },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.curry_id).toBe(ids.curry2Id);
+    expect(mondayBreakfast?.subzi_id).toBe(ids.subzi2Id);
+  });
+
+  it('replaces the base with a required specific base when the target appears', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Sambar swaps to chapati',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'component', component_id: ids.curry1Id },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_component', component_ids: [ids.breadBaseId] }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { curry_id: ids.curry1Id },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.base_id).toBe(ids.breadBaseId);
+    expect(mondayBreakfast?.curry_id).toBe(ids.curry1Id);
+  });
+
+  it('does not replace a locked component and emits a warning', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice wants dal',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_component', component_ids: [ids.curry2Id] }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: ids.riceBaseId, curry_id: ids.curry1Id },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.curry_id).toBe(ids.curry1Id);
+    expect(result.warnings.some((warning) =>
+      warning.message.includes("require_component component_id") &&
+      warning.message.includes('locked curry'),
+    )).toBe(true);
+  });
+
+  it('skips missing and day-ineligible required components with warnings', async () => {
+    const ids = await seedMinimalComponents();
+    const sundayOnlyExtraId = await addComponent({
+      name: 'Sunday Curd',
+      componentType: 'extra',
+      extra_category_id: ids.condimentCategoryId,
+      extra_category: 'condiment',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['sunday'],
+      created_at: '',
+    });
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice wants impossible extras',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [{ kind: 'require_component', component_ids: [999_999, sundayOnlyExtraId] }],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: ids.riceBaseId },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      (slot) => slot.day === 'monday' && slot.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.extra_ids).not.toContain(sundayOnlyExtraId);
+    expect(result.warnings.some((warning) => warning.message.includes("component_id '999999' was not found"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.message.includes(`component_id '${sundayOnlyExtraId}' is not eligible`))).toBe(true);
+  });
+});
+
 // ─── PLAN-04: Extra compatibility ─────────────────────────────────────────────
 
 describe('PLAN-04: Extra compatibility', () => {
@@ -582,6 +737,87 @@ describe('RULE-04: No-repeat rules (NoRepeatRule)', () => {
     expect(result.plan.slots).toHaveLength(21);
     // With exactly 7 unique bases available, at least 7 unique bases used
     expect(uniqueBases.size).toBeGreaterThanOrEqual(7);
+  });
+
+  // no_repeat applies to every component the target matches, not just whole component types.
+  describe('no-repeat on non-type targets', () => {
+    const oneBase = () => addComponent({
+      name: 'Plain Rice',
+      componentType: 'base',
+      base_type: 'rice-based',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const subzi = (name: string, regional: ComponentRecord['regional_tags'][number]) => addComponent({
+      name,
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: [regional],
+      occasion_tags: ['everyday'],
+      created_at: '',
+    });
+    const countUses = (slots: { subzi_id?: number; curry_id?: number }[], key: 'subzi_id' | 'curry_id', id: number) =>
+      slots.filter(s => s[key] === id).length;
+
+    it('17. tag target — matched subzis are used at most once, unmatched ones may repeat', async () => {
+      await oneBase();
+      await seedDefaultPreferences();
+      const southId = await subzi('Beans Poriyal', 'south-indian');
+      const panId = await subzi('Aloo Gobi', 'pan-indian');
+      await addRule({
+        name: 'No repeat south-indian',
+        enabled: true,
+        compiled_filter: {
+          type: 'rule',
+          target: { mode: 'tag', filter: { regional_tag: 'south-indian' } },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'no_repeat' }],
+        },
+        created_at: '',
+      });
+
+      const { plan } = await generate();
+
+      expect(countUses(plan.slots, 'subzi_id', southId)).toBeLessThanOrEqual(1);
+      // With only one other subzi, it has to fill the remaining slots, so it repeats.
+      expect(countUses(plan.slots, 'subzi_id', panId)).toBeGreaterThan(1);
+    });
+
+    it('18. component target — the single targeted curry is used at most once, others may repeat', async () => {
+      await oneBase();
+      await seedDefaultPreferences();
+      const curryA = await addComponent({ name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+      const curryB = await addComponent({ name: 'Dal Tadka', componentType: 'curry', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+      await addRule({
+        name: 'No repeat Sambar',
+        enabled: true,
+        compiled_filter: {
+          type: 'rule',
+          target: { mode: 'component', component_id: curryA },
+          scope: { days: null, slots: null },
+          effects: [{ kind: 'no_repeat' }],
+        },
+        created_at: '',
+      });
+
+      const { plan } = await generate();
+
+      expect(countUses(plan.slots, 'curry_id', curryA)).toBeLessThanOrEqual(1);
+      expect(countUses(plan.slots, 'curry_id', curryB)).toBeGreaterThan(1);
+    });
+
+    it('19. without a no_repeat rule the same tagged subzi repeats (guards the assertions above)', async () => {
+      await oneBase();
+      await seedDefaultPreferences();
+      const southId = await subzi('Beans Poriyal', 'south-indian');
+      await subzi('Aloo Gobi', 'pan-indian');
+
+      const { plan } = await generate();
+
+      expect(countUses(plan.slots, 'subzi_id', southId)).toBeGreaterThan(1);
+    });
   });
 });
 
@@ -1932,6 +2168,37 @@ describe('meal-template rules: component exclusions (TMPL-03)', () => {
     expect(hasAnyCurry).toBe(true);
     expect(hasAnySubzi).toBe(true);
     void ids;
+  });
+
+  it('skips extras for a matching base category even when extras are otherwise required', async () => {
+    const ids = await seedMinimalComponents();
+    await seedDefaultPreferences();
+    await addRule({
+      name: 'Rice: no extras',
+      enabled: true,
+      compiled_filter: {
+        type: 'rule',
+        target: { mode: 'base_category', category_id: ids.riceBaseCategoryId },
+        scope: { days: ['monday'], slots: ['breakfast'] },
+        effects: [
+          { kind: 'skip_component', component_types: ['extra'] },
+          { kind: 'require_extra', category_ids: [ids.liquidCategoryId] },
+          { kind: 'require_component', component_ids: [ids.extraCondimentAllId] },
+        ],
+      },
+      created_at: '',
+    });
+
+    const result = await generate({
+      lockedSlots: {
+        'monday-breakfast': { base_id: ids.riceBaseId },
+      },
+    });
+    const mondayBreakfast = result.plan.slots.find(
+      s => s.day === 'monday' && s.meal_slot === 'breakfast',
+    );
+
+    expect(mondayBreakfast?.extra_ids).toEqual([]);
   });
 });
 

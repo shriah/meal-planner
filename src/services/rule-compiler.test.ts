@@ -12,7 +12,8 @@ describe('compileRule', () => {
       slots: [],
       selection: '',
       allowed_slots: ['lunch', 'dinner'],
-      skip_component_types: ['curry'],
+      skip_component_types: ['curry', 'extra'],
+      require_component_ids: [11],
       require_extra_category_ids: [7, 8],
     };
 
@@ -22,7 +23,8 @@ describe('compileRule', () => {
       scope: { days: null, slots: null },
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
-        { kind: 'skip_component', component_types: ['curry'] },
+        { kind: 'skip_component', component_types: ['curry', 'extra'] },
+        { kind: 'require_component', component_ids: [11] },
         { kind: 'require_extra', category_ids: [7, 8] },
       ],
     });
@@ -37,6 +39,7 @@ describe('compileRule', () => {
       selection: 'filter_pool',
       allowed_slots: [],
       skip_component_types: [],
+      require_component_ids: [],
       require_extra_category_ids: [],
     };
 
@@ -58,6 +61,7 @@ describe('decompileRule', () => {
       effects: [
         { kind: 'allowed_slots', slots: ['lunch', 'dinner'] },
         { kind: 'skip_component', component_types: ['subzi'] },
+        { kind: 'require_component', component_ids: [12] },
         { kind: 'require_extra', category_ids: [9] },
       ],
     };
@@ -70,6 +74,7 @@ describe('decompileRule', () => {
       selection: '',
       allowed_slots: ['lunch', 'dinner'],
       skip_component_types: ['subzi'],
+      require_component_ids: [12],
       require_extra_category_ids: [9],
     });
   });
@@ -114,6 +119,7 @@ describe('decompileRule', () => {
       selection: '',
       allowed_slots: ['dinner'],
       skip_component_types: [],
+      require_component_ids: [],
       require_extra_category_ids: [],
     });
   });
@@ -129,5 +135,29 @@ describe('decompileRule', () => {
     const state = decompileRule(compiled, 'No repeat subzi');
     expect(state.days).toEqual([]);
     expect(state.slots).toEqual([]);
+  });
+
+  it('drops deleted component IDs during decompile and round-trip', () => {
+    const compiled: CompiledRule = {
+      type: 'rule',
+      target: { mode: 'base_category', category_id: 4 },
+      scope: { days: null, slots: null },
+      effects: [
+        { kind: 'require_component', component_ids: [12, 99] },
+      ],
+    };
+
+    const state = decompileRule(compiled, 'Rice components', {
+      baseCategoryIds: [4],
+      componentIds: [12],
+    });
+
+    expect(state.require_component_ids).toEqual([12]);
+    expect(compileRule(state)).toEqual({
+      type: 'rule',
+      target: { mode: 'base_category', category_id: 4 },
+      scope: { days: null, slots: null },
+      effects: [{ kind: 'require_component', component_ids: [12] }],
+    });
   });
 });

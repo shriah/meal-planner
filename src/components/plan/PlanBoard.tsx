@@ -43,7 +43,7 @@ export function PlanBoard() {
   const componentsMap = useMemo(() => {
     const map = new Map<number, (typeof allComponents)[number]>()
     for (const c of allComponents ?? []) {
-      if (c.id !== undefined) map.set(c.id, c)
+      map.set(c.id, c)
     }
     return map
   }, [allComponents])
@@ -63,7 +63,7 @@ export function PlanBoard() {
     ? plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
     : undefined
   const selectedBaseCategoryId = selectedPlanSlot
-    ? componentsMap.get(selectedPlanSlot.base_id)?.base_category_id
+    ? componentsMap.get(selectedPlanSlot.base_id)?.base_category_id ?? undefined
     : undefined
 
   return (

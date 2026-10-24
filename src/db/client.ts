@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
+import { resolveSeededCurryCompatibilityIds, type SeedCategoryLookup } from '@/db/seed-data';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
@@ -8,7 +8,7 @@ import type { CompiledRule, WeeklyPlan } from '@/types/plan';
 
 // Rule record — stores unified CompiledRule
 export interface RuleRecord {
-  id?: number;
+  id: number;
   name: string;
   enabled: boolean;
   compiled_filter: CompiledRule;
@@ -16,7 +16,7 @@ export interface RuleRecord {
 }
 
 export interface SavedPlanRecord {
-  id?: number;
+  id: number;
   week_start: string;
   slots: WeeklyPlan;
   locks: Record<string, boolean>;
@@ -35,9 +35,13 @@ export interface CategorySeedInput {
   name: string;
 }
 
+// Pre-insert shapes: the migration fixture is plain data that has not been assigned ids by Dexie yet.
+type LegacyComponent = Omit<ComponentRecord, 'id'>;
+type LegacyRule = Omit<RuleRecord, 'id'>;
+
 export interface LegacyCategoryMigrationFixture {
-  components: ComponentRecord[];
-  rules: RuleRecord[];
+  components: LegacyComponent[];
+  rules: LegacyRule[];
 }
 
 type CategoryLookup = Record<CategoryKind, Map<string, number>>;
@@ -368,18 +372,12 @@ function buildCategoryLookup(categories: CategoryRecord[]): CategoryLookup {
   return {
     base: new Map(
       categories
-        .filter(
-          (category): category is CategoryRecord & { id: number } =>
-            category.kind === 'base' && category.id !== undefined,
-        )
+        .filter((category) => category.kind === 'base')
         .map((category) => [category.name, category.id]),
     ),
     extra: new Map(
       categories
-        .filter(
-          (category): category is CategoryRecord & { id: number } =>
-            category.kind === 'extra' && category.id !== undefined,
-        )
+        .filter((category) => category.kind === 'extra')
         .map((category) => [category.name, category.id]),
     ),
   };
@@ -430,7 +428,7 @@ function migrateRuleCategoryRefs(compiledFilter: unknown, categoryLookup: Catego
 }
 
 function backfillLegacyCurryCompatibility(
-  component: ComponentRecord,
+  component: LegacyComponent,
   categoryLookup: CategoryLookup,
 ): number[] | undefined {
   if (component.compatible_base_category_ids !== undefined) {
@@ -450,17 +448,17 @@ function backfillLegacyCurryCompatibility(
   const seedCategoryLookup = {
     base: Object.fromEntries(categoryLookup.base.entries()),
     extra: Object.fromEntries(categoryLookup.extra.entries()),
-  };
+  } as SeedCategoryLookup;
 
   return resolveSeededCurryCompatibilityIds(component.name, seedCategoryLookup)
     ?? [...categoryLookup.base.values()];
 }
 
 function normalizeComponentCategoryRefs(
-  component: ComponentRecord,
+  component: LegacyComponent,
   category: CategoryRecord & { id: number },
-): ComponentRecord {
-  const nextComponent: ComponentRecord = { ...component };
+): LegacyComponent {
+  const nextComponent: LegacyComponent = { ...component };
 
   if (nextComponent.componentType === 'extra') {
     delete nextComponent.compatible_base_category_ids;
@@ -501,7 +499,7 @@ function normalizeComponentCategoryRefs(
   return nextComponent;
 }
 
-function normalizeRuleCategoryRefs(rule: RuleRecord, category: CategoryRecord & { id: number }): RuleRecord {
+function normalizeRuleCategoryRefs(rule: LegacyRule, category: CategoryRecord & { id: number }): LegacyRule {
   const compiledFilter = rule.compiled_filter;
   if (!compiledFilter || typeof compiledFilter !== 'object') {
     return rule;
@@ -583,7 +581,7 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
   const categoryLookup = buildCategoryLookup(categories);
 
   const components = fixture.components.map((component) => {
-    const nextComponent: ComponentRecord = {
+    const nextComponent: LegacyComponent = {
       ...component,
       base_category_id:
         component.base_category_id
@@ -621,11 +619,12 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
       if (!category?.id) {
         return { categories, components, rules };
       }
+      const deletedCategory = category as CategoryRecord & { id: number };
 
       return {
         categories: categories.filter((candidate) => candidate.id !== deletedCategoryId),
-        components: components.map((component) => normalizeComponentCategoryRefs(component, category)),
-        rules: rules.map((rule) => normalizeRuleCategoryRefs(rule, category)),
+        components: components.map((component) => normalizeComponentCategoryRefs(component, deletedCategory)),
+        rules: rules.map((rule) => normalizeRuleCategoryRefs(rule, deletedCategory)),
       };
     },
   };
@@ -682,7 +681,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
           target: { mode: 'base_type', base_type: 'bread-based' },
           scope: { days: ['friday'], slots: ['dinner'] },
           effects: [{ kind: 'require_extra', categories: ['condiment'] }],
-        } as CompiledRule,
+        } as unknown as CompiledRule, // legacy pre-category shape, migrated below
         created_at: '',
       },
     ],

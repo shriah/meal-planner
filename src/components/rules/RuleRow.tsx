@@ -47,11 +47,11 @@ export function RuleRow({ rule }: RuleRowProps) {
   }
 
   async function handleToggle() {
-    await updateRule(rule.id!, { enabled: !rule.enabled })
+    await updateRule(rule.id, { enabled: !rule.enabled })
   }
 
   async function handleDelete() {
-    await deleteRule(rule.id!)
+    await deleteRule(rule.id)
     setConfirmingDelete(false)
   }
 

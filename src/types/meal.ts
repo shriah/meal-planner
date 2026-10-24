@@ -1,5 +1,5 @@
 export interface MealRecord {
-  id?: number;
+  id: number;
   name?: string;
   base_id: number;
   curry_id?: number;

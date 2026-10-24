@@ -97,7 +97,7 @@ describe('RuleRow edit flow', () => {
 
     render(
       <>
-        <LiveRuleRow ruleId={rule.id!} />
+        <LiveRuleRow ruleId={rule.id} />
         <Toaster />
       </>,
     );
@@ -119,7 +119,7 @@ describe('RuleRow edit flow', () => {
 
     render(
       <>
-        <LiveRuleRow ruleId={rule.id!} />
+        <LiveRuleRow ruleId={rule.id} />
         <Toaster />
       </>,
     );
@@ -147,7 +147,7 @@ describe('RuleRow edit flow', () => {
 
     render(
       <>
-        <LiveRuleRow ruleId={rule.id!} />
+        <LiveRuleRow ruleId={rule.id} />
         <Toaster />
       </>,
     );
@@ -187,7 +187,7 @@ describe('RuleRow edit flow', () => {
 
     render(
       <>
-        <LiveRuleRow ruleId={rule.id!} />
+        <LiveRuleRow ruleId={rule.id} />
         <Toaster />
       </>,
     );

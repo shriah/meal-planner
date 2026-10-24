@@ -37,7 +37,7 @@ let mockWarnings: Warning[] = []
 const mockInitFromDB = vi.fn()
 const mockGenerateFresh = vi.fn()
 const mockRegenerate = vi.fn()
-const mockMealPickerSheet = vi.fn(() => null)
+const mockMealPickerSheet = vi.fn<(props: unknown) => null>(() => null)
 
 vi.mock('@/stores/plan-store', () => ({
   usePlanStore: vi.fn((selector) => {

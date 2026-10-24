@@ -16,7 +16,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { getCategoriesByKind } from '@/services/category-db';
-import { updateRule } from '@/services/food-db';
+import { getAllComponents, updateRule } from '@/services/food-db';
 import { compileRule, decompileRule } from '@/services/rule-compiler';
 import {
   EMPTY_RULE_FORM_STATE,
@@ -41,6 +41,7 @@ export function EditRuleSheet({
   const [saving, setSaving] = useState(false);
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], []);
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], []);
+  const components = useLiveQuery(() => getAllComponents(), [], []);
 
   useEffect(() => {
     if (!open) {
@@ -50,11 +51,12 @@ export function EditRuleSheet({
     dispatch({
       type: 'LOAD_PRESET',
       state: decompileRule(rule.compiled_filter, rule.name, {
-        baseCategoryIds: baseCategories.flatMap((category) => category.id ?? []),
-        extraCategoryIds: extraCategories.flatMap((category) => category.id ?? []),
+        baseCategoryIds: baseCategories.map((category) => category.id),
+        extraCategoryIds: extraCategories.map((category) => category.id),
+        componentIds: components.map((component) => component.id),
       }),
     });
-  }, [baseCategories, extraCategories, open, rule]);
+  }, [baseCategories, components, extraCategories, open, rule]);
 
   async function handleSave() {
     if (!isFormValid(state) || saving || rule.id == null) {
@@ -96,9 +98,9 @@ export function EditRuleSheet({
         >
           <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 pb-6">
             <div className="space-y-2">
-              <Label htmlFor={`rule-name-${rule.id ?? 'draft'}`}>Rule name</Label>
+              <Label htmlFor={`rule-name-${rule.id}`}>Rule name</Label>
               <Input
-                id={`rule-name-${rule.id ?? 'draft'}`}
+                id={`rule-name-${rule.id}`}
                 value={state.name}
                 onChange={(event) =>
                   dispatch({ type: 'SET_NAME', name: event.target.value })

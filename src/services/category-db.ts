@@ -28,13 +28,13 @@ export async function deleteCategory(id: number): Promise<void> {
     const components = await db.components.toArray();
     for (const component of components) {
       const nextComponent = normalizeComponentCategoryRefs(component, category as CategoryRecord & { id: number });
-      await db.components.update(component.id!, nextComponent);
+      await db.components.put(nextComponent);
     }
 
     const rules = await db.rules.toArray();
     for (const rule of rules) {
       const nextRule = normalizeRuleCategoryRefs(rule, category as CategoryRecord & { id: number });
-      await db.rules.update(rule.id!, {
+      await db.rules.update(rule.id, {
         enabled: nextRule.enabled,
         compiled_filter: nextRule.compiled_filter,
       });

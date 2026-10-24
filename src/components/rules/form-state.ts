@@ -10,6 +10,12 @@ type ExamplePresetDefinition = Omit<RuleFormState, 'target'> & {
     | { mode: 'built_in_base_category'; built_in_name: BuiltInBaseCategoryName };
 };
 
+function isBuiltInBaseCategoryTarget(
+  target: ExamplePresetDefinition['target'],
+): target is { mode: 'built_in_base_category'; built_in_name: BuiltInBaseCategoryName } {
+  return target.mode === 'built_in_base_category';
+}
+
 export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
   'fish-fridays': {
     name: 'Fish Fridays',
@@ -19,6 +25,7 @@ export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
     selection: 'require_one',
     allowed_slots: [],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   },
   'no-repeat-subzi': {
@@ -29,6 +36,7 @@ export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
     selection: 'no_repeat',
     allowed_slots: [],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   },
   'weekend-special': {
@@ -39,6 +47,7 @@ export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
     selection: 'filter_pool',
     allowed_slots: [],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   },
   'no-paneer-weekdays': {
@@ -49,6 +58,7 @@ export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
     selection: 'exclude',
     allowed_slots: [],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   },
   'rice-lunch-dinner': {
@@ -59,6 +69,7 @@ export const EXAMPLE_PRESETS: Record<string, ExamplePresetDefinition> = {
     selection: '',
     allowed_slots: ['lunch', 'dinner'],
     skip_component_types: [],
+    require_component_ids: [],
     require_extra_category_ids: [],
   },
 };
@@ -71,6 +82,7 @@ export const EMPTY_RULE_FORM_STATE: RuleFormState = {
   selection: '',
   allowed_slots: [],
   skip_component_types: [],
+  require_component_ids: [],
   require_extra_category_ids: [],
 };
 
@@ -81,15 +93,19 @@ export function resolveExamplePreset(
   const preset = EXAMPLE_PRESETS[presetSlug];
   if (!preset) return null;
 
-  if (preset.target.mode !== 'built_in_base_category') {
-    return preset;
+  if (!isBuiltInBaseCategoryTarget(preset.target)) {
+    return {
+      ...preset,
+      target: preset.target,
+    };
   }
 
+  const builtInTarget = preset.target;
   const matchingCategory = baseCategories.find(
-    (category) => category.kind === 'base' && category.name === preset.target.built_in_name,
+    (category) => category.kind === 'base' && category.name === builtInTarget.built_in_name,
   );
 
-  if (matchingCategory?.id === undefined) {
+  if (!matchingCategory) {
     return null;
   }
 
@@ -111,6 +127,7 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
         selection: state.selection,
         allowed_slots: state.allowed_slots,
         skip_component_types: state.skip_component_types,
+        require_component_ids: state.require_component_ids,
         require_extra_category_ids: state.require_extra_category_ids,
       };
 
@@ -150,6 +167,8 @@ export function formReducer(state: RuleFormState, action: FormAction): RuleFormS
       return { ...state, allowed_slots: action.allowed_slots };
     case 'SET_SKIP_COMPONENT_TYPES':
       return { ...state, skip_component_types: action.skip_component_types };
+    case 'SET_REQUIRE_COMPONENT_IDS':
+      return { ...state, require_component_ids: action.component_ids };
     case 'SET_REQUIRE_EXTRA_CATEGORY_IDS':
       return { ...state, require_extra_category_ids: action.category_ids };
     case 'LOAD_PRESET':
@@ -174,6 +193,7 @@ export function isFormValid(state: RuleFormState): boolean {
     state.selection !== '' ||
     state.allowed_slots.length > 0 ||
     state.skip_component_types.length > 0 ||
+    state.require_component_ids.length > 0 ||
     state.require_extra_category_ids.length > 0
   );
 }

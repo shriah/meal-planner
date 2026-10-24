@@ -12,9 +12,11 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { getAllComponents } from '@/services/food-db';
 import { getCategoriesByKind } from '@/services/category-db';
 import { ALL_DAYS } from '@/types/plan';
-import type { RuleFormState, FormAction } from '../types';
+import type { RuleFormState, FormAction, SkippableComponentType } from '../types';
 import type { TagFilter } from '@/types/plan';
 import type { MealSlot } from '@/types/preferences';
+import type { ComponentRecord } from '@/types/component';
+import { X } from 'lucide-react';
 
 const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner'];
 const TAG_DIETARY = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian'] as const;
@@ -102,6 +104,64 @@ function ComponentPicker({ value, onChange }: { value: number | null; onChange: 
       searchPlaceholder="Search components..."
       className="w-full"
     />
+  );
+}
+
+function RequiredComponentsPicker({
+  selectedIds,
+  onChange,
+}: {
+  selectedIds: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const allComponents = useLiveQuery(() => getAllComponents()) ?? [];
+  const componentsById = new Map(allComponents.map((component): [number, ComponentRecord] => [component.id, component]));
+  const options: ComboboxOption[] = allComponents
+    .filter(component => !selectedIds.includes(component.id))
+    .map(component => ({
+      value: String(component.id),
+      label: `${component.name} (${component.componentType})`,
+    }));
+
+  return (
+    <div className="space-y-2">
+      <Combobox
+        options={options}
+        value=""
+        onValueChange={(value) => {
+          const componentId = Number(value);
+          if (Number.isFinite(componentId) && !selectedIds.includes(componentId)) {
+            onChange([...selectedIds, componentId]);
+          }
+        }}
+        placeholder="Add component..."
+        searchPlaceholder="Search components..."
+        className="w-full"
+      />
+      {selectedIds.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {selectedIds.map((componentId) => {
+            const component = componentsById.get(componentId);
+            return (
+              <span
+                key={componentId}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs"
+              >
+                {component ? `${component.name} (${component.componentType})` : `Deleted component #${componentId}`}
+                <button
+                  type="button"
+                  aria-label={`Remove ${component?.name ?? `component ${componentId}`}`}
+                  className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                  onClick={() => onChange(selectedIds.filter(id => id !== componentId))}
+                >
+                  <X className="size-3" />
+                </button>
+              </span>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -247,11 +307,15 @@ function EffectsSection({ state, dispatch }: Props) {
     { value: 'no_repeat', label: "No-repeat — don't reuse the same component across the week" },
   ] as const;
 
-  const toggleSkipType = (ct: 'curry' | 'subzi') => {
+  const toggleSkipType = (ct: SkippableComponentType) => {
     const next = state.skip_component_types.includes(ct)
       ? state.skip_component_types.filter(x => x !== ct)
       : [...state.skip_component_types, ct];
     dispatch({ type: 'SET_SKIP_COMPONENT_TYPES', skip_component_types: next });
+  };
+
+  const toggleRequireComponent = (componentIds: number[]) => {
+    dispatch({ type: 'SET_REQUIRE_COMPONENT_IDS', component_ids: componentIds });
   };
 
   const toggleRequireExtra = (categoryId: number) => {
@@ -305,12 +369,14 @@ function EffectsSection({ state, dispatch }: Props) {
         <div className="space-y-1">
           <p className="text-sm text-muted-foreground">Skip component types</p>
           <div className="flex gap-4">
-            {(['curry', 'subzi'] as const).map(ct => (
+            {(['curry', 'subzi', 'extra'] as const).map(ct => (
               <div key={ct} className="flex items-center space-x-2">
                 <Checkbox id={`skip-${ct}`}
                   checked={state.skip_component_types.includes(ct)}
                   onCheckedChange={() => toggleSkipType(ct)} />
-                <Label htmlFor={`skip-${ct}`} className="font-normal cursor-pointer capitalize">{ct}</Label>
+                <Label htmlFor={`skip-${ct}`} className="font-normal cursor-pointer capitalize">
+                  {ct === 'extra' ? 'Extras' : ct}
+                </Label>
               </div>
             ))}
           </div>
@@ -323,16 +389,23 @@ function EffectsSection({ state, dispatch }: Props) {
             {extraCategories.map(category => (
               <div key={category.id} className="flex items-center space-x-2">
                 <Checkbox id={`req-${category.id}`}
-                  checked={category.id !== undefined && state.require_extra_category_ids.includes(category.id)}
+                  checked={state.require_extra_category_ids.includes(category.id)}
                   onCheckedChange={() => {
-                    if (category.id !== undefined) {
-                      toggleRequireExtra(category.id);
-                    }
+                    toggleRequireExtra(category.id);
                   }} />
                 <Label htmlFor={`req-${category.id}`} className="font-normal cursor-pointer">{category.name}</Label>
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Require specific components */}
+        <div className="space-y-1">
+          <p className="text-sm text-muted-foreground">Require specific components</p>
+          <RequiredComponentsPicker
+            selectedIds={state.require_component_ids}
+            onChange={toggleRequireComponent}
+          />
         </div>
       </div>
     </div>
