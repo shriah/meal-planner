@@ -3,7 +3,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PlanBoard } from './PlanBoard'
 import type { ComponentRecord } from '@/types/component'
-import type { WeeklyPlan, Warning } from '@/types/plan'
+import type { WeeklyPlan } from '@/types/plan'
+import type { PlanProblem } from '@/services/plan-generation'
+import type { RuleIssue } from '@/rules'
 
 // Mock next/link
 vi.mock('next/link', () => ({
@@ -33,7 +35,8 @@ function buildFullPlan(): WeeklyPlan {
 // Control state via these variables
 let mockPlan: WeeklyPlan | null = null
 let mockAllComponents: ComponentRecord[] = []
-let mockWarnings: Warning[] = []
+let mockProblems: PlanProblem[] = []
+let mockRuleIssues: RuleIssue[] = []
 const mockInitFromDB = vi.fn()
 const mockGenerateFresh = vi.fn()
 const mockRegenerate = vi.fn()
@@ -43,12 +46,13 @@ vi.mock('@/stores/plan-store', () => ({
   usePlanStore: vi.fn((selector) => {
     const state = {
       plan: mockPlan,
-      warnings: mockWarnings,
+      problems: mockProblems,
+      ruleIssues: mockRuleIssues,
       hydrated: true,
       isGenerating: false,
       isReadOnly: false,
       currentWeekStart: '2026-03-23',
-      warningBannerDismissed: false,
+      problemsDismissed: false,
       locks: {},
       initFromDB: mockInitFromDB,
       generateFresh: mockGenerateFresh,
@@ -56,7 +60,7 @@ vi.mock('@/stores/plan-store', () => ({
       setLock: vi.fn(),
       lockDay: vi.fn(),
       unlockDay: vi.fn(),
-      dismissWarningBanner: vi.fn(),
+      dismissProblems: vi.fn(),
     }
     return selector(state)
   }),
@@ -77,7 +81,8 @@ describe('PlanBoard', () => {
   beforeEach(() => {
     mockPlan = null
     mockAllComponents = []
-    mockWarnings = []
+    mockProblems = []
+    mockRuleIssues = []
     mockInitFromDB.mockClear()
     mockGenerateFresh.mockClear()
     mockMealPickerSheet.mockClear()
@@ -397,17 +402,8 @@ describe('PlanBoard', () => {
     )
   })
 
-  it('surfaces omitted-curry warnings through the existing banner and highlighted cell path', () => {
-    mockPlan = {
-      slots: [
-        {
-          day: 'monday',
-          meal_slot: 'lunch',
-          base_id: 101,
-          extra_ids: [],
-        },
-      ],
-    }
+  it('explains broken rules in the banner and highlights the meal they are in', () => {
+    mockPlan = { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 101, extra_ids: [] }] }
     mockAllComponents = [
       {
         id: 101,
@@ -421,18 +417,20 @@ describe('PlanBoard', () => {
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]
-    mockWarnings = [
-      {
-        slot: { day: 'monday', meal_slot: 'lunch' },
-        rule_id: null,
-        message: 'no compatible curry available for base "Plain Rice" on monday lunch - skipped',
-      },
+    mockProblems = [
+      { level: 'hard', message: 'Fish on Mondays: on Monday lunch has 0, must be at least 1', ruleId: 3, day: 'monday', meal: 'lunch' },
+      { level: 'soft', message: 'Dish repeated in the week: "Plain Rice" across the week has 2, should be at most 1' },
     ]
+    mockRuleIssues = [{ ruleId: 9, name: 'Old category rule', message: 'refers to base category #4, which no longer exists' }]
 
     render(<PlanBoard />)
 
-    expect(screen.getByText('1 slot could not be filled — see highlighted cell')).toBeTruthy()
-    expect(screen.getByText('Warning')).toBeTruthy()
+    expect(screen.getByText('1 rule could not be met — see highlighted meals; 1 rule was skipped')).toBeTruthy()
+    expect(screen.getAllByText('Fish on Mondays: on Monday lunch has 0, must be at least 1').length).toBeGreaterThan(0)
+    expect(screen.getByText('Skipped “Old category rule”: refers to base category #4, which no longer exists')).toBeTruthy()
+    // Unmet preferences are not presented as problems.
+    expect(screen.queryByText(/Dish repeated/)).toBeNull()
+    expect(screen.getByText('Rule broken')).toBeTruthy()
     expect(screen.getByText('Plain Rice')).toBeTruthy()
   })
 })

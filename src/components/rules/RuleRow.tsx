@@ -1,11 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import type { RuleRecord } from '@/db/client'
-import { describeRule } from './ruleDescriptions'
+import { describeSpec, missingReferences, parseSpec, TEMPLATES, type KnownIds, type Names } from '@/rules'
 import { updateRule, deleteRule } from '@/services/food-db'
-import { getCategoriesByKind } from '@/services/category-db'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,36 +13,28 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { Alert } from '@/components/ui/alert'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { EditRuleSheet } from './EditRuleSheet'
 
 interface RuleRowProps {
   rule: RuleRecord
+  names: Names
+  known: KnownIds
 }
 
-export function RuleRow({ rule }: RuleRowProps) {
+/** Why a stored rule would be skipped when planning, or null when it applies. */
+function problemOf(rule: RuleRecord, known: KnownIds): string | null {
+  const parsed = parseSpec(rule.spec)
+  if (!parsed.ok) return `Invalid rule — ${parsed.message}`
+  const missing = missingReferences(parsed.spec, known)
+  return missing.length ? `Refers to ${missing.join(', ')}, which no longer exists` : null
+}
+
+export function RuleRow({ rule, names, known }: RuleRowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [editing, setEditing] = useState(false)
-  const categories = useLiveQuery(
-    async () => {
-      const [baseCategories, extraCategories] = await Promise.all([
-        getCategoriesByKind('base'),
-        getCategoriesByKind('extra'),
-      ])
-      return [...baseCategories, ...extraCategories]
-    },
-    [],
-    [],
-  )
-
-  const summary = describeRule(rule.compiled_filter, categories)
-
-  const ruleTypeLabel: Record<string, string> = {
-    'no-repeat': 'No Repeat',
-    'scheduling-rule': 'Scheduling',
-    'meal-template': 'Meal Template',
-  }
+  const parsed = parseSpec(rule.spec)
+  const summary = parsed.ok ? describeSpec(parsed.spec, names) : 'This rule cannot be read'
+  const problem = problemOf(rule, known)
 
   async function handleToggle() {
     await updateRule(rule.id, { enabled: !rule.enabled })
@@ -67,41 +57,36 @@ export function RuleRow({ rule }: RuleRowProps) {
           <p className="text-sm font-medium truncate">{rule.name}</p>
           <p className="text-sm text-muted-foreground truncate">{summary}</p>
         </div>
-        <Badge variant="secondary" className="text-xs shrink-0">
-          {ruleTypeLabel[rule.compiled_filter.type] ?? rule.compiled_filter.type}
-        </Badge>
+        {problem ? (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="destructive" className="text-xs shrink-0">Not applied</Badge>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs">{problem}</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ) : parsed.ok && (
+          <Badge variant="secondary" className="text-xs shrink-0">{TEMPLATES[parsed.spec.template].label}</Badge>
+        )}
         <button
           type="button"
           role="switch"
           aria-checked={rule.enabled}
+          aria-label={`${rule.enabled ? 'Disable' : 'Enable'} ${rule.name}`}
           onClick={handleToggle}
           className={cn(
             'relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
             rule.enabled ? 'bg-primary' : 'bg-input',
           )}
-          >
-            <span
+        >
+          <span
             className={cn(
               'pointer-events-none inline-block size-4 rounded-full bg-background shadow transition-transform',
               rule.enabled ? 'translate-x-4' : 'translate-x-0',
             )}
           />
-          </button>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Edit rule"
-                onClick={() => setEditing(true)}
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit rule</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        </button>
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -139,7 +124,6 @@ export function RuleRow({ rule }: RuleRowProps) {
           </div>
         </Alert>
       )}
-      <EditRuleSheet rule={rule} open={editing} onOpenChange={setEditing} />
     </div>
   )
 }

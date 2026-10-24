@@ -1,7 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react';
-import { db } from '@/db/client';
+import { db, type RuleRecord } from '@/db/client';
+import { is, type Matcher, type Meal } from '@/planner';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 
@@ -79,52 +80,18 @@ export async function runSeed(): Promise<void> {
 
   const now = new Date().toISOString();
 
-  // Seed default meal-template rules (equivalent to old base_type_slots prefs)
+  // Default rules: which meals each kind of base suits.
+  const onlyAt = (name: string, match: Matcher, meals: Meal[]): Omit<RuleRecord, 'id'> => ({
+    name,
+    enabled: true,
+    spec: { template: 'allowed_meals', params: { match, meals, strength: 'must' } },
+    created_at: now,
+  });
   await db.rules.bulkAdd([
-    {
-      name: 'Other: breakfast and dinner',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_category', category_id: categoryLookup.base.other },
-        scope: { days: null, slots: null },
-        effects: [{ kind: 'allowed_slots', slots: ['breakfast', 'dinner'] }],
-      },
-      created_at: now,
-    },
-    {
-      name: 'Rice-based: lunch only',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_category', category_id: categoryLookup.base['rice-based'] },
-        scope: { days: null, slots: null },
-        effects: [{ kind: 'allowed_slots', slots: ['lunch'] }],
-      },
-      created_at: now,
-    },
-    {
-      name: 'Bread-based: dinner only',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_category', category_id: categoryLookup.base['bread-based'] },
-        scope: { days: null, slots: null },
-        effects: [{ kind: 'allowed_slots', slots: ['dinner'] }],
-      },
-      created_at: now,
-    },
-    {
-      name: 'Poori: breakfast only',
-      enabled: true,
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'component', component_id: pooriId },
-        scope: { days: null, slots: ['lunch', 'dinner'] },
-        effects: [{ kind: 'exclude' }],
-      },
-      created_at: now,
-    },
+    onlyAt('Other: breakfast and dinner', is('base_category_id', categoryLookup.base.other), ['breakfast', 'dinner']),
+    onlyAt('Rice-based: lunch only', is('base_category_id', categoryLookup.base['rice-based']), ['lunch']),
+    onlyAt('Bread-based: dinner only', is('base_category_id', categoryLookup.base['bread-based']), ['dinner']),
+    onlyAt('Poori: breakfast only', is('id', pooriId), ['breakfast']),
   ]);
 }
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
+import { RuleSpecSchema } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
@@ -131,14 +132,16 @@ describe('runSeed', () => {
     expect(prefs!.slot_restrictions.component_slot_overrides).toEqual({});
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
-      expect(rule.compiled_filter.target.mode).toBe('base_category');
-      if (rule.compiled_filter.target.mode === 'base_category') {
-        expect(rule.compiled_filter.target.category_id).toEqual(expect.any(Number));
-      }
+      expect(rule.spec).toMatchObject({
+        template: 'allowed_meals',
+        params: { match: { field: 'base_category_id', op: 'eq', value: expect.any(Number) } },
+      });
     }
 
     const pooriRule = rules.find((rule) => rule.name === 'Poori: breakfast only');
-    expect(pooriRule?.compiled_filter.target.mode).toBe('component');
+    expect(pooriRule?.spec).toMatchObject({ template: 'allowed_meals', params: { match: { field: 'id' }, meals: ['breakfast'] } });
+    // Every seeded rule is valid and applies.
+    expect(rules.every((rule) => RuleSpecSchema.safeParse(rule.spec).success)).toBe(true);
   });
 
   it('is idempotent and does not duplicate seeded categories or components', async () => {

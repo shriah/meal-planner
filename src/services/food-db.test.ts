@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { is } from '@/planner';
+import { compileRules } from '@/rules';
 import { db } from '@/db/client';
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels';
 import {
@@ -74,7 +76,7 @@ describe('Phase 14 category services', () => {
     expect(getBaseCategoryLabel(categoriesById, 999_999)).toBe('Deleted base category');
   });
 
-  it('delete normalization strips deleted IDs, clears direct refs, and disables invalid rules', async () => {
+  it('delete normalization strips deleted IDs and clears direct refs, leaving rules for planning to flag', async () => {
     const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
     const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
     const condimentId = await addCategory({ kind: 'extra', name: 'condiment' });
@@ -125,11 +127,9 @@ describe('Phase 14 category services', () => {
       name: 'Bread dinner',
       enabled: true,
       created_at: new Date().toISOString(),
-      compiled_filter: {
-        type: 'rule',
-        target: { mode: 'base_category', category_id: breadId },
-        scope: { days: ['friday'], slots: ['dinner'] },
-        effects: [{ kind: 'require_extra', category_ids: [condimentId] }],
+      spec: {
+        template: 'require_with',
+        params: { when: is('base_category_id', breadId), extraCategories: [condimentId], scope: { days: ['friday'], meals: ['dinner'] } },
       },
     });
 
@@ -149,7 +149,12 @@ describe('Phase 14 category services', () => {
     expect(chole?.compatible_base_category_ids).toEqual([]);
     expect(extraComponent).not.toHaveProperty('compatible_base_category_ids');
     expect(extraComponent).not.toHaveProperty('compatible_base_types');
-    expect(rule.enabled).toBe(false);
+    // The rule is kept unchanged; compiling it now reports the deleted category instead of applying it.
+    expect(rule.enabled).toBe(true);
+    const known = { components: new Set<number>(), baseCategories: new Set([riceId]), extraCategories: new Set([condimentId]) };
+    expect(compileRules([rule], known).issues).toEqual([
+      expect.objectContaining({ name: 'Bread dinner', message: `refers to base category #${breadId}, which no longer exists` }),
+    ]);
   });
 
   it('rename keeps category-ID compatibility stable and delete preserves explicit zero-compatible curries without inventing fallback', async () => {

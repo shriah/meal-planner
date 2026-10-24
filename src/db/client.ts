@@ -4,15 +4,19 @@ import type { CategoryKind, CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { UserPreferencesRecord } from '@/types/preferences';
-import type { CompiledRule, WeeklyPlan } from '@/types/plan';
+import type { WeeklyPlan } from '@/types/plan';
+import { convertLegacyRule, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 
-// Rule record — stores unified CompiledRule
-export interface RuleRecord {
-  id: number;
-  name: string;
-  enabled: boolean;
-  compiled_filter: CompiledRule;
+export type { RuleRecord };
+
+/** One-time messages for the user, e.g. which old rules could not be converted. */
+export interface NoticeRecord {
+  id: string;
+  kind: 'rule-migration';
+  converted: number;
+  dropped: DroppedRule[];
   created_at: string;
+  dismissed: boolean;
 }
 
 export interface SavedPlanRecord {
@@ -37,7 +41,13 @@ export interface CategorySeedInput {
 
 // Pre-insert shapes: the migration fixture is plain data that has not been assigned ids by Dexie yet.
 type LegacyComponent = Omit<ComponentRecord, 'id'>;
-type LegacyRule = Omit<RuleRecord, 'id'>;
+// Rules in the pre-template shape (compiled_filter), as older upgrade steps see them.
+interface LegacyRule {
+  name: string;
+  enabled: boolean;
+  compiled_filter: unknown;
+  created_at: string;
+}
 
 export interface LegacyCategoryMigrationFixture {
   components: LegacyComponent[];
@@ -66,6 +76,7 @@ const db = new Dexie('FoodPlannerDB') as Dexie & {
   saved_plans: EntityTable<SavedPlanRecord, 'id'>;
   preferences: EntityTable<UserPreferencesRecord, 'id'>;
   active_plan: EntityTable<ActivePlanRecord, 'id'>;
+  notices: EntityTable<NoticeRecord, 'id'>;
 };
 
 db.version(1).stores({
@@ -563,7 +574,7 @@ function normalizeRuleCategoryRefs(rule: LegacyRule, category: CategoryRecord & 
   return {
     ...rule,
     enabled,
-    compiled_filter: nextRule as CompiledRule,
+    compiled_filter: nextRule,
   };
 }
 
@@ -607,7 +618,7 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
 
   const rules = fixture.rules.map((rule) => ({
     ...rule,
-    compiled_filter: migrateRuleCategoryRefs(rule.compiled_filter, categoryLookup) as CompiledRule,
+    compiled_filter: migrateRuleCategoryRefs(rule.compiled_filter, categoryLookup),
   }));
 
   return {
@@ -681,7 +692,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
           target: { mode: 'base_type', base_type: 'bread-based' },
           scope: { days: ['friday'], slots: ['dinner'] },
           effects: [{ kind: 'require_extra', categories: ['condiment'] }],
-        } as unknown as CompiledRule, // legacy pre-category shape, migrated below
+        }, // legacy pre-category shape, migrated below
         created_at: '',
       },
     ],
@@ -812,4 +823,54 @@ db.version(13).stores({
     });
 });
 
-export { db, normalizeComponentCategoryRefs, normalizeRuleCategoryRefs };
+// v14: rules move from compiled_filter to rule templates. Rules are converted by the meaning the old
+// form stated; any that cannot be converted faithfully are dropped and listed in a notice.
+export const RULE_MIGRATION_NOTICE_ID = 'rule-migration-v14';
+
+db.version(14).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *compatible_base_types, *compatible_base_category_ids, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade(async (tx) => {
+  const categories: CategoryRecord[] = await tx.table('categories').toArray();
+  const components: ComponentRecord[] = await tx.table('components').toArray();
+  const oldRules: { id: number; name: string; enabled: boolean; compiled_filter: unknown; created_at: string }[] =
+    await tx.table('rules').toArray();
+  if (oldRules.length === 0) return;
+
+  const ctx = {
+    known: {
+      components: new Set(components.map((c) => c.id)),
+      baseCategories: new Set(categories.filter((c) => c.kind === 'base').map((c) => c.id)),
+      extraCategories: new Set(categories.filter((c) => c.kind === 'extra').map((c) => c.id)),
+    },
+    componentTypes: new Map(components.map((c) => [c.id, c.componentType])),
+  };
+  const converted: ConvertedRule[] = [];
+  const dropped: DroppedRule[] = [];
+  for (const row of oldRules) {
+    const result = convertLegacyRule(row, ctx);
+    if (result.ok) converted.push(...result.rules);
+    else dropped.push(result.dropped);
+  }
+
+  await tx.table('rules').clear();
+  await tx.table('rules').bulkAdd(converted);
+  const notice: NoticeRecord = {
+    id: RULE_MIGRATION_NOTICE_ID,
+    kind: 'rule-migration',
+    converted: converted.length,
+    dropped,
+    created_at: new Date().toISOString(),
+    dismissed: dropped.length === 0,
+  };
+  await tx.table('notices').put(notice);
+});
+
+export { db, normalizeComponentCategoryRefs };
