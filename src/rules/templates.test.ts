@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
-import { describeSpec, RuleSpecSchema, type RuleSpecInput } from './templates';
+import { describeSpec, RuleSpecSchema, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
 
 // ─── Library: two base categories, several curries/subzis, extras in two categories ──────────
 const RICE = 10;
@@ -177,6 +177,16 @@ describe('rule template params', () => {
     expect(parsed).toEqual({ template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', roles: ['base', 'curry', 'subzi'], strength: 'must' } });
   });
 
+  it('groups every rule type exactly once, for the type picker', () => {
+    expect(TEMPLATE_GROUPS.map((g) => g.label)).toEqual(['Where and when', 'Keep out', 'Pair and require', 'Count and spread', 'Preference']);
+    expect(TEMPLATE_GROUPS.flatMap((g) => g.templates).sort()).toEqual([...TEMPLATE_IDS].sort());
+  });
+
+  it('accepts a prefer weight up to 10 and no more', () => {
+    expect(valid({ template: 'prefer', params: { match: is('id', 1), direction: 'prefer', weight: 10 } })).toBe(true);
+    expect(valid({ template: 'prefer', params: { match: is('id', 1), direction: 'prefer', weight: 11 } })).toBe(false);
+  });
+
   it('rejects incomplete or contradictory params', () => {
     expect(valid({ template: 'limit', params: { match: is('role', 'curry'), per: 'week' } })).toBe(false);
     expect(valid({ template: 'limit', params: { match: is('role', 'curry'), per: 'week', min: 3, max: 2 } })).toBe(false);
@@ -198,6 +208,8 @@ describe('rule template params', () => {
       .toBe('Non-veg dishes: at most 2 per week');
     expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } })).toBe('Sambar only with Rice bases');
     expect(RuleSpecSchema.safeParse({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [] } }).success).toBe(false);
+    expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'avoid', weight: 1 } })).toBe('Avoid dishes with fish (slightly)');
+    expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'prefer', weight: 5 } })).toBe('Prefer dishes with fish (strongly)');
     expect(d({ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } })).toBe('Chole only on Saturday or Sunday');
     expect(d({ template: 'avoid_with', params: { match: is('id', 31), with: all(is('componentType', 'curry'), oneOf('curry_category', ['soup', 'lentil'])) } }))
       .toBe('Rasam never with soup or lentil curries');

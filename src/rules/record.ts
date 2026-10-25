@@ -9,6 +9,8 @@ export interface RuleRecord {
   enabled: boolean;
   spec: RuleSpecInput;
   created_at: string;
+  /** Set on the rules every library starts with, so they stay recognisable after a rename and can be restored. */
+  default_key?: string;
   /** Component whose form manages this rule (a curry's base pairing). Such rules are edited there. */
   owner_component_id?: number;
 }

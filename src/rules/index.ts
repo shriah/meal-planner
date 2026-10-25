@@ -1,14 +1,17 @@
 // Rule types (templates), stored rules, and their compilation into planner constraints.
 export {
-  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, PREFER_COST, compileSpec, describeSpec, specReferences,
+  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, TEMPLATE_GROUPS, PREFER_COST, compileSpec, describeSpec, specReferences,
   type RuleSpec, type RuleSpecInput, type TemplateId, type ParamsOf, type RuleTemplate, type Scope, type Strength,
   type ConstraintBody, type Refs,
 } from './templates';
+export { groupRules, type RuleGroups } from './groups';
+export { LEVELS, nearestLevel, type Level } from './levels';
 export { describeMatcher, describeScope, type Names } from './describe';
-export { defaultRules, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
+export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
   pairingRule, pairingCategories, curryClashRule, clashCurryCategories, dayRule, ruleDays, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
-  type OwnedRule, type OwnedTemplate,
+  readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays,
+  type OwnedRule, type OwnedTemplate, type OwnedRuleChanges, type OwnedValues, type DayMode,
 } from './owned';
 export { compileRules, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export {

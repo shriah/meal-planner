@@ -135,6 +135,7 @@ describe('runSeed', () => {
     expect(await db.preferences.count()).toBe(0);
     const names = new Set(rules.map((r) => r.name));
     for (const r of defaultRules({ breakfast: 2, lunch: 3, dinner: 3 })) expect(names, r.name).toContain(r.name);
+    expect(rules.filter((r) => r.default_key).map((r) => r.default_key).sort()).toEqual(defaultRules().map((r) => r.default_key).sort());
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
       expect(rule.spec).toMatchObject({

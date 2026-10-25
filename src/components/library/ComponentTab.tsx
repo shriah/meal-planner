@@ -1,19 +1,16 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getComponentsByType } from '@/services/food-db'
 import { filterComponents } from '@/lib/filter-components'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
+import { TagFilter } from '@/components/ui/TagFilter'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ComponentRow } from './ComponentRow'
 import { ComponentForm } from './ComponentForm'
 import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
-
-const ALL_DIETARY_TAGS: DietaryTag[] = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian']
-const ALL_REGIONAL_TAGS: RegionalTag[] = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian']
 
 const SINGULAR_LABEL: Record<ComponentType, string> = {
   base: 'Base',
@@ -25,13 +22,21 @@ const SINGULAR_LABEL: Record<ComponentType, string> = {
 interface ComponentTabProps {
   type: ComponentType
   label: string
+  /** A dish to open and scroll to, from a deep link (`/library#dish-3`). */
+  focusId?: number
 }
 
-export function ComponentTab({ type, label }: ComponentTabProps) {
+export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
   const [searchText, setSearchText] = useState('')
   const [activeDietaryTags, setActiveDietaryTags] = useState<DietaryTag[]>([])
   const [activeRegionalTags, setActiveRegionalTags] = useState<RegionalTag[]>([])
-  const [expandedId, setExpandedId] = useState<number | null>(null)
+  const [expandedId, setExpandedId] = useState<number | null>(focusId ?? null)
+  // A deep link that arrives while this tab is open expands its dish too.
+  const [seenFocusId, setSeenFocusId] = useState(focusId)
+  if (focusId !== seenFocusId) {
+    setSeenFocusId(focusId)
+    if (focusId !== undefined) setExpandedId(focusId)
+  }
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null)
   const [addingNew, setAddingNew] = useState(false)
 
@@ -66,6 +71,11 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
     return filterComponents(components ?? [], searchText, activeDietaryTags, [...activeRegionalTags, tag]).length > 0
   }
 
+  const hasFocusedDish = focusId !== undefined && (components ?? []).some(c => c.id === focusId)
+  useEffect(() => {
+    if (hasFocusedDish) document.getElementById(`dish-${focusId}`)?.scrollIntoView?.({ block: 'center' })
+  }, [hasFocusedDish, focusId])
+
   const singularLabel = SINGULAR_LABEL[type]
   const isEmpty = (components ?? []).length === 0
   const noResults = !isEmpty && filtered.length === 0
@@ -82,44 +92,15 @@ export function ComponentTab({ type, label }: ComponentTabProps) {
       />
 
       {/* Tag filter chips */}
-      <div className="flex flex-wrap gap-2">
-        {ALL_DIETARY_TAGS.map(tag => {
-          const isActive = activeDietaryTags.includes(tag)
-          const hasMatches = dietaryTagHasMatches(tag)
-          return (
-            <Badge
-              key={tag}
-              variant={isActive ? 'default' : 'outline'}
-              className={
-                (!hasMatches && !isActive
-                  ? 'opacity-50 pointer-events-none cursor-not-allowed'
-                  : 'cursor-pointer') + ' text-sm px-2 py-0.5'
-              }
-              onClick={() => hasMatches || isActive ? toggleDietaryTag(tag) : undefined}
-            >
-              {tag}
-            </Badge>
-          )
-        })}
-        {ALL_REGIONAL_TAGS.map(tag => {
-          const isActive = activeRegionalTags.includes(tag)
-          const hasMatches = regionalTagHasMatches(tag)
-          return (
-            <Badge
-              key={tag}
-              variant={isActive ? 'default' : 'outline'}
-              className={
-                (!hasMatches && !isActive
-                  ? 'opacity-50 pointer-events-none cursor-not-allowed'
-                  : 'cursor-pointer') + ' text-sm px-2 py-0.5'
-              }
-              onClick={() => hasMatches || isActive ? toggleRegionalTag(tag) : undefined}
-            >
-              {tag}
-            </Badge>
-          )
-        })}
-      </div>
+      <TagFilter
+        dietary={activeDietaryTags}
+        regional={activeRegionalTags}
+        onToggleDietary={toggleDietaryTag}
+        onToggleRegional={toggleRegionalTag}
+        isDisabled={(kind, tag) => kind === 'dietary'
+          ? !dietaryTagHasMatches(tag as DietaryTag)
+          : !regionalTagHasMatches(tag as RegionalTag)}
+      />
 
       {/* Empty state: no components at all */}
       {isEmpty && (

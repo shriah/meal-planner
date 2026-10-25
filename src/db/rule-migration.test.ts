@@ -164,4 +164,33 @@ describe('v14 rule migration', () => {
       expect(c).not.toHaveProperty('incompatible_curry_categories');
     }
   });
+
+  it('v17 gives default rules a stable key, matching by name and leaving everything else alone', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+
+    const v16 = new Dexie('FoodPlannerDB');
+    v16.version(16).stores({ ...V13_STORES, rules: '++id, owner_component_id', notices: 'id' });
+    await v16.open();
+    const stored = (name: string, extra: object = {}) => ({ name, enabled: true, created_at: '', spec: { template: 'exclude', params: { match: is('id', 1), strength: 'must' } }, ...extra });
+    await v16.table('rules').bulkAdd([
+      stored('A curry in every meal'),
+      stored('Extras at lunch: at most 4'),
+      stored('My own curry wish'),
+      stored('Vary dishes across the week', { default_key: 'variety' }),
+      stored('Sambar: base pairing', { owner_component_id: 3 }),
+    ]);
+    v16.close();
+
+    await db.open();
+
+    const keys = Object.fromEntries((await db.rules.toArray()).map((r) => [r.name, r.default_key]));
+    expect(keys).toEqual({
+      'A curry in every meal': 'want-curry',
+      'Extras at lunch: at most 4': 'extras-limit-lunch',
+      'My own curry wish': undefined,
+      'Vary dishes across the week': 'variety',
+      'Sambar: base pairing': undefined,
+    });
+  });
 });

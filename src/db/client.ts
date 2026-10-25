@@ -6,7 +6,7 @@ import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { LegacyPreferencesRecord } from '@/types/preferences';
 import type { WeeklyPlan } from '@/types/plan';
 import {
-  convertLegacyRule, curryClashRule, dayRule, defaultRules, exclusionRule, legacyOccasionDays, pairingCategories, pairingRule,
+  convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, pairingCategories, pairingRule,
   DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 
 export type { RuleRecord };
@@ -886,5 +886,26 @@ db.version(16).stores({
 
   await rulesTable.bulkAdd(added);
 });
+
+// v17: the default rules get a stable key, so they stay recognisable after a rename and can be
+// restored. Rules stored by v16 are matched by name; a default the user renamed cannot be told
+// apart from their own rule and is left alone.
+db.version(17).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade((tx) =>
+  tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+    if (rule.default_key !== undefined || rule.owner_component_id !== undefined) return;
+    const key = defaultKeyForName(rule.name);
+    if (key) rule.default_key = key;
+  }),
+);
 
 export { db, normalizeComponentCategoryRefs };
