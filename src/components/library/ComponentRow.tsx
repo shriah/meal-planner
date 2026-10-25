@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/tooltip'
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
+import { getOwnedRules } from '@/services/food-db'
+import { clashCurryCategories, pairingCategories, ruleDays, type RuleRecord } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -42,14 +44,23 @@ export function ComponentRow({
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
   const baseCategoriesById = useMemo(() => buildCategoryMap(baseCategories ?? []), [baseCategories])
   const extraCategoriesById = useMemo(() => buildCategoryMap(extraCategories ?? []), [extraCategories])
-  const compatibleBaseLabels = (component.compatible_base_category_ids ?? []).map((id) =>
+  const isCurry = component.componentType === 'curry'
+  // Compatible bases (curry, subzi), clashing curry types (extra) and specific days live in rules the
+  // component owns; without them it goes with anything, on any day.
+  const owned = useLiveQuery(() => getOwnedRules(component.id), [component.id])
+  const ownedValue = <T,>(read: (r: RuleRecord) => T | undefined): T | undefined =>
+    owned?.map(read).find((v) => v !== undefined)
+  const pairedBaseCategoryIds = ownedValue(pairingCategories)
+  const compatibleBaseLabels = (pairedBaseCategoryIds ?? []).map((id) =>
     getBaseCategoryLabel(baseCategoriesById, id),
   )
-  const showsCompatibleBaseSummary =
-    component.componentType === 'curry'
-    && compatibleBaseLabels.length > 0
-  const showsZeroCompatibleWarning =
-    component.componentType === 'curry' && compatibleBaseLabels.length === 0
+  const clashLabels = ownedValue(clashCurryCategories) ?? []
+  const days = ownedValue(ruleDays) ?? []
+  const dayLabel = days.join() === 'monday,tuesday,wednesday,thursday,friday' ? 'Weekdays'
+    : days.join() === 'saturday,sunday' ? 'Weekends'
+      : days.length ? `Only ${days.map((d) => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}` : undefined
+  const showsCompatibleBaseSummary = compatibleBaseLabels.length > 0
+  const showsNeverAutoWarning = owned?.some((r) => r.spec.template === 'exclude') ?? false
 
   function handleRowClick() {
     if (expanded) {
@@ -112,13 +123,31 @@ export function ComponentRow({
           </Badge>
         )}
 
+        {isCurry && component.curry_category && (
+          <Badge variant="secondary" className="shrink-0 text-sm px-2 py-0.5">
+            {component.curry_category}
+          </Badge>
+        )}
+
+        {dayLabel && (
+          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
+            {dayLabel}
+          </Badge>
+        )}
+
+        {clashLabels.length > 0 && (
+          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
+            Not with {clashLabels.join(', ')}
+          </Badge>
+        )}
+
         {showsCompatibleBaseSummary && (
           <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
             {compatibleBaseLabels.join(', ')}
           </Badge>
         )}
 
-        {showsZeroCompatibleWarning && (
+        {showsNeverAutoWarning && (
           <Badge variant="destructive" className="shrink-0 text-sm px-2 py-0.5">
             Not auto-selected
           </Badge>

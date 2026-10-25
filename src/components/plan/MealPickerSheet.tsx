@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { getComponentsByType } from '@/services/food-db'
 import { filterComponents } from '@/lib/filter-components'
 import { usePlanStore } from '@/stores/plan-store'
+import { loadPlanningInput } from '@/services/planning'
+import { slotConflicts, type PlanProblem } from '@/services/plan-generation'
 import type { DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
 import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
@@ -29,35 +31,21 @@ const PICKER_TITLES: Record<'base' | 'curry' | 'subzi' | 'extras', string> = {
   extras: 'Pick Extras',
 }
 
-function isCompatibleCurryForBase(
-  compatibleBaseCategoryIds: number[] | undefined,
-  baseCategoryId: number | undefined,
-): boolean {
-  if (baseCategoryId === undefined) {
-    return compatibleBaseCategoryIds === undefined
-  }
-
-  if (compatibleBaseCategoryIds === undefined) {
-    return true
-  }
-
-  return compatibleBaseCategoryIds.includes(baseCategoryId)
-}
-
 interface MealPickerSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   day: DayOfWeek
   slot: MealSlot
   componentType: 'base' | 'curry' | 'subzi' | 'extras'
-  currentBaseCategoryId?: number
 }
 
-export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, currentBaseCategoryId }: MealPickerSheetProps) {
+export function MealPickerSheet({ open, onOpenChange, day, slot, componentType }: MealPickerSheetProps) {
   const [searchText, setSearchText] = useState('')
   const [activeDietaryTags, setActiveDietaryTags] = useState<DietaryTag[]>([])
   const [activeRegionalTags, setActiveRegionalTags] = useState<RegionalTag[]>([])
   const swapComponent = usePlanStore(s => s.swapComponent)
+  const plan = usePlanStore(s => s.plan)
+  const planningInput = useLiveQuery(() => (open ? loadPlanningInput() : undefined), [open])
 
   const dbComponentType = COMPONENT_TYPE_MAP[componentType]
 
@@ -77,27 +65,28 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
     [components, searchText, activeDietaryTags, activeRegionalTags],
   )
 
-  const currySections = useMemo(() => {
-    if (componentType !== 'curry') {
-      return null
-    }
+  // Choices that would break a hard rule in this plan are still offered, as overrides.
+  // Scored over every component, not the filtered list, so typing in search does not re-score.
+  const conflicts = useMemo(
+    () => (planningInput && plan && components
+      ? slotConflicts(planningInput, plan, day, slot, componentType, components.map(c => c.id))
+      : new Map<number, PlanProblem[]>()),
+    [planningInput, plan, components, day, slot, componentType],
+  )
 
-    const compatible = filtered.filter(component =>
-      isCompatibleCurryForBase(component.compatible_base_category_ids, currentBaseCategoryId),
-    )
-    const overrides = filtered.filter(component =>
-      !isCompatibleCurryForBase(component.compatible_base_category_ids, currentBaseCategoryId),
-    )
+  const sections = useMemo(() => {
+    const fits = filtered.filter(component => !conflicts.has(component.id))
+    const overrides = filtered.filter(component => conflicts.has(component.id))
 
-    if (compatible.length === 0 || overrides.length === 0) {
+    if (fits.length === 0 || overrides.length === 0) {
       return null
     }
 
     return [
-      { title: 'Compatible Curries', items: compatible },
-      { title: 'Override Choices', items: overrides },
+      { title: 'Fits your rules', items: fits },
+      { title: 'Breaks a rule', items: overrides },
     ]
-  }, [componentType, currentBaseCategoryId, filtered])
+  }, [conflicts, filtered])
 
   function toggleDietaryTag(tag: DietaryTag) {
     setActiveDietaryTags(prev =>
@@ -171,9 +160,9 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
             <p className="text-sm text-muted-foreground text-center py-8">
               No {dbComponentType}s match your filters. Try clearing a tag.
             </p>
-          ) : currySections ? (
+          ) : sections ? (
             <div className="space-y-4">
-              {currySections.map(section => (
+              {sections.map(section => (
                 <section key={section.title} className="space-y-1">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     {section.title}
@@ -184,7 +173,12 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType, 
                       onClick={() => handleSelect(c.id)}
                       className="w-full flex items-center justify-between gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-accent/10 transition-colors"
                     >
-                      <span className="font-medium">{c.name}</span>
+                      <span className="min-w-0">
+                        <span className="block font-medium">{c.name}</span>
+                        {conflicts.get(c.id)?.map(p => (
+                          <span key={p.message} className="block text-xs text-muted-foreground">{p.message}</span>
+                        ))}
+                      </span>
                       <div className="flex gap-1 shrink-0">
                         {c.dietary_tags.map(tag => (
                           <Badge key={tag} variant="outline" className="text-xs">

@@ -18,8 +18,14 @@ export type Scope = z.infer<typeof ScopeSchema>;
 const StrengthSchema = z.enum(['must', 'prefer']).default('must');
 export type Strength = z.infer<typeof StrengthSchema>;
 
-/** Soft cost per unit for `prefer` rules; above every built-in preference (at most 5) so user wishes win. */
+/**
+ * Soft cost per unit for `prefer` rules without their own `cost`. The default preferences (want a
+ * curry, variety, …) set lower costs, so a user's preference wins over them unless told otherwise.
+ */
 export const PREFER_COST = 10;
+
+/** How much breaking a `prefer` rule costs per unit, 1–10; PREFER_COST when left out. Ignored for `must`. */
+const CostSchema = z.number().int().min(1).max(10).optional();
 
 const count = z.number().int().min(0);
 const ids = z.array(z.number().int());
@@ -28,14 +34,14 @@ const DEFAULT_REPEAT_ROLES: Role[] = ['base', 'curry', 'subzi'];
 
 // ─── Params per template ──────────────────────────────────────────────────────
 
-const ExcludeParams = z.object({ match: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema }).strict();
+const ExcludeParams = z.object({ match: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema }).strict();
 
 const OnlyAllowParams = z
-  .object({ match: MatcherSchema, roles: z.array(z.enum(ROLES)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema })
+  .object({ match: MatcherSchema, roles: z.array(z.enum(ROLES)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const RequireParams = z
-  .object({ match: MatcherSchema, min: z.number().int().min(1).default(1), scope: ScopeSchema.optional(), strength: StrengthSchema })
+  .object({ match: MatcherSchema, min: z.number().int().min(1).default(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const LimitParams = z
@@ -45,7 +51,7 @@ const LimitParams = z
     min: count.optional(),
     max: count.optional(),
     scope: ScopeSchema.optional(),
-    strength: StrengthSchema,
+    strength: StrengthSchema, cost: CostSchema,
   })
   .strict()
   .refine((p) => p.min !== undefined || p.max !== undefined, { message: 'set a minimum, a maximum, or both', path: ['max'] })
@@ -58,16 +64,16 @@ const NoRepeatParams = z
     within: z.union([z.literal('week'), z.number().int().min(2).max(DAYS.length - 1)]).default('week'),
     roles: z.array(z.enum(ROLES)).min(1).default(DEFAULT_REPEAT_ROLES),
     scope: ScopeSchema.optional(),
-    strength: StrengthSchema,
+    strength: StrengthSchema, cost: CostSchema,
   })
   .strict();
 
 const AllowedMealsParams = z
-  .object({ match: MatcherSchema, meals: z.array(z.enum(MEALS)).min(1), days: z.array(z.enum(DAYS)).min(1).optional(), strength: StrengthSchema })
+  .object({ match: MatcherSchema, meals: z.array(z.enum(MEALS)).min(1), days: z.array(z.enum(DAYS)).min(1).optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const SkipWhenParams = z
-  .object({ when: MatcherSchema, skip: z.array(z.enum(SKIPPABLE)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema })
+  .object({ when: MatcherSchema, skip: z.array(z.enum(SKIPPABLE)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const RequireWithParams = z
@@ -76,10 +82,22 @@ const RequireWithParams = z
     components: ids.default([]),
     extraCategories: ids.default([]),
     scope: ScopeSchema.optional(),
-    strength: StrengthSchema,
+    strength: StrengthSchema, cost: CostSchema,
   })
   .strict()
   .refine((p) => p.components.length + p.extraCategories.length > 0, { message: 'choose at least one component or extra category', path: ['components'] });
+
+const PairsWithParams = z
+  .object({ match: MatcherSchema, baseCategories: ids.min(1), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const AllowedDaysParams = z
+  .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const AvoidWithParams = z
+  .object({ match: MatcherSchema, with: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
 
 const PreferParams = z
   .object({ match: MatcherSchema, direction: z.enum(['prefer', 'avoid']), weight: z.number().int().min(1).max(5).default(2) })
@@ -94,6 +112,9 @@ export const RuleSpecSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('allowed_meals'), params: AllowedMealsParams }).strict(),
   z.object({ template: z.literal('skip_when'), params: SkipWhenParams }).strict(),
   z.object({ template: z.literal('require_with'), params: RequireWithParams }).strict(),
+  z.object({ template: z.literal('pairs_with'), params: PairsWithParams }).strict(),
+  z.object({ template: z.literal('avoid_with'), params: AvoidWithParams }).strict(),
+  z.object({ template: z.literal('allowed_days'), params: AllowedDaysParams }).strict(),
   z.object({ template: z.literal('prefer'), params: PreferParams }).strict(),
 ]);
 
@@ -132,7 +153,7 @@ function matcherRefs(m: Matcher, out: Refs): Refs {
   if (isLeaf(m)) {
     const values = (Array.isArray(m.value) ? m.value : [m.value]) as number[];
     if (m.field === 'id') out.components.push(...values);
-    else if (m.field === 'base_category_id' || m.field === 'compatible_base_category_ids') out.baseCategories.push(...values);
+    else if (m.field === 'base_category_id') out.baseCategories.push(...values);
     else if (m.field === 'extra_category_id') out.extraCategories.push(...values);
   } else if ('all' in m) m.all.forEach((x) => matcherRefs(x, out));
   else if ('any' in m) m.any.forEach((x) => matcherRefs(x, out));
@@ -252,6 +273,39 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       return r;
     },
   },
+  pairs_with: {
+    label: 'Only with these bases',
+    summary: 'Matching dishes only share a meal with a base from the chosen categories.',
+    // A base without a category is outside every list.
+    compile: (p) => [slotCount(
+      all(p.match, not(is('role', 'base'))), undefined, p.strength, undefined, 0,
+      all(is('role', 'base'), not(oneOf('base_category_id', p.baseCategories))),
+    )],
+    describe: (p, n) => {
+      const bases = p.baseCategories.map((id) => n.baseCategory?.(id) ?? `base category #${id}`);
+      return `${sentence(describeMatcher(p.match, n))} only with ${bases.join(' or ')} bases${strengthWord(p.strength)}`;
+    },
+    references: (p) => {
+      const r = refsOf(p.match);
+      r.baseCategories.push(...p.baseCategories);
+      return r;
+    },
+  },
+  allowed_days: {
+    label: 'Only on certain days',
+    summary: 'Matching dishes may only be placed on the chosen days.',
+    compile: (p) => [slotCount(all(p.match, not(oneOf('day', p.days))), undefined, p.strength, undefined, 0)],
+    describe: (p, n) => sentence(`${describeMatcher(p.match, n)} only${describeScope({ days: p.days })}${strengthWord(p.strength)}`),
+    references: (p) => refsOf(p.match),
+  },
+  avoid_with: {
+    label: 'Never together',
+    summary: 'Matching dishes never share a meal with the other dishes.',
+    // A dish matching both sides is its own trigger, so keep the two sides apart.
+    compile: (p) => [slotCount(p.match, p.scope, p.strength, undefined, 0, p.with)],
+    describe: (p, n) => `${sentence(describeMatcher(p.match, n))} never with ${describeMatcher(p.with, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
+    references: (p) => refsOf(p.match, p.with),
+  },
   prefer: {
     label: 'Prefer or avoid',
     summary: 'Nudge the planner towards or away from matching components without forbidding anything.',
@@ -264,7 +318,10 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
 
 export function compileSpec(spec: RuleSpec): ConstraintBody[] {
-  return (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params);
+  const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params);
+  const cost = 'cost' in spec.params ? spec.params.cost : undefined;
+  if (cost === undefined) return bodies;
+  return bodies.map((b) => (b.kind === 'count' && b.costs ? { ...b, costs: { min: cost, max: cost } } : b));
 }
 export function describeSpec(spec: RuleSpec, names: Names = {}): string {
   return (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).describe(spec.params, names);

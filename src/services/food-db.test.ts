@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { compileRules } from '@/rules';
+import {
+  clashCurryCategories, compileRules, curryClashRule, dayRule, exclusionRule, pairingCategories, pairingRule, ruleDays,
+} from '@/rules';
 import { db } from '@/db/client';
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels';
 import {
@@ -12,8 +14,12 @@ import {
 import {
   addComponent,
   addRule,
+  deleteComponent,
   getComponentsByType,
+  getOwnedRule,
   getRules,
+  saveComponent,
+  updateComponent,
 } from '@/services/food-db';
 
 beforeEach(async () => {
@@ -37,7 +43,7 @@ describe('Phase 14 category services', () => {
       base_type: 'rice-based',
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -48,7 +54,7 @@ describe('Phase 14 category services', () => {
       extra_category: 'liquid',
       dietary_tags: ['veg'],
       regional_tags: ['south-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -88,7 +94,7 @@ describe('Phase 14 category services', () => {
       base_type: 'bread-based',
       dietary_tags: ['veg'],
       regional_tags: ['north-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -99,29 +105,27 @@ describe('Phase 14 category services', () => {
       extra_category: 'condiment',
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
-    const mixedVegCurryId = await addComponent({
+    const mixedVegCurryId = await saveComponent(undefined, {
       name: 'Mixed Veg Curry',
       componentType: 'curry',
-      compatible_base_category_ids: [breadId, riceId],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
-    });
+    }, { pairs_with: (c) => pairingRule(c, [breadId, riceId]) });
 
-    const choleId = await addComponent({
+    const choleId = await saveComponent(undefined, {
       name: 'Chole',
       componentType: 'curry',
-      compatible_base_category_ids: [breadId],
       dietary_tags: ['veg'],
       regional_tags: ['north-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
-    });
+    }, { pairs_with: (c) => pairingRule(c, [breadId]) });
 
     await addRule({
       name: 'Bread dinner',
@@ -136,17 +140,15 @@ describe('Phase 14 category services', () => {
     await renameCategory(breadId, 'flatbread');
     await deleteCategory(breadId);
 
-    const [baseComponent, mixedVegCurry, chole] = await db.components.bulkGet([
-      rotiId,
-      mixedVegCurryId,
-      choleId,
-    ]);
+    const baseComponent = await db.components.get(rotiId);
     const [extraComponent] = await getComponentsByType('extra');
-    const [rule] = await getRules();
+    const [rule] = (await getRules()).filter((r) => r.owner_component_id === undefined);
 
     expect(baseComponent?.base_category_id).toBeNull();
-    expect(mixedVegCurry?.compatible_base_category_ids).toEqual([riceId]);
-    expect(chole?.compatible_base_category_ids).toEqual([]);
+    // Pairings owned by curries drop the deleted category instead of being skipped; one left with
+    // no category is removed, so the curry goes with any base.
+    expect(pairingCategories((await getOwnedRule(mixedVegCurryId, 'pairs_with'))!)).toEqual([riceId]);
+    expect(await getOwnedRule(choleId, 'pairs_with')).toBeUndefined();
     expect(extraComponent).not.toHaveProperty('compatible_base_category_ids');
     expect(extraComponent).not.toHaveProperty('compatible_base_types');
     // The rule is kept unchanged; compiling it now reports the deleted category instead of applying it.
@@ -157,56 +159,106 @@ describe('Phase 14 category services', () => {
     ]);
   });
 
-  it('rename keeps category-ID compatibility stable and delete preserves explicit zero-compatible curries without inventing fallback', async () => {
+  it('rename keeps category-ID compatibility stable; delete removes emptied pairings but keeps never-planned curries', async () => {
     const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
     const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
 
-    await addComponent({
+    await saveComponent(undefined, {
       name: 'Mixed Veg Curry',
       componentType: 'curry',
-      compatible_base_category_ids: [breadId, riceId],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
-    });
-    await addComponent({
+    }, { pairs_with: (c) => pairingRule(c, [breadId, riceId]) });
+    await saveComponent(undefined, {
       name: 'Never Auto Pick',
       componentType: 'curry',
-      compatible_base_category_ids: [],
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
-    });
-    await addComponent({
+    }, { exclude: (c) => exclusionRule(c) });
+    await saveComponent(undefined, {
       name: 'Bread Only Curry',
       componentType: 'curry',
-      compatible_base_category_ids: [breadId],
       dietary_tags: ['veg'],
       regional_tags: ['north-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
-    });
+    }, { pairs_with: (c) => pairingRule(c, [breadId]) });
 
     await renameCategory(breadId, 'flatbread');
 
-    const afterRename = await getComponentsByType('curry');
-    expect(afterRename.find((component) => component.name === 'Mixed Veg Curry')?.compatible_base_category_ids)
-      .toEqual([breadId, riceId]);
-    expect(afterRename.find((component) => component.name === 'Bread Only Curry')?.compatible_base_category_ids)
-      .toEqual([breadId]);
-    expect(afterRename.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids)
-      .toEqual([]);
+    const pairedWith = async (name: string) => {
+      const curry = (await getComponentsByType('curry')).find((component) => component.name === name)!;
+      const rule = await getOwnedRule(curry.id, 'pairs_with');
+      return rule && pairingCategories(rule);
+    };
+    const neverAuto = (await getComponentsByType('curry')).find((c) => c.name === 'Never Auto Pick')!;
+    expect(await pairedWith('Mixed Veg Curry')).toEqual([breadId, riceId]);
+    expect(await pairedWith('Bread Only Curry')).toEqual([breadId]);
 
     await deleteCategory(breadId);
 
-    const afterDelete = await getComponentsByType('curry');
-    expect(afterDelete.find((component) => component.name === 'Mixed Veg Curry')?.compatible_base_category_ids)
-      .toEqual([riceId]);
-    expect(afterDelete.find((component) => component.name === 'Bread Only Curry')?.compatible_base_category_ids)
-      .toEqual([]);
-    expect(afterDelete.find((component) => component.name === 'Never Auto Pick')?.compatible_base_category_ids)
-      .toEqual([]);
+    expect(await pairedWith('Mixed Veg Curry')).toEqual([riceId]);
+    expect(await pairedWith('Bread Only Curry')).toBeUndefined();
+    expect(await getOwnedRule(neverAuto.id, 'exclude')).toBeDefined();
+  });
+
+  it('stores a curry pairing as a rule the curry owns, renamed and deleted with it', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
+    const curry = { name: 'Sambar', componentType: 'curry' as const, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const id = await saveComponent(undefined, curry, { pairs_with: (c) => pairingRule(c, [riceId]) });
+
+    const rule = await getOwnedRule(id, 'pairs_with');
+    expect(rule).toMatchObject({
+      name: 'Sambar: base pairing',
+      enabled: true,
+      owner_component_id: id,
+      spec: { template: 'pairs_with', params: { match: is('id', id), baseCategories: [riceId] } },
+    });
+    expect(await db.components.get(id)).not.toHaveProperty('compatible_base_category_ids');
+
+    // Several rules of different types, one of each.
+    await saveComponent(id, curry, { exclude: (c) => exclusionRule(c), allowed_days: (c) => dayRule(c, ['sunday']) });
+    await saveComponent(id, curry, { allowed_days: (c) => dayRule(c, ['monday']) });
+    expect((await getRules()).map((r) => r.spec.template)).toEqual(['pairs_with', 'exclude', 'allowed_days']);
+    expect(ruleDays((await getOwnedRule(id, 'allowed_days'))!)).toEqual(['monday']);
+    await saveComponent(id, curry, { exclude: null, allowed_days: null });
+
+    expect(await getRules()).toHaveLength(1);
+    await updateComponent(id, { name: 'Tiffin Sambar' });
+    expect((await getOwnedRule(id, 'pairs_with'))?.name).toBe('Tiffin Sambar: base pairing');
+
+    await saveComponent(id, curry, { pairs_with: null });
+    expect(await getOwnedRule(id, 'pairs_with')).toBeUndefined();
+
+    await saveComponent(id, curry, { pairs_with: (c) => pairingRule(c, [riceId]) });
+    await deleteComponent(id);
+    expect(await getRules()).toEqual([]);
+  });
+
+  it('lets subzis own a base pairing and extras own a curry clash, kept in step with renames and deletes', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
+    const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
+    const dish = (name: string, componentType: 'curry' | 'subzi' | 'extra') =>
+      ({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' });
+    const subziId = await saveComponent(undefined, dish('Bhindi', 'subzi'), { pairs_with: (c) => pairingRule(c, [riceId]) });
+    const curryId = await saveComponent(undefined, dish('Bread Curry', 'curry'), { pairs_with: (c) => pairingRule(c, [breadId]) });
+    const extraId = await saveComponent(undefined, dish('Papad', 'extra'), { avoid_with: (c) => curryClashRule(c, ['soup']) });
+
+    expect(clashCurryCategories((await getOwnedRule(extraId, 'avoid_with'))!)).toEqual(['soup']);
+    await updateComponent(extraId, { name: 'Masala Papad' });
+    expect((await getOwnedRule(extraId, 'avoid_with'))?.name).toBe('Masala Papad: not with these curries');
+
+    // A pairing left with no categories is removed, for curries and subzis alike.
+    await deleteCategory(riceId);
+    await deleteCategory(breadId);
+    expect(await getOwnedRule(subziId, 'pairs_with')).toBeUndefined();
+    expect(await getOwnedRule(curryId, 'pairs_with')).toBeUndefined();
+
+    await deleteComponent(extraId);
+    expect(await getOwnedRule(extraId, 'avoid_with')).toBeUndefined();
   });
 });

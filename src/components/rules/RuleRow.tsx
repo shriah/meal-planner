@@ -15,6 +15,7 @@ import {
 import { Alert } from '@/components/ui/alert'
 import { Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
 import { EditRuleSheet } from './EditRuleSheet'
 
 interface RuleRowProps {
@@ -37,6 +38,7 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
   const parsed = parseSpec(rule.spec)
   const summary = parsed.ok ? describeSpec(parsed.spec, names) : 'This rule cannot be read'
   const problem = problemOf(rule, known)
+  const owned = rule.owner_component_id !== undefined
 
   async function handleToggle() {
     await updateRule(rule.id, { enabled: !rule.enabled })
@@ -89,31 +91,39 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
             )}
           />
         </button>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Edit rule" onClick={() => setEditing(true)}>
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Edit rule</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="Delete rule"
-                onClick={() => setConfirmingDelete(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Delete rule</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        {owned ? (
+          <Button variant="ghost" size="sm" asChild>
+            <Link href="/library">Edit in Library</Link>
+          </Button>
+        ) : (
+          <>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="Edit rule" onClick={() => setEditing(true)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit rule</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label="Delete rule"
+                    onClick={() => setConfirmingDelete(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete rule</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </>
+        )}
       </div>
       {confirmingDelete && (
         <Alert
@@ -136,7 +146,7 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
           </div>
         </Alert>
       )}
-      <EditRuleSheet rule={rule} open={editing} onOpenChange={setEditing} />
+      {!owned && <EditRuleSheet rule={rule} open={editing} onOpenChange={setEditing} />}
     </div>
   )
 }

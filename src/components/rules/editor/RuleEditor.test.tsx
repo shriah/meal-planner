@@ -13,8 +13,8 @@ afterEach(() => cleanup());
 
 beforeEach(async () => {
   await Promise.all([db.categories.clear(), db.components.clear(), db.rules.clear()]);
-  await addComponent({ name: 'Fish Curry', componentType: 'curry', protein_tag: 'fish', dietary_tags: ['non-veg'], regional_tags: ['coastal-konkan'], occasion_tags: ['everyday'], created_at: '' });
-  await addComponent({ name: 'Dal Tadka', componentType: 'curry', protein_tag: 'dal', dietary_tags: ['veg'], regional_tags: ['north-indian'], occasion_tags: ['everyday'], created_at: '' });
+  await addComponent({ name: 'Fish Curry', componentType: 'curry', protein_tag: 'fish', dietary_tags: ['non-veg'], regional_tags: ['coastal-konkan'], occasion_tags: [], created_at: '' });
+  await addComponent({ name: 'Dal Tadka', componentType: 'curry', protein_tag: 'dal', dietary_tags: ['veg'], regional_tags: ['north-indian'], occasion_tags: [], created_at: '' });
 });
 
 async function choose(trigger: HTMLElement, option: string) {
@@ -84,7 +84,7 @@ describe('RuleEditor', () => {
   });
 
   it('checks a draft against the library and reports conflicts', async () => {
-    await addComponent({ name: 'Rice', componentType: 'base', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], created_at: '' });
+    await addComponent({ name: 'Rice', componentType: 'base', dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: [], created_at: '' });
     await db.rules.add({
       name: 'No fish', enabled: true, created_at: '',
       spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } },

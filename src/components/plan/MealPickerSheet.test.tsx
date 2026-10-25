@@ -6,9 +6,20 @@ import { MealPickerSheet } from './MealPickerSheet'
 const mockSwapComponent = vi.fn()
 const mockGetComponentsByType = vi.fn()
 const mockFilterComponents = vi.fn((...args: unknown[]) => args[0])
+const mockSlotConflicts = vi.fn<(...args: unknown[]) => Map<number, { level: string; message: string }[]>>(() => new Map())
+const plan = { slots: [] }
+const planningInput = { library: [], categories: [], rules: [] }
 
 vi.mock('@/stores/plan-store', () => ({
-  usePlanStore: vi.fn((selector) => selector({ swapComponent: mockSwapComponent })),
+  usePlanStore: vi.fn((selector) => selector({ swapComponent: mockSwapComponent, plan })),
+}))
+
+vi.mock('@/services/planning', () => ({
+  loadPlanningInput: () => planningInput,
+}))
+
+vi.mock('@/services/plan-generation', () => ({
+  slotConflicts: (...args: unknown[]) => mockSlotConflicts(...args),
 }))
 
 vi.mock('dexie-react-hooks', () => ({
@@ -28,20 +39,18 @@ const curryComponents = [
     id: 1,
     name: 'Chicken Curry',
     componentType: 'curry',
-    compatible_base_category_ids: [20],
     dietary_tags: ['non-veg'],
     regional_tags: ['north-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01',
   },
   {
     id: 2,
     name: 'Dal Makhani',
     componentType: 'curry',
-    compatible_base_category_ids: [10],
     dietary_tags: ['veg'],
     regional_tags: ['north-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01',
   },
   {
@@ -50,7 +59,7 @@ const curryComponents = [
     componentType: 'curry',
     dietary_tags: ['veg'],
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01',
   },
 ]
@@ -62,7 +71,7 @@ const extraComponents = [
     componentType: 'extra',
     dietary_tags: ['veg'],
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01',
   },
 ]
@@ -80,6 +89,8 @@ describe('MealPickerSheet', () => {
     mockSwapComponent.mockClear()
     mockGetComponentsByType.mockReset()
     mockFilterComponents.mockClear()
+    mockSlotConflicts.mockReset()
+    mockSlotConflicts.mockImplementation(() => new Map())
     defaultProps.onOpenChange = vi.fn()
 
     mockGetComponentsByType.mockImplementation((type: string) => {
@@ -131,12 +142,11 @@ describe('MealPickerSheet', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 
-  it('loads extras through the flat extra query path even when a base category is present', () => {
+  it('loads extras through the flat extra query path', () => {
     render(
       <MealPickerSheet
         {...defaultProps}
         componentType="extras"
-        currentBaseCategoryId={42}
       />,
     )
 
@@ -150,53 +160,34 @@ describe('MealPickerSheet', () => {
     expect(screen.getByText('Pickle')).toBeTruthy()
   })
 
-  it('groups compatible and explicit override curries when both sets exist', () => {
-    render(
-      <MealPickerSheet
-        {...defaultProps}
-        componentType="curry"
-        currentBaseCategoryId={10}
-      />,
-    )
+  it('asks the planner which choices break a rule in this slot of the current plan', () => {
+    render(<MealPickerSheet {...defaultProps} componentType="curry" />)
 
-    expect(screen.getByText('Compatible Curries')).toBeTruthy()
-    expect(screen.getByText('Override Choices')).toBeTruthy()
+    expect(mockSlotConflicts).toHaveBeenCalledWith(planningInput, plan, 'monday', 'lunch', 'curry', [1, 2, 3])
+  })
+
+  it('groups choices that fit the rules apart from overrides, showing what each override breaks', () => {
+    mockSlotConflicts.mockImplementation(() => new Map([[1, [{ level: 'hard', message: 'Chicken Curry: base pairing' }]]]))
+
+    render(<MealPickerSheet {...defaultProps} componentType="curry" />)
+
+    expect(screen.getByText('Fits your rules')).toBeTruthy()
+    expect(screen.getByText('Breaks a rule')).toBeTruthy()
     expect(screen.getByText('Dal Makhani')).toBeTruthy()
-    expect(screen.getByText('Chicken Curry')).toBeTruthy()
+    expect(screen.getByText('Chicken Curry: base pairing')).toBeTruthy()
 
     fireEvent.click(screen.getByText('Chicken Curry'))
 
     expect(mockSwapComponent).toHaveBeenCalledWith('monday', 'lunch', 'curry', 1)
   })
 
-  it('collapses to one flat curry list when the base has no compatible curries', () => {
-    mockFilterComponents.mockReturnValueOnce(curryComponents.slice(0, 2))
+  it('collapses to one flat list when every choice breaks a rule', () => {
+    mockSlotConflicts.mockImplementation(() => new Map([1, 2, 3].map((id) => [id, [{ level: 'hard', message: 'x' }]])))
 
-    render(
-      <MealPickerSheet
-        {...defaultProps}
-        componentType="curry"
-        currentBaseCategoryId={99}
-      />,
-    )
+    render(<MealPickerSheet {...defaultProps} componentType="curry" />)
 
-    expect(screen.queryByText('Compatible Curries')).toBeNull()
-    expect(screen.queryByText('Override Choices')).toBeNull()
-    expect(screen.getByText('Chicken Curry')).toBeTruthy()
-    expect(screen.getByText('Dal Makhani')).toBeTruthy()
-  })
-
-  it('treats legacy curries as the only compatible section when the base has no category id', () => {
-    render(
-      <MealPickerSheet
-        {...defaultProps}
-        componentType="curry"
-      />,
-    )
-
-    expect(screen.getByText('Compatible Curries')).toBeTruthy()
-    expect(screen.getByText('Override Choices')).toBeTruthy()
-    expect(screen.getByText('Legacy Curry')).toBeTruthy()
+    expect(screen.queryByText('Fits your rules')).toBeNull()
+    expect(screen.queryByText('Breaks a rule')).toBeNull()
     expect(screen.getByText('Chicken Curry')).toBeTruthy()
     expect(screen.getByText('Dal Makhani')).toBeTruthy()
   })
@@ -210,7 +201,7 @@ describe('MealPickerSheet', () => {
           componentType: 'base',
           dietary_tags: ['veg'],
           regional_tags: ['north-indian'],
-          occasion_tags: ['everyday'],
+          occasion_tags: [],
           created_at: '2026-01-01',
         }]
       }
@@ -225,8 +216,8 @@ describe('MealPickerSheet', () => {
     const { unmount } = render(<MealPickerSheet {...defaultProps} componentType="base" />)
 
     expect(screen.getByText('Chapati')).toBeTruthy()
-    expect(screen.queryByText('Compatible Curries')).toBeNull()
-    expect(screen.queryByText('Override Choices')).toBeNull()
+    expect(screen.queryByText('Fits your rules')).toBeNull()
+    expect(screen.queryByText('Breaks a rule')).toBeNull()
 
     unmount()
 
@@ -234,12 +225,11 @@ describe('MealPickerSheet', () => {
       <MealPickerSheet
         {...defaultProps}
         componentType="extras"
-        currentBaseCategoryId={42}
       />,
     )
 
     expect(screen.getByText('Pickle')).toBeTruthy()
-    expect(screen.queryByText('Compatible Curries')).toBeNull()
-    expect(screen.queryByText('Override Choices')).toBeNull()
+    expect(screen.queryByText('Fits your rules')).toBeNull()
+    expect(screen.queryByText('Breaks a rule')).toBeNull()
   })
 })

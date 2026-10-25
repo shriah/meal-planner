@@ -2,8 +2,8 @@
 // Iteration budgets (not wall-clock) keep results deterministic regardless of machine load.
 import { describe, expect, it } from 'vitest';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
-import type { CountConstraint } from './constraints';
-import { all, is, not, oneOf } from './matcher';
+import type { Constraint, CountConstraint } from './constraints';
+import { all, is, not, oneOf, type Matcher } from './matcher';
 import { planWeek, type PlanResult, type PlanSlotLike } from './plan';
 import { explain } from './scorer';
 import type { ComponentLike, Pins } from './types';
@@ -28,13 +28,30 @@ const nameOf = (id: number) => library.find((c) => c.id === id)?.name;
 const SEEDS = [1, 2, 3, 4, 5];
 const BUDGET = { timeLimitMs: Infinity, maxIterations: 40_000, plateauIterations: 4000 };
 const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
+// The default rules every library is seeded with (src/rules/defaults.ts), as constraints, since the
+// planner cannot import the rules module.
+const prefer = (id: string, select: Matcher, weight: number): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight });
+const dishes = oneOf('componentType', ['base', 'curry', 'subzi']);
+const DEFAULTS: Constraint[] = [
+  ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
+    id: `default:extras-${meal}`, label: `extras-${meal}`, select: all(is('componentType', 'extra')), groupBy: 'slot',
+    scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] },
+  })),
+  rule({ id: 'default:want-curry', label: 'want-curry', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: 5, max: 5 } }),
+  rule({ id: 'default:want-subzi', label: 'want-subzi', select: is('componentType', 'subzi'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: 5, max: 5 } }),
+  rule({ id: 'default:variety', label: 'variety', select: all(dishes, oneOf('role', ['base', 'curry', 'subzi'])), groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 } }),
+  rule({ id: 'default:spacing', label: 'spacing', select: all(dishes, oneOf('role', ['base', 'curry', 'subzi'])), groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 } }),
+  prefer('default:extra-cost', is('componentType', 'extra'), 1),
+  prefer('default:frequent', is('frequency', 'frequent'), -1),
+  prefer('default:rare', is('frequency', 'rare'), 1),
+];
 const run = (constraints: CountConstraint[], seed: number, pins?: Pins) =>
-  planWeek({ library, constraints }, { ...BUDGET, seed, pins });
+  planWeek({ library, constraints: [...DEFAULTS, ...constraints] }, { ...BUDGET, seed, pins });
 const hardOf = (r: PlanResult) => r.justifications.filter((j) => j.level === 'hard').map((j) => explain(j, { component: nameOf }));
 const ids = (r: PlanResult, pick: (s: PlanSlotLike) => (number | undefined)[]) => r.slots.flatMap(pick).filter((x): x is number => x !== undefined);
 
 describe('planner scenarios (seed library)', () => {
-  it.each(SEEDS)('built-ins alone: every meal is filled and no hard rule breaks (seed %i)', (seed) => {
+  it.each(SEEDS)('default rules alone: every meal is filled and no hard rule breaks (seed %i)', (seed) => {
     const r = run([], seed);
     expect(hardOf(r)).toEqual([]);
     expect(r.slots).toHaveLength(21);

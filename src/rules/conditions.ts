@@ -5,7 +5,7 @@ import { all, any, FIELDS, isLeaf, not, oneOf, is, TRUE, type FieldKey, type Lea
 
 /** Fields offered in the rule editor. Day and meal are chosen through a rule's scope instead. */
 export const CONDITION_FIELDS = [
-  'componentType', 'id', 'base_category_id', 'extra_category_id',
+  'componentType', 'id', 'base_category_id', 'extra_category_id', 'curry_category',
   'dietary_tags', 'protein_tag', 'regional_tags', 'occasion_tags', 'frequency',
 ] as const satisfies readonly FieldKey[];
 export type ConditionField = (typeof CONDITION_FIELDS)[number];

@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
-import { RuleSpecSchema } from '@/rules';
+import { is } from '@/planner';
+import { defaultRules, pairingCategories, ruleDays, RuleSpecSchema } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
-import { getComponentsByType, getPreferences } from '@/services/food-db';
+import { getComponentsByType, getOwnedRule, getOwnedRules } from '@/services/food-db';
 import type { CurryRecord, ExtraRecord } from '@/types/component';
 
 describe('runSeed', () => {
@@ -65,14 +66,30 @@ describe('runSeed', () => {
     const sambar = curries.find((component) => component.name === 'Sambar');
     const rasam = curries.find((component) => component.name === 'Rasam');
 
-    expect(sambar?.compatible_base_category_ids).toEqual([
+    // Curated pairings are seeded as rules each curry owns, not as component fields.
+    expect(sambar).not.toHaveProperty('compatible_base_category_ids');
+    expect(pairingCategories((await getOwnedRule(sambar!.id, 'pairs_with'))!)).toEqual([
       baseIdsByName['rice-based'],
       baseIdsByName['other'],
     ]);
-    expect(sambar?.compatible_base_category_ids).toEqual(
-      expect.arrayContaining([expect.any(Number)]),
-    );
-    expect(rasam?.compatible_base_category_ids).toEqual([]);
+    // Rasam's curated list is empty: it is never planned automatically.
+    expect(await getOwnedRule(rasam!.id, 'pairs_with')).toBeUndefined();
+    expect(await getOwnedRule(rasam!.id, 'exclude')).toBeDefined();
+    // Every seeded curry has a curated pairing or is never planned automatically.
+    for (const curry of curries) {
+      const owned = (await getOwnedRules(curry.id)).filter((r) => r.spec.template !== 'allowed_days');
+      expect(owned, curry.name).toHaveLength(1);
+      expect(owned[0].spec).toMatchObject({ params: { match: is('id', curry.id) } });
+    }
+  });
+
+  it('turns the calendar tags in the seed data into day rules each dish owns', async () => {
+    await runSeed();
+    const components = await db.components.toArray();
+    for (const c of components) expect(c.occasion_tags.every((t) => t === 'festive' || t === 'fasting'), c.name).toBe(true);
+    const dayRules = (await getOwnedRules()).filter((r) => r.spec.template === 'allowed_days');
+    expect(dayRules.length).toBeGreaterThan(0);
+    for (const r of dayRules) expect(ruleDays(r)).toEqual(['saturday', 'sunday']);
   });
 
   it('keeps extra records flat in the domain type contract', () => {
@@ -80,19 +97,8 @@ describe('runSeed', () => {
     expectTypeOf<ExtraRecord>().not.toHaveProperty('compatible_base_types');
   });
 
-  it('keeps an explicit empty curry compatibility array distinct from legacy missing data', () => {
-    const intentionallyIneligibleCurry: CurryRecord = {
-      id: 1,
-      name: 'Explicitly Ineligible Curry',
-      componentType: 'curry',
-      compatible_base_category_ids: [],
-      dietary_tags: ['veg'],
-      regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
-      created_at: '2026-03-20T00:00:00.000Z',
-    };
-
-    expect(intentionallyIneligibleCurry.compatible_base_category_ids).toEqual([]);
+  it('keeps base compatibility out of the curry record type', () => {
+    expectTypeOf<CurryRecord>().not.toHaveProperty('compatible_base_category_ids');
   });
 
   it('resolves curated curry compatibility only for exact seeded names', () => {
@@ -116,10 +122,9 @@ describe('runSeed', () => {
     expect(resolveSeededCurryCompatibilityIds('Sambar Deluxe', categoryLookup)).toBeUndefined();
   });
 
-  it('creates preferences with per-meal extras limits and seeds base-category default rules', async () => {
+  it('seeds the default rules, with the extras limits as rules, and base-category meal windows', async () => {
     await runSeed();
 
-    const prefs = await getPreferences();
     const rules = await db.rules.toArray();
     const categoryRuleNames = new Set([
       'Other: breakfast and dinner',
@@ -127,8 +132,9 @@ describe('runSeed', () => {
       'Bread-based: dinner only',
     ]);
 
-    expect(prefs).toBeDefined();
-    expect(prefs).toEqual({ id: 'prefs', extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 3 } });
+    expect(await db.preferences.count()).toBe(0);
+    const names = new Set(rules.map((r) => r.name));
+    for (const r of defaultRules({ breakfast: 2, lunch: 3, dinner: 3 })) expect(names, r.name).toContain(r.name);
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
       expect(rule.spec).toMatchObject({

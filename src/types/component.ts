@@ -18,12 +18,14 @@ export const DIETARY_TAGS = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian'] as
 export type DietaryTag = (typeof DIETARY_TAGS)[number];
 export const PROTEIN_TAGS = ['fish', 'chicken', 'mutton', 'egg', 'paneer', 'dal', 'none'] as const;
 export type ProteinTag = (typeof PROTEIN_TAGS)[number];
+export const CURRY_CATEGORIES = [
+  'lentil', 'legume', 'paneer', 'chicken', 'mutton', 'fish', 'egg', 'vegetable', 'stew', 'soup', 'dairy',
+] as const;
+export type CurryCategory = (typeof CURRY_CATEGORIES)[number];
 export const REGIONAL_TAGS = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian'] as const;
 export type RegionalTag = (typeof REGIONAL_TAGS)[number];
-export const OCCASION_TAGS = [
-  'everyday', 'weekday', 'weekend', 'fasting', 'festive',
-  'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
-] as const;
+// Which days a dish suits is not a tag: a dish limited to certain days owns an `allowed_days` rule.
+export const OCCASION_TAGS = ['fasting', 'festive'] as const;
 export type OccasionTag = (typeof OCCASION_TAGS)[number];
 
 // Shared base for all components
@@ -48,21 +50,17 @@ export interface BaseRecord extends BaseComponentFields {
 
 export interface CurryRecord extends BaseComponentFields {
   componentType: 'curry';
-  curry_category?: string;
-  compatible_base_category_ids: number[];
+  curry_category?: CurryCategory;
 }
 
 export interface SubziRecord extends BaseComponentFields {
   componentType: 'subzi';
-  compatible_base_category_ids?: number[];
-  compatible_base_types?: BaseType[];
 }
 
 export interface ExtraRecord extends BaseComponentFields {
   componentType: 'extra';
   extra_category_id?: number | null;
   extra_category: ExtraCategory;
-  incompatible_curry_categories?: string[];
 }
 
 export type MealComponent = BaseRecord | CurryRecord | SubziRecord | ExtraRecord;
@@ -75,11 +73,8 @@ export type Frequency = (typeof FREQUENCIES)[number];
 export type ComponentRecord = BaseComponentFields & {
   base_category_id?: number | null;
   base_type?: BaseType;
-  curry_category?: string;
-  compatible_base_category_ids?: number[];
-  compatible_base_types?: BaseType[];
+  curry_category?: CurryCategory;
   extra_category_id?: number | null;
   extra_category?: ExtraCategory;
-  incompatible_curry_categories?: string[];
   frequency?: Frequency; // defaults to 'normal' in generator
 };

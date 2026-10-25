@@ -1,11 +1,13 @@
 import Dexie, { type EntityTable } from 'dexie';
 import { resolveSeededCurryCompatibilityIds, type SeedCategoryLookup } from '@/db/seed-data';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
-import type { ComponentRecord } from '@/types/component';
+import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCategory } from '@/types/component';
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
-import type { UserPreferencesRecord } from '@/types/preferences';
+import type { LegacyPreferencesRecord } from '@/types/preferences';
 import type { WeeklyPlan } from '@/types/plan';
-import { convertLegacyRule, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
+import {
+  convertLegacyRule, curryClashRule, dayRule, defaultRules, exclusionRule, legacyOccasionDays, pairingCategories, pairingRule,
+  DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 
 export type { RuleRecord };
 
@@ -40,7 +42,14 @@ export interface CategorySeedInput {
 }
 
 // Pre-insert shapes: the migration fixture is plain data that has not been assigned ids by Dexie yet.
-type LegacyComponent = Omit<ComponentRecord, 'id'>;
+// Before v15, components carried their own compatibility lists.
+type LegacyComponent = Omit<ComponentRecord, 'id' | 'occasion_tags'> & {
+  /** Before v16 these included calendar tags (`everyday`, `weekday`, `weekend`, `monday` …). */
+  occasion_tags: string[];
+  compatible_base_category_ids?: number[];
+  compatible_base_types?: BaseType[];
+  incompatible_curry_categories?: string[];
+};
 export interface LegacyCategoryMigrationFixture {
   components: LegacyComponent[];
 }
@@ -65,7 +74,7 @@ const db = new Dexie('FoodPlannerDB') as Dexie & {
   meal_extras: EntityTable<MealExtraRecord, 'meal_id'>;
   rules: EntityTable<RuleRecord, 'id'>;
   saved_plans: EntityTable<SavedPlanRecord, 'id'>;
-  preferences: EntityTable<UserPreferencesRecord, 'id'>;
+  preferences: EntityTable<LegacyPreferencesRecord, 'id'>;
   active_plan: EntityTable<ActivePlanRecord, 'id'>;
   notices: EntityTable<NoticeRecord, 'id'>;
 };
@@ -566,7 +575,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
         base_type: 'rice-based',
         dietary_tags: ['veg'],
         regional_tags: ['south-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
       {
@@ -575,7 +584,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
         base_type: 'bread-based',
         dietary_tags: ['veg'],
         regional_tags: ['north-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
       {
@@ -585,7 +594,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
         compatible_base_types: ['rice-based'],
         dietary_tags: ['veg'],
         regional_tags: ['south-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
       {
@@ -595,7 +604,7 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
         compatible_base_types: ['rice-based', 'bread-based'],
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
     ],
@@ -774,6 +783,108 @@ db.version(14).stores({
     dismissed: dropped.length === 0,
   };
   await tx.table('notices').put(notice);
+});
+
+// v15: compatibility lists on components become rules the component owns. A curry's or subzi's
+// compatible base categories become `pairs_with`; an extra's incompatible curry types become
+// `avoid_with`. An empty subzi list was never enforced, so it stays unrestricted rather than
+// becoming "never planned" as an empty curry list is.
+db.version(15).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade(async (tx) => {
+  const baseCategories = new Set(
+    (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
+  );
+  const now = new Date().toISOString();
+  const pairings: Omit<RuleRecord, 'id'>[] = [];
+  const isCurryCategory = (c: string): c is CurryCategory => (CURRY_CATEGORIES as readonly string[]).includes(c);
+  await tx.table('components').toCollection().modify((component: LegacyComponent & { id: number }) => {
+    const ids = component.compatible_base_category_ids?.filter((id) => baseCategories.has(id));
+    if (ids && (component.componentType === 'curry' || (component.componentType === 'subzi' && ids.length > 0))) {
+      pairings.push({ ...pairingRule(component, ids), enabled: true, created_at: now });
+    }
+    const clashes = component.incompatible_curry_categories?.filter(isCurryCategory) ?? [];
+    if (component.componentType === 'extra' && clashes.length > 0) {
+      pairings.push({ ...curryClashRule(component, clashes), enabled: true, created_at: now });
+    }
+    delete component.compatible_base_category_ids;
+    delete component.compatible_base_types;
+    delete component.incompatible_curry_categories;
+  });
+  await tx.table('rules').bulkAdd(pairings);
+});
+
+// v16: what the planner used to apply by itself becomes stored rules. The per-meal extras limits
+// (preferences) and the default preferences (a curry and subzi in each meal, variety, frequency)
+// become ordinary rules; calendar occasion tags (`everyday`, `weekday`, `weekend`, `monday` …)
+// become an `allowed_days` rule the dish owns; an empty base pairing ("never planned") becomes an
+// explicit `exclude` rule the dish owns. An earlier v15 may have run already, so this also converts
+// whatever it left on components, and never gives a dish a second owned rule of the same type.
+db.version(16).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade(async (tx) => {
+  const now = new Date().toISOString();
+  const rulesTable = tx.table('rules');
+  const added: Omit<RuleRecord, 'id'>[] = [];
+  const add = (r: Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>) => added.push({ ...r, enabled: true, created_at: now });
+
+  // A library that was never seeded gets the defaults from runSeed instead.
+  if ((await tx.table('components').count()) > 0) {
+    const prefs = await tx.table('preferences').get('prefs');
+    defaultRules({ ...DEFAULT_EXTRA_LIMITS, ...prefs?.extra_quantity_limits }).forEach(add);
+  }
+  await tx.table('preferences').clear();
+
+  const rules: RuleRecord[] = await rulesTable.toArray();
+  const names = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c.name]));
+  const owns = (id: number, template: string) => rules.some((r) => r.owner_component_id === id && r.spec.template === template);
+
+  for (const rule of rules) {
+    if (rule.owner_component_id !== undefined && pairingCategories(rule)?.length === 0) {
+      await rulesTable.delete(rule.id);
+      if (!owns(rule.owner_component_id, 'exclude')) {
+        add(exclusionRule({ id: rule.owner_component_id, name: names.get(rule.owner_component_id) ?? rule.name }));
+      }
+    }
+  }
+
+  const isCurryCategory = (c: string): c is CurryCategory => (CURRY_CATEGORIES as readonly string[]).includes(c);
+  await tx.table('components').toCollection().modify((component: LegacyComponent & { id: number }) => {
+    const tags = component.occasion_tags ?? [];
+    const days = legacyOccasionDays(tags);
+    if (days && !owns(component.id, 'allowed_days')) add(dayRule(component, days));
+    component.occasion_tags = tags.filter((t) => !LEGACY_CALENDAR_TAGS.includes(t));
+
+    const clashes = component.incompatible_curry_categories?.filter(isCurryCategory) ?? [];
+    if (component.componentType === 'extra' && clashes.length > 0 && !owns(component.id, 'avoid_with')) {
+      add(curryClashRule(component, clashes));
+    }
+    const bases = component.compatible_base_category_ids;
+    if (component.componentType === 'curry' && Array.isArray(bases) && !owns(component.id, 'pairs_with') && !owns(component.id, 'exclude')) {
+      add(bases.length ? pairingRule(component, bases) : exclusionRule(component));
+    }
+    delete component.compatible_base_category_ids;
+    delete component.compatible_base_types;
+    delete component.incompatible_curry_categories;
+  });
+
+  await rulesTable.bulkAdd(added);
 });
 
 export { db, normalizeComponentCategoryRefs };

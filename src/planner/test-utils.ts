@@ -11,7 +11,7 @@ export function component(componentType: Role, overrides: Partial<ComponentLike>
     componentType,
     dietary_tags: ['veg'],
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     ...overrides,
   };
 }

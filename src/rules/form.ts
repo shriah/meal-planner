@@ -17,7 +17,9 @@ export type FormFieldKind =
   | 'direction'        // prefer / avoid
   | 'weight'           // 1–5
   | 'strength'         // must / prefer
+  | 'cost'             // 1–10, for prefer rules
   | 'components'       // component ids
+  | 'baseCategories'   // base category ids
   | 'extraCategories'; // extra category ids
 
 export interface FormField {
@@ -39,18 +41,22 @@ const strength: FormField = {
   key: 'strength', kind: 'strength', label: 'How strict',
   help: '“Must” rules always hold when possible; “prefer” rules give way when they conflict with others.',
 };
+const cost: FormField = {
+  key: 'cost', kind: 'cost', label: 'How much it matters', optional: true,
+  help: 'For “prefer” rules: 1 gives way easily, 10 (the default) almost never.',
+};
 const scope: FormField = { key: 'scope', kind: 'scope', label: 'When', help: 'Leave empty for every day and meal.', optional: true };
 
 export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   exclude: {
-    fields: [{ key: 'match', kind: 'match', label: 'Never include' }, scope, strength],
+    fields: [{ key: 'match', kind: 'match', label: 'Never include' }, scope, strength, cost],
     defaults: () => ({ match: TRUE, strength: 'must' }),
   },
   only_allow: {
     fields: [
       { key: 'roles', kind: 'roles', label: 'For these parts of a meal' },
       { key: 'match', kind: 'match', label: 'Only allow' },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, roles: ['curry'], strength: 'must' }),
   },
@@ -58,7 +64,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'match', kind: 'match', label: 'Always include' },
       { key: 'min', kind: 'count', label: 'How many in each meal' },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, min: 1, strength: 'must' }),
   },
@@ -68,7 +74,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'per', kind: 'per', label: 'Per' },
       { key: 'min', kind: 'count', label: 'At least', optional: true },
       { key: 'max', kind: 'count', label: 'At most', optional: true },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, per: 'week', max: 2, strength: 'must' }),
   },
@@ -77,7 +83,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'match', kind: 'match', label: "Don't repeat" },
       { key: 'within', kind: 'within', label: 'Not again within' },
       { key: 'roles', kind: 'roles', label: 'Counting these parts of a meal' },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, within: 'week', roles: ['base', 'curry', 'subzi'], strength: 'must' }),
   },
@@ -86,7 +92,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'match', kind: 'match', label: 'Dishes' },
       { key: 'meals', kind: 'meals', label: 'Only at' },
       { key: 'days', kind: 'days', label: 'On these days', help: 'Leave empty for every day.', optional: true },
-      strength,
+      strength, cost,
     ],
     defaults: () => ({ match: TRUE, meals: ['lunch'], strength: 'must' }),
   },
@@ -94,7 +100,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'when', kind: 'match', label: 'When a meal contains' },
       { key: 'skip', kind: 'skip', label: 'Leave out' },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ when: TRUE, skip: ['subzi'], strength: 'must' }),
   },
@@ -103,9 +109,33 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'when', kind: 'match', label: 'When a meal contains' },
       { key: 'components', kind: 'components', label: 'Also include these dishes', optional: true },
       { key: 'extraCategories', kind: 'extraCategories', label: 'And an extra from', optional: true },
-      scope, strength,
+      scope, strength, cost,
     ],
     defaults: () => ({ when: TRUE, components: [], extraCategories: [], strength: 'must' }),
+  },
+  pairs_with: {
+    fields: [
+      { key: 'match', kind: 'match', label: 'Dishes' },
+      { key: 'baseCategories', kind: 'baseCategories', label: 'Only with a base from' },
+      strength, cost,
+    ],
+    defaults: () => ({ match: TRUE, baseCategories: [], strength: 'must' }),
+  },
+  allowed_days: {
+    fields: [
+      { key: 'match', kind: 'match', label: 'Dishes' },
+      { key: 'days', kind: 'days', label: 'Only on' },
+      strength, cost,
+    ],
+    defaults: () => ({ match: TRUE, days: ['saturday', 'sunday'], strength: 'must' }),
+  },
+  avoid_with: {
+    fields: [
+      { key: 'match', kind: 'match', label: 'Dishes' },
+      { key: 'with', kind: 'match', label: 'Never in the same meal as' },
+      scope, strength, cost,
+    ],
+    defaults: () => ({ match: TRUE, with: TRUE, strength: 'must' }),
   },
   prefer: {
     fields: [

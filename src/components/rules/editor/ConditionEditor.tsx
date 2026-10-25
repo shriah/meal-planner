@@ -24,6 +24,7 @@ const FIELD_LABELS: Record<ConditionField, string> = {
   id: 'Dish',
   base_category_id: 'Base category',
   extra_category_id: 'Extra category',
+  curry_category: 'Curry type',
   dietary_tags: 'Dietary',
   protein_tag: 'Protein',
   regional_tags: 'Region',

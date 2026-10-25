@@ -14,11 +14,12 @@ describe('rule forms', () => {
     }
   });
 
-  it('defaults only need a condition (and for require_with, something to include) to become valid', () => {
+  it('defaults only need a condition (and for require_with and pairs_with, something to choose) to become valid', () => {
     for (const id of TEMPLATE_IDS) {
       const spec = newSpec(id) as { template: string; params: Record<string, unknown> };
       for (const key of ['match', 'when']) if (key in spec.params) spec.params[key] = is('protein_tag', 'fish');
       if (id === 'require_with') spec.params.components = [1];
+      if (id === 'pairs_with') spec.params.baseCategories = [1];
       expect(RuleSpecSchema.safeParse(spec).success, id).toBe(true);
     }
   });
