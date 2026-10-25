@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildModel, DAYS, emptyPlan, score, slotIndex, type ComponentLike, type Day } from '@/planner';
-import { defaultRules, legacyOccasionDays } from './defaults';
+import { defaultKeyForName, defaultRules, legacyOccasionDays } from './defaults';
 import { compileRules } from './record';
 import { RuleSpecSchema } from './templates';
 
@@ -19,6 +19,19 @@ function oldAllowed(tags: string[], day: Day): boolean {
 describe('default rules', () => {
   it('are valid stored rules', () => {
     for (const r of defaultRules()) expect(RuleSpecSchema.safeParse(r.spec).success, r.name).toBe(true);
+  });
+
+  it('each have a stable, unique key', () => {
+    expect(defaultRules().map((r) => r.default_key)).toEqual([
+      'extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner', 'want-curry', 'want-subzi', 'variety', 'spacing',
+      'extras-only-when-asked', 'prefer-frequent', 'avoid-rare',
+    ]);
+  });
+
+  it('recognises a stored default by its name, whatever extras limit it carries', () => {
+    for (const r of defaultRules({ breakfast: 1, lunch: 5, dinner: 4 })) expect(defaultKeyForName(r.name), r.name).toBe(r.default_key);
+    expect(defaultKeyForName('Fish on Fridays')).toBeUndefined();
+    expect(defaultKeyForName('Extras at brunch: at most 2')).toBeUndefined();
   });
 
   it('enforce the per-meal extras limit', () => {

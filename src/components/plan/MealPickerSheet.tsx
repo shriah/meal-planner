@@ -5,6 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { TagFilter } from '@/components/ui/TagFilter'
 import { getComponentsByType } from '@/services/food-db'
 import { filterComponents } from '@/lib/filter-components'
 import { usePlanStore } from '@/stores/plan-store'
@@ -13,9 +14,6 @@ import { slotConflicts, type PlanProblem } from '@/services/plan-generation'
 import type { DayOfWeek } from '@/types/plan'
 import type { MealSlot } from '@/types/preferences'
 import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
-
-const ALL_DIETARY_TAGS: DietaryTag[] = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian']
-const ALL_REGIONAL_TAGS: RegionalTag[] = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian']
 
 const COMPONENT_TYPE_MAP: Record<'base' | 'curry' | 'subzi' | 'extras', ComponentType> = {
   base: 'base',
@@ -125,33 +123,12 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType }
             className="h-9"
           />
 
-          {/* Dietary tag chips */}
-          <div className="flex flex-wrap gap-2">
-            {ALL_DIETARY_TAGS.map(tag => (
-              <Badge
-                key={tag}
-                variant={activeDietaryTags.includes(tag) ? 'default' : 'outline'}
-                className="cursor-pointer"
-                onClick={() => toggleDietaryTag(tag)}
-              >
-                {tag}
-              </Badge>
-            ))}
-          </div>
-
-          {/* Regional tag chips */}
-          <div className="flex flex-wrap gap-2">
-            {ALL_REGIONAL_TAGS.map(tag => (
-              <Badge
-                key={tag}
-                variant={activeRegionalTags.includes(tag) ? 'default' : 'outline'}
-                className="cursor-pointer"
-                onClick={() => toggleRegionalTag(tag)}
-              >
-                {tag}
-              </Badge>
-            ))}
-          </div>
+          <TagFilter
+            dietary={activeDietaryTags}
+            regional={activeRegionalTags}
+            onToggleDietary={toggleDietaryTag}
+            onToggleRegional={toggleRegionalTag}
+          />
         </div>
 
         {/* Component list */}
@@ -176,7 +153,7 @@ export function MealPickerSheet({ open, onOpenChange, day, slot, componentType }
                       <span className="min-w-0">
                         <span className="block font-medium">{c.name}</span>
                         {conflicts.get(c.id)?.map(p => (
-                          <span key={p.message} className="block text-xs text-muted-foreground">{p.message}</span>
+                          <span key={p.reason} className="block text-xs text-muted-foreground">{p.reason}</span>
                         ))}
                       </span>
                       <div className="flex gap-1 shrink-0">

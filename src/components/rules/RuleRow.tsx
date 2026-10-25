@@ -22,6 +22,8 @@ interface RuleRowProps {
   rule: RuleRecord
   names: Names
   known: KnownIds
+  /** The row a deep link points at. */
+  highlighted?: boolean
 }
 
 /** Why a stored rule would be skipped when planning, or null when it applies. */
@@ -32,7 +34,7 @@ function problemOf(rule: RuleRecord, known: KnownIds): string | null {
   return missing.length ? `Refers to ${missing.join(', ')}, which no longer exists` : null
 }
 
-export function RuleRow({ rule, names, known }: RuleRowProps) {
+export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [editing, setEditing] = useState(false)
   const parsed = parseSpec(rule.spec)
@@ -50,7 +52,11 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
   }
 
   return (
-    <div>
+    <div
+      id={`rule-${rule.id}`}
+      data-highlighted={highlighted ? 'true' : undefined}
+      className={cn(highlighted && 'rounded-md ring-2 ring-primary/40')}
+    >
       <div
         className={cn(
           'flex min-h-[48px] items-center gap-4 px-4 py-3',
@@ -93,7 +99,7 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
         </button>
         {owned ? (
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/library">Edit in Library</Link>
+            <Link href={`/library#dish-${rule.owner_component_id}`}>Edit in Library</Link>
           </Button>
         ) : (
           <>

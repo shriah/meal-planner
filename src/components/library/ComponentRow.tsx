@@ -14,7 +14,7 @@ import {
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
 import { getOwnedRules } from '@/services/food-db'
-import { clashCurryCategories, pairingCategories, ruleDays, type RuleRecord } from '@/rules'
+import { describeDays, readOwned } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -47,20 +47,13 @@ export function ComponentRow({
   const isCurry = component.componentType === 'curry'
   // Compatible bases (curry, subzi), clashing curry types (extra) and specific days live in rules the
   // component owns; without them it goes with anything, on any day.
-  const owned = useLiveQuery(() => getOwnedRules(component.id), [component.id])
-  const ownedValue = <T,>(read: (r: RuleRecord) => T | undefined): T | undefined =>
-    owned?.map(read).find((v) => v !== undefined)
-  const pairedBaseCategoryIds = ownedValue(pairingCategories)
-  const compatibleBaseLabels = (pairedBaseCategoryIds ?? []).map((id) =>
-    getBaseCategoryLabel(baseCategoriesById, id),
-  )
-  const clashLabels = ownedValue(clashCurryCategories) ?? []
-  const days = ownedValue(ruleDays) ?? []
-  const dayLabel = days.join() === 'monday,tuesday,wednesday,thursday,friday' ? 'Weekdays'
-    : days.join() === 'saturday,sunday' ? 'Weekends'
-      : days.length ? `Only ${days.map((d) => d.charAt(0).toUpperCase() + d.slice(1, 3)).join(', ')}` : undefined
+  const ownedRules = useLiveQuery(() => getOwnedRules(component.id), [component.id])
+  const owned = readOwned(ownedRules ?? [])
+  const compatibleBaseLabels = owned.bases.map((id) => getBaseCategoryLabel(baseCategoriesById, id))
+  const clashLabels = owned.clashes
+  const dayLabel = describeDays(owned.days)
   const showsCompatibleBaseSummary = compatibleBaseLabels.length > 0
-  const showsNeverAutoWarning = owned?.some((r) => r.spec.template === 'exclude') ?? false
+  const showsNeverAutoWarning = owned.neverAuto
 
   function handleRowClick() {
     if (expanded) {
@@ -76,7 +69,7 @@ export function ComponentRow({
   }
 
   return (
-    <div>
+    <div id={`dish-${component.id}`}>
       {/* Collapsed row — 48px min height */}
       <div
         className="flex min-h-[48px] items-center gap-2 px-4 py-2 cursor-pointer hover:bg-muted/40 transition-colors"
@@ -120,6 +113,12 @@ export function ComponentRow({
         {component.componentType === 'extra' && component.extra_category_id != null && (
           <Badge variant="secondary" className="shrink-0 text-sm px-2 py-0.5">
             {getExtraCategoryLabel(extraCategoriesById, component.extra_category_id)}
+          </Badge>
+        )}
+
+        {(component.frequency === 'frequent' || component.frequency === 'rare') && (
+          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
+            {component.frequency === 'frequent' ? 'Frequent' : 'Rare'}
           </Badge>
         )}
 

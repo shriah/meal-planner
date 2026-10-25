@@ -1,7 +1,7 @@
 'use client'
 
+import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PlanComponentRow } from './PlanComponentRow'
 import { cn } from '@/lib/utils'
 import type { PlanSlot, DayOfWeek } from '@/types/plan'
@@ -21,6 +21,7 @@ interface MealCellProps {
 
 export function MealCell({ day, slot, planSlot, componentsMap, problems, onPickerOpen }: MealCellProps) {
   const hasProblem = problems.length > 0
+  const [showProblems, setShowProblems] = useState(false)
 
   if (!planSlot) {
     return (
@@ -43,19 +44,22 @@ export function MealCell({ day, slot, planSlot, componentsMap, problems, onPicke
       hasProblem && 'border-2 border-amber-400'
     )}>
       {hasProblem && (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div className="flex items-center gap-1 text-amber-600 mb-1">
-                <AlertTriangle className="h-3 w-3" />
-                <span className="text-xs">Rule broken</span>
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="max-w-xs">
-              {problems.map((p, i) => <p key={i} className="text-xs">{p.message}</p>)}
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
+        <div className="mb-1 text-amber-600">
+          <button
+            type="button"
+            aria-expanded={showProblems}
+            onClick={() => setShowProblems(open => !open)}
+            className="flex items-center gap-1 text-xs"
+          >
+            <AlertTriangle className="h-3 w-3" />
+            <span>Rule broken</span>
+          </button>
+          {showProblems && (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground">
+              {problems.map((p, i) => <li key={i}>{p.reason}</li>)}
+            </ul>
+          )}
+        </div>
       )}
       <PlanComponentRow day={day} slot={slot} componentType="base" displayName={baseName} onPickerOpen={() => onPickerOpen('base')} />
       <PlanComponentRow day={day} slot={slot} componentType="curry" displayName={curryName} onPickerOpen={() => onPickerOpen('curry')} />

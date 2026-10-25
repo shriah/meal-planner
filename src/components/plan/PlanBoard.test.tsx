@@ -414,19 +414,27 @@ describe('PlanBoard', () => {
       },
     ]
     mockProblems = [
-      { level: 'hard', message: 'Fish on Mondays: on Monday lunch has 0, must be at least 1', ruleId: 3, day: 'monday', meal: 'lunch' },
-      { level: 'soft', message: 'Dish repeated in the week: "Plain Rice" across the week has 2, should be at most 1' },
+      { level: 'hard', reason: 'Always include dishes with fish', message: 'Always include dishes with fish — Monday lunch', ruleId: 3, day: 'monday', meal: 'lunch' },
+      { level: 'soft', reason: 'Vary dishes across the week', message: 'Vary dishes across the week — this week' },
     ]
     mockRuleIssues = [{ ruleId: 9, name: 'Old category rule', message: 'refers to base category #4, which no longer exists' }]
 
     render(<PlanBoard />)
 
     expect(screen.getByText('1 rule could not be met — see highlighted meals; 1 rule was skipped')).toBeTruthy()
-    expect(screen.getAllByText('Fish on Mondays: on Monday lunch has 0, must be at least 1').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Always include dishes with fish — Monday lunch').length).toBeGreaterThan(0)
+    // A problem from a stored rule links to that rule; one without a rule does not.
+    expect(screen.getByRole('link', { name: 'Open rule' }).getAttribute('href')).toBe('/rules#rule-3')
     expect(screen.getByText('Skipped “Old category rule”: refers to base category #4, which no longer exists')).toBeTruthy()
     // Unmet preferences are not presented as problems.
-    expect(screen.queryByText(/Dish repeated/)).toBeNull()
-    expect(screen.getByText('Rule broken')).toBeTruthy()
+    expect(screen.queryByText(/Vary dishes/)).toBeNull()
+    // The reason is readable without hovering: it opens inline in the meal.
+    const toggle = screen.getByRole('button', { name: /Rule broken/ })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('Always include dishes with fish')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText('Always include dishes with fish')).toBeTruthy()
     expect(screen.getByText('Plain Rice')).toBeTruthy()
   })
 })

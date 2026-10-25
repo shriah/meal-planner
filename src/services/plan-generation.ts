@@ -3,7 +3,7 @@ import {
   buildModel, explain, fromPlanSlots, planWeek, score, slotIndex,
   type Justification, type Meal, type ModelInput, type Pins,
 } from '@/planner';
-import { compileRules, type RuleIssue, type RuleRecord } from '@/rules';
+import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { DayOfWeek, WeeklyPlan } from '@/types/plan';
@@ -22,6 +22,9 @@ export interface PlanningOptions {
 /** A rule the plan could not satisfy, located where possible. */
 export interface PlanProblem {
   level: 'hard' | 'soft';
+  /** What is broken, in words and without where: the rule's description, or a built-in's label. */
+  reason: string;
+  /** The reason with where it is broken, for lists that do not show the meal. */
   message: string;
   ruleId?: number;
   day?: DayOfWeek;
@@ -36,7 +39,18 @@ export interface PlanningOutcome {
   ruleIssues: RuleIssue[];
 }
 
-/** Planner input for the stored data, plus the rules that were skipped and names for explanations. */
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/** "Monday lunch", "Monday", "Monday–Wednesday", or "this week". */
+function whereText(g: Justification['group']): string {
+  if (g.day && g.meal) return `${titleCase(g.day)} ${g.meal}`;
+  if (g.day) return titleCase(g.day);
+  if (g.window) return `${titleCase(g.window[0])}–${titleCase(g.window[1])}`;
+  if (g.meal) return `${g.meal} this week`;
+  return 'this week';
+}
+
+/** Planner input for the stored data, the rules that were skipped, and a way to word each problem. */
 function modelFromData(input: PlanningInput) {
   const { library, categories, rules } = input;
   const known = {
@@ -46,16 +60,38 @@ function modelFromData(input: PlanningInput) {
   };
   const { constraints, issues } = compileRules(rules, known);
   const componentName = new Map(library.map((c) => [c.id, c.name]));
+  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const names: Names = {
+    component: (id) => componentName.get(id),
+    baseCategory: (id) => categoryName.get(id),
+    extraCategory: (id) => categoryName.get(id),
+  };
+  const ruleById = new Map(rules.map((r) => [r.id, r]));
+
+  /** Rule problems read as the rule's description; anything else keeps the planner's own wording. */
+  const problemOf = (j: Justification): PlanProblem => {
+    const parsed = j.ruleId !== undefined && ruleById.has(j.ruleId) ? parseSpec(ruleById.get(j.ruleId)!.spec) : undefined;
+    const reason = parsed?.ok ? describeSpec(parsed.spec, names) : undefined;
+    return {
+      level: j.level,
+      reason: reason ?? j.label,
+      message: reason ? `${reason} — ${whereText(j.group)}` : explain(j, names),
+      ...(j.ruleId !== undefined && { ruleId: j.ruleId }),
+      ...(j.group.day && { day: j.group.day }),
+      ...(j.group.meal && { meal: j.group.meal }),
+    };
+  };
+
   const model: ModelInput = { library, constraints };
-  return { model, issues, names: { component: (id: number) => componentName.get(id) } };
+  return { model, issues, problemOf };
 }
 
 export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): PlanningOutcome {
-  const { model, issues, names } = modelFromData(input);
+  const { model, issues, problemOf } = modelFromData(input);
   const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31) });
   return {
     plan: { slots: result.slots },
-    problems: result.justifications.map((j) => toProblem(j, explain(j, names))),
+    problems: result.justifications.map(problemOf),
     ruleIssues: issues,
   };
 }
@@ -75,7 +111,7 @@ export function slotConflicts(
   part: SlotPart,
   candidates: readonly number[],
 ): Map<number, PlanProblem[]> {
-  const { model, names } = modelFromData(input);
+  const { model, problemOf } = modelFromData(input);
   const m = buildModel(model);
   const state = fromPlanSlots(plan.slots);
   const slot = state[slotIndex(day, meal)];
@@ -92,17 +128,7 @@ export function slotConflicts(
   for (const id of candidates) {
     put(id);
     const added = hard().filter((j) => j.units > (baseline.get(key(j)) ?? 0));
-    if (added.length) out.set(id, added.map((j) => toProblem(j, explain(j, names))));
+    if (added.length) out.set(id, added.map(problemOf));
   }
   return out;
-}
-
-function toProblem(j: Justification, message: string): PlanProblem {
-  return {
-    level: j.level,
-    message,
-    ...(j.ruleId !== undefined && { ruleId: j.ruleId }),
-    ...(j.group.day && { day: j.group.day }),
-    ...(j.group.meal && { meal: j.group.meal }),
-  };
 }

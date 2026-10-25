@@ -1,12 +1,12 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { db } from '@/db/client'
 import { ROLES, type Matcher } from '@/planner'
 import {
-  describeSpec, newSpec, previewMatches, TEMPLATE_FORMS, TEMPLATE_IDS, TEMPLATES, validateDraft,
+  describeSpec, newSpec, previewMatches, RuleSpecSchema, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES, validateDraft,
   type Draft, type FormField, type Names, type RuleSpecInput, type Scope, type TemplateId,
 } from '@/rules'
 import { addRule, updateRule } from '@/services/food-db'
@@ -15,12 +15,15 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConditionEditor, type EditorData } from './ConditionEditor'
-import { DAY_OPTIONS, MEAL_OPTIONS, MultiPicker, ScopePicker, ToggleGroup } from './widgets'
+import { DAY_OPTIONS, LevelSelect, MEAL_OPTIONS, MultiPicker, ScopePicker, ToggleGroup } from './widgets'
 
 const ROLE_OPTIONS = ROLES.map((r) => ({ value: r, label: r === 'subzi' ? 'Subzi' : r.charAt(0).toUpperCase() + r.slice(1) }))
 const SKIP_OPTIONS = ROLE_OPTIONS.filter((o) => o.value !== 'base')
+
+/** How long editing must pause before the draft is checked against the library. */
+const CHECK_DELAY_MS = 600
 
 interface RuleEditorProps {
   initial?: Draft
@@ -31,10 +34,11 @@ interface RuleEditorProps {
 }
 
 export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorProps) {
-  const [name, setName] = useState(initial?.name ?? '')
+  // null until the user types: the name then follows what was stored (see `shownName`).
+  const [typedName, setName] = useState<string | null>(null)
   const [spec, setSpec] = useState<RuleSpecInput>(initial?.spec ?? newSpec('exclude'))
   const [showErrors, setShowErrors] = useState(false)
-  const [check, setCheck] = useState<DraftCheck | 'running' | null>(null)
+  const [checked, setChecked] = useState<{ key: string; outcome: DraftCheck } | null>(null)
 
   const components = useLiveQuery(() => db.components.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
@@ -50,7 +54,15 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     }
   }, [components, categories])
 
-  const result = validateDraft({ name, spec })
+  // An empty name falls back to what the rule says, so a name is never needed.
+  const parsedSpec = RuleSpecSchema.safeParse(spec)
+  const suggestedName = parsedSpec.success ? describeSpec(parsedSpec.data, data.names) : ''
+  // A rule saved without a name was stored under its description. Opening it leaves the name empty
+  // again, so the name keeps following the rule if its conditions change.
+  const initialParsed = initial ? RuleSpecSchema.safeParse(initial.spec) : undefined
+  const initialWasUnnamed = !!initial && !!initialParsed?.success && initial.name === describeSpec(initialParsed.data, data.names)
+  const shownName = typedName ?? (initialWasUnnamed ? '' : initial?.name ?? '')
+  const result = validateDraft({ name: shownName.trim() || suggestedName, spec })
   const errors = !result.ok && showErrors ? result.errors : {}
   const params = spec.params as Record<string, unknown>
 
@@ -59,7 +71,6 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     if (value === undefined) delete next[key]
     else next[key] = value
     setSpec({ ...spec, params: next } as RuleSpecInput)
-    setCheck(null)
   }
 
   /** A cost is dropped when a rule becomes a must, so it never lingers unseen. */
@@ -67,7 +78,6 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     const next: Record<string, unknown> = { ...params, strength }
     if (strength === 'must') delete next.cost
     setSpec({ ...spec, params: next } as RuleSpecInput)
-    setCheck(null)
   }
 
   /** Switching type keeps the main condition when both types have one. */
@@ -78,7 +88,6 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
       if (key in next.params && carried) next.params[key] = carried
     }
     setSpec(next as RuleSpecInput)
-    setCheck(null)
   }
 
   async function save() {
@@ -92,12 +101,22 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     onSaved()
   }
 
-  async function runCheck() {
-    setShowErrors(true)
-    if (!result.ok) return
-    setCheck('running')
-    setCheck(await checkDraftRule({ name: result.name, enabled: true, spec: result.spec, created_at: '' }, ruleId))
-  }
+  // Check a valid draft against the library once editing pauses. A newer edit cancels the pending
+  // check and discards a slower one still in flight, so a stale result never shows.
+  const checkKey = result.ok ? JSON.stringify(result.spec) : null
+  const check: DraftCheck | 'running' | null = !checkKey ? null : checked?.key === checkKey ? checked.outcome : 'running'
+  useEffect(() => {
+    if (!checkKey) return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const outcome = await checkDraftRule({ name: 'draft', enabled: true, spec: JSON.parse(checkKey), created_at: '' }, ruleId)
+      if (!cancelled) setChecked({ key: checkKey, outcome })
+    }, CHECK_DELAY_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [checkKey, ruleId])
 
   const renderField = (field: FormField) => {
     const v = params[field.key]
@@ -166,10 +185,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         )
       case 'weight':
         return (
-          <Select value={String(v ?? 2)} onValueChange={(x) => setParam(field.key, Number(x))}>
-            <SelectTrigger className="w-24" aria-label={field.label}><SelectValue /></SelectTrigger>
-            <SelectContent>{[1, 2, 3, 4, 5].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-          </Select>
+          <LevelSelect label={field.label} kind="weight" value={(v as number | undefined) ?? 2}
+            onChange={(n) => setParam(field.key, n)} />
         )
       case 'strength':
         return (
@@ -184,10 +201,9 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         )
       case 'cost':
         return (
-          <Select value={String(v ?? 10)} onValueChange={(x) => setParam(field.key, x === '10' ? undefined : Number(x))}>
-            <SelectTrigger className="w-24" aria-label={field.label}><SelectValue /></SelectTrigger>
-            <SelectContent>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
-          </Select>
+          // A cost of 10 is the default, so it is stored as no cost at all.
+          <LevelSelect label={field.label} kind="cost" value={(v as number | undefined) ?? 10}
+            onChange={(n) => setParam(field.key, n === 10 ? undefined : n)} />
         )
       case 'components':
         return (
@@ -210,8 +226,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
   return (
     <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); void save() }}>
       <div className="space-y-1">
-        <Label htmlFor="rule-name">Rule name</Label>
-        <Input id="rule-name" value={name} onChange={(e) => setName(e.target.value)} aria-invalid={!!errors.name} />
+        <Label htmlFor="rule-name">Rule name<span className="text-muted-foreground font-normal"> (optional)</span></Label>
+        <Input id="rule-name" value={shownName} placeholder={suggestedName} onChange={(e) => setName(e.target.value)} aria-invalid={!!errors.name} />
         {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
       </div>
 
@@ -220,7 +236,12 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         <Select value={spec.template} onValueChange={(t) => changeTemplate(t as TemplateId)}>
           <SelectTrigger className="w-full" aria-label="Rule type"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {TEMPLATE_IDS.map((id) => <SelectItem key={id} value={id}>{TEMPLATES[id].label}</SelectItem>)}
+            {TEMPLATE_GROUPS.map((group) => (
+              <SelectGroup key={group.label}>
+                <SelectLabel>{group.label}</SelectLabel>
+                {group.templates.map((id) => <SelectItem key={id} value={id}>{TEMPLATES[id].label}</SelectItem>)}
+              </SelectGroup>
+            ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">{TEMPLATES[spec.template].summary}</p>
@@ -244,13 +265,11 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         <p>{result.ok ? describeSpec(result.spec, data.names) : 'Finish the rule to see its description.'}</p>
       </div>
 
+      {check === 'running' && <p className="text-xs text-muted-foreground">Checking against your library…</p>}
       {check && check !== 'running' && <CheckResult check={check} />}
 
       <div className="flex flex-wrap gap-2">
         <Button type="submit">{ruleId === undefined ? 'Add rule' : 'Save changes'}</Button>
-        <Button type="button" variant="outline" onClick={() => void runCheck()} disabled={check === 'running'}>
-          {check === 'running' ? 'Checking…' : 'Check against my library'}
-        </Button>
         {onCancel && <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>}
       </div>
     </form>

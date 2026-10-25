@@ -1,14 +1,17 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/client'
-import { getRules } from '@/services/food-db'
-import type { KnownIds, Names } from '@/rules'
+import { getRules, restoreDefaultRules } from '@/services/food-db'
+import { parseHash, useUrlHash } from '@/lib/hash-target'
+import { describeSpec, groupRules, parseSpec, type KnownIds, type Names } from '@/rules'
+import type { RuleRecord } from '@/db/client'
 import { RuleRow } from './RuleRow'
 import { RuleEmptyState } from './RuleEmptyState'
 import { RuleMigrationNotice } from './RuleMigrationNotice'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
@@ -17,6 +20,8 @@ export function RuleList() {
   const rules = useLiveQuery(getRules)
   const components = useLiveQuery(() => db.components.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
+  const [query, setQuery] = useState('')
+  const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
 
   // Names for descriptions, and the ids that exist, so rules pointing at deleted items are flagged.
   const { names, known } = useMemo(() => {
@@ -35,12 +40,38 @@ export function RuleList() {
     return { names, known }
   }, [components, categories])
 
+  const groups = useMemo(() => groupRules(rules ?? []), [rules])
+
+  // A deep link (`/rules#rule-12`) opens the section holding that rule and scrolls to it.
+  const target = parseHash(useUrlHash()).rule
+  const targetGroup = target === undefined ? undefined
+    : (['defaults', 'dish', 'mine'] as const).find((g) => groups[g].some((r) => r.id === target))
+  useEffect(() => {
+    if (targetGroup) document.getElementById(`rule-${target}`)?.scrollIntoView?.({ block: 'center' })
+  }, [target, targetGroup])
+
   if (!rules) return null
 
+  const needle = query.trim().toLowerCase()
+  const searching = needle !== ''
+  const matches = (rule: RuleRecord) => {
+    if (!searching) return true
+    const parsed = parseSpec(rule.spec)
+    const text = `${rule.name} ${parsed.ok ? describeSpec(parsed.spec, names) : ''}`.toLowerCase()
+    return text.includes(needle)
+  }
+  const mine = groups.mine.filter(matches)
+  const defaults = groups.defaults.filter(matches)
+  const dish = groups.dish.filter(matches)
+  const nothingMatches = searching && mine.length + defaults.length + dish.length === 0
+
   const activeCount = rules.filter((r) => r.enabled).length
-  // Rules owned by a dish (base pairings, curry clashes) are edited from the Library, so they are listed apart.
-  const ownRules = rules.filter((r) => r.owner_component_id === undefined)
-  const pairings = rules.filter((r) => r.owner_component_id !== undefined)
+  const row = (rule: RuleRecord) => <RuleRow key={rule.id} rule={rule} names={names} known={known} highlighted={rule.id === target} />
+
+  async function restore() {
+    const added = await restoreDefaultRules()
+    setRestoreMessage(added === 0 ? 'All default rules are already there' : `Restored ${added} default ${added === 1 ? 'rule' : 'rules'}`)
+  }
 
   return (
     <main className="px-4 py-8 sm:px-8">
@@ -54,26 +85,54 @@ export function RuleList() {
         </Button>
       </div>
       <RuleMigrationNotice />
-      {rules.length > 0 && (
-        <p className="text-sm text-muted-foreground mb-4">
-          {rules.length} rules · {activeCount} active
-        </p>
-      )}
-      <Separator className="mb-4" />
-      {ownRules.length === 0 ? (
-        <RuleEmptyState />
-      ) : (
-        ownRules.map((rule) => <RuleRow key={rule.id} rule={rule} names={names} known={known} />)
-      )}
-      {pairings.length > 0 && (
-        <section className="mt-8">
-          <h2 className="text-lg font-semibold font-heading">Dish pairings</h2>
-          <p className="text-sm text-muted-foreground mb-2">
-            Which bases a curry or subzi goes with, and which curries an extra avoids. Change them from the dish in the Library.
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        {rules.length > 0 && (
+          <p className="text-sm text-muted-foreground">
+            {rules.length} rules · {activeCount} active
           </p>
-          <Separator className="mb-2" />
-          {pairings.map((rule) => <RuleRow key={rule.id} rule={rule} names={names} known={known} />)}
+        )}
+        <Input
+          type="search"
+          aria-label="Search rules"
+          placeholder="Search rules…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          className="w-full sm:w-72"
+        />
+      </div>
+      <Separator className="mb-4" />
+
+      {nothingMatches && <p className="py-8 text-sm text-muted-foreground">No rules match “{query.trim()}”</p>}
+
+      {!nothingMatches && (searching ? mine.length > 0 : true) && (
+        <section>
+          {(mine.length > 0 || searching) && <h2 className="mb-1 text-lg font-semibold font-heading">Your rules</h2>}
+          {mine.length > 0 ? mine.map(row) : <RuleEmptyState />}
         </section>
+      )}
+
+      {!nothingMatches && (searching ? defaults.length > 0 : true) && (
+        <details className="mt-8" open={searching || targetGroup === 'defaults' ? true : undefined}>
+          <summary className="cursor-pointer text-lg font-semibold font-heading">Planner defaults ({defaults.length})</summary>
+          <div className="mb-2 mt-1 flex flex-wrap items-center gap-3">
+            <p className="text-sm text-muted-foreground">
+              What the planner aims for unless a rule says otherwise. Edit, switch off or delete any of them.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={() => void restore()}>Restore defaults</Button>
+            {restoreMessage && <span role="status" className="text-sm text-muted-foreground">{restoreMessage}</span>}
+          </div>
+          {defaults.map(row)}
+        </details>
+      )}
+
+      {!nothingMatches && dish.length > 0 && (
+        <details className="mt-8" open={searching || targetGroup === 'dish' ? true : undefined}>
+          <summary className="cursor-pointer text-lg font-semibold font-heading">Dish settings ({dish.length})</summary>
+          <p className="mb-2 mt-1 text-sm text-muted-foreground">
+            Which bases, curries and days each dish goes with. Change them from the dish in the Library.
+          </p>
+          {dish.map(row)}
+        </details>
       )}
     </main>
   )

@@ -27,7 +27,7 @@ describe('RuleEditor', () => {
     const onSaved = vi.fn();
     render(<RuleEditor onSaved={onSaved} />);
 
-    await userEvent.type(screen.getByLabelText('Rule name'), 'No fish on Fridays');
+    await userEvent.type(screen.getByLabelText(/Rule name/), 'No fish on Fridays');
     await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
     await choose(screen.getByRole('combobox', { name: 'Condition 1 field' }), 'Protein');
     await userEvent.click(screen.getByRole('combobox', { name: 'Add protein' }));
@@ -47,12 +47,63 @@ describe('RuleEditor', () => {
     });
   });
 
+  it('names a rule after its description when the name is left empty', async () => {
+    render(<RuleEditor onSaved={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
+    await choose(screen.getByRole('combobox', { name: 'Condition 1 field' }), 'Protein');
+    await userEvent.click(screen.getByRole('combobox', { name: 'Add protein' }));
+    await userEvent.click(await screen.findByText('fish'));
+    await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+
+    await waitFor(async () => expect(await db.rules.count()).toBe(1));
+    const [rule] = await db.rules.toArray();
+    expect(rule.name).toBe('Never include dishes with fish');
+  });
+
+  it('groups the rule types by what they do', async () => {
+    render(<RuleEditor onSaved={vi.fn()} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Rule type' }));
+    for (const label of ['Where and when', 'Keep out', 'Pair and require', 'Count and spread', 'Preference']) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it.each([
+    ['Slightly', 3],
+    ['Strongly', undefined],
+  ])('sets how much a preferred rule matters in words: %s', async (level, cost) => {
+    const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: level === 'Slightly' ? undefined : 3 } } as const;
+    const id = (await db.rules.add({ name: 'Fish', enabled: true, created_at: '', spec })) as number;
+    render(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+
+    expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent(level === 'Slightly' ? 'Strongly' : 'Slightly');
+    await choose(screen.getByRole('combobox', { name: 'How much it matters' }), level);
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(async () => expect((await db.rules.get(id))?.spec.params).toMatchObject({ strength: 'prefer' }));
+    if (cost === undefined) expect((await db.rules.get(id))?.spec.params).not.toHaveProperty('cost');
+    else expect((await db.rules.get(id))?.spec.params).toHaveProperty('cost', cost);
+  });
+
+  it('uses the same words for the weight of a prefer or avoid rule', async () => {
+    const spec = { template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'prefer', weight: 4 } } as const;
+    const id = (await db.rules.add({ name: 'Fish', enabled: true, created_at: '', spec })) as number;
+    render(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+
+    expect(screen.getByRole('combobox', { name: 'How strongly' })).toHaveTextContent('Strongly');
+    await choose(screen.getByRole('combobox', { name: 'How strongly' }), 'Slightly');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(async () => expect((await db.rules.get(id))?.spec.params).toMatchObject({ weight: 1 }));
+  });
+
   it('does not save an incomplete rule and says why', async () => {
     const onSaved = vi.fn();
     render(<RuleEditor onSaved={onSaved} />);
     await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
 
-    expect(screen.getByText('Give the rule a name')).toBeInTheDocument();
+    // The empty name is not an error: it falls back to the rule's description.
+    expect(screen.queryByText('Give the rule a name')).not.toBeInTheDocument();
     expect(screen.getByText('Add at least one condition')).toBeInTheDocument();
     expect(onSaved).not.toHaveBeenCalled();
     expect(await db.rules.count()).toBe(0);
@@ -94,8 +145,39 @@ describe('RuleEditor', () => {
       spec: { template: 'require', params: { match: is('protein_tag', 'fish'), scope: { days: ['friday'], meals: ['lunch'] } } },
     }} onSaved={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'Check against my library' }));
-    expect(await screen.findByText('With this rule, the planner could not meet:')).toBeInTheDocument();
-    expect(screen.getByText(/on Friday lunch has/)).toBeInTheDocument();
+    // The check runs by itself once editing pauses.
+    expect(await screen.findByText('With this rule, the planner could not meet:', {}, { timeout: 4000 })).toBeInTheDocument();
+    expect(screen.getAllByText(/— Friday lunch$/).length).toBeGreaterThan(0);
+  });
+
+  describe('a rule saved without a name', () => {
+    const spec = { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } } as const;
+    const open = async (name: string) => {
+      const id = (await db.rules.add({ name, enabled: true, created_at: '', spec })) as number;
+      render(<RuleEditor ruleId={id} initial={{ name, spec }} onSaved={vi.fn()} />);
+      return id;
+    };
+    const addFriday = () => userEvent.click(within(screen.getByRole('group', { name: 'Days' })).getByRole('button', { name: 'Fri' }));
+
+    it('keeps following its description when it is edited and saved again', async () => {
+      const id = await open('Never include dishes with fish');
+      await waitFor(() => expect(screen.getByLabelText(/Rule name/)).toHaveValue(''));
+
+      await addFriday();
+      await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+      await waitFor(async () => expect((await db.rules.get(id))?.name).toBe('Never include dishes with fish on Friday'));
+    });
+
+    it('keeps a name the user chose', async () => {
+      const id = await open('No fish');
+      expect(screen.getByLabelText(/Rule name/)).toHaveValue('No fish');
+
+      await addFriday();
+      await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+      await waitFor(async () => expect((await db.rules.get(id))?.spec.params).toMatchObject({ scope: { days: ['friday'] } }));
+      expect((await db.rules.get(id))?.name).toBe('No fish');
+    });
   });
 });

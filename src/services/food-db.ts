@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { ownedRuleName, type OwnedRule, type OwnedTemplate } from '@/rules';
+import { defaultRules, ownedRuleName, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -44,8 +44,7 @@ export async function deleteComponent(id: number): Promise<void> {
 
 // ─── Owned rules (base pairing, curry clash, specific days) ───────────────────
 
-/** For each owned rule type: a builder to create or update it once the component has an id, or null to remove it. */
-export type OwnedRuleChanges = Partial<Record<OwnedTemplate, ((c: { id: number; name: string }) => OwnedRule) | null>>;
+export type { OwnedRuleChanges };
 
 export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]> {
   const owned = db.rules.where('owner_component_id');
@@ -138,4 +137,18 @@ export async function updateRule(id: number, changes: Partial<RuleRecord>): Prom
 
 export async function deleteRule(id: number): Promise<void> {
   await db.rules.delete(id);
+}
+
+/**
+ * Add back the default rules that are missing, by key. Defaults that are still stored, edited or
+ * switched off, are left as they are. Returns how many were added.
+ */
+export async function restoreDefaultRules(): Promise<number> {
+  return db.transaction('rw', db.rules, async () => {
+    const have = new Set((await db.rules.toArray()).map((r) => r.default_key).filter(Boolean));
+    const missing = defaultRules().filter((r) => !have.has(r.default_key));
+    const created_at = new Date().toISOString();
+    await db.rules.bulkAdd(missing.map((r) => ({ ...r, enabled: true, created_at })) as RuleRecord[]);
+    return missing.length;
+  });
 }
