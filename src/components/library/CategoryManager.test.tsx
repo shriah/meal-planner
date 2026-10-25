@@ -20,7 +20,7 @@ beforeEach(async () => {
 });
 
 async function seedCategories() {
-  const riceId = await addCategory({ kind: 'base', name: 'Rice-based' });
+  await addCategory({ kind: 'base', name: 'Rice-based' });
   await addCategory({ kind: 'base', name: 'Bread-based' });
   await addCategory({ kind: 'extra', name: 'Liquid' });
   await addCategory({ kind: 'extra', name: 'Crunchy' });
@@ -30,11 +30,9 @@ async function seedCategories() {
     componentType: 'extra',
     extra_category_id: 3,
     extra_category: 'liquid',
-    compatible_base_category_ids: [riceId],
-    compatible_base_types: ['rice-based'],
     dietary_tags: ['veg'],
     regional_tags: ['south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: new Date().toISOString(),
   });
 }

@@ -1,7 +1,10 @@
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner';
 
-export interface UserPreferencesRecord {
+/**
+ * Before v16, the most extras the planner could place at each meal. The limits are now stored rules;
+ * the record is only read by the v16 upgrade.
+ */
+export interface LegacyPreferencesRecord {
   id: 'prefs';
-  /** Most extras the planner may place at each meal. */
   extra_quantity_limits: Record<MealSlot, number>;
 }

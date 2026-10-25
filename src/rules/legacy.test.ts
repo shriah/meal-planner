@@ -29,6 +29,7 @@ describe('legacy rule conversion', () => {
     expect(t({ mode: 'component', component_id: 5 })).toMatchObject({ match: is('id', 5) });
     expect(t({ mode: 'base_category', category_id: 10 })).toMatchObject({ match: all(is('componentType', 'base'), is('base_category_id', 10)) });
     expect(t({ mode: 'tag', filter: { protein_tag: 'fish' } })).toMatchObject({ match: is('protein_tag', 'fish') });
+    expect(t({ mode: 'tag', filter: { occasion_tag: 'festive' } })).toMatchObject({ match: is('occasion_tags', 'festive') });
     expect(t({ mode: 'tag', filter: { dietary_tag: 'veg', regional_tag: 'south-indian' } }))
       .toMatchObject({ match: all(is('dietary_tags', 'veg'), is('regional_tags', 'south-indian')) });
   });
@@ -86,6 +87,10 @@ describe('legacy rule conversion', () => {
     expect(dropped(legacy({ mode: 'component', component_id: 1 }, [{ kind: 'require_extra', category_ids: [404] }]))).toContain('extra category #404');
     expect(dropped(legacy({ mode: 'component_type', component_type: 'curry' }, [{ kind: 'exclude' }], { days: [], slots: null }))).toBe('its days or meals select nothing');
     expect(dropped(legacy({ mode: 'component_type', component_type: 'curry' }, [{ kind: 'allowed_slots', slots: [] }]))).toBe('it allows no meals');
+    for (const tag of ['friday', 'weekday', 'everyday']) {
+      expect(dropped(legacy({ mode: 'tag', filter: { occasion_tag: tag } }, [{ kind: 'exclude' }])))
+        .toBe('it selects dishes by the days they suit, which are now set on each dish');
+    }
   });
 
   it('converts both shapes used by the seeded rules (category meal windows, component excluded at meals)', () => {

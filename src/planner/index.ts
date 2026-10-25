@@ -16,7 +16,7 @@ export {
   compileModel, score, compareScore, explain, groupText, UNKNOWN_COMPONENT,
   type CompiledModel, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
-export { builtinConstraints, compatConstraints, occasionViolation, DEFAULT_EXTRA_LIMITS, type BuiltinOptions } from './builtins';
+export { builtinConstraints } from './builtins';
 export { solve, clonePlan, type SolveOptions, type SolveResult, type StopReason } from './solver';
 export { mulberry32 } from './rng';
 export {

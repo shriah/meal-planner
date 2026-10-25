@@ -1,8 +1,8 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
+import { ownedRuleName, type OwnedRule, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
-import type { UserPreferencesRecord } from '@/types/preferences';
 
 // ─── Component CRUD ───────────────────────────────────────────────────────────
 
@@ -23,11 +23,63 @@ export async function addComponent(component: Omit<ComponentRecord, 'id'>): Prom
 }
 
 export async function updateComponent(id: number, changes: Partial<ComponentRecord>): Promise<void> {
-  await db.components.update(id, changes);
+  await db.transaction('rw', db.components, db.rules, async () => {
+    await db.components.update(id, changes);
+    if (changes.name !== undefined) {
+      const name = changes.name;
+      await db.rules.where('owner_component_id').equals(id).modify((rule) => {
+        rule.name = ownedRuleName(rule.spec.template, name);
+      });
+    }
+  });
 }
 
+/** Deleting a component also deletes the rules it owns. */
 export async function deleteComponent(id: number): Promise<void> {
-  await db.components.delete(id);
+  await db.transaction('rw', db.components, db.rules, async () => {
+    await db.rules.where('owner_component_id').equals(id).delete();
+    await db.components.delete(id);
+  });
+}
+
+// ─── Owned rules (base pairing, curry clash, specific days) ───────────────────
+
+/** For each owned rule type: a builder to create or update it once the component has an id, or null to remove it. */
+export type OwnedRuleChanges = Partial<Record<OwnedTemplate, ((c: { id: number; name: string }) => OwnedRule) | null>>;
+
+export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]> {
+  const owned = db.rules.where('owner_component_id');
+  return (componentId === undefined ? owned.above(0) : owned.equals(componentId)).toArray();
+}
+
+/** The rule of one type a component owns; each component owns at most one per type. */
+export async function getOwnedRule(componentId: number, template: OwnedTemplate): Promise<RuleRecord | undefined> {
+  return (await getOwnedRules(componentId)).find((r) => r.spec.template === template);
+}
+
+/** Add or update a component together with the rules it owns. Rule types left out are not touched. */
+export async function saveComponent(
+  id: number | undefined,
+  component: Omit<ComponentRecord, 'id'>,
+  owned: OwnedRuleChanges = {},
+): Promise<number> {
+  return db.transaction('rw', db.components, db.rules, async () => {
+    const componentId = id ?? ((await db.components.add(component as ComponentRecord)) as number);
+    if (id !== undefined) await db.components.update(id, component);
+    const existing = await getOwnedRules(componentId);
+    for (const [template, build] of Object.entries(owned) as [OwnedTemplate, OwnedRuleChanges[OwnedTemplate]][]) {
+      if (build === undefined) continue;
+      const current = existing.find((r) => r.spec.template === template);
+      if (build === null) {
+        if (current) await db.rules.delete(current.id);
+        continue;
+      }
+      const rule = build({ id: componentId, name: component.name });
+      if (current) await db.rules.update(current.id, rule);
+      else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
+    }
+    return componentId;
+  });
 }
 
 // ─── Meal CRUD ────────────────────────────────────────────────────────────────
@@ -68,16 +120,6 @@ export async function getMealExtras(mealId: number): Promise<ComponentRecord[]> 
   if (componentIds.length === 0) return [];
   const components = await db.components.bulkGet(componentIds);
   return components.filter((c): c is ComponentRecord => c !== undefined);
-}
-
-// ─── Preferences ─────────────────────────────────────────────────────────────
-
-export async function getPreferences(): Promise<UserPreferencesRecord | undefined> {
-  return db.preferences.get('prefs');
-}
-
-export async function putPreferences(prefs: UserPreferencesRecord): Promise<void> {
-  await db.preferences.put(prefs);
 }
 
 // ─── Rule CRUD ────────────────────────────────────────────────────────────────

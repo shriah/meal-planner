@@ -134,7 +134,7 @@ describe('PlanBoard', () => {
     expect(lockButtons.length).toBe(84)
   })
 
-  it('passes the selected slot base_category_id into MealPickerSheet for extras', () => {
+  it('opens MealPickerSheet on the clicked slot for extras', () => {
     mockPlan = {
       slots: [
         {
@@ -156,7 +156,7 @@ describe('PlanBoard', () => {
         base_category_id: 42,
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -165,7 +165,7 @@ describe('PlanBoard', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -174,7 +174,7 @@ describe('PlanBoard', () => {
         componentType: 'subzi',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -183,7 +183,7 @@ describe('PlanBoard', () => {
         componentType: 'extra',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]
@@ -194,14 +194,13 @@ describe('PlanBoard', () => {
     expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
       expect.objectContaining({
         componentType: 'extras',
-        currentBaseCategoryId: 42,
         day: 'monday',
         slot: 'lunch',
       }),
     )
   })
 
-  it('passes the selected slot base_category_id into MealPickerSheet for curry pickers', () => {
+  it('opens MealPickerSheet on the clicked slot for curries', () => {
     mockPlan = {
       slots: [
         {
@@ -223,7 +222,7 @@ describe('PlanBoard', () => {
         base_category_id: 42,
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -232,7 +231,7 @@ describe('PlanBoard', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -241,7 +240,7 @@ describe('PlanBoard', () => {
         componentType: 'subzi',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -250,7 +249,7 @@ describe('PlanBoard', () => {
         componentType: 'extra',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]
@@ -261,14 +260,13 @@ describe('PlanBoard', () => {
     expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
       expect.objectContaining({
         componentType: 'curry',
-        currentBaseCategoryId: 42,
         day: 'monday',
         slot: 'lunch',
       }),
     )
   })
 
-  it('keeps currentBaseCategoryId undefined for base pickers', () => {
+  it('opens MealPickerSheet on the clicked slot for bases', () => {
     mockPlan = {
       slots: [
         {
@@ -290,7 +288,7 @@ describe('PlanBoard', () => {
         base_category_id: 42,
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -299,7 +297,7 @@ describe('PlanBoard', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -308,7 +306,7 @@ describe('PlanBoard', () => {
         componentType: 'subzi',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -317,7 +315,7 @@ describe('PlanBoard', () => {
         componentType: 'extra',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]
@@ -328,14 +326,13 @@ describe('PlanBoard', () => {
     expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
       expect.objectContaining({
         componentType: 'base',
-        currentBaseCategoryId: undefined,
         day: 'monday',
         slot: 'lunch',
       }),
     )
   })
 
-  it('keeps currentBaseCategoryId undefined for subzi pickers', () => {
+  it('opens MealPickerSheet on the clicked slot for subzis', () => {
     mockPlan = {
       slots: [
         {
@@ -357,7 +354,7 @@ describe('PlanBoard', () => {
         base_category_id: 42,
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -366,7 +363,7 @@ describe('PlanBoard', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -375,7 +372,7 @@ describe('PlanBoard', () => {
         componentType: 'subzi',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
       {
@@ -384,7 +381,7 @@ describe('PlanBoard', () => {
         componentType: 'extra',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]
@@ -395,7 +392,6 @@ describe('PlanBoard', () => {
     expect(mockMealPickerSheet).toHaveBeenLastCalledWith(
       expect.objectContaining({
         componentType: 'subzi',
-        currentBaseCategoryId: undefined,
         day: 'monday',
         slot: 'lunch',
       }),
@@ -413,7 +409,7 @@ describe('PlanBoard', () => {
         base_category_id: 42,
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '2026-03-28T00:00:00.000Z',
       },
     ]

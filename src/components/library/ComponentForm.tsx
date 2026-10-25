@@ -2,7 +2,11 @@
 
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { addComponent, updateComponent } from '@/services/food-db'
+import { getOwnedRules, saveComponent, type OwnedRuleChanges } from '@/services/food-db'
+import {
+  clashCurryCategories, curryClashRule, dayRule, exclusionRule, pairingCategories, pairingRule, ruleDays, type RuleRecord,
+} from '@/rules'
+import { DAYS, type Day } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -21,21 +25,40 @@ import {
   BUILT_IN_EXTRA_CATEGORY_NAMES,
   type CategoryRecord,
 } from '@/types/category'
-import type {
-  ComponentRecord,
-  ComponentType,
-  BaseType,
-  ExtraCategory,
-  DietaryTag,
-  ProteinTag,
-  RegionalTag,
-  OccasionTag,
+import {
+  CURRY_CATEGORIES,
+  OCCASION_TAGS,
+  type ComponentRecord,
+  type ComponentType,
+  type CurryCategory,
+  type BaseType,
+  type ExtraCategory,
+  type DietaryTag,
+  type ProteinTag,
+  type RegionalTag,
+  type OccasionTag,
 } from '@/types/component'
 
 const DIETARY_TAGS: DietaryTag[] = ['veg', 'non-veg', 'vegan', 'jain', 'eggetarian']
 const REGIONAL_TAGS: RegionalTag[] = ['south-indian', 'north-indian', 'coastal-konkan', 'pan-indian']
-const GENERAL_OCCASION_TAGS: OccasionTag[] = ['everyday', 'weekday', 'weekend', 'fasting', 'festive']
-const DAY_TAGS: OccasionTag[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+const WEEKDAYS: Day[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+const WEEKEND: Day[] = ['saturday', 'sunday']
+
+/** Which days a dish may be planned on; anything but 'any' is stored as an `allowed_days` rule. */
+type DayMode = 'any' | 'weekdays' | 'weekends' | 'specific'
+const DAY_MODES: { value: DayMode; label: string }[] = [
+  { value: 'any', label: 'Any day' },
+  { value: 'weekdays', label: 'Weekdays' },
+  { value: 'weekends', label: 'Weekends' },
+  { value: 'specific', label: 'Specific days' },
+]
+const sameDays = (a: Day[], b: Day[]) => a.length === b.length && a.every(d => b.includes(d))
+function dayModeOf(days: Day[]): DayMode {
+  if (days.length === 0) return 'any'
+  if (sameDays(days, WEEKDAYS)) return 'weekdays'
+  if (sameDays(days, WEEKEND)) return 'weekends'
+  return 'specific'
+}
 const PROTEIN_TAGS: ProteinTag[] = ['fish', 'chicken', 'mutton', 'egg', 'paneer', 'dal', 'none']
 
 const SINGULAR_LABEL: Record<ComponentType, string> = {
@@ -58,23 +81,43 @@ interface FormState {
   base_category_id: string
   extra_category_id: string
   compatible_base_category_ids: number[]
+  /** 'none' when the curry has no type. */
+  curry_category: CurryCategory | 'none'
+  /** Curry types an extra never goes with. */
+  clash_curry_categories: CurryCategory[]
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
   regional_tags: RegionalTag[]
   occasion_tags: OccasionTag[]
+  day_mode: DayMode
+  /** Specific days the dish may be planned on, when day_mode is 'specific'. */
+  days: Day[]
+  /** Never planned automatically; can still be picked by hand. */
+  never_auto: boolean
 }
 
-function initialFormState(component: ComponentRecord | undefined, componentType: ComponentType): FormState {
+function initialFormState(
+  component: ComponentRecord | undefined,
+  componentType: ComponentType,
+  ownedRules: RuleRecord[] = [],
+): FormState {
+  const owned = <T,>(read: (r: RuleRecord) => T | undefined): T | undefined =>
+    ownedRules.map(read).find((v) => v !== undefined)
   if (component) {
     return {
       name: component.name,
       base_category_id: componentType === 'base' ? String(component.base_category_id ?? '') : '',
       extra_category_id: componentType === 'extra' ? String(component.extra_category_id ?? '') : '',
-      compatible_base_category_ids: component.compatible_base_category_ids ?? [],
+      compatible_base_category_ids: owned(pairingCategories) ?? [],
+      curry_category: component.curry_category ?? 'none',
+      clash_curry_categories: owned(clashCurryCategories) ?? [],
       dietary_tags: component.dietary_tags,
       protein_tag: component.protein_tag ?? 'none',
       regional_tags: component.regional_tags,
       occasion_tags: component.occasion_tags,
+      day_mode: dayModeOf(owned(ruleDays) ?? []),
+      days: owned(ruleDays) ?? [],
+      never_auto: ownedRules.some(r => r.spec.template === 'exclude'),
     }
   }
   return {
@@ -82,23 +125,20 @@ function initialFormState(component: ComponentRecord | undefined, componentType:
     base_category_id: '',
     extra_category_id: '',
     compatible_base_category_ids: [],
+    curry_category: 'none',
+    clash_curry_categories: [],
     dietary_tags: [],
     protein_tag: 'none',
     regional_tags: [],
     occasion_tags: [],
+    day_mode: 'any',
+    days: [],
+    never_auto: false,
   }
 }
 
 function toggleArrayValue<T>(arr: T[], value: T): T[] {
   return arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value]
-}
-
-function hasDayOccasionTag(tags: OccasionTag[]): boolean {
-  return tags.some(tag => DAY_TAGS.includes(tag))
-}
-
-function removeDayOccasionTags(tags: OccasionTag[]): OccasionTag[] {
-  return tags.filter(tag => !DAY_TAGS.includes(tag))
 }
 
 function getBuiltInBaseType(name: string | undefined): BaseType | undefined {
@@ -126,24 +166,28 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
 }
 
 function showsCompatibleBaseChecklist(componentType: ComponentType) {
-  return componentType === 'curry'
+  return componentType === 'curry' || componentType === 'subzi'
 }
 
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode }: ComponentFormProps) {
   const [form, setForm] = useState<FormState>(() => initialFormState(component, componentType))
-  const [showSpecificDays, setShowSpecificDays] = useState(() => hasDayOccasionTag(form.occasion_tags))
   const [saving, setSaving] = useState(false)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
+  // Compatible bases (curry, subzi), clashing curry types (extra) and specific days are stored as
+  // rules the component owns.
+  const owned = useLiveQuery(
+    () => (component?.id !== undefined ? getOwnedRules(component.id) : []),
+    [component?.id],
+  )
   // Re-sync the form when the edited record changes underneath it (e.g. live query update).
   // Adjusting state during render avoids the extra render pass an effect would cause.
-  const sourceFormState = initialFormState(component, componentType)
+  const sourceFormState = initialFormState(component, componentType, owned)
   const sourceKey = JSON.stringify([component?.id, component?.created_at, sourceFormState])
   const [syncedKey, setSyncedKey] = useState(sourceKey)
   if (component && sourceKey !== syncedKey) {
     setSyncedKey(sourceKey)
     setForm(sourceFormState)
-    setShowSpecificDays(hasDayOccasionTag(sourceFormState.occasion_tags))
   }
 
   // Until the user picks one, default to the first category of the matching kind.
@@ -156,8 +200,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const selectedExtraCategory = findCategory(extraCategories, extraCategoryId)
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
-  const hasZeroCompatibleBases =
-    componentType === 'curry' && form.compatible_base_category_ids.length === 0
 
   async function handleSave() {
     setSaving(true)
@@ -183,17 +225,22 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             }
           : {}),
         ...(componentType === 'curry'
-          ? {
-              compatible_base_category_ids: form.compatible_base_category_ids,
-            }
+          ? { curry_category: form.curry_category === 'none' ? undefined : form.curry_category }
           : {}),
       }
 
-      if (mode === 'edit' && component?.id !== undefined) {
-        await updateComponent(component.id, record)
-      } else {
-        await addComponent(record)
+      // With nothing chosen, a dish goes with any base, any curry and any day.
+      const bases = form.compatible_base_category_ids
+      const clashes = form.clash_curry_categories
+      const days = { any: [], weekdays: WEEKDAYS, weekends: WEEKEND, specific: form.days }[form.day_mode]
+      const changes: OwnedRuleChanges = {
+        allowed_days: days.length ? (c) => dayRule(c, days) : null,
+        exclude: form.never_auto ? (c) => exclusionRule(c) : null,
       }
+      if (showsCompatibleBaseChecklist(componentType)) changes.pairs_with = bases.length ? (c) => pairingRule(c, bases) : null
+      if (componentType === 'extra') changes.avoid_with = clashes.length ? (c) => curryClashRule(c, clashes) : null
+      const id = mode === 'edit' ? component?.id : undefined
+      await saveComponent(id, record, changes)
       onSave()
     } finally {
       setSaving(false)
@@ -258,7 +305,48 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         </div>
       )}
 
-      {/* Compatible base types (Extra only) */}
+      {/* Curry type (Curry only) */}
+      {componentType === 'curry' && (
+        <div className="space-y-1">
+          <Label className="text-xs font-semibold">Curry Type</Label>
+          <Select
+            value={form.curry_category}
+            onValueChange={value => setForm(s => ({ ...s, curry_category: value as FormState['curry_category'] }))}
+          >
+            <SelectTrigger className="w-full" aria-label="Curry Type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">none</SelectItem>
+              {CURRY_CATEGORIES.map(category => (
+                <SelectItem key={category} value={category}>{category}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
+      {/* Curry types this extra never goes with (Extra only) */}
+      {componentType === 'extra' && (
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold">Never With These Curry Types</legend>
+          <div className="flex flex-wrap gap-3">
+            {CURRY_CATEGORIES.map(category => (
+              <label key={category} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={form.clash_curry_categories.includes(category)}
+                  onCheckedChange={() =>
+                    setForm(s => ({ ...s, clash_curry_categories: toggleArrayValue(s.clash_curry_categories, category) }))
+                  }
+                />
+                {category}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      )}
+
+      {/* Compatible base categories (Curry and Subzi) */}
       {showsCompatibleBaseChecklist(componentType) && (
         <fieldset className="space-y-2">
           <legend className="text-xs font-semibold">Compatible Base Categories</legend>
@@ -284,17 +372,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           {baseCategories === undefined && (
             <p className="text-xs text-muted-foreground">Loading compatible base categories...</p>
           )}
-          {hasZeroCompatibleBases && (
-            <p className="text-xs text-amber-700">
-              No compatible base categories selected. This curry will not be auto-selected.
-            </p>
+          {form.compatible_base_category_ids.length === 0 && (
+            <p className="text-xs text-muted-foreground">None selected: goes with any base.</p>
           )}
         </fieldset>
       )}
 
-      {(componentType === 'base' || showsCompatibleBaseChecklist(componentType)) && (
-        <Separator />
-      )}
+      <Separator />
 
       {/* Dietary tags */}
       <div className="space-y-1">
@@ -356,7 +440,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         <div className="space-y-1">
           <span className="text-xs text-muted-foreground">General</span>
           <div className="flex flex-wrap gap-3">
-            {GENERAL_OCCASION_TAGS.map(tag => (
+            {OCCASION_TAGS.map(tag => (
               <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
                 <Checkbox
                   checked={form.occasion_tags.includes(tag)}
@@ -367,39 +451,51 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
                 {tag}
               </label>
             ))}
-            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-              <Checkbox
-                checked={showSpecificDays}
-                onCheckedChange={(checked) => {
-                  const next = checked === true
-                  setShowSpecificDays(next)
-                  if (!next) {
-                    setForm(s => ({ ...s, occasion_tags: removeDayOccasionTags(s.occasion_tags) }))
-                  }
-                }}
-              />
-              specific day
-            </label>
           </div>
         </div>
-        {showSpecificDays && (
+      </div>
+
+      {/* Days and automatic planning, stored as rules the dish owns */}
+      <div className="space-y-2">
+        <Label className="text-xs font-semibold">Days</Label>
+        <Select
+          value={form.day_mode}
+          onValueChange={value => setForm(s => ({ ...s, day_mode: value as DayMode }))}
+        >
+          <SelectTrigger className="w-full" aria-label="Days">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {DAY_MODES.map(mode => (
+              <SelectItem key={mode.value} value={mode.value}>{mode.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {form.day_mode === 'specific' && (
           <div className="space-y-1">
             <span className="text-xs text-muted-foreground">Specific days</span>
             <div className="flex flex-wrap gap-3">
-              {DAY_TAGS.map(tag => (
-                <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
+              {DAYS.map(day => (
+                <label key={day} className="flex items-center gap-1.5 text-xs cursor-pointer">
                   <Checkbox
-                    checked={form.occasion_tags.includes(tag)}
+                    checked={form.days.includes(day)}
                     onCheckedChange={() =>
-                      setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
+                      setForm(s => ({ ...s, days: toggleArrayValue(s.days, day) }))
                     }
                   />
-                  {tag}
+                  {day}
                 </label>
               ))}
             </div>
           </div>
         )}
+        <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+          <Checkbox
+            checked={form.never_auto}
+            onCheckedChange={checked => setForm(s => ({ ...s, never_auto: checked === true }))}
+          />
+          Never plan automatically
+        </label>
       </div>
 
       {/* Action buttons */}

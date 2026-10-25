@@ -4,9 +4,16 @@
 // are dropped with a reason. The old schema is copied here so the converter outlives the old code.
 import { z } from 'zod';
 import { DAYS, MEALS, all, is, type Matcher, type Role } from '@/planner';
-import { DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS } from '@/types/component';
+import { DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS, type OccasionTag } from '@/types/component';
+import { LEGACY_CALENDAR_TAGS } from './defaults';
 import { missingReferences, type KnownIds } from './record';
 import { RuleSpecSchema, TEMPLATES, type RuleSpec, type RuleSpecInput, type Scope } from './templates';
+
+// Old rules could select dishes by a calendar occasion tag (`weekday`, `monday` …); which days a dish
+// suits is now a rule the dish owns, so there is no tag left to select by.
+const LEGACY_OCCASION_TAGS = [
+  ...OCCASION_TAGS, 'everyday', 'weekday', 'weekend', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+] as const;
 
 const LegacyTargetSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('component_type'), component_type: z.enum(['base', 'curry', 'subzi']) }),
@@ -16,7 +23,7 @@ const LegacyTargetSchema = z.discriminatedUnion('mode', [
       dietary_tag: z.enum(DIETARY_TAGS).optional(),
       protein_tag: z.enum(PROTEIN_TAGS).optional(),
       regional_tag: z.enum(REGIONAL_TAGS).optional(),
-      occasion_tag: z.enum(OCCASION_TAGS).optional(),
+      occasion_tag: z.enum(LEGACY_OCCASION_TAGS).optional(),
     }),
   }),
   z.object({ mode: z.literal('component'), component_id: z.number() }),
@@ -85,7 +92,10 @@ function targetMatcher(t: LegacyTarget): Matcher | string {
       if (f.dietary_tag) parts.push(is('dietary_tags', f.dietary_tag));
       if (f.protein_tag) parts.push(is('protein_tag', f.protein_tag));
       if (f.regional_tag) parts.push(is('regional_tags', f.regional_tag));
-      if (f.occasion_tag) parts.push(is('occasion_tags', f.occasion_tag));
+      if (f.occasion_tag && LEGACY_CALENDAR_TAGS.includes(f.occasion_tag)) {
+        return 'it selects dishes by the days they suit, which are now set on each dish';
+      }
+      if (f.occasion_tag) parts.push(is('occasion_tags', f.occasion_tag as OccasionTag));
       if (parts.length === 0) return 'its tag filter is empty, so it would match every component';
       return parts.length === 1 ? parts[0] : all(...parts);
     }

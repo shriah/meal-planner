@@ -5,6 +5,11 @@ export {
   type ConstraintBody, type Refs,
 } from './templates';
 export { describeMatcher, describeScope, type Names } from './describe';
+export { defaultRules, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
+export {
+  pairingRule, pairingCategories, curryClashRule, clashCurryCategories, dayRule, ruleDays, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
+  type OwnedRule, type OwnedTemplate,
+} from './owned';
 export { compileRules, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export {
   convertLegacyRule, LegacyCompiledRuleSchema,

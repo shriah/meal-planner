@@ -1,5 +1,5 @@
 // High-level entry: library + constraints -> best plan found, its score and explanations.
-import { builtinConstraints, type BuiltinOptions } from './builtins';
+import { builtinConstraints } from './builtins';
 import { ConstraintSchema, type Constraint } from './constraints';
 import { compileModel, type CompiledModel, type Justification, type Score } from './scorer';
 import { solve, type SolveOptions, type SolveResult } from './solver';
@@ -48,14 +48,13 @@ export class InvalidConstraintError extends Error {
 
 export interface ModelInput {
   library: readonly ComponentLike[];
-  /** Constraints compiled from user rules. Built-ins are added automatically. */
+  /** Constraints compiled from stored rules. The meal-structure built-ins are added automatically. */
   constraints?: readonly Constraint[];
-  builtins?: BuiltinOptions;
 }
 
 /** Validate and compile. Throws InvalidConstraintError for malformed or duplicate constraints. */
 export function buildModel(input: ModelInput): CompiledModel {
-  const constraints = [...builtinConstraints(input.library, input.builtins), ...(input.constraints ?? [])];
+  const constraints = [...builtinConstraints(), ...(input.constraints ?? [])];
   const seen = new Set<string>();
   for (const c of constraints) {
     const parsed = ConstraintSchema.safeParse(c);

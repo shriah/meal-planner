@@ -11,7 +11,7 @@ const fixtures: ComponentRecord[] = [
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['south-indian', 'pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01T00:00:00Z',
     base_type: 'rice-based',
   },
@@ -22,7 +22,7 @@ const fixtures: ComponentRecord[] = [
     dietary_tags: ['veg'],
     protein_tag: 'dal',
     regional_tags: ['north-indian', 'pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
     created_at: '2026-01-01T00:00:00Z',
   },
   {
@@ -32,7 +32,7 @@ const fixtures: ComponentRecord[] = [
     dietary_tags: ['veg'],
     protein_tag: 'dal',
     regional_tags: ['north-indian'],
-    occasion_tags: ['weekend', 'festive'],
+    occasion_tags: ['festive'],
     created_at: '2026-01-01T00:00:00Z',
   },
   {
@@ -42,7 +42,7 @@ const fixtures: ComponentRecord[] = [
     dietary_tags: ['non-veg'],
     protein_tag: 'chicken',
     regional_tags: ['coastal-konkan', 'pan-indian'],
-    occasion_tags: ['everyday', 'weekend'],
+    occasion_tags: [],
     created_at: '2026-01-01T00:00:00Z',
   },
   {
@@ -52,7 +52,7 @@ const fixtures: ComponentRecord[] = [
     dietary_tags: ['veg', 'jain'],
     protein_tag: 'none',
     regional_tags: ['north-indian'],
-    occasion_tags: ['everyday', 'fasting'],
+    occasion_tags: ['fasting'],
     created_at: '2026-01-01T00:00:00Z',
   },
 ]

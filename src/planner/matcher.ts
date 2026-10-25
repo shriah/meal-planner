@@ -2,12 +2,12 @@
 // Serialisable, Zod-validated, compiled to plain closures (no eval).
 import { z } from 'zod';
 import {
-  COMPONENT_TYPES, DIETARY_TAGS, FREQUENCIES, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
-  type ComponentType, type DietaryTag, type Frequency, type OccasionTag, type ProteinTag, type RegionalTag,
+  COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, FREQUENCIES, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
+  type ComponentType, type CurryCategory, type DietaryTag, type Frequency, type OccasionTag, type ProteinTag, type RegionalTag,
 } from '@/types/component';
 import { DAYS, MEALS, ROLES, type Assignment, type Day, type Meal, type Role } from './types';
 
-export type FieldKind = 'enum' | 'id' | 'set' | 'idset' | 'bool';
+export type FieldKind = 'enum' | 'id' | 'set';
 
 /** Value type of every field (element type for set fields). */
 export interface FieldValues {
@@ -18,9 +18,7 @@ export interface FieldValues {
   id: number;
   base_category_id: number;
   extra_category_id: number;
-  compatible_base_category_ids: number;
-  /** True when the component declares a compatible-base list (curries). */
-  compat_restricted: boolean;
+  curry_category: CurryCategory;
   dietary_tags: DietaryTag;
   protein_tag: ProteinTag;
   regional_tags: RegionalTag;
@@ -45,8 +43,7 @@ export const FIELDS = {
   id: { kind: 'id', label: 'Component', read: (a) => a.c.id },
   base_category_id: { kind: 'id', label: 'Base category', read: (a) => a.c.base_category_id ?? undefined },
   extra_category_id: { kind: 'id', label: 'Extra category', read: (a) => a.c.extra_category_id ?? undefined },
-  compatible_base_category_ids: { kind: 'idset', label: 'Compatible base categories', read: (a) => a.c.compatible_base_category_ids },
-  compat_restricted: { kind: 'bool', label: 'Has compatibility list', read: (a) => a.c.compatible_base_category_ids !== undefined },
+  curry_category: { kind: 'enum', label: 'Curry type', options: CURRY_CATEGORIES, read: (a) => a.c.curry_category },
   dietary_tags: { kind: 'set', label: 'Dietary', options: DIETARY_TAGS, read: (a) => a.c.dietary_tags },
   protein_tag: { kind: 'enum', label: 'Protein', options: PROTEIN_TAGS, read: (a) => a.c.protein_tag },
   regional_tags: { kind: 'set', label: 'Region', options: REGIONAL_TAGS, read: (a) => a.c.regional_tags },
@@ -58,13 +55,11 @@ export const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[];
 type KindOf<F extends FieldKey> = (typeof FIELDS)[F]['kind'];
 
 type TypedLeafFor<F extends FieldKey> =
-  KindOf<F> extends 'set' | 'idset'
+  KindOf<F> extends 'set'
     ? | { field: F; op: 'has'; value: FieldValues[F] }
       | { field: F; op: 'hasAny' | 'hasAll'; value: FieldValues[F][] }
-    : KindOf<F> extends 'bool'
-      ? { field: F; op: 'eq'; value: boolean }
-      : | { field: F; op: 'eq' | 'neq'; value: FieldValues[F] }
-        | { field: F; op: 'in'; value: FieldValues[F][] };
+    : | { field: F; op: 'eq' | 'neq'; value: FieldValues[F] }
+      | { field: F; op: 'in'; value: FieldValues[F][] };
 
 export type Leaf = { [F in FieldKey]: TypedLeafFor<F> }[FieldKey];
 export type Matcher = Leaf | { all: Matcher[] } | { any: Matcher[] } | { not: Matcher };
@@ -72,16 +67,13 @@ export type Matcher = Leaf | { all: Matcher[] } | { any: Matcher[] } | { not: Ma
 export const OPS_BY_KIND: Record<FieldKind, readonly Leaf['op'][]> = {
   enum: ['eq', 'neq', 'in'],
   id: ['eq', 'neq', 'in'],
-  bool: ['eq'],
   set: ['has', 'hasAny', 'hasAll'],
-  idset: ['has', 'hasAny', 'hasAll'],
 };
 const MANY_OPS: readonly string[] = ['in', 'hasAny', 'hasAll'];
 
 function valueSchema(key: FieldKey): z.ZodType<unknown> {
   const f: FieldDef = FIELDS[key];
-  if (f.kind === 'id' || f.kind === 'idset') return z.number().int();
-  if (f.kind === 'bool') return z.boolean();
+  if (f.kind === 'id') return z.number().int();
   return z.enum(f.options as [string, ...string[]]);
 }
 const VALUE_SCHEMAS = Object.fromEntries(FIELD_KEYS.map((k) => [k, valueSchema(k)])) as Record<FieldKey, z.ZodType<unknown>>;
@@ -122,10 +114,7 @@ export const not = (m: Matcher): Matcher => ({ not: m });
 /** Matches every assignment (`all` of nothing). */
 export const TRUE: Matcher = { all: [] };
 
-const isSetKind = (field: FieldKey) => {
-  const k = FIELDS[field].kind;
-  return k === 'set' || k === 'idset';
-};
+const isSetKind = (field: FieldKey) => FIELDS[field].kind === 'set';
 /** `is('role', 'curry')`, `is('dietary_tags', 'non-veg')`: eq for scalars, has for sets. */
 export const is = <F extends FieldKey>(field: F, value: FieldValues[F]): Matcher =>
   ({ field, op: isSetKind(field) ? 'has' : 'eq', value }) as unknown as Leaf;

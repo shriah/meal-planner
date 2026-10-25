@@ -1,6 +1,7 @@
 import type {
   ComponentRecord,
   BaseType,
+  CurryCategory,
   ExtraCategory,
   DietaryTag,
   ProteinTag,
@@ -11,6 +12,8 @@ import {
   BUILT_IN_BASE_CATEGORY_NAMES,
   BUILT_IN_EXTRA_CATEGORY_NAMES,
 } from '@/types/category';
+import type { Day } from '@/planner';
+import { LEGACY_CALENDAR_TAGS, legacyOccasionDays } from '@/rules';
 
 export type SeedCategoryLookup = {
   base: Record<BaseType, number>;
@@ -58,6 +61,22 @@ export function resolveSeededCurryCompatibilityIds(
   return curatedBaseTypes.map((baseType) => categoryLookup.base[baseType]);
 }
 
+// ─── Occasion days ────────────────────────────────────────────────────────────
+
+// Seed dishes are written with calendar tags (`everyday`, `weekday`, `weekend`); the app keeps only
+// the descriptive tags and turns the days into an `allowed_days` rule each dish owns.
+type SeedOccasionTag = OccasionTag | 'everyday' | 'weekday' | 'weekend';
+const SEED_DAYS = new Map<string, Day[]>();
+
+function seedOccasionTags(name: string, tags: SeedOccasionTag[]): OccasionTag[] {
+  const days = legacyOccasionDays(tags);
+  if (days) SEED_DAYS.set(name, days);
+  return tags.filter((t): t is OccasionTag => !LEGACY_CALENDAR_TAGS.includes(t));
+}
+
+/** The days a seeded dish may be planned on, or undefined for any day. */
+export const seededDays = (name: string): Day[] | undefined => SEED_DAYS.get(name);
+
 // ─── Factory helpers ──────────────────────────────────────────────────────────
 
 const CREATED_AT = '2026-03-20T00:00:00.000Z';
@@ -69,7 +88,7 @@ function makeBase(
     dietary_tags: DietaryTag[];
     protein_tag?: ProteinTag;
     regional_tags: RegionalTag[];
-    occasion_tags: OccasionTag[];
+    occasion_tags: SeedOccasionTag[];
   },
 ): Omit<ComponentRecord, 'id'> {
   return {
@@ -79,7 +98,7 @@ function makeBase(
     dietary_tags: tags.dietary_tags,
     protein_tag: tags.protein_tag,
     regional_tags: tags.regional_tags,
-    occasion_tags: tags.occasion_tags,
+    occasion_tags: seedOccasionTags(name, tags.occasion_tags),
     created_at: CREATED_AT,
   };
 }
@@ -90,8 +109,8 @@ function makeCurry(
     dietary_tags: DietaryTag[];
     protein_tag?: ProteinTag;
     regional_tags: RegionalTag[];
-    occasion_tags: OccasionTag[];
-    curry_category?: string;
+    occasion_tags: SeedOccasionTag[];
+    curry_category?: CurryCategory;
   },
 ): Omit<ComponentRecord, 'id'> {
   return {
@@ -101,7 +120,7 @@ function makeCurry(
     dietary_tags: tags.dietary_tags,
     protein_tag: tags.protein_tag,
     regional_tags: tags.regional_tags,
-    occasion_tags: tags.occasion_tags,
+    occasion_tags: seedOccasionTags(name, tags.occasion_tags),
     created_at: CREATED_AT,
   };
 }
@@ -112,7 +131,7 @@ function makeSubzi(
     dietary_tags: DietaryTag[];
     protein_tag?: ProteinTag;
     regional_tags: RegionalTag[];
-    occasion_tags: OccasionTag[];
+    occasion_tags: SeedOccasionTag[];
   },
 ): Omit<ComponentRecord, 'id'> {
   return {
@@ -121,7 +140,7 @@ function makeSubzi(
     dietary_tags: tags.dietary_tags,
     protein_tag: tags.protein_tag,
     regional_tags: tags.regional_tags,
-    occasion_tags: tags.occasion_tags,
+    occasion_tags: seedOccasionTags(name, tags.occasion_tags),
     created_at: CREATED_AT,
   };
 }
@@ -133,7 +152,7 @@ function makeExtra(
     dietary_tags: DietaryTag[];
     protein_tag?: ProteinTag;
     regional_tags: RegionalTag[];
-    occasion_tags: OccasionTag[];
+    occasion_tags: SeedOccasionTag[];
   },
 ): Omit<ComponentRecord, 'id'> {
   return {
@@ -143,7 +162,7 @@ function makeExtra(
     dietary_tags: tags.dietary_tags,
     protein_tag: tags.protein_tag,
     regional_tags: tags.regional_tags,
-    occasion_tags: tags.occasion_tags,
+    occasion_tags: seedOccasionTags(name, tags.occasion_tags),
     created_at: CREATED_AT,
   };
 }
@@ -166,16 +185,6 @@ function applySeedCategoryIds(
     };
   }
 
-  if (component.componentType === 'curry') {
-    return {
-      ...component,
-      compatible_base_category_ids: resolveSeededCurryCompatibilityIds(
-        component.name,
-        categoryLookup,
-      ),
-    };
-  }
-
   return component;
 }
 
@@ -186,7 +195,7 @@ const plainRice = makeBase('Plain Rice', 'rice-based', {
   dietary_tags: ['veg', 'vegan', 'jain'],
   protein_tag: 'none',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const basmatiRice = makeBase('Basmati Rice', 'rice-based', {
@@ -200,21 +209,21 @@ const brownRice = makeBase('Brown Rice', 'rice-based', {
   dietary_tags: ['veg', 'vegan', 'jain'],
   protein_tag: 'none',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const jeeraRice = makeBase('Jeera Rice', 'rice-based', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const lemonRice = makeBase('Lemon Rice', 'rice-based', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const tamarindRice = makeBase('Tamarind Rice', 'rice-based', {
@@ -228,14 +237,14 @@ const curdRice = makeBase('Curd Rice', 'rice-based', {
   dietary_tags: ['veg'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const tomatoRice = makeBase('Tomato Rice', 'rice-based', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const coconutRice = makeBase('Coconut Rice', 'rice-based', {
@@ -257,14 +266,14 @@ const chapati = makeBase('Chapati', 'bread-based', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const roti = makeBase('Roti', 'bread-based', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const paratha = makeBase('Paratha', 'bread-based', {
@@ -307,14 +316,14 @@ const idli = makeBase('Idli', 'other', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const dosa = makeBase('Dosa', 'other', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const masalaDosa = makeBase('Masala Dosa', 'other', {
@@ -335,14 +344,14 @@ const uttapam = makeBase('Uttapam', 'other', {
   dietary_tags: ['veg'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const upma = makeBase('Upma', 'other', {
   dietary_tags: ['veg'],
   protein_tag: 'none',
   regional_tags: ['south-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const pongal = makeBase('Pongal', 'other', {
@@ -366,7 +375,7 @@ const sambar = makeCurry('Sambar', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'dal',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'lentil',
 });
 
@@ -374,7 +383,7 @@ const rasam = makeCurry('Rasam', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'soup',
 });
 
@@ -382,7 +391,7 @@ const dalTadka = makeCurry('Dal Tadka', {
   dietary_tags: ['veg'],
   protein_tag: 'dal',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'lentil',
 });
 
@@ -486,7 +495,7 @@ const eggCurry = makeCurry('Egg Curry', {
   dietary_tags: ['eggetarian'],
   protein_tag: 'egg',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'egg',
 });
 
@@ -494,7 +503,7 @@ const mixedVegCurry = makeCurry('Mixed Veg Curry', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'vegetable',
 });
 
@@ -502,7 +511,7 @@ const alooMatar = makeCurry('Aloo Matar', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'vegetable',
 });
 
@@ -550,7 +559,7 @@ const kootu = makeCurry('Kootu', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'dal',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'lentil',
 });
 
@@ -558,7 +567,7 @@ const kadhi = makeCurry('Kadhi', {
   dietary_tags: ['veg'],
   protein_tag: 'none',
   regional_tags: ['north-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
   curry_category: 'dairy',
 });
 
@@ -568,35 +577,35 @@ const alooGobi = makeSubzi('Aloo Gobi', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const bhindiMasala = makeSubzi('Bhindi Masala', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const beansThoran = makeSubzi('Beans Thoran', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const cabbageThoran = makeSubzi('Cabbage Thoran', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const alooJeera = makeSubzi('Aloo Jeera', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const bainganBharta = makeSubzi('Baingan Bharta', {
@@ -610,14 +619,14 @@ const palakDry = makeSubzi('Palak (dry)', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['north-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const mixedVegDry = makeSubzi('Mixed Veg (dry)', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const gobiManchurian = makeSubzi('Gobi Manchurian (dry)', {
@@ -638,28 +647,28 @@ const alooFry = makeSubzi('Aloo Fry', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian', 'pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const vendakkaiPoriyal = makeSubzi('Vendakkai Poriyal (Okra)', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const beetrootPoriyal = makeSubzi('Beetroot Poriyal', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const carrotBeansPoriyal = makeSubzi('Carrot Beans Poriyal', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const kootuCurry = makeSubzi('Kootu Curry', {
@@ -673,35 +682,35 @@ const cauliflowerPepperFry = makeSubzi('Cauliflower Pepper Fry', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const potatoPodimas = makeSubzi('Potato Podimas', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const keeraiMasiyal = makeSubzi('Keerai Masiyal', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const mixedGreensThoran = makeSubzi('Thoran (mixed greens)', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['south-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 const capsicumStirFry = makeSubzi('Capsicum Stir Fry', {
   dietary_tags: ['veg', 'vegan'],
   protein_tag: 'none',
   regional_tags: ['pan-indian'],
-  occasion_tags: ['everyday'],
+  occasion_tags: [],
 });
 
 // ─── Extras (~17) ─────────────────────────────────────────────────────────────
@@ -713,7 +722,7 @@ const sambarExtra = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'dal',
     regional_tags: ['south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -724,7 +733,7 @@ const rasamExtra = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -735,7 +744,7 @@ const papad = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -746,7 +755,7 @@ const fryums = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -757,7 +766,7 @@ const mangoPickle = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -768,7 +777,7 @@ const limePickle = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -779,7 +788,7 @@ const mixedPickle = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -790,7 +799,7 @@ const coconutChutney = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -801,7 +810,7 @@ const tomatoChutney = makeExtra(
     dietary_tags: ['veg', 'vegan'],
     protein_tag: 'none',
     regional_tags: ['south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -812,7 +821,7 @@ const curdYogurt = makeExtra(
     dietary_tags: ['veg'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -823,7 +832,7 @@ const buttermilk = makeExtra(
     dietary_tags: ['veg'],
     protein_tag: 'none',
     regional_tags: ['pan-indian', 'south-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 
@@ -834,7 +843,7 @@ const ghee = makeExtra(
     dietary_tags: ['veg'],
     protein_tag: 'none',
     regional_tags: ['pan-indian'],
-    occasion_tags: ['everyday'],
+    occasion_tags: [],
   },
 );
 

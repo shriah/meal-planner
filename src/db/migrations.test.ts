@@ -54,7 +54,7 @@ describe('Phase 14 categories table migration', () => {
       componentType: 'curry',
       dietary_tags: ['veg'],
       regional_tags: ['south-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -75,7 +75,7 @@ describe('Phase 14 categories table migration', () => {
       componentType: 'curry',
       dietary_tags: ['veg'],
       regional_tags: ['pan-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -98,7 +98,7 @@ describe('Phase 14 categories table migration', () => {
       compatible_base_category_ids: [],
       dietary_tags: ['veg'],
       regional_tags: ['south-indian'],
-      occasion_tags: ['everyday'],
+      occasion_tags: [],
       created_at: '',
     });
 
@@ -118,7 +118,7 @@ describe('Phase 14 categories table migration', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['south-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
       {
@@ -126,7 +126,7 @@ describe('Phase 14 categories table migration', () => {
         componentType: 'curry',
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
       {
@@ -135,7 +135,7 @@ describe('Phase 14 categories table migration', () => {
         compatible_base_category_ids: [],
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
-        occasion_tags: ['everyday'],
+        occasion_tags: [],
         created_at: '',
       },
     );

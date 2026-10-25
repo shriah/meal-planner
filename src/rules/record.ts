@@ -9,6 +9,8 @@ export interface RuleRecord {
   enabled: boolean;
   spec: RuleSpecInput;
   created_at: string;
+  /** Component whose form manages this rule (a curry's base pairing). Such rules are edited there. */
+  owner_component_id?: number;
 }
 
 /** Ids that currently exist, so rules pointing at deleted components or categories are caught. */

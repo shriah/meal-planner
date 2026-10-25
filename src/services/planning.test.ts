@@ -3,7 +3,7 @@ import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
 import { addRule } from '@/services/food-db';
-import { planFromData } from './plan-generation';
+import { planFromData, slotConflicts } from './plan-generation';
 import { generatePlan, loadPlanningInput } from './planning';
 
 beforeEach(async () => {
@@ -53,13 +53,35 @@ describe('planFromData', () => {
     ]);
   });
 
-  it('applies the per-meal extras limit from preferences', async () => {
+  it('applies the seeded per-meal extras limit, an ordinary rule the user can change', async () => {
     await runSeed();
+    const lunchLimit = (await db.rules.toArray()).find((r) => r.name === 'Extras at lunch: at most 3')!;
+    await db.rules.update(lunchLimit.id, {
+      name: 'Extras at lunch: at most 1',
+      spec: { template: 'limit', params: { match: is('componentType', 'extra'), per: 'meal', max: 1, scope: { meals: ['lunch'] }, strength: 'must' } },
+    });
     const input = await loadPlanningInput();
     const extras = input.library.filter((c) => c.componentType === 'extra').map((c) => c.id);
-    const outcome = planFromData({ ...input, extraLimits: { breakfast: 1, lunch: 1, dinner: 1 } }, {
-      seed: 4, pins: { 'monday-lunch': { extra_ids: extras.slice(0, 2) } },
-    });
-    expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', message: expect.stringContaining('At most 1 extras at lunch') }));
+    const outcome = planFromData(input, { seed: 4, pins: { 'monday-lunch': { extra_ids: extras.slice(0, 2) } } });
+    expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', message: expect.stringContaining('Extras at lunch: at most 1') }));
+  });
+});
+
+describe('slotConflicts', () => {
+  it('reports the rules a choice would break in one slot, leaving choices that fit out', async () => {
+    await runSeed();
+    const input = await loadPlanningInput();
+    const { plan } = planFromData(input, { seed: 1 });
+    const byName = (name: string) => input.library.find((c) => c.name === name)!.id;
+    const riceId = input.categories.find((c) => c.name === 'rice-based')!.id;
+    const riceLunch = plan.slots.find((s) => s.meal_slot === 'lunch'
+      && input.library.find((c) => c.id === s.base_id)?.base_category_id === riceId)!;
+
+    const conflicts = slotConflicts(input, plan, riceLunch.day, 'lunch', 'curry', [byName('Sambar'), byName('Chole'), byName('Rasam')]);
+
+    expect([...conflicts.keys()]).toEqual([byName('Chole'), byName('Rasam')]);
+    expect(conflicts.get(byName('Chole'))).toEqual([
+      expect.objectContaining({ level: 'hard', day: riceLunch.day, meal: 'lunch', message: expect.stringContaining('Chole: base pairing') }),
+    ]);
   });
 });

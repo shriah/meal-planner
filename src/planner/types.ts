@@ -2,6 +2,7 @@
 import {
   COMPONENT_TYPES,
   type ComponentType,
+  type CurryCategory,
   type DietaryTag,
   type Frequency,
   type OccasionTag,
@@ -26,7 +27,7 @@ export interface ComponentLike {
   componentType: ComponentType;
   base_category_id?: number | null;
   extra_category_id?: number | null;
-  compatible_base_category_ids?: readonly number[];
+  curry_category?: CurryCategory;
   dietary_tags: readonly DietaryTag[];
   protein_tag?: ProteinTag;
   regional_tags: readonly RegionalTag[];

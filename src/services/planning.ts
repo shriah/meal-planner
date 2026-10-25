@@ -4,13 +4,12 @@ import type { RuleRecord } from '@/rules';
 import { planFromData, type PlanningInput, type PlanningOptions, type PlanningOutcome, type PlanProblem } from './plan-generation';
 
 export async function loadPlanningInput(): Promise<PlanningInput> {
-  const [library, categories, rules, prefs] = await Promise.all([
+  const [library, categories, rules] = await Promise.all([
     db.components.toArray(),
     db.categories.toArray(),
     db.rules.toArray(),
-    db.preferences.get('prefs'),
   ]);
-  return { library, categories, rules, extraLimits: prefs?.extra_quantity_limits };
+  return { library, categories, rules };
 }
 
 function runInWorker(input: PlanningInput, opts: PlanningOptions): Promise<PlanningOutcome> {

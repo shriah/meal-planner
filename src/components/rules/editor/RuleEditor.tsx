@@ -62,6 +62,14 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     setCheck(null)
   }
 
+  /** A cost is dropped when a rule becomes a must, so it never lingers unseen. */
+  const setStrength = (strength: string) => {
+    const next: Record<string, unknown> = { ...params, strength }
+    if (strength === 'must') delete next.cost
+    setSpec({ ...spec, params: next } as RuleSpecInput)
+    setCheck(null)
+  }
+
   /** Switching type keeps the main condition when both types have one. */
   const changeTemplate = (template: TemplateId) => {
     const next = newSpec(template) as { template: TemplateId; params: Record<string, unknown> }
@@ -165,7 +173,7 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         )
       case 'strength':
         return (
-          <RadioGroup value={String(v ?? 'must')} onValueChange={(x) => setParam(field.key, x)} className="flex gap-4" aria-label={field.label}>
+          <RadioGroup value={String(v ?? 'must')} onValueChange={(x) => setStrength(x)} className="flex gap-4" aria-label={field.label}>
             {[['must', 'Must'], ['prefer', 'Prefer']].map(([value, text]) => (
               <div key={value} className="flex items-center gap-2">
                 <RadioGroupItem value={value} id={`strength-${value}`} />
@@ -174,10 +182,22 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
             ))}
           </RadioGroup>
         )
+      case 'cost':
+        return (
+          <Select value={String(v ?? 10)} onValueChange={(x) => setParam(field.key, x === '10' ? undefined : Number(x))}>
+            <SelectTrigger className="w-24" aria-label={field.label}><SelectValue /></SelectTrigger>
+            <SelectContent>{[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}</SelectContent>
+          </Select>
+        )
       case 'components':
         return (
           <MultiPicker label={field.label} value={(v as number[]) ?? []} onChange={(x) => setParam(field.key, x)}
             options={[...components].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.id, label: `${c.name} (${c.componentType})` }))} />
+        )
+      case 'baseCategories':
+        return (
+          <MultiPicker label={field.label} value={(v as number[]) ?? []} onChange={(x) => setParam(field.key, x)}
+            options={data.baseCategories.map((c) => ({ value: c.id, label: c.name }))} />
         )
       case 'extraCategories':
         return (
@@ -206,14 +226,17 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         <p className="text-xs text-muted-foreground">{TEMPLATES[spec.template].summary}</p>
       </div>
 
-      {TEMPLATE_FORMS[spec.template].fields.map((field) => (
-        <div key={field.key} className="space-y-1.5">
-          <Label>{field.label}{field.optional && <span className="text-muted-foreground font-normal"> (optional)</span>}</Label>
-          {field.help && <p className="text-xs text-muted-foreground">{field.help}</p>}
-          {renderField(field)}
-          {errors[field.key] && <p className="text-xs text-destructive">{errors[field.key]}</p>}
-        </div>
-      ))}
+      {TEMPLATE_FORMS[spec.template].fields
+        // A cost only means something for rules that may give way.
+        .filter((field) => field.kind !== 'cost' || params.strength === 'prefer')
+        .map((field) => (
+          <div key={field.key} className="space-y-1.5">
+            <Label>{field.label}{field.optional && <span className="text-muted-foreground font-normal"> (optional)</span>}</Label>
+            {field.help && <p className="text-xs text-muted-foreground">{field.help}</p>}
+            {renderField(field)}
+            {errors[field.key] && <p className="text-xs text-destructive">{errors[field.key]}</p>}
+          </div>
+        ))}
       {errors.rule && <p className="text-xs text-destructive">{errors.rule}</p>}
 
       <div className="rounded-md bg-muted/50 p-3 text-sm">

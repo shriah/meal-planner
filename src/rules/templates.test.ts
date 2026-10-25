@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { all, is, planWeek, type ComponentLike, type PlanSlotLike } from '@/planner';
+import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
 import { describeSpec, RuleSpecSchema, type RuleSpecInput } from './templates';
 
@@ -9,17 +9,17 @@ const BREAD = 20;
 const LIQUID = 30;
 const SWEET = 40;
 const mk = (id: number, componentType: ComponentLike['componentType'], extra: Partial<ComponentLike> = {}): ComponentLike =>
-  ({ id, name: `#${id}`, componentType, dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: ['everyday'], ...extra });
+  ({ id, name: `#${id}`, componentType, dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: [], ...extra });
 const library: ComponentLike[] = [
   mk(1, 'base', { name: 'Rice', base_category_id: RICE }),
   mk(2, 'base', { name: 'Jeera Rice', base_category_id: RICE }),
   mk(3, 'base', { name: 'Roti', base_category_id: BREAD }),
   mk(4, 'base', { name: 'Paratha', base_category_id: BREAD }),
-  mk(11, 'curry', { name: 'Dal', protein_tag: 'dal' }),
-  mk(12, 'curry', { name: 'Sambar', protein_tag: 'dal', regional_tags: ['south-indian'] }),
+  mk(11, 'curry', { name: 'Dal', protein_tag: 'dal', curry_category: 'lentil' }),
+  mk(12, 'curry', { name: 'Sambar', protein_tag: 'dal', regional_tags: ['south-indian'], curry_category: 'lentil' }),
   mk(13, 'curry', { name: 'Fish Curry', protein_tag: 'fish', dietary_tags: ['non-veg'] }),
   mk(14, 'curry', { name: 'Paneer Masala', protein_tag: 'paneer' }),
-  mk(15, 'curry', { name: 'Chole' }),
+  mk(15, 'curry', { name: 'Chole', curry_category: 'legume' }),
   mk(21, 'subzi', { name: 'Bhindi' }),
   mk(22, 'subzi', { name: 'Aloo Gobi' }),
   mk(23, 'subzi', { name: 'Beans' }),
@@ -109,6 +109,50 @@ describe('rule templates in the planner', () => {
     for (const s of r.slots.filter((x) => x.curry_id === 12)) expect(s.extra_ids).toContain(31);
   });
 
+  it.each(SEEDS)('pairs_with: Sambar only with rice; exclude: Fish Curry never planned (seed %i)', (seed) => {
+    const r = plan([
+      { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } },
+      { template: 'exclude', params: { match: is('id', 13) } },
+    ], seed);
+    expect(hard(r)).toEqual([]);
+    for (const s of r.slots.filter((x) => x.curry_id === 12)) expect([1, 2]).toContain(s.base_id);
+    expect(r.slots.some((s) => s.curry_id === 13)).toBe(false);
+  });
+
+  it('pairs_with: flags a matching dish next to a base outside the list or without a category, and nothing else', () => {
+    const lib = [...library, mk(5, 'base', { name: 'Uncategorised' })];
+    const { constraints } = compileRules([record({ template: 'pairs_with', params: { match: oneOf('id', [12, 21]), baseCategories: [RICE] } })], known);
+    const m = buildModel({ library: lib, constraints });
+    const p = emptyPlan();
+    p[slotIndex('monday', 'lunch')] = { base: 1, curry: 12, subzi: 21, extras: [] }; // rice: fine
+    p[slotIndex('monday', 'dinner')] = { base: 3, curry: 12, subzi: 21, extras: [] }; // bread: curry and subzi
+    p[slotIndex('tuesday', 'lunch')] = { base: 5, curry: 12, extras: [] }; // uncategorised: curry
+    p[slotIndex('tuesday', 'dinner')] = { base: 3, curry: 11, extras: [] }; // not matched: fine
+    const broken = score(m, p, true).justifications.filter((j) => j.ruleId === 1);
+    expect(broken.map((j) => [j.group.day, j.group.meal, j.actual])).toEqual([['monday', 'dinner', 2], ['tuesday', 'lunch', 1]]);
+  });
+
+  it.each(SEEDS)('allowed_days: Chole only on Saturday or Sunday (seed %i)', (seed) => {
+    const r = plan([{ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } }], seed);
+    expect(hard(r)).toEqual([]);
+    for (const s of r.slots.filter((x) => x.curry_id === 15)) expect(['saturday', 'sunday']).toContain(s.day);
+  });
+
+  it.each(SEEDS)('curry_category: no lentil curry at dinner (seed %i)', (seed) => {
+    const r = plan([{ template: 'exclude', params: { match: is('curry_category', 'lentil'), scope: { meals: ['dinner'] } } }], seed);
+    expect(hard(r)).toEqual([]);
+    for (const s of r.slots.filter((x) => x.meal_slot === 'dinner')) expect([11, 12]).not.toContain(s.curry_id);
+  });
+
+  it.each(SEEDS)('avoid_with: Rasam never in a meal with a lentil curry (seed %i)', (seed) => {
+    const r = plan([
+      { template: 'avoid_with', params: { match: is('id', 31), with: all(is('componentType', 'curry'), is('curry_category', 'lentil')) } },
+      { template: 'require', params: { match: is('id', 31), scope: { meals: ['lunch'] } } },
+    ], seed);
+    expect(hard(r)).toEqual([]);
+    for (const s of r.slots.filter((x) => x.extra_ids.includes(31))) expect([11, 12]).not.toContain(s.curry_id);
+  });
+
   it('prefer strength: soft rules give way to hard ones and are reported as soft', () => {
     const r = plan([
       { template: 'exclude', params: { match: is('protein_tag', 'fish') } },
@@ -152,5 +196,10 @@ describe('rule template params', () => {
       .toBe('With Sambar, also include Rasam and an extra from Liquid (preferred)');
     expect(d({ template: 'limit', params: { match: is('dietary_tags', 'non-veg'), per: 'week', max: 2 } }))
       .toBe('Non-veg dishes: at most 2 per week');
+    expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } })).toBe('Sambar only with Rice bases');
+    expect(RuleSpecSchema.safeParse({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [] } }).success).toBe(false);
+    expect(d({ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } })).toBe('Chole only on Saturday or Sunday');
+    expect(d({ template: 'avoid_with', params: { match: is('id', 31), with: all(is('componentType', 'curry'), oneOf('curry_category', ['soup', 'lentil'])) } }))
+      .toBe('Rasam never with soup or lentil curries');
   });
 });

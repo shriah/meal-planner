@@ -38,6 +38,9 @@ export function RuleList() {
   if (!rules) return null
 
   const activeCount = rules.filter((r) => r.enabled).length
+  // Rules owned by a dish (base pairings, curry clashes) are edited from the Library, so they are listed apart.
+  const ownRules = rules.filter((r) => r.owner_component_id === undefined)
+  const pairings = rules.filter((r) => r.owner_component_id !== undefined)
 
   return (
     <main className="px-4 py-8 sm:px-8">
@@ -57,10 +60,20 @@ export function RuleList() {
         </p>
       )}
       <Separator className="mb-4" />
-      {rules.length === 0 ? (
+      {ownRules.length === 0 ? (
         <RuleEmptyState />
       ) : (
-        rules.map((rule) => <RuleRow key={rule.id} rule={rule} names={names} known={known} />)
+        ownRules.map((rule) => <RuleRow key={rule.id} rule={rule} names={names} known={known} />)
+      )}
+      {pairings.length > 0 && (
+        <section className="mt-8">
+          <h2 className="text-lg font-semibold font-heading">Dish pairings</h2>
+          <p className="text-sm text-muted-foreground mb-2">
+            Which bases a curry or subzi goes with, and which curries an extra avoids. Change them from the dish in the Library.
+          </p>
+          <Separator className="mb-2" />
+          {pairings.map((rule) => <RuleRow key={rule.id} rule={rule} names={names} known={known} />)}
+        </section>
       )}
     </main>
   )

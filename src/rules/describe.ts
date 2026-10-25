@@ -16,7 +16,7 @@ const PLURAL: Record<string, string> = { base: 'bases', curry: 'curries', subzi:
 function valueText(field: string, value: unknown, names: Names): string {
   const id = value as number;
   if (field === 'id') return names.component?.(id) ?? `component #${id}`;
-  if (field === 'base_category_id' || field === 'compatible_base_category_ids') return names.baseCategory?.(id) ?? `base category #${id}`;
+  if (field === 'base_category_id') return names.baseCategory?.(id) ?? `base category #${id}`;
   if (field === 'extra_category_id') return names.extraCategory?.(id) ?? `extra category #${id}`;
   return String(value);
 }
@@ -29,6 +29,7 @@ function parts(c: Condition, names: Names): { adjective?: string; qualifier?: st
   switch (c.field) {
     case 'dietary_tags':
     case 'regional_tags':
+    case 'curry_category':
       return c.negate ? { qualifier: `that are not ${v}` } : { adjective: v };
     case 'protein_tag':
       return { qualifier: `${c.negate ? 'without' : 'with'} ${v}` };

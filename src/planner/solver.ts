@@ -151,7 +151,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       const s = plan[pick(free[r])];
       set(s, r, r !== 'base' && rng() < 0.15 ? undefined : pick(pool[r]));
     } else if (move < 0.6) {
-      // Change base and curry together, so compatible pairs stay reachable.
+      // Change base and curry together, so pairings that depend on the base stay reachable.
       const slots = free.base.filter((i) => isFree(i, 'curry'));
       if (!slots.length || !pool.base.length) continue;
       const s = plan[pick(slots)];

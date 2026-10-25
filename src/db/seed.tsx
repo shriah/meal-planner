@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { db, type RuleRecord } from '@/db/client';
 import { is, type Matcher, type Meal } from '@/planner';
+import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 
@@ -55,6 +56,8 @@ export async function runSeed(): Promise<void> {
   const {
     materializePooriSeed,
     materializeSeedComponents,
+    resolveSeededCurryCompatibilityIds,
+    seededDays,
   } = await import('@/db/seed-data');
   const categoryLookup = await ensureSeedCategories();
   const pooriRecord = materializePooriSeed(categoryLookup);
@@ -65,14 +68,10 @@ export async function runSeed(): Promise<void> {
 
   // Insert remaining components (everything except Poori)
   const rest = seededComponents.filter(c => c.name !== 'Poori');
-  await db.components.bulkAdd(rest as ComponentRecord[]);
-
-  await db.preferences.put({
-    id: 'prefs',
-    extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 3 },
-  });
+  const restIds = await db.components.bulkAdd(rest as ComponentRecord[], { allKeys: true });
 
   const now = new Date().toISOString();
+  await db.rules.bulkAdd(defaultRules({ breakfast: 2, lunch: 3, dinner: 3 }).map((r) => ({ ...r, enabled: true, created_at: now })));
 
   // Default rules: which meals each kind of base suits.
   const onlyAt = (name: string, match: Matcher, meals: Meal[]): Omit<RuleRecord, 'id'> => ({
@@ -87,6 +86,20 @@ export async function runSeed(): Promise<void> {
     onlyAt('Bread-based: dinner only', is('base_category_id', categoryLookup.base['bread-based']), ['dinner']),
     onlyAt('Poori: breakfast only', is('id', pooriId), ['breakfast']),
   ]);
+
+  // Curated curry pairings and the days a dish suits, owned by each dish so they are edited from its form.
+  // A curated empty pairing means the curry is never planned automatically.
+  const seeded = [{ id: pooriId, c: pooriRecord }, ...rest.map((c, i) => ({ id: restIds[i], c }))];
+  const owned = seeded.flatMap(({ id, c }) => {
+    const dish = { id, name: c.name };
+    const bases = c.componentType === 'curry' ? resolveSeededCurryCompatibilityIds(c.name, categoryLookup) : undefined;
+    const days = seededDays(c.name);
+    return [
+      ...(bases ? [bases.length ? pairingRule(dish, bases) : exclusionRule(dish)] : []),
+      ...(days ? [dayRule(dish, days)] : []),
+    ];
+  });
+  await db.rules.bulkAdd(owned.map((r) => ({ ...r, enabled: true, created_at: now })));
 }
 
 export function SeedBootstrap({ children }: { children: React.ReactNode }) {
