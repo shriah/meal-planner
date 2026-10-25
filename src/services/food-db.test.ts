@@ -4,6 +4,7 @@ import {
   clashCurryCategories, compileRules, curryClashRule, dayRule, exclusionRule, pairingCategories, pairingRule, ruleDays,
 } from '@/rules';
 import { db } from '@/db/client';
+import { runSeed } from '@/db/seed';
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels';
 import {
   addCategory,
@@ -15,11 +16,14 @@ import {
   addComponent,
   addRule,
   deleteComponent,
+  deleteRule,
   getComponentsByType,
   getOwnedRule,
   getRules,
+  restoreDefaultRules,
   saveComponent,
   updateComponent,
+  updateRule,
 } from '@/services/food-db';
 
 beforeEach(async () => {
@@ -260,5 +264,23 @@ describe('Phase 14 category services', () => {
 
     await deleteComponent(extraId);
     expect(await getOwnedRule(extraId, 'avoid_with')).toBeUndefined();
+  });
+
+  it('restores deleted default rules without touching ones that are still there, edited or not', async () => {
+    await runSeed();
+    const byKey = async (key: string) => (await getRules()).find((r) => r.default_key === key);
+    await deleteRule((await byKey('variety'))!.id);
+    await deleteRule((await byKey('spacing'))!.id);
+    const wantCurry = (await byKey('want-curry'))!;
+    await updateRule(wantCurry.id, { name: 'My curry wish', enabled: false });
+    const before = (await getRules()).length;
+
+    expect(await restoreDefaultRules()).toBe(2);
+    expect(await getRules()).toHaveLength(before + 2);
+    expect((await byKey('variety'))?.name).toBe('Vary dishes across the week');
+    expect(await byKey('want-curry')).toMatchObject({ name: 'My curry wish', enabled: false });
+
+    expect(await restoreDefaultRules()).toBe(0);
+    expect(await getRules()).toHaveLength(before + 2);
   });
 });

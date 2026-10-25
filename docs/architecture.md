@@ -78,13 +78,16 @@ it references, and form metadata the editor is generated from. Count-based templ
 Every library starts with **default rules** (`src/rules/defaults.ts`): extras per meal, a curry and a
 subzi in every meal, variety across the week, no dish on the same or next day, extras only when a
 rule asks, and frequent over rare dishes. They are ordinary rules that can be edited or switched off;
-their costs (5, 2, 3, 1) sit below a user's own `prefer` rules (10 by default).
+their costs (5, 2, 3, 1) sit below a user's own `prefer` rules (10 by default). Each carries a stable
+`default_key`, so it stays recognisable after a rename and "Restore defaults" can add back any that
+were deleted without touching the ones that remain. Soft strength is shown in words (Slightly,
+Moderately, Strongly); the stored numbers are unchanged.
 
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
-component's form and listed under "Dish pairings" on the Rules page. A curry's or subzi's compatible
+component's form and listed under "Dish settings" on the Rules page. A curry's or subzi's compatible
 base categories are an `only with these bases` (`pairs_with`) rule; an extra's "never with these
 curry types" is a `never together` (`avoid_with`) rule over `curry_category`; a dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
@@ -94,6 +97,12 @@ instead of being skipped; a pairing left with no category is removed. With nothi
 goes with any base, any curry and any day (it owns no rule). The meal picker marks a choice as an override
 when scoring the current plan with it adds a hard violation, so every rule counts there, not only
 pairings.
+
+The Rules page groups rules as "Your rules", "Planner defaults" and "Dish settings" (the last two
+collapsed), with a search box. A plan problem carries a plain `reason` (the rule's description, or a
+built-in's label) and a `message` that adds where; links of the form `/rules#rule-<id>` and
+`/library#dish-<id>` open and scroll to a rule or dish. A rule being edited is checked against the
+library automatically once editing pauses.
 
 ## Planner (`src/planner`)
 

@@ -221,4 +221,20 @@ describe('ComponentRow curry compatibility summary', () => {
     });
     expect(screen.queryByText(/not auto-selected/i)).not.toBeInTheDocument();
   });
+
+  it.each([
+    ['frequent', 'Frequent'],
+    ['rare', 'Rare'],
+  ] as const)('shows a %s dish with a "%s" badge, and no badge for normal', async (frequency, label) => {
+    const base = {
+      id: 1, name: 'Dal', componentType: 'curry' as const, dietary_tags: ['veg' as const], regional_tags: [],
+      occasion_tags: [], created_at: new Date().toISOString(),
+    };
+    const handlers = { expanded: false, confirmingDelete: false, onExpand: () => {}, onCollapse: () => {}, onRequestDelete: () => {}, onCancelDelete: () => {}, onDelete: () => {} };
+    const { rerender } = render(<ComponentRow component={{ ...base, frequency }} {...handlers} />);
+    expect(await screen.findByText(label)).toBeInTheDocument();
+
+    rerender(<ComponentRow component={{ ...base, frequency: 'normal' }} {...handlers} />);
+    await waitFor(() => expect(screen.queryByText(label)).not.toBeInTheDocument());
+  });
 });

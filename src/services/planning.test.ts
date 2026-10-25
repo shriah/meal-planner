@@ -46,7 +46,9 @@ describe('planFromData', () => {
     const outcome = planFromData(await loadPlanningInput(), { seed: 3, pins: { 'monday-breakfast': { base_id: idli.id } } });
 
     expect(outcome.problems.filter((p) => p.level === 'hard')).toEqual([
-      expect.objectContaining({ day: 'monday', meal: 'breakfast', message: 'No Idli: on Monday breakfast has 1, must be at most 0' }),
+      expect.objectContaining({
+        day: 'monday', meal: 'breakfast', reason: 'Never include Idli', message: 'Never include Idli — Monday breakfast',
+      }),
     ]);
     expect(outcome.ruleIssues).toEqual([
       expect.objectContaining({ name: 'Ghost rule', message: 'refers to component #4242, which no longer exists' }),
@@ -63,7 +65,7 @@ describe('planFromData', () => {
     const input = await loadPlanningInput();
     const extras = input.library.filter((c) => c.componentType === 'extra').map((c) => c.id);
     const outcome = planFromData(input, { seed: 4, pins: { 'monday-lunch': { extra_ids: extras.slice(0, 2) } } });
-    expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', message: expect.stringContaining('Extras at lunch: at most 1') }));
+    expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', reason: 'Extras: at most 1 per meal at lunch', message: 'Extras: at most 1 per meal at lunch — Monday lunch' }));
   });
 });
 
@@ -81,7 +83,22 @@ describe('slotConflicts', () => {
 
     expect([...conflicts.keys()]).toEqual([byName('Chole'), byName('Rasam')]);
     expect(conflicts.get(byName('Chole'))).toEqual([
-      expect.objectContaining({ level: 'hard', day: riceLunch.day, meal: 'lunch', message: expect.stringContaining('Chole: base pairing') }),
+      expect.objectContaining({ level: 'hard', day: riceLunch.day, meal: 'lunch', reason: expect.stringMatching(/^Chole only with .*bases$/) }),
     ]);
+  });
+
+  it('explains problems in words: no counting jargon, categories by name, built-ins by label', async () => {
+    await runSeed();
+    const input = await loadPlanningInput();
+    const { plan } = planFromData(input, { seed: 1 });
+    const chole = input.library.find((c) => c.name === 'Chole')!.id;
+    const riceLunch = plan.slots.find((s) => s.meal_slot === 'lunch' && input.library.find((c) => c.id === s.base_id)?.base_category_id === input.categories.find((c) => c.name === 'rice-based')!.id)!;
+    const reasons = slotConflicts(input, plan, riceLunch.day, 'lunch', 'curry', [chole]).get(chole)!.map((p) => p.reason);
+    expect(reasons).toEqual(['Chole only with bread-based bases']);
+
+    const broken = planFromData(input, { seed: 2, pins: { 'monday-lunch': { curry_id: input.library.filter((c) => c.componentType === 'curry')[0].id, subzi_id: input.library.find((c) => c.componentType === 'base')!.id } } });
+    const builtin = broken.problems.find((p) => p.reason === 'Component used in the wrong role');
+    expect(builtin?.message).toContain('has 1, must be at most 0');
+    for (const p of broken.problems.filter((p) => p.ruleId !== undefined)) expect(p.message, p.reason).not.toMatch(/must be|should be|has \d/);
   });
 });

@@ -6,7 +6,7 @@ import { MealPickerSheet } from './MealPickerSheet'
 const mockSwapComponent = vi.fn()
 const mockGetComponentsByType = vi.fn()
 const mockFilterComponents = vi.fn((...args: unknown[]) => args[0])
-const mockSlotConflicts = vi.fn<(...args: unknown[]) => Map<number, { level: string; message: string }[]>>(() => new Map())
+const mockSlotConflicts = vi.fn<(...args: unknown[]) => Map<number, { level: string; reason: string; message: string }[]>>(() => new Map())
 const plan = { slots: [] }
 const planningInput = { library: [], categories: [], rules: [] }
 
@@ -167,14 +167,18 @@ describe('MealPickerSheet', () => {
   })
 
   it('groups choices that fit the rules apart from overrides, showing what each override breaks', () => {
-    mockSlotConflicts.mockImplementation(() => new Map([[1, [{ level: 'hard', message: 'Chicken Curry: base pairing' }]]]))
+    mockSlotConflicts.mockImplementation(() => new Map([[1, [
+      { level: 'hard', reason: 'Chicken Curry only with bread-based bases', message: 'Chicken Curry only with bread-based bases — Monday lunch' },
+    ]]]))
 
     render(<MealPickerSheet {...defaultProps} componentType="curry" />)
 
     expect(screen.getByText('Fits your rules')).toBeTruthy()
     expect(screen.getByText('Breaks a rule')).toBeTruthy()
     expect(screen.getByText('Dal Makhani')).toBeTruthy()
-    expect(screen.getByText('Chicken Curry: base pairing')).toBeTruthy()
+    // The reason is shown without where: the picker is already on that meal.
+    expect(screen.getByText('Chicken Curry only with bread-based bases')).toBeTruthy()
+    expect(screen.queryByText(/Monday lunch/)).toBeNull()
 
     fireEvent.click(screen.getByText('Chicken Curry'))
 
@@ -182,7 +186,7 @@ describe('MealPickerSheet', () => {
   })
 
   it('collapses to one flat list when every choice breaks a rule', () => {
-    mockSlotConflicts.mockImplementation(() => new Map([1, 2, 3].map((id) => [id, [{ level: 'hard', message: 'x' }]])))
+    mockSlotConflicts.mockImplementation(() => new Map([1, 2, 3].map((id) => [id, [{ level: 'hard', reason: 'x', message: 'x' }]])))
 
     render(<MealPickerSheet {...defaultProps} componentType="curry" />)
 

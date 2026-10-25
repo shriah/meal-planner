@@ -2,9 +2,10 @@
 
 import { X } from 'lucide-react'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import type { Scope } from '@/rules'
+import { LEVELS, nearestLevel, type Scope } from '@/rules'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Toggle } from '@/components/ui/toggle'
 
 export interface Option<V extends string | number> {
@@ -101,5 +102,23 @@ export function ScopePicker({ value, onChange }: { value: Scope | undefined; onC
         <ToggleGroup label="Meals" options={MEAL_OPTIONS} value={value?.meals ?? []} onChange={(meals) => set({ meals })} />
       </div>
     </div>
+  )
+}
+
+/** Pick how much a soft rule matters in words. Shows the level nearest the stored number. */
+export function LevelSelect({ label, kind, value, onChange }: {
+  label: string
+  kind: 'cost' | 'weight'
+  value: number
+  onChange: (next: number) => void
+}) {
+  const current = nearestLevel(kind, value)
+  return (
+    <Select value={current.label} onValueChange={(x) => onChange(LEVELS.find((l) => l.label === x)![kind])}>
+      <SelectTrigger className="w-36" aria-label={label}><SelectValue /></SelectTrigger>
+      <SelectContent>
+        {LEVELS.map((l) => <SelectItem key={l.label} value={l.label}>{l.label}</SelectItem>)}
+      </SelectContent>
+    </Select>
   )
 }

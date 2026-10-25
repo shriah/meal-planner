@@ -378,4 +378,41 @@ describe('ComponentForm dynamic category wiring', () => {
       expect(rule && clashCurryCategories(rule)).toEqual(['soup']);
     });
   });
+
+  it('sets how often a dish is planned, and shows it when editing', async () => {
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    expect(screen.getByRole('combobox', { name: 'How often' })).toHaveTextContent('Normal');
+    await userEvent.click(screen.getByRole('combobox', { name: 'How often' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Often' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Dal');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+
+    await waitFor(async () => {
+      const [dal] = await getComponentsByType('curry');
+      expect(dal.frequency).toBe('frequent');
+    });
+
+    cleanup();
+    const [dal] = await getComponentsByType('curry');
+    await db.components.update(dal.id, { frequency: 'rare' });
+    render(<LiveEditForm componentId={dal.id} />);
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'How often' })).toHaveTextContent('Rarely'));
+  });
+
+  it.each(['curry', 'extra'] as const)('groups what becomes a rule under a Planning heading for a %s', async (type) => {
+    await addCategory({ kind: 'extra', name: 'Crunchy' });
+    render(<ComponentForm componentType={type} mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    expect(screen.getByRole('heading', { name: 'Planning' })).toBeInTheDocument();
+    expect(screen.getByText(/saved as rules/i)).toBeInTheDocument();
+    const planning = screen.getByRole('heading', { name: 'Planning' }).closest('section')!;
+    expect(planning).toContainElement(screen.getByRole('combobox', { name: 'Days' }));
+    expect(planning).toContainElement(screen.getByRole('checkbox', { name: 'Never plan automatically' }));
+  });
+
+  it('says occasion tags are for use in rules', () => {
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    expect(screen.getByText(/use them in rules/i)).toBeInTheDocument();
+  });
 });

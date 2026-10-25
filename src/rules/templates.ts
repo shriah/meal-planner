@@ -6,6 +6,7 @@ import {
   type Bounds, type Constraint, type GroupBy, type Matcher, type Role,
 } from '@/planner';
 import { describeMatcher, describeScope, type Names } from './describe';
+import { nearestLevel } from './levels';
 
 // ─── Shared params ────────────────────────────────────────────────────────────
 
@@ -100,7 +101,7 @@ const AvoidWithParams = z
   .strict();
 
 const PreferParams = z
-  .object({ match: MatcherSchema, direction: z.enum(['prefer', 'avoid']), weight: z.number().int().min(1).max(5).default(2) })
+  .object({ match: MatcherSchema, direction: z.enum(['prefer', 'avoid']), weight: z.number().int().min(1).max(10).default(2) })
   .strict();
 
 export const RuleSpecSchema = z.discriminatedUnion('template', [
@@ -310,12 +311,21 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Prefer or avoid',
     summary: 'Nudge the planner towards or away from matching components without forbidding anything.',
     compile: (p) => [{ kind: 'prefer', select: p.match, weight: p.direction === 'prefer' ? -p.weight : p.weight }],
-    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (strength ${p.weight} of 5)`,
+    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (${nearestLevel('weight', p.weight).label.toLowerCase()})`,
     references: (p) => refsOf(p.match),
   },
 };
 
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+
+/** Rule types grouped by what they do, for the type picker. Every type appears exactly once. */
+export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [
+  { label: 'Where and when', templates: ['allowed_meals', 'allowed_days', 'only_allow'] },
+  { label: 'Keep out', templates: ['exclude', 'skip_when', 'avoid_with'] },
+  { label: 'Pair and require', templates: ['require', 'require_with', 'pairs_with'] },
+  { label: 'Count and spread', templates: ['limit', 'no_repeat'] },
+  { label: 'Preference', templates: ['prefer'] },
+];
 
 export function compileSpec(spec: RuleSpec): ConstraintBody[] {
   const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params);
