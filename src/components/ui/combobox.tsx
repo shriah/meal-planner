@@ -17,6 +17,8 @@ interface ComboboxProps {
   placeholder?: string
   searchPlaceholder?: string
   className?: string
+  /** Accessible name for the trigger when no visible label is attached. */
+  'aria-label'?: string
 }
 
 export function Combobox({
@@ -26,6 +28,7 @@ export function Combobox({
   placeholder = "Select...",
   searchPlaceholder = "Search...",
   className,
+  'aria-label': ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
@@ -43,6 +46,7 @@ export function Combobox({
         <button
           type="button"
           role="combobox"
+          aria-label={ariaLabel}
           aria-expanded={open}
           aria-controls={listboxId}
           aria-haspopup="listbox"

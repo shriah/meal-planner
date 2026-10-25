@@ -147,10 +147,10 @@ describe('rule template params', () => {
     const names = { component: (id: number) => library.find((c) => c.id === id)?.name, baseCategory: () => 'Rice', extraCategory: () => 'Liquid' };
     const d = (spec: RuleSpecInput) => describeSpec(RuleSpecSchema.parse(spec), names);
     expect(d({ template: 'exclude', params: { match: is('protein_tag', 'fish'), scope: { days: ['friday'], meals: ['lunch'] } } }))
-      .toBe('Never include protein is fish on Friday at lunch');
+      .toBe('Never include dishes with fish on Friday at lunch');
     expect(d({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer' } }))
       .toBe('With Sambar, also include Rasam and an extra from Liquid (preferred)');
     expect(d({ template: 'limit', params: { match: is('dietary_tags', 'non-veg'), per: 'week', max: 2 } }))
-      .toBe('at most 2 × dietary is non-veg per week');
+      .toBe('Non-veg dishes: at most 2 per week');
   });
 });

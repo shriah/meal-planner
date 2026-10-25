@@ -10,3 +10,11 @@ export {
   convertLegacyRule, LegacyCompiledRuleSchema,
   type LegacyRuleRow, type ConvertedRule, type DroppedRule, type ConversionContext, type ConversionResult,
 } from './legacy';
+export {
+  CONDITION_FIELDS, toMatcher, fromMatcher, groupProblems, emptyGroup,
+  type Condition, type ConditionGroup, type ConditionField, type ConditionValue,
+} from './conditions';
+export {
+  TEMPLATE_FORMS, newSpec, validateDraft, previewMatches,
+  type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
+} from './form';

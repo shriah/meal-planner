@@ -142,7 +142,12 @@ function matcherRefs(m: Matcher, out: Refs): Refs {
 const refsOf = (...ms: Matcher[]): Refs => ms.reduce((acc, m) => matcherRefs(m, acc), { components: [], baseCategories: [], extraCategories: [] } as Refs);
 
 const strengthWord = (s: Strength) => (s === 'must' ? '' : ' (preferred)');
-const roleList = (roles: readonly string[]) => roles.map((r) => (r === 'subzi' ? 'subzis' : `${r}s`)).join(', ');
+const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+const ROLE_PLURAL: Record<string, string> = { base: 'bases', curry: 'curries', subzi: 'subzis', extra: 'extras' };
+const roleList = (roles: readonly string[]) => {
+  const words = roles.map((r) => ROLE_PLURAL[r] ?? r);
+  return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
+};
 
 // ─── Templates ────────────────────────────────────────────────────────────────
 
@@ -166,14 +171,14 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Only allow',
     summary: 'In the chosen days and meals, the chosen roles may only hold matching components.',
     compile: (p) => p.roles.map((role) => slotCount(all(is('role', role), not(p.match)), p.scope, p.strength, undefined, 0)),
-    describe: (p, n) => `Only ${describeMatcher(p.match, n)} as ${roleList(p.roles)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
+    describe: (p, n) => `${sentence(roleList(p.roles))}${describeScope(p.scope)}: only ${describeMatcher(p.match, n)}${strengthWord(p.strength)}`,
     references: (p) => refsOf(p.match),
   },
   require: {
     label: 'Always include',
     summary: 'Every meal in the chosen days and meals includes a matching component.',
     compile: (p) => [slotCount(p.match, p.scope, p.strength, p.min)],
-    describe: (p, n) => `Always include ${p.min > 1 ? `${p.min} × ` : ''}${describeMatcher(p.match, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
+    describe: (p, n) => `Always include ${p.min > 1 ? `at least ${p.min} ` : ''}${describeMatcher(p.match, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
     references: (p) => refsOf(p.match),
   },
   limit: {
@@ -190,7 +195,8 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     describe: (p, n) => {
       const range = p.min !== undefined && p.max !== undefined ? (p.min === p.max ? `exactly ${p.min}` : `${p.min}–${p.max}`)
         : p.min !== undefined ? `at least ${p.min}` : `at most ${p.max}`;
-      return `${range} × ${describeMatcher(p.match, n)} per ${p.per}${describeScope(p.scope)}${strengthWord(p.strength)}`;
+      // "Dishes with fish: at least 1 per day" reads correctly for any count.
+      return `${sentence(describeMatcher(p.match, n))}: ${range} per ${p.per}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => refsOf(p.match),
   },
@@ -215,7 +221,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       groupBy: 'slot',
       ...bounds(p.strength, undefined, 0),
     }],
-    describe: (p, n) => `${describeMatcher(p.match, n)} only at ${p.meals.join(' or ')}${describeScope({ days: p.days })}${strengthWord(p.strength)}`,
+    describe: (p, n) => sentence(`${describeMatcher(p.match, n)} only at ${p.meals.join(' or ')}${describeScope({ days: p.days })}${strengthWord(p.strength)}`),
     references: (p) => refsOf(p.match),
   },
   skip_when: {
@@ -250,7 +256,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Prefer or avoid',
     summary: 'Nudge the planner towards or away from matching components without forbidding anything.',
     compile: (p) => [{ kind: 'prefer', select: p.match, weight: p.direction === 'prefer' ? -p.weight : p.weight }],
-    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (strength ${p.weight})`,
+    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (strength ${p.weight} of 5)`,
     references: (p) => refsOf(p.match),
   },
 };

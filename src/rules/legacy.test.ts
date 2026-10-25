@@ -72,7 +72,7 @@ describe('legacy rule conversion', () => {
   it('produces specs that validate and read sensibly', () => {
     for (const r of converted(legacy({ mode: 'base_category', category_id: 10 }, [{ kind: 'allowed_slots', slots: ['lunch'] }]))) {
       const spec = RuleSpecSchema.parse(r.spec);
-      expect(describeSpec(spec, { baseCategory: () => 'Rice-based' })).toBe('component type is base and base category is Rice-based only at lunch');
+      expect(describeSpec(spec, { baseCategory: () => 'Rice-based' })).toBe('Bases in the Rice-based category only at lunch');
     }
   });
 

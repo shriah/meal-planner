@@ -13,8 +13,9 @@ import {
   TooltipContent,
 } from '@/components/ui/tooltip'
 import { Alert } from '@/components/ui/alert'
-import { Trash2 } from 'lucide-react'
+import { Pencil, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { EditRuleSheet } from './EditRuleSheet'
 
 interface RuleRowProps {
   rule: RuleRecord
@@ -32,6 +33,7 @@ function problemOf(rule: RuleRecord, known: KnownIds): string | null {
 
 export function RuleRow({ rule, names, known }: RuleRowProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [editing, setEditing] = useState(false)
   const parsed = parseSpec(rule.spec)
   const summary = parsed.ok ? describeSpec(parsed.spec, names) : 'This rule cannot be read'
   const problem = problemOf(rule, known)
@@ -90,6 +92,16 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Edit rule" onClick={() => setEditing(true)}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Edit rule</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
@@ -124,6 +136,7 @@ export function RuleRow({ rule, names, known }: RuleRowProps) {
           </div>
         </Alert>
       )}
+      <EditRuleSheet rule={rule} open={editing} onOpenChange={setEditing} />
     </div>
   )
 }

@@ -40,10 +40,13 @@ Each phase ends with eslint 0, tsc 0, all tests green, and a check-in.
 3. **Storage + generation wiring**: Dexie migration runs the converter (converted rules mean what the
    old form said; unconvertible rules are dropped and listed once). Plan store calls the planner in a
    Web Worker; locks become pins; the plan view shows justifications instead of ad hoc warnings.
-   Category deletion cleans up rule references through `specReferences`. Old generator, rule
-   compiler and effect types are deleted.
-4. **Rules UI**: template picker, params form generated from template metadata, live description,
-   impact preview powered by the scorer. Old form state and fields are deleted.
+   Category deletion leaves rules unchanged; rules referring to deleted items are skipped at planning
+   and flagged by name. Old generator, rule compiler and effect types are deleted.
+4. **Rules UI**: one editor generated from template form metadata (`src/rules/form.ts`): rule type
+   picker, conditions as "all/any of: field is / is not values" (nested matchers are shown read-only,
+   never altered), live description, matching-dishes preview, per-field validation, and "check
+   against my library", which plans a week with the draft added and lists anything it cannot meet.
+   Used by the new-rule page (presets prefill it) and an edit sheet on each rule.
 5. **Cleanup**: seed rules as templates, update `docs/architecture.md`, remove dead code.
 
 ## Decisions (defaults; change before the phase that uses them)
