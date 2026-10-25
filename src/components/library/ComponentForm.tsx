@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { addComponent, updateComponent } from '@/services/food-db'
 import { getCategoriesByKind } from '@/services/category-db'
@@ -93,6 +93,14 @@ function toggleArrayValue<T>(arr: T[], value: T): T[] {
   return arr.includes(value) ? arr.filter(v => v !== value) : [...arr, value]
 }
 
+function hasDayOccasionTag(tags: OccasionTag[]): boolean {
+  return tags.some(tag => DAY_TAGS.includes(tag))
+}
+
+function removeDayOccasionTags(tags: OccasionTag[]): OccasionTag[] {
+  return tags.filter(tag => !DAY_TAGS.includes(tag))
+}
+
 function getBuiltInBaseType(name: string | undefined): BaseType | undefined {
   if (!name) {
     return undefined
@@ -123,54 +131,31 @@ function showsCompatibleBaseChecklist(componentType: ComponentType) {
 
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode }: ComponentFormProps) {
   const [form, setForm] = useState<FormState>(() => initialFormState(component, componentType))
+  const [showSpecificDays, setShowSpecificDays] = useState(() => hasDayOccasionTag(form.occasion_tags))
   const [saving, setSaving] = useState(false)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
-  const sourceFormState = useMemo(
-    () => initialFormState(component, componentType),
-    [
-      componentType,
-      component?.id,
-      component?.name,
-      component?.base_category_id,
-      component?.extra_category_id,
-      component?.created_at,
-      component?.protein_tag,
-      component?.dietary_tags.join('|'),
-      component?.regional_tags.join('|'),
-      component?.occasion_tags.join('|'),
-      component?.compatible_base_category_ids?.join('|'),
-    ],
-  )
-
-  useEffect(() => {
-    if (!component) {
-      return
-    }
-
+  // Re-sync the form when the edited record changes underneath it (e.g. live query update).
+  // Adjusting state during render avoids the extra render pass an effect would cause.
+  const sourceFormState = initialFormState(component, componentType)
+  const sourceKey = JSON.stringify([component?.id, component?.created_at, sourceFormState])
+  const [syncedKey, setSyncedKey] = useState(sourceKey)
+  if (component && sourceKey !== syncedKey) {
+    setSyncedKey(sourceKey)
     setForm(sourceFormState)
-  }, [component, sourceFormState])
+    setShowSpecificDays(hasDayOccasionTag(sourceFormState.occasion_tags))
+  }
 
-  useEffect(() => {
-    if (componentType !== 'base' || !baseCategories?.length || form.base_category_id) {
-      return
-    }
+  // Until the user picks one, default to the first category of the matching kind.
+  const baseCategoryId =
+    form.base_category_id || (componentType === 'base' ? String(baseCategories?.[0]?.id ?? '') : '')
+  const extraCategoryId =
+    form.extra_category_id || (componentType === 'extra' ? String(extraCategories?.[0]?.id ?? '') : '')
 
-    setForm((current) => ({ ...current, base_category_id: String(baseCategories[0].id ?? '') }))
-  }, [baseCategories, componentType, form.base_category_id])
-
-  useEffect(() => {
-    if (componentType !== 'extra' || !extraCategories?.length || form.extra_category_id) {
-      return
-    }
-
-    setForm((current) => ({ ...current, extra_category_id: String(extraCategories[0].id ?? '') }))
-  }, [componentType, extraCategories, form.extra_category_id])
-
-  const selectedBaseCategory = findCategory(baseCategories, form.base_category_id)
-  const selectedExtraCategory = findCategory(extraCategories, form.extra_category_id)
-  const canSaveBase = componentType !== 'base' || Boolean(form.base_category_id)
-  const canSaveExtra = componentType !== 'extra' || Boolean(form.extra_category_id)
+  const selectedBaseCategory = findCategory(baseCategories, baseCategoryId)
+  const selectedExtraCategory = findCategory(extraCategories, extraCategoryId)
+  const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
+  const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
   const hasZeroCompatibleBases =
     componentType === 'curry' && form.compatible_base_category_ids.length === 0
 
@@ -187,13 +172,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         created_at: component?.created_at ?? new Date().toISOString(),
         ...(componentType === 'base'
           ? {
-              base_category_id: form.base_category_id ? Number(form.base_category_id) : null,
+              base_category_id: baseCategoryId ? Number(baseCategoryId) : null,
               base_type: getBuiltInBaseType(selectedBaseCategory?.name),
             }
           : {}),
         ...(componentType === 'extra'
           ? {
-              extra_category_id: form.extra_category_id ? Number(form.extra_category_id) : null,
+              extra_category_id: extraCategoryId ? Number(extraCategoryId) : null,
               extra_category: getBuiltInExtraCategory(selectedExtraCategory?.name),
             }
           : {}),
@@ -236,7 +221,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         <div className="space-y-1">
           <Label className="text-xs font-semibold">Base Category</Label>
           <Select
-            value={form.base_category_id}
+            value={baseCategoryId}
             onValueChange={value => setForm(s => ({ ...s, base_category_id: value }))}
           >
             <SelectTrigger className="w-full" aria-label="Base Category">
@@ -258,7 +243,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         <div className="space-y-1">
           <Label className="text-xs font-semibold">Extra Category</Label>
           <Select
-            value={form.extra_category_id}
+            value={extraCategoryId}
             onValueChange={value => setForm(s => ({ ...s, extra_category_id: value }))}
           >
             <SelectTrigger className="w-full" aria-label="Extra Category">
@@ -281,13 +266,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             {(baseCategories ?? []).map((category) => (
               <label key={category.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
                 <Checkbox
-                  checked={form.compatible_base_category_ids.includes(category.id ?? -1)}
+                  checked={form.compatible_base_category_ids.includes(category.id)}
                   onCheckedChange={() =>
                     setForm(s => ({
                       ...s,
                       compatible_base_category_ids: toggleArrayValue(
                         s.compatible_base_category_ids,
-                        category.id!,
+                        category.id,
                       ),
                     }))
                   }
@@ -382,24 +367,39 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
                 {tag}
               </label>
             ))}
-          </div>
-        </div>
-        <div className="space-y-1">
-          <span className="text-xs text-muted-foreground">Specific days</span>
-          <div className="flex flex-wrap gap-3">
-            {DAY_TAGS.map(tag => (
-              <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <Checkbox
-                  checked={form.occasion_tags.includes(tag)}
-                  onCheckedChange={() =>
-                    setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
+            <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+              <Checkbox
+                checked={showSpecificDays}
+                onCheckedChange={(checked) => {
+                  const next = checked === true
+                  setShowSpecificDays(next)
+                  if (!next) {
+                    setForm(s => ({ ...s, occasion_tags: removeDayOccasionTags(s.occasion_tags) }))
                   }
-                />
-                {tag}
-              </label>
-            ))}
+                }}
+              />
+              specific day
+            </label>
           </div>
         </div>
+        {showSpecificDays && (
+          <div className="space-y-1">
+            <span className="text-xs text-muted-foreground">Specific days</span>
+            <div className="flex flex-wrap gap-3">
+              {DAY_TAGS.map(tag => (
+                <label key={tag} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox
+                    checked={form.occasion_tags.includes(tag)}
+                    onCheckedChange={() =>
+                      setForm(s => ({ ...s, occasion_tags: toggleArrayValue(s.occasion_tags, tag) }))
+                    }
+                  />
+                  {tag}
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action buttons */}

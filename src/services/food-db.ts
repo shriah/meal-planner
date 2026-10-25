@@ -86,11 +86,6 @@ export async function getRules(): Promise<RuleRecord[]> {
   return db.rules.toArray();
 }
 
-export async function getEnabledRules(): Promise<RuleRecord[]> {
-  const all = await db.rules.toArray();
-  return all.filter(r => r.enabled);
-}
-
 export async function addRule(rule: Omit<RuleRecord, 'id'>): Promise<number> {
   return db.rules.add(rule as RuleRecord) as Promise<number>;
 }

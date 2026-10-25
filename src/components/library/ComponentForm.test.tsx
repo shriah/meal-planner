@@ -61,6 +61,92 @@ function LiveEditForm({ componentId }: { componentId: number }) {
 }
 
 describe('ComponentForm dynamic category wiring', () => {
+  it('hides specific day options by default until the specific day marker is selected', async () => {
+    render(
+      <ComponentForm
+        componentType="subzi"
+        mode="add"
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    expect(screen.getByRole('checkbox', { name: 'specific day' })).not.toBeChecked();
+    expect(screen.queryByText('Specific days')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'monday' })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'specific day' }));
+
+    expect(screen.getByRole('checkbox', { name: 'specific day' })).toBeChecked();
+    expect(screen.getByText('Specific days')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'monday' })).toBeInTheDocument();
+  });
+
+  it('persists selected day tags while the specific day marker remains selected', async () => {
+    render(
+      <ComponentForm
+        componentType="subzi"
+        mode="add"
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'specific day' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'monday' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Monday Beans');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+
+    await waitFor(async () => {
+      const subzis = await getComponentsByType('subzi');
+      expect(subzis).toHaveLength(1);
+      expect(subzis[0].occasion_tags).toEqual(['monday']);
+    });
+  });
+
+  it('clears selected day tags when the specific day marker is unchecked', async () => {
+    render(
+      <ComponentForm
+        componentType="subzi"
+        mode="add"
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'specific day' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'monday' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'specific day' }));
+
+    expect(screen.queryByRole('checkbox', { name: 'monday' })).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('Name'), 'Everyday Beans');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+
+    await waitFor(async () => {
+      const subzis = await getComponentsByType('subzi');
+      expect(subzis).toHaveLength(1);
+      expect(subzis[0].occasion_tags).toEqual([]);
+    });
+  });
+
+  it('shows specific day options when editing a component with stored day tags', async () => {
+    const subziId = await db.components.add({
+      name: 'Monday Beans',
+      componentType: 'subzi',
+      dietary_tags: ['veg'],
+      regional_tags: ['pan-indian'],
+      occasion_tags: ['monday'],
+      created_at: new Date().toISOString(),
+    }) as number;
+
+    render(<LiveEditForm componentId={subziId} />);
+
+    expect(await screen.findByRole('checkbox', { name: 'specific day' })).toBeChecked();
+    expect(screen.getByText('Specific days')).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'monday' })).toBeChecked();
+  });
+
   it('uses live base-category records instead of hard-coded base types when creating a base component', async () => {
     const steamedId = await addCategory({ kind: 'base', name: 'Steamed' });
     await addCategory({ kind: 'base', name: 'Flatbread' });
@@ -122,7 +208,7 @@ describe('ComponentForm dynamic category wiring', () => {
 
   it('reuses the compatible-base checklist when creating a curry and persists selected base category ids', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
+    await addCategory({ kind: 'base', name: 'Flatbreads' });
 
     render(
       <ComponentForm
@@ -173,7 +259,7 @@ describe('ComponentForm dynamic category wiring', () => {
   });
 
   it('refreshes form and row labels after a category rename without rewriting stored references', async () => {
-    const riceId = await addCategory({ kind: 'base', name: 'Rice-based' });
+    await addCategory({ kind: 'base', name: 'Rice-based' });
     const liquidId = await addCategory({ kind: 'extra', name: 'Liquid' });
     const extraId = await db.components.add({
       name: 'Rasam',
@@ -183,7 +269,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: ['everyday'],
       created_at: new Date().toISOString(),
-    });
+    }) as number;
 
     render(
       <>
@@ -219,7 +305,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: ['everyday'],
       created_at: new Date().toISOString(),
-    });
+    }) as number;
 
     render(
       <>
@@ -234,10 +320,11 @@ describe('ComponentForm dynamic category wiring', () => {
     await renameCategory(riceId, 'Steamed rice');
     await renameCategory(breadId, 'Rotis');
 
+    // Each rename is a separate write with its own live-query update, so wait for both.
     await waitFor(() => {
       expect(screen.getAllByText('Steamed rice').length).toBeGreaterThan(0);
+      expect(screen.getByText('Rotis')).toBeInTheDocument();
     });
-    expect(screen.getByText('Rotis')).toBeInTheDocument();
 
     const [storedCurry] = await getComponentsByType('curry');
     expect(storedCurry.compatible_base_category_ids).toEqual([riceId]);
@@ -253,7 +340,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: ['everyday'],
       created_at: new Date().toISOString(),
-    });
+    }) as number;
 
     render(<LiveEditForm componentId={curryId} />);
 

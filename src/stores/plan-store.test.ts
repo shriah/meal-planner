@@ -4,7 +4,7 @@ import { usePlanStore } from './plan-store';
 import { saveActivePlan } from '@/services/plan-db';
 import { getISOWeekStart, addWeeks } from '@/services/week-utils';
 import type { WeeklyPlan } from '@/types/plan';
-import * as generatorService from '@/services/generator';
+import * as planningService from '@/services/planning';
 
 // ─── Helper: make a minimal valid WeeklyPlan ───────────────────────────────────
 
@@ -32,10 +32,11 @@ beforeEach(async () => {
   usePlanStore.setState({
     plan: null,
     locks: {},
-    warnings: [],
+    problems: [],
+    ruleIssues: [],
     isGenerating: false,
     hydrated: false,
-    warningBannerDismissed: false,
+    problemsDismissed: false,
     currentWeekStart: getISOWeekStart(new Date()),
     isReadOnly: false,
   });
@@ -144,7 +145,7 @@ describe('plan-store', () => {
     )?.curry_id).toBe(999);
   });
 
-  it('regenerate forwards locked incompatible curry selections back into generate unchanged', async () => {
+  it('regenerate pins locked incompatible curry selections unchanged', async () => {
     const plan = makePlan();
     plan.slots = plan.slots.map((slot) => (
       slot.day === 'monday' && slot.meal_slot === 'lunch'
@@ -152,9 +153,10 @@ describe('plan-store', () => {
         : slot
     ));
 
-    const generateSpy = vi.spyOn(generatorService, 'generate').mockResolvedValue({
+    const generateSpy = vi.spyOn(planningService, 'generatePlan').mockResolvedValue({
       plan,
-      warnings: [],
+      problems: [],
+      ruleIssues: [],
     });
 
     usePlanStore.setState({
@@ -168,7 +170,7 @@ describe('plan-store', () => {
     await usePlanStore.getState().regenerate();
 
     expect(generateSpy).toHaveBeenCalledWith({
-      lockedSlots: {
+      pins: {
         'monday-lunch': {
           base_id: 1,
           curry_id: 999,
@@ -177,7 +179,7 @@ describe('plan-store', () => {
     });
   });
 
-  it('regenerate forwards a locked incompatible curry even when the base itself is not locked', async () => {
+  it('regenerate pins a locked curry even when the base itself is not locked', async () => {
     const plan = makePlan();
     plan.slots = plan.slots.map((slot) => (
       slot.day === 'monday' && slot.meal_slot === 'lunch'
@@ -185,9 +187,10 @@ describe('plan-store', () => {
         : slot
     ));
 
-    const generateSpy = vi.spyOn(generatorService, 'generate').mockResolvedValue({
+    const generateSpy = vi.spyOn(planningService, 'generatePlan').mockResolvedValue({
       plan,
-      warnings: [],
+      problems: [],
+      ruleIssues: [],
     });
 
     usePlanStore.setState({
@@ -200,7 +203,7 @@ describe('plan-store', () => {
     await usePlanStore.getState().regenerate();
 
     expect(generateSpy).toHaveBeenCalledWith({
-      lockedSlots: {
+      pins: {
         'monday-lunch': {
           curry_id: 999,
         },

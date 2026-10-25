@@ -94,7 +94,8 @@ describe('CategoryManager', () => {
       expect(baseCategories.map((category) => category.name)).toContain('Millet-based');
     });
 
-    const milletRow = screen.getByRole('listitem', { name: 'Millet-based' });
+    // The waitFor above checks the DB; the row only renders once the live query re-emits.
+    const milletRow = await screen.findByRole('listitem', { name: 'Millet-based' });
     await userEvent.click(within(milletRow).getByRole('button', { name: 'Rename Category' }));
 
     const renameInput = within(milletRow).getByLabelText('Rename Millet-based');

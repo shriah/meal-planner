@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
+import { RuleSpecSchema } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
@@ -81,6 +82,7 @@ describe('runSeed', () => {
 
   it('keeps an explicit empty curry compatibility array distinct from legacy missing data', () => {
     const intentionallyIneligibleCurry: CurryRecord = {
+      id: 1,
       name: 'Explicitly Ineligible Curry',
       componentType: 'curry',
       compatible_base_category_ids: [],
@@ -114,7 +116,7 @@ describe('runSeed', () => {
     expect(resolveSeededCurryCompatibilityIds('Sambar Deluxe', categoryLookup)).toBeUndefined();
   });
 
-  it('creates preferences with empty slot_restrictions and seeds base-category default rules', async () => {
+  it('creates preferences with per-meal extras limits and seeds base-category default rules', async () => {
     await runSeed();
 
     const prefs = await getPreferences();
@@ -126,18 +128,19 @@ describe('runSeed', () => {
     ]);
 
     expect(prefs).toBeDefined();
-    expect(prefs!.slot_restrictions.base_type_slots).toEqual({});
-    expect(prefs!.slot_restrictions.component_slot_overrides).toEqual({});
+    expect(prefs).toEqual({ id: 'prefs', extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 3 } });
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
-      expect(rule.compiled_filter.target.mode).toBe('base_category');
-      if (rule.compiled_filter.target.mode === 'base_category') {
-        expect(rule.compiled_filter.target.category_id).toEqual(expect.any(Number));
-      }
+      expect(rule.spec).toMatchObject({
+        template: 'allowed_meals',
+        params: { match: { field: 'base_category_id', op: 'eq', value: expect.any(Number) } },
+      });
     }
 
     const pooriRule = rules.find((rule) => rule.name === 'Poori: breakfast only');
-    expect(pooriRule?.compiled_filter.target.mode).toBe('component');
+    expect(pooriRule?.spec).toMatchObject({ template: 'allowed_meals', params: { match: { field: 'id' }, meals: ['breakfast'] } });
+    // Every seeded rule is valid and applies.
+    expect(rules.every((rule) => RuleSpecSchema.safeParse(rule.spec).success)).toBe(true);
   });
 
   it('is idempotent and does not duplicate seeded categories or components', async () => {

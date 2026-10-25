@@ -17,6 +17,8 @@ interface ComboboxProps {
   placeholder?: string
   searchPlaceholder?: string
   className?: string
+  /** Accessible name for the trigger when no visible label is attached. */
+  'aria-label'?: string
 }
 
 export function Combobox({
@@ -26,9 +28,11 @@ export function Combobox({
   placeholder = "Select...",
   searchPlaceholder = "Search...",
   className,
+  'aria-label': ariaLabel,
 }: ComboboxProps) {
   const [open, setOpen] = React.useState(false)
   const [search, setSearch] = React.useState("")
+  const listboxId = React.useId()
 
   const filtered = options.filter(opt =>
     opt.label.toLowerCase().includes(search.toLowerCase()),
@@ -42,7 +46,10 @@ export function Combobox({
         <button
           type="button"
           role="combobox"
+          aria-label={ariaLabel}
           aria-expanded={open}
+          aria-controls={listboxId}
+          aria-haspopup="listbox"
           className={cn(
             "flex w-[180px] items-center justify-between gap-1.5 rounded-md border border-input bg-input/20 px-2 py-1.5 text-xs/relaxed transition-colors outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-muted-foreground dark:bg-input/30",
             !selected && "text-muted-foreground",
@@ -73,7 +80,7 @@ export function Combobox({
           </div>
 
           {/* Options list */}
-          <div className="max-h-48 overflow-y-auto p-1">
+          <div id={listboxId} role="listbox" className="max-h-48 overflow-y-auto p-1">
             {filtered.length === 0 ? (
               <p className="px-2 py-4 text-center text-xs text-muted-foreground">No results.</p>
             ) : (
@@ -81,6 +88,8 @@ export function Combobox({
                 <button
                   key={opt.value}
                   type="button"
+                  role="option"
+                  aria-selected={opt.value === value}
                   onClick={() => {
                     onValueChange(opt.value)
                     setOpen(false)

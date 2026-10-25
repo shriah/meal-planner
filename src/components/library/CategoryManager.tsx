@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { toast } from 'sonner';
 import { Alert } from '@/components/ui/alert';
@@ -88,16 +88,16 @@ export function CategoryManager() {
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined);
   const activeCategories = activeKind === 'base' ? baseCategories : extraCategories;
 
-  useEffect(() => {
-    if (!open) {
+  function handleOpenChange(next: boolean) {
+    setOpen(next);
+    if (!next) {
       setActiveKind('base');
       setDraft(null);
       setRenameState(null);
       setDeleteId(null);
     }
-  }, [open]);
+  }
 
-  const orderedCategories = useMemo(() => activeCategories ?? [], [activeCategories]);
   const draftIsActive = draft?.kind === activeKind;
   const draftIsValid = draftIsActive && isUniqueName(activeCategories, draft.name);
   const renameIsValid = renameState?.kind === activeKind
@@ -154,7 +154,7 @@ export function CategoryManager() {
   }
 
   function renderCategoryRow(category: CategoryRecord) {
-    const isRenaming = renameState?.id === category.id;
+    const isRenaming = renameState !== null && renameState.id === category.id;
     const isDeleting = deleteId === category.id;
     const renameError = isRenaming && !renameIsValid;
 
@@ -221,7 +221,7 @@ export function CategoryManager() {
                     setDraft(null);
                     setDeleteId(null);
                     setRenameState({
-                      id: category.id!,
+                      id: category.id,
                       kind: category.kind,
                       originalName: category.name,
                       name: category.name,
@@ -236,7 +236,7 @@ export function CategoryManager() {
                   variant="ghost"
                   onClick={() => {
                     setRenameState(null);
-                    setDeleteId((current) => current === category.id ? null : category.id!);
+                    setDeleteId((current) => current === category.id ? null : category.id);
                   }}
                 >
                   Delete Category
@@ -255,7 +255,7 @@ export function CategoryManager() {
                 type="button"
                 variant="destructive"
                 size="sm"
-                onClick={() => void handleDeleteCategory(category.id!)}
+                onClick={() => void handleDeleteCategory(category.id)}
                 disabled={saving}
                 aria-label={`Delete ${category.name} cleanup is automatic`}
               >
@@ -281,7 +281,7 @@ export function CategoryManager() {
       <Button type="button" variant="outline" onClick={() => setOpen(true)}>
         Manage Categories
       </Button>
-      <Sheet open={open} onOpenChange={setOpen}>
+      <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent side="right" className="sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>Manage Categories</SheetTitle>

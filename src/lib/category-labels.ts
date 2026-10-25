@@ -2,9 +2,7 @@ import type { CategoryRecord } from '@/types/category';
 
 export function buildCategoryMap(categories: CategoryRecord[]): Map<number, CategoryRecord> {
   return new Map(
-    categories
-      .filter((category): category is CategoryRecord & { id: number } => category.id !== undefined)
-      .map((category) => [category.id, category]),
+    categories.map((category) => [category.id, category]),
   );
 }
 

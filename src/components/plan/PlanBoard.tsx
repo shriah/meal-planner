@@ -12,7 +12,7 @@ import { DayColumnHeader } from './DayColumnHeader'
 import { SlotRowLabel } from './SlotRowLabel'
 import { MealCell } from './MealCell'
 import { PlanActionBar } from './PlanActionBar'
-import { WarningBanner } from './WarningBanner'
+import { PlanProblemsBanner } from './PlanProblemsBanner'
 import { MealPickerSheet } from './MealPickerSheet'
 import { WeekNavigator } from './WeekNavigator'
 import { Button } from '@/components/ui/button'
@@ -23,7 +23,7 @@ const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
 
 export function PlanBoard() {
   const plan = usePlanStore(s => s.plan)
-  const warnings = usePlanStore(s => s.warnings)
+  const problems = usePlanStore(s => s.problems)
   const hydrated = usePlanStore(s => s.hydrated)
   const isGenerating = usePlanStore(s => s.isGenerating)
   const initFromDB = usePlanStore(s => s.initFromDB)
@@ -43,7 +43,7 @@ export function PlanBoard() {
   const componentsMap = useMemo(() => {
     const map = new Map<number, (typeof allComponents)[number]>()
     for (const c of allComponents ?? []) {
-      if (c.id !== undefined) map.set(c.id, c)
+      map.set(c.id, c)
     }
     return map
   }, [allComponents])
@@ -63,7 +63,7 @@ export function PlanBoard() {
     ? plan?.slots.find(s => s.day === pickerState.day && s.meal_slot === pickerState.slot)
     : undefined
   const selectedBaseCategoryId = selectedPlanSlot
-    ? componentsMap.get(selectedPlanSlot.base_id)?.base_category_id
+    ? componentsMap.get(selectedPlanSlot.base_id)?.base_category_id ?? undefined
     : undefined
 
   return (
@@ -76,7 +76,7 @@ export function PlanBoard() {
         <PlanActionBar />
       </div>
 
-      <WarningBanner />
+      <PlanProblemsBanner />
 
       {isPastWeek && (
         <Alert className="border-amber-300 bg-amber-50 text-amber-900 mb-4" role="status">
@@ -139,7 +139,7 @@ export function PlanBoard() {
                       slot={slot}
                       planSlot={planSlot}
                       componentsMap={componentsMap}
-                      warnings={warnings}
+                      problems={problems.filter(p => p.level === 'hard' && p.day === day && p.meal === slot)}
                       onPickerOpen={isReadOnly ? () => {} : (componentType) => setPickerState({ day, slot, componentType })}
                     />
                   )

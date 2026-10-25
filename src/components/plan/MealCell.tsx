@@ -4,7 +4,8 @@ import { AlertTriangle } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { PlanComponentRow } from './PlanComponentRow'
 import { cn } from '@/lib/utils'
-import type { PlanSlot, Warning, DayOfWeek } from '@/types/plan'
+import type { PlanSlot, DayOfWeek } from '@/types/plan'
+import type { PlanProblem } from '@/services/plan-generation'
 import type { MealSlot } from '@/types/preferences'
 import type { ComponentRecord } from '@/types/component'
 
@@ -13,13 +14,13 @@ interface MealCellProps {
   slot: MealSlot
   planSlot: PlanSlot | undefined
   componentsMap: Map<number, ComponentRecord>
-  warnings: Warning[]
+  /** Hard problems located in this meal. */
+  problems: PlanProblem[]
   onPickerOpen: (componentType: 'base' | 'curry' | 'subzi' | 'extras') => void
 }
 
-export function MealCell({ day, slot, planSlot, componentsMap, warnings, onPickerOpen }: MealCellProps) {
-  const cellWarnings = warnings.filter(w => w.slot.day === day && w.slot.meal_slot === slot)
-  const hasWarning = cellWarnings.length > 0
+export function MealCell({ day, slot, planSlot, componentsMap, problems, onPickerOpen }: MealCellProps) {
+  const hasProblem = problems.length > 0
 
   if (!planSlot) {
     return (
@@ -39,19 +40,19 @@ export function MealCell({ day, slot, planSlot, componentsMap, warnings, onPicke
   return (
     <div className={cn(
       'rounded-md border p-2 flex flex-col gap-1',
-      hasWarning && 'border-2 border-amber-400'
+      hasProblem && 'border-2 border-amber-400'
     )}>
-      {hasWarning && (
+      {hasProblem && (
         <TooltipProvider>
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-1 text-amber-600 mb-1">
                 <AlertTriangle className="h-3 w-3" />
-                <span className="text-xs">Warning</span>
+                <span className="text-xs">Rule broken</span>
               </div>
             </TooltipTrigger>
             <TooltipContent side="top" className="max-w-xs">
-              {cellWarnings.map((w, i) => <p key={i} className="text-xs">{w.message}</p>)}
+              {problems.map((p, i) => <p key={i} className="text-xs">{p.message}</p>)}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
