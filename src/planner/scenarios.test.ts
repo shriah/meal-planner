@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import type { CountConstraint } from './constraints';
-import { all, is, oneOf } from './matcher';
+import { all, is, not, oneOf } from './matcher';
 import { planWeek, type PlanResult, type PlanSlotLike } from './plan';
 import { explain } from './scorer';
 import type { ComponentLike, Pins } from './types';
@@ -88,6 +88,26 @@ describe('planner scenarios (seed library)', () => {
     expect(r.score.hard).toBe(1);
     expect(hardOf(r)).toHaveLength(1);
     expect(hardOf(r)[0]).toMatch(/^(Fish on Friday lunch|No non-veg): on Friday lunch has/);
+  });
+
+  it.each(SEEDS)('variety under the seeded meal windows: no dish on the same or next day, every meal has a curry (seed %i)', (seed) => {
+    const notAt = (id: string, select: CountConstraint['select'], meals: ('breakfast' | 'lunch' | 'dinner')[]) =>
+      rule({ id, label: id, select: all(select, not(oneOf('meal', meals))), groupBy: 'slot', bounds: { hardMax: 0 } });
+    const r = run([
+      notAt('other', is('base_category_id', CAT.base.other), ['breakfast', 'dinner']),
+      notAt('rice', is('base_category_id', CAT.base['rice-based']), ['lunch']),
+      notAt('bread', is('base_category_id', CAT.base['bread-based']), ['dinner']),
+    ], seed);
+    expect(hardOf(r)).toEqual([]);
+    expect(r.slots.every((s) => s.curry_id !== undefined)).toBe(true);
+    const daysUsed = new Map<number, number[]>();
+    for (const s of r.slots) {
+      const day = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].indexOf(s.day);
+      for (const id of [s.base_id, s.curry_id, s.subzi_id]) if (id !== undefined) daysUsed.set(id, [...(daysUsed.get(id) ?? []), day]);
+    }
+    for (const [id, days] of daysUsed) {
+      days.forEach((d, i) => { if (i > 0) expect(d - days[i - 1], `${nameOf(id)} on days ${days}`).toBeGreaterThan(1); });
+    }
   });
 
   it('produces different plans for different seeds', () => {

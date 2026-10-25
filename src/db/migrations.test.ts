@@ -31,7 +31,7 @@ describe('Phase 14 categories table migration', () => {
     expect(rasam).not.toHaveProperty('compatible_base_types');
   });
 
-  it('delete normalization clears component references and disables rules with deleted category targets', () => {
+  it('delete normalization clears component references to the deleted category', () => {
     const fixture = buildCategoryMigrationFixture();
     const migrated = migrateLegacyCategoryData(fixture);
     const deletedBaseCategoryId = migrated.categories.find((category) => category.name === 'bread-based')?.id;
@@ -41,12 +41,10 @@ describe('Phase 14 categories table migration', () => {
     const normalized = migrated.normalizeDeletedCategory(deletedBaseCategoryId!);
     const roti = normalized.components.find((component) => component.name === 'Roti');
     const pickle = normalized.components.find((component) => component.name === 'Pickle');
-    const breadRule = normalized.rules.find((rule) => rule.name === 'Bread dinner');
 
     expect(roti?.base_category_id).toBeNull();
     expect(pickle).not.toHaveProperty('compatible_base_category_ids');
     expect(pickle).not.toHaveProperty('compatible_base_types');
-    expect(breadRule?.enabled).toBe(false);
   });
 
   it('backfills legacy seeded curries with curated compatible base category IDs', () => {

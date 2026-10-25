@@ -47,7 +47,14 @@ Each phase ends with eslint 0, tsc 0, all tests green, and a check-in.
    never altered), live description, matching-dishes preview, per-field validation, and "check
    against my library", which plans a week with the draft added and lists anything it cannot meet.
    Used by the new-rule page (presets prefill it) and an edit sheet on each rule.
-5. **Cleanup**: seed rules as templates, update `docs/architecture.md`, remove dead code.
+5. **Cleanup and tuning**: `docs/architecture.md` rewritten for the planner; rewrite leftovers removed
+   (old preference fields, the rule half of the v11 migration simulator, unused rule queries).
+   Variety tuned on the seed library: same dish on the same or next day costs 3, a repeat in the week
+   2, a meal without curry or subzi 5; `prefer` rules cost 10 so user wishes outrank built-ins.
+   Measured over 10 seeds with the seeded meal windows: near-repeats 4.6 → 0 per week, repeated
+   dishes 9.2 → 4.3, no meal without a curry, no hard violations; planning p50 ≈ 156 ms in a worker.
+
+Status: all five phases complete.
 
 ## Decisions (defaults; change before the phase that uses them)
 

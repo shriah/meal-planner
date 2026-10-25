@@ -41,17 +41,8 @@ export interface CategorySeedInput {
 
 // Pre-insert shapes: the migration fixture is plain data that has not been assigned ids by Dexie yet.
 type LegacyComponent = Omit<ComponentRecord, 'id'>;
-// Rules in the pre-template shape (compiled_filter), as older upgrade steps see them.
-interface LegacyRule {
-  name: string;
-  enabled: boolean;
-  compiled_filter: unknown;
-  created_at: string;
-}
-
 export interface LegacyCategoryMigrationFixture {
   components: LegacyComponent[];
-  rules: LegacyRule[];
 }
 
 type CategoryLookup = Record<CategoryKind, Map<string, number>>;
@@ -510,74 +501,6 @@ function normalizeComponentCategoryRefs(
   return nextComponent;
 }
 
-function normalizeRuleCategoryRefs(rule: LegacyRule, category: CategoryRecord & { id: number }): LegacyRule {
-  const compiledFilter = rule.compiled_filter;
-  if (!compiledFilter || typeof compiledFilter !== 'object') {
-    return rule;
-  }
-
-  const record = compiledFilter as Record<string, unknown>;
-  if (record.type !== 'rule') {
-    return rule;
-  }
-
-  let enabled = rule.enabled;
-  let effectsChanged = false;
-  const nextRule: Record<string, unknown> = { ...record };
-
-  if (record.target && typeof record.target === 'object') {
-    const target = record.target as Record<string, unknown>;
-    const targetHitsById = target.mode === 'base_category' && target.category_id === category.id;
-    const targetHitsByLegacyName = category.kind === 'base' && target.mode === 'base_type' && target.base_type === category.name;
-
-    if (targetHitsById || targetHitsByLegacyName) {
-      enabled = false;
-    }
-  }
-
-  if (Array.isArray(record.effects)) {
-    const effects = record.effects.flatMap((effect) => {
-      if (!effect || typeof effect !== 'object') {
-        return [effect];
-      }
-
-      const effectRecord = effect as Record<string, unknown>;
-      if (effectRecord.kind !== 'require_extra') {
-        return [effect];
-      }
-
-      const nextEffect = { ...effectRecord };
-      if (Array.isArray(effectRecord.category_ids)) {
-        nextEffect.category_ids = effectRecord.category_ids.filter((id) => id !== category.id);
-      }
-      if (Array.isArray(effectRecord.categories)) {
-        nextEffect.categories = effectRecord.categories.filter((name) => name !== category.name);
-      }
-
-      const hasIds = Array.isArray(nextEffect.category_ids) && nextEffect.category_ids.length > 0;
-      const hasNames = Array.isArray(nextEffect.categories) && nextEffect.categories.length > 0;
-      if (!hasIds && !hasNames) {
-        effectsChanged = true;
-        return [];
-      }
-
-      effectsChanged = true;
-      return [nextEffect];
-    });
-
-    nextRule.effects = effects;
-    if (effects.length === 0 && effectsChanged) {
-      enabled = false;
-    }
-  }
-
-  return {
-    ...rule,
-    enabled,
-    compiled_filter: nextRule,
-  };
-}
-
 function seedBuiltInCategories(now: string): CategoryRecord[] {
   return BUILT_IN_CATEGORY_SEEDS.map((seed, index) => ({
     id: index + 1,
@@ -616,26 +539,19 @@ export function migrateLegacyCategoryData(fixture: LegacyCategoryMigrationFixtur
     return nextComponent;
   });
 
-  const rules = fixture.rules.map((rule) => ({
-    ...rule,
-    compiled_filter: migrateRuleCategoryRefs(rule.compiled_filter, categoryLookup),
-  }));
-
   return {
     categories,
     components,
-    rules,
     normalizeDeletedCategory(deletedCategoryId: number) {
       const category = categories.find((candidate) => candidate.id === deletedCategoryId);
       if (!category?.id) {
-        return { categories, components, rules };
+        return { categories, components };
       }
       const deletedCategory = category as CategoryRecord & { id: number };
 
       return {
         categories: categories.filter((candidate) => candidate.id !== deletedCategoryId),
         components: components.map((component) => normalizeComponentCategoryRefs(component, deletedCategory)),
-        rules: rules.map((rule) => normalizeRuleCategoryRefs(rule, deletedCategory)),
       };
     },
   };
@@ -680,19 +596,6 @@ export function buildCategoryMigrationFixture(): LegacyCategoryMigrationFixture 
         dietary_tags: ['veg'],
         regional_tags: ['pan-indian'],
         occasion_tags: ['everyday'],
-        created_at: '',
-      },
-    ],
-    rules: [
-      {
-        name: 'Bread dinner',
-        enabled: true,
-        compiled_filter: {
-          type: 'rule',
-          target: { mode: 'base_type', base_type: 'bread-based' },
-          scope: { days: ['friday'], slots: ['dinner'] },
-          effects: [{ kind: 'require_extra', categories: ['condiment'] }],
-        }, // legacy pre-category shape, migrated below
         created_at: '',
       },
     ],

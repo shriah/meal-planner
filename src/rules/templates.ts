@@ -18,8 +18,8 @@ export type Scope = z.infer<typeof ScopeSchema>;
 const StrengthSchema = z.enum(['must', 'prefer']).default('must');
 export type Strength = z.infer<typeof StrengthSchema>;
 
-/** Soft cost per unit for `prefer` rules; above the built-in preferences (1–3) so user wishes win. */
-export const PREFER_COST = 5;
+/** Soft cost per unit for `prefer` rules; above every built-in preference (at most 5) so user wishes win. */
+export const PREFER_COST = 10;
 
 const count = z.number().int().min(0);
 const ids = z.array(z.number().int());

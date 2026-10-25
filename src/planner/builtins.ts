@@ -14,6 +14,8 @@ export interface BuiltinOptions {
   extraCost?: number;
   /** Soft cost per repeated use of the same base, curry or subzi in the week. */
   reuseCost?: number;
+  /** Soft cost per extra use of the same base, curry or subzi on the same or the next day. */
+  closeRepeatCost?: number;
   /** Soft reward for frequent components and cost for rare ones, per placement. */
   frequencyWeight?: { frequent: number; rare: number };
 }
@@ -104,14 +106,18 @@ export function builtinConstraints(library: readonly ComponentLike[], opts: Buil
       select: occasionViolation(), groupBy: 'slot', bounds: { hardMax: 0 } },
     ...compatConstraints(library, opts),
 
-    // Preferences.
+    // Preferences. Repeating a dish across the week is normal (few curries suit some bases);
+    // repeating it on the same or the next day is what makes a week feel monotonous.
     { kind: 'count', id: 'builtin:want-curry', label: 'Meal without a curry', origin: 'builtin',
-      select: is('role', 'curry'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: opts.missingRoleCost ?? 3 } },
+      select: is('role', 'curry'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: opts.missingRoleCost ?? 5 } },
     { kind: 'count', id: 'builtin:want-subzi', label: 'Meal without a subzi', origin: 'builtin',
-      select: is('role', 'subzi'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: opts.missingRoleCost ?? 3 } },
+      select: is('role', 'subzi'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: opts.missingRoleCost ?? 5 } },
     { kind: 'count', id: 'builtin:variety', label: 'Dish repeated in the week', origin: 'builtin',
       select: oneOf('role', ['base', 'curry', 'subzi']), groupBy: 'component',
-      bounds: { softMax: 1 }, costs: { max: opts.reuseCost ?? 1 } },
+      bounds: { softMax: 1 }, costs: { max: opts.reuseCost ?? 2 } },
+    { kind: 'count', id: 'builtin:spacing', label: 'Dish repeated on the same or next day', origin: 'builtin',
+      select: oneOf('role', ['base', 'curry', 'subzi']), groupBy: ['component', { days: 2 }],
+      bounds: { softMax: 1 }, costs: { max: opts.closeRepeatCost ?? 3 } },
     { kind: 'prefer', id: 'builtin:extra-cost', label: 'Extra placed', origin: 'builtin',
       select: is('role', 'extra'), weight: opts.extraCost ?? 1 },
     { kind: 'prefer', id: 'builtin:frequent', label: 'Frequent dish', origin: 'builtin',

@@ -67,15 +67,9 @@ export async function runSeed(): Promise<void> {
   const rest = seededComponents.filter(c => c.name !== 'Poori');
   await db.components.bulkAdd(rest as ComponentRecord[]);
 
-  // Seed default preferences (slot_restrictions cleared — rules used instead)
   await db.preferences.put({
     id: 'prefs',
-    slot_restrictions: {
-      base_type_slots: {},
-      component_slot_overrides: {},
-    },
     extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 3 },
-    base_type_rules: [],
   });
 
   const now = new Date().toISOString();

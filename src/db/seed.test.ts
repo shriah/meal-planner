@@ -116,7 +116,7 @@ describe('runSeed', () => {
     expect(resolveSeededCurryCompatibilityIds('Sambar Deluxe', categoryLookup)).toBeUndefined();
   });
 
-  it('creates preferences with empty slot_restrictions and seeds base-category default rules', async () => {
+  it('creates preferences with per-meal extras limits and seeds base-category default rules', async () => {
     await runSeed();
 
     const prefs = await getPreferences();
@@ -128,8 +128,7 @@ describe('runSeed', () => {
     ]);
 
     expect(prefs).toBeDefined();
-    expect(prefs!.slot_restrictions.base_type_slots).toEqual({});
-    expect(prefs!.slot_restrictions.component_slot_overrides).toEqual({});
+    expect(prefs).toEqual({ id: 'prefs', extra_quantity_limits: { breakfast: 2, lunch: 3, dinner: 3 } });
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
       expect(rule.spec).toMatchObject({

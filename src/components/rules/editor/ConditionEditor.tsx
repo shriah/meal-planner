@@ -31,7 +31,7 @@ const FIELD_LABELS: Record<ConditionField, string> = {
   frequency: 'Frequency',
 }
 
-export function valueOptions(field: ConditionField, data: EditorData): Option<ConditionValue>[] {
+function valueOptions(field: ConditionField, data: EditorData): Option<ConditionValue>[] {
   switch (field) {
     case 'id':
       return [...data.components].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.id, label: `${c.name} (${c.componentType})` }))
