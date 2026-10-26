@@ -30,7 +30,7 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whole-word (or whole-phrase) occurrence, so "rice" does not match "price". */
 const contains = (text: string, phrase: string) => phrase !== '' && new RegExp(`(^|[^a-z0-9])${escape(phrase)}($|[^a-z0-9])`).test(text);
 
-export function buildSlice(message: string, data: AssistantData): Slice {
+function matchLibrary(message: string, data: AssistantData) {
   const text = norm(message);
   const messageWords = new Set(words(message).filter((w) => w.length >= MIN_WORD && !STOP_WORDS.has(w)));
 
@@ -51,15 +51,28 @@ export function buildSlice(message: string, data: AssistantData): Slice {
     .map((c) => ({ c, s: score(c) }))
     .filter((x) => x.s > 0)
     .sort((a, b) => b.s - a.s);
-  const matchedIds = new Set(matched.map((x) => x.c.id));
 
+  return { matched, matchedIds: new Set(matched.map((x) => x.c.id)), categoryIds, messageWords };
+}
+
+/** Every library dish matching the message, best match first (uncapped). */
+export function searchLibrary(message: string, data: AssistantData): ComponentRecord[] {
+  return matchLibrary(message, data).matched.map((x) => x.c);
+}
+
+export function namesFor(data: AssistantData): Names {
   const componentName = new Map(data.library.map((c) => [c.id, c.name]));
   const categoryName = new Map(data.categories.map((c) => [c.id, c.name]));
-  const names: Names = {
+  return {
     component: (id) => componentName.get(id),
     baseCategory: (id) => categoryName.get(id),
     extraCategory: (id) => categoryName.get(id),
   };
+}
+
+export function buildSlice(message: string, data: AssistantData): Slice {
+  const { matched, matchedIds, categoryIds, messageWords } = matchLibrary(message, data);
+  const names = namesFor(data);
 
   // 0 = owned by a matched dish, 1 = refers to one, 2 = refers to a matched category, 3 = named in the message.
   const rank = (r: AssistantData['rules'][number]): number => {
