@@ -10,7 +10,7 @@ export type GeminiPart =
 
 export type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] };
 
-export type ToolDeclaration = { name: string; description: string; parameters: object };
+export type ToolDeclaration = { name: string; description: string; parameters?: object };
 
 export type GeminiEvent =
   | { type: 'text'; text: string }

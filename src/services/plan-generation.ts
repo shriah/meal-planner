@@ -132,3 +132,27 @@ export function slotConflicts(
   }
   return out;
 }
+
+/** Ids the plan uses that are no longer in the library, sorted. */
+export function missingDishIds(input: PlanningInput, plan: WeeklyPlan): number[] {
+  const known = new Set(input.library.map((c) => c.id));
+  const used = plan.slots.flatMap((s) => [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids]);
+  return [...new Set(used.filter((id): id is number => id !== undefined && !known.has(id)))].sort((a, b) => a - b);
+}
+
+/**
+ * Re-scores a stored plan under the rules as they are now (not as they were when it was made).
+ * Dishes that have since been deleted are left out of the check rather than failing it.
+ */
+export function explainPlan(input: PlanningInput, plan: WeeklyPlan): PlanProblem[] {
+  const { model, problemOf } = modelFromData(input);
+  const known = new Set(input.library.map((c) => c.id));
+  const state = fromPlanSlots(plan.slots);
+  for (const slot of state) {
+    if (slot.base !== undefined && !known.has(slot.base)) slot.base = undefined;
+    if (slot.curry !== undefined && !known.has(slot.curry)) slot.curry = undefined;
+    if (slot.subzi !== undefined && !known.has(slot.subzi)) slot.subzi = undefined;
+    slot.extras = slot.extras.filter((id) => known.has(id));
+  }
+  return score(buildModel(model), state, true).justifications.map(problemOf);
+}

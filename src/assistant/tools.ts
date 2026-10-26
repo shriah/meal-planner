@@ -1,6 +1,9 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
+import { MEALS } from '@/planner';
 import { describeSpec, parseSpec } from '@/rules';
+import { explainPlan, missingDishIds } from '@/services/plan-generation';
+import { ALL_DAYS } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
 import { MAX_LIST_ITEMS } from './limits';
 import { namesFor, searchLibrary, type AssistantData } from './retrieve';
@@ -25,7 +28,6 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   {
     name: 'list_rules',
     description: `List the user's planning rules (id, name, description, enabled), up to ${MAX_LIST_ITEMS}.`,
-    parameters: obj({}),
   },
   {
     name: 'explain_plan_slot',
@@ -66,6 +68,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
 
 const SearchArgs = z.object({ query: z.string().trim().min(1) });
 const GetRuleArgs = z.object({ id: z.number().int() });
+const ExplainArgs = z.object({ day: z.enum(ALL_DAYS as [string, ...string[]]), meal: z.enum(MEALS) }).passthrough();
 const NoArgs = z.object({}).passthrough();
 
 const capped = <T>(items: T[], key: string) => ({
@@ -107,10 +110,30 @@ const HANDLERS: Record<string, Handler> = {
     if (!a.ok) return a;
     return { ok: true, data: capped(data.rules.map((r) => describeRule(r, data)), 'rules') };
   },
+  explain_plan_slot(args, { data }) {
+    const a = parse(ExplainArgs, args);
+    if (!a.ok) return a;
+    const { plan } = data;
+    if (!plan) return { ok: true, data: { note: 'no plan' } };
+    const { day, meal } = a.value;
+    const problems = explainPlan(data, plan).filter((p) => (p.day === undefined && p.meal === undefined) || (p.day === day && p.meal === meal));
+    const missing = missingDishIds(data, plan);
+    return {
+      ok: true,
+      data: {
+        note: "Judged under today's rules, which may differ from the rules in force when the plan was made.",
+        day,
+        meal,
+        problems: problems.slice(0, MAX_LIST_ITEMS),
+        ...(problems.length > MAX_LIST_ITEMS ? { more: problems.length - MAX_LIST_ITEMS } : {}),
+        ...(missing.length ? { missingDishIds: missing } : {}),
+      },
+    };
+  },
 };
 
 const NOT_AVAILABLE: ToolResult = { ok: false, error: 'not available' };
-const PENDING = new Set(['explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule']);
+const PENDING = new Set(['propose_rule', 'propose_dish', 'simulate_with_rule']);
 
 export async function runTool(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
   try {
