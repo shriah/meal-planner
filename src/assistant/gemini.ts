@@ -5,7 +5,7 @@ export const GEMINI_MODEL = 'gemini-3.8-flash';
 
 export type GeminiPart =
   | { text: string }
-  | { functionCall: { name: string; args: unknown } }
+  | { functionCall: { name: string; args: unknown }; thoughtSignature?: string }
   | { functionResponse: { name: string; response: unknown } };
 
 export type GeminiContent = { role: 'user' | 'model'; parts: GeminiPart[] };
@@ -14,7 +14,7 @@ export type ToolDeclaration = { name: string; description: string; parameters: o
 
 export type GeminiEvent =
   | { type: 'text'; text: string }
-  | { type: 'toolCall'; name: string; args: unknown }
+  | { type: 'toolCall'; name: string; args: unknown; thoughtSignature?: string }
   | { type: 'done' };
 
 export class GeminiError extends Error {
@@ -41,21 +41,37 @@ function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === 'AbortError';
 }
 
+const BLOCK_REASONS = new Set(['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION', 'IMAGE_SAFETY']);
+
 function eventsFromData(json: string): GeminiEvent[] {
-  let parsed: { candidates?: { content?: { parts?: GeminiPart[] } }[] };
+  let parsed: {
+    error?: { message?: string };
+    promptFeedback?: { blockReason?: string };
+    candidates?: { finishReason?: string; content?: { parts?: (GeminiPart & { thoughtSignature?: string })[] } }[];
+  };
   try {
     parsed = JSON.parse(json);
   } catch {
     return [];
   }
+  if (parsed.error) {
+    throw new GeminiError('other', parsed.error.message || 'Gemini returned an error.');
+  }
   const out: GeminiEvent[] = [];
-  for (const part of parsed.candidates?.[0]?.content?.parts ?? []) {
+  const candidate = parsed.candidates?.[0];
+  for (const part of candidate?.content?.parts ?? []) {
     if ('functionCall' in part && part.functionCall) {
-      out.push({ type: 'toolCall', name: part.functionCall.name, args: part.functionCall.args });
+      const ev: GeminiEvent = { type: 'toolCall', name: part.functionCall.name, args: part.functionCall.args };
+      if (part.thoughtSignature) ev.thoughtSignature = part.thoughtSignature;
+      out.push(ev);
     } else if ('text' in part && part.text) {
       out.push({ type: 'text', text: part.text });
     }
   }
+  const blocked =
+    parsed.promptFeedback?.blockReason ||
+    (candidate?.finishReason && BLOCK_REASONS.has(candidate.finishReason));
+  if (blocked && out.length === 0) throw new GeminiError('other', 'Gemini blocked this response.');
   return out;
 }
 
@@ -84,8 +100,15 @@ export async function* streamGemini(
   }
 
   if (!res.ok) {
-    if (res.status === 400 || res.status === 401 || res.status === 403) {
+    if (res.status === 401 || res.status === 403) {
       throw new GeminiError('auth', 'Gemini rejected the API key.');
+    }
+    if (res.status === 400) {
+      const text = await res.text().catch(() => '');
+      if (/API_KEY_INVALID|API key/i.test(text)) {
+        throw new GeminiError('auth', 'Gemini rejected the API key.');
+      }
+      throw new GeminiError('other', 'Gemini rejected the request.');
     }
     if (res.status === 429) throw new GeminiError('rate', 'Gemini rate limit reached.');
     throw new GeminiError('other', `Gemini returned HTTP ${res.status}.`);
@@ -109,8 +132,11 @@ export async function* streamGemini(
     buffer += decoder.decode();
     if (buffer.startsWith('data:')) yield* eventsFromData(buffer.slice(5).trim());
   } catch (e) {
+    if (e instanceof GeminiError) throw e;
     if (isAbort(e)) return;
     throw new GeminiError('network', 'Connection to Gemini was interrupted.');
+  } finally {
+    reader.cancel().catch(() => {});
   }
   yield { type: 'done' };
 }

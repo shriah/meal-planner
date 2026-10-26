@@ -50,7 +50,7 @@ describe('streamGemini', () => {
     ]);
   });
 
-  it.each([[400], [403]])('maps HTTP %i to auth', async (status) => {
+  it.each([[401], [403]])('maps HTTP %i to auth', async (status) => {
     const f = async () => new Response('no', { status });
     await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'auth' });
   });
@@ -110,5 +110,81 @@ describe('streamGemini', () => {
     };
     await collect(streamGemini({ ...req, tools: [] }, f as typeof fetch));
     expect(JSON.parse(String(init?.body))).not.toHaveProperty('tools');
+  });
+
+  it('maps 400 to auth only when the body says the API key is invalid', async () => {
+    const bad = async () => new Response('{"error":{"details":[{"reason":"API_KEY_INVALID"}]}}', { status: 400 });
+    await expect(collect(streamGemini(req, bad as typeof fetch))).rejects.toMatchObject({ kind: 'auth' });
+    const other = async () => new Response('{"error":{"message":"bad schema"}}', { status: 400 });
+    await expect(collect(streamGemini(req, other as typeof fetch))).rejects.toMatchObject({ kind: 'other' });
+  });
+
+  it('passes thoughtSignature through on toolCall events', async () => {
+    const chunk = data({
+      candidates: [{ content: { parts: [{ functionCall: { name: 'x', args: {} }, thoughtSignature: 'sig' }] } }],
+    });
+    const f = async () => sseResponse([chunk]);
+    expect(await collect(streamGemini(req, f as typeof fetch))).toEqual([
+      { type: 'toolCall', name: 'x', args: {}, thoughtSignature: 'sig' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('throws other on an error chunk in a 200 stream', async () => {
+    const f = async () => sseResponse([data({ error: { message: 'overloaded' } })]);
+    await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({
+      kind: 'other',
+      message: 'overloaded',
+    });
+  });
+
+  it('throws other on blocked chunks', async () => {
+    const pf = async () => sseResponse([data({ promptFeedback: { blockReason: 'SAFETY' } })]);
+    await expect(collect(streamGemini(req, pf as typeof fetch))).rejects.toMatchObject({ kind: 'other' });
+    const fr = async () => sseResponse([data({ candidates: [{ finishReason: 'SAFETY' }] })]);
+    await expect(collect(streamGemini(req, fr as typeof fetch))).rejects.toMatchObject({ kind: 'other' });
+  });
+
+  it('skips malformed data lines', async () => {
+    const f = async () => sseResponse(['data: {oops\n\n', textChunk('ok')]);
+    expect(await collect(streamGemini(req, f as typeof fetch))).toEqual([
+      { type: 'text', text: 'ok' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('handles a multi-byte character split across chunks and two events in one chunk', async () => {
+    const bytes = enc.encode(textChunk('caf\u00e9') + textChunk('!'));
+    const cut = bytes.indexOf(0xc3) + 1;
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(bytes.slice(0, cut));
+        c.enqueue(bytes.slice(cut));
+        c.close();
+      },
+    });
+    const f = async () => new Response(body);
+    expect(await collect(streamGemini(req, f as typeof fetch))).toEqual([
+      { type: 'text', text: 'caf\u00e9' },
+      { type: 'text', text: '!' },
+      { type: 'done' },
+    ]);
+  });
+
+  it('stops without GeminiError when aborted mid-stream', async () => {
+    const ac = new AbortController();
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(enc.encode(textChunk('a')));
+        ac.signal.addEventListener('abort', () => c.error(new DOMException('aborted', 'AbortError')));
+      },
+    });
+    const f = async () => new Response(body);
+    const out: GeminiEvent[] = [];
+    for await (const e of streamGemini({ ...req, signal: ac.signal }, f as typeof fetch)) {
+      out.push(e);
+      ac.abort();
+    }
+    expect(out).toEqual([{ type: 'text', text: 'a' }]);
   });
 });
