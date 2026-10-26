@@ -31,6 +31,8 @@ describe('looksOffTopic', () => {
   });
   it('is false on app vocabulary', () => {
     expect(looksOffTopic('add chole', slice(false))).toBe(false);
+    expect(looksOffTopic('swap paneer for dal', slice(false))).toBe(false);
+    expect(looksOffTopic('remove it please', slice(false))).toBe(false);
     expect(looksOffTopic('something for Dinner', slice(false))).toBe(false);
   });
 });
@@ -44,8 +46,13 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('Monday');
   });
   it('shows an exclude example that RuleSpecSchema accepts', () => {
-    const m = SYSTEM_PROMPT.match(/EXAMPLE: (\{.*\})/);
-    expect(m).not.toBeNull();
-    expect(RuleSpecSchema.safeParse(JSON.parse(m![1])).success).toBe(true);
+    const specs = [...SYSTEM_PROMPT.matchAll(/^EXAMPLE: (\{.*\})$/gm)].map((m) => JSON.parse(m[1]));
+    expect(specs.length).toBeGreaterThanOrEqual(2);
+    for (const s of specs) expect(RuleSpecSchema.safeParse(s).success).toBe(true);
+    expect(specs.some((s) => s.params.scope)).toBe(true);
+  });
+  it('keeps day and meal out of match fields', () => {
+    expect(SYSTEM_PROMPT).toMatch(/Match fields: [^.]*\./);
+    expect(SYSTEM_PROMPT.match(/Match fields: ([^.]*)\./)![1]).not.toMatch(/\b(day|meal|role)\b/);
   });
 });

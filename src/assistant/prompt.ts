@@ -1,6 +1,6 @@
 // The system prompt (a constant, never built from user text), the injection-safe data wrapper,
 // and a cheap off-topic shortcut.
-import { TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
+import { CONDITION_FIELDS, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
 import { TOOL_DECLARATIONS } from './tools';
 import type { Slice } from './retrieve';
 
@@ -19,6 +19,10 @@ const toolLines = TOOL_DECLARATIONS.map((t) => `- ${t.name}: ${t.description}`).
 const EXAMPLE = JSON.stringify({
   template: 'exclude',
   params: { match: { field: 'protein_tag', op: 'eq', value: 'paneer' }, strength: 'must' },
+});
+const SCOPED_EXAMPLE = JSON.stringify({
+  template: 'exclude',
+  params: { match: { field: 'protein_tag', op: 'eq', value: 'fish' }, scope: { days: ['tuesday'] }, strength: 'must' },
 });
 
 export const SYSTEM_PROMPT = `You are the rules assistant of a weekly meal planner. Weeks start on Monday.
@@ -39,8 +43,11 @@ ${toolLines}
 Rule drafts use only these templates, as spec = { template, params }. A "?" marks an optional param.
 ${templateLines}
 
-A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Fields include role, day, meal, componentType, id, curry_category, dietary_tags, protein_tag, regional_tags, occasion_tags, frequency, base_category_id, extra_category_id. Use dish ids from search_dishes, never guess them.
+A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${CONDITION_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them.
 EXAMPLE: ${EXAMPLE}
+
+scope is optional and strict: { days?: [...], meals?: [...] } with lowercase values (monday..sunday; breakfast, lunch, dinner) and no other keys. Leave it out for every day and meal.
+EXAMPLE: ${SCOPED_EXAMPLE}
 
 Style: short, plain text. No markdown links, images or HTML.`;
 
@@ -55,6 +62,7 @@ const VOCABULARY = [
   'rule', 'rules', 'plan', 'plans', 'dish', 'dishes', 'meal', 'meals', 'breakfast', 'lunch', 'dinner', 'add', 'why',
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'week', 'weekly', 'day',
   'exclude', 'require', 'limit', 'repeat', 'never', 'always', 'prefer', 'only', 'allow', 'skip', 'pair', 'pairs',
+  'make', 'change', 'remove', 'swap', 'show', 'list', 'explain', 'what', 'avoid', 'allow',
   'curry', 'subzi', 'base', 'extra', 'veg', 'vegetarian', 'paneer', 'rice', 'dal', 'tag', 'category', 'recipe', 'food',
 ];
 
