@@ -45,7 +45,7 @@ export function RuleList() {
   // A deep link (`/rules#rule-12`) opens the section holding that rule and scrolls to it.
   const target = parseHash(useUrlHash()).rule
   const targetGroup = target === undefined ? undefined
-    : (['defaults', 'dish', 'mine'] as const).find((g) => groups[g].some((r) => r.id === target))
+    : (['defaults', 'mine'] as const).find((g) => groups[g].some((r) => r.id === target))
   useEffect(() => {
     if (targetGroup) document.getElementById(`rule-${target}`)?.scrollIntoView?.({ block: 'center' })
   }, [target, targetGroup])
@@ -62,10 +62,11 @@ export function RuleList() {
   }
   const mine = groups.mine.filter(matches)
   const defaults = groups.defaults.filter(matches)
-  const dish = groups.dish.filter(matches)
-  const nothingMatches = searching && mine.length + defaults.length + dish.length === 0
+  const nothingMatches = searching && mine.length + defaults.length === 0
 
-  const activeCount = rules.filter((r) => r.enabled).length
+  // Dish settings belong to the dish (edited in the Library), so they aren't listed or counted here.
+  const shown = [...groups.mine, ...groups.defaults]
+  const activeCount = shown.filter((r) => r.enabled).length
   const row = (rule: RuleRecord) => <RuleRow key={rule.id} rule={rule} names={names} known={known} highlighted={rule.id === target} />
 
   async function restore() {
@@ -86,9 +87,9 @@ export function RuleList() {
       </div>
       <RuleMigrationNotice />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        {rules.length > 0 && (
+        {shown.length > 0 && (
           <p className="text-sm text-muted-foreground">
-            {rules.length} rules · {activeCount} active
+            {shown.length} rules · {activeCount} active
           </p>
         )}
         <Input
@@ -122,16 +123,6 @@ export function RuleList() {
             {restoreMessage && <span role="status" className="text-sm text-muted-foreground">{restoreMessage}</span>}
           </div>
           {defaults.map(row)}
-        </details>
-      )}
-
-      {!nothingMatches && dish.length > 0 && (
-        <details className="mt-8" open={searching || targetGroup === 'dish' ? true : undefined}>
-          <summary className="cursor-pointer text-lg font-semibold font-heading">Dish settings ({dish.length})</summary>
-          <p className="mb-2 mt-1 text-sm text-muted-foreground">
-            Which bases, curries and days each dish goes with. Change them from the dish in the Library.
-          </p>
-          {dish.map(row)}
         </details>
       )}
     </main>

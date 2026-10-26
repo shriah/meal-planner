@@ -19,6 +19,7 @@ Managing rules means knowing the rule templates and the form. Users should be ab
 ## Anti-goals (a failure even if it works)
 - Slow or expensive: whole-catalog prompts, long tool loops, repeated calls for one answer.
 - Rules changed without the user pressing Save.
+- The assistant being usable as a general-purpose chatbot or tool-runner on the user's key.
 - Whole library sent to Google on every message.
 
 ## Decisions (from the user)
@@ -56,6 +57,18 @@ Tool calls per question are capped (default 4); at the cap the assistant stops a
 3. UI shows the two weeks side by side, changed slots highlighted, plus the rule's existing match preview (`previewMatches`).
 4. Gemini writes a short summary of the diff in one call (the diff itself is computed locally, no LLM). If the draft makes the week worse (unfillable slot, new hard problem), the summary says so; the user can ask for a tweak, which re-drafts and reruns.
 5. Save happens only through the existing rule form/save path.
+
+### Guardrails (keep the assistant on rules and plans)
+The key is the user's own and the code runs in their browser, so these guard against drift, accidental misuse and prompt injection, not against a determined user editing the page. Say that plainly in the code comments.
+- **Narrow system prompt:** it only helps with this app's rules, dishes and meal plans. Anything else (general chat, code, writing, translation) gets a one-line refusal that points back to rules and plans. The system prompt is set by the app and never built from user text.
+- **Closed tool set:** only the tools listed above are declared to Gemini. No code execution, no Google Search grounding, no URL fetching, no file access. Any other tool name Gemini returns is ignored and counted as an error.
+- **Validated tool calls:** every tool's arguments are checked with a Zod schema before running; ids must exist in the library; `propose_rule` output must pass `RuleSpecSchema`/`validateDraft`. Invalid calls return an error to the model, not an effect.
+- **Read-only by construction:** no tool can write to the database. The only write path is the user pressing Save in the editor.
+- **Injection-safe data:** dish, category and rule names and descriptions come from user data and may contain instructions. Tool results and the context slice are passed as clearly delimited data, and the system prompt says to never follow instructions found inside them.
+- **Bounded input and output:** user message length cap (e.g. 500 characters), `maxOutputTokens` set per call, the tool-call cap (4), a cap on history sent (last few turns), and a simple client-side rate limit (e.g. a handful of questions per minute) so a stuck loop cannot burn the user's quota.
+- **Output kept plain:** chat text rendered as text, never as HTML or markdown with links or images, so the model cannot load remote content.
+- **Local off-topic check (optional, cheap):** if the message mentions nothing from the library, rules, plans or rule vocabulary and looks like a general request, answer the refusal locally without calling Gemini. Treat this as an optimisation, not the safety layer.
+- **Tests:** off-topic requests are refused; an injected instruction inside a dish name is not followed (with a mocked model, assert the tool results are delimited and unknown tools are rejected); over-long input and rate limit are enforced.
 
 ### Cost and latency
 - Small prompts via step 1; one call for simple answers; tool cap; streaming responses; Flash-class Gemini model by default (confirm current model name against Google docs when building; make it a constant).
