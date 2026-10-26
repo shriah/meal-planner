@@ -1,12 +1,13 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
   buildModel, explain, fromPlanSlots, planWeek, score, slotIndex,
-  type Justification, type Meal, type ModelInput, type Pins,
+  MEALS, type Justification, type Meal, type ModelInput, type Pins,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
-import type { DayOfWeek, WeeklyPlan } from '@/types/plan';
+import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
+import type { SlotChange } from '@/assistant/types';
 
 export interface PlanningInput {
   library: ComponentRecord[];
@@ -155,4 +156,32 @@ export function explainPlan(input: PlanningInput, plan: WeeklyPlan): PlanProblem
     slot.extras = slot.extras.filter((id) => known.has(id));
   }
   return score(buildModel(model), state, true).justifications.map(problemOf);
+}
+
+const slotIds = (s: PlanSlot | undefined): number[] =>
+  s ? [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((id): id is number => id !== undefined) : [];
+
+/**
+ * Slots whose dishes differ between two plans, in day-then-meal order, with the dishes named.
+ * `touches` says whether a dish is one a rule is about; a change is touched when any dish in
+ * either version of the slot is.
+ */
+export function diffPlans(
+  before: WeeklyPlan,
+  after: WeeklyPlan,
+  names: ReadonlyMap<number, string>,
+  touches: (id: number) => boolean = () => false,
+): SlotChange[] {
+  const find = (p: WeeklyPlan, day: DayOfWeek, meal: Meal) => p.slots.find((s) => s.day === day && s.meal_slot === meal);
+  const text = (ids: number[]) => (ids.length ? ids.map((id) => names.get(id) ?? `dish ${id}`).join(' + ') : 'nothing');
+  const out: SlotChange[] = [];
+  for (const day of ALL_DAYS) {
+    for (const meal of MEALS) {
+      const b = slotIds(find(before, day, meal));
+      const a = slotIds(find(after, day, meal));
+      if (b.join(',') === a.join(',')) continue;
+      out.push({ day, meal, before: text(b), after: text(a), touchedByRule: [...b, ...a].some(touches) });
+    }
+  }
+  return out;
 }

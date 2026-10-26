@@ -27,7 +27,7 @@ function runInWorker(input: PlanningInput, opts: PlanningOptions): Promise<Plann
   });
 }
 
-async function runPlanning(input: PlanningInput, opts: PlanningOptions): Promise<PlanningOutcome> {
+export async function runPlanning(input: PlanningInput, opts: PlanningOptions): Promise<PlanningOutcome> {
   if (typeof Worker === 'undefined') return planFromData(input, opts);
   try {
     return await runInWorker(input, opts);

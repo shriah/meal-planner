@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { dayRule, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
-import { explainPlan, missingDishIds, type PlanningInput } from './plan-generation';
+import { diffPlans, explainPlan, missingDishIds, type PlanningInput } from './plan-generation';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -30,5 +30,22 @@ describe('explainPlan', () => {
     const plan = planOf({ base_id: 99, curry_id: 98, extra_ids: [97] });
     expect(() => explainPlan(input(), plan)).not.toThrow();
     expect(missingDishIds(input(), plan)).toEqual([97, 98, 99]);
+  });
+});
+
+describe('diffPlans', () => {
+  const names = new Map([[1, 'Pulao'], [2, 'Paneer'], [3, 'Dal']]);
+
+  it('is empty for equal plans', () => {
+    const p = planOf({ curry_id: 2 });
+    expect(diffPlans(p, structuredClone(p), names)).toEqual([]);
+  });
+
+  it('lists changed slots with dish names and flags those touching the predicate', () => {
+    const before = planOf({ curry_id: 2 }, { day: 'tuesday', curry_id: 3 });
+    const after = planOf({ curry_id: 3 }, { day: 'tuesday', curry_id: 3 });
+    const changes = diffPlans(before, after, names, (id) => id === 2);
+    expect(changes).toEqual([{ day: 'monday', meal: 'lunch', before: 'Pulao + Paneer', after: 'Pulao + Dal', touchedByRule: true }]);
+    expect(diffPlans(before, after, names)[0].touchedByRule).toBe(false);
   });
 });

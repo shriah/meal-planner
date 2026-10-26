@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS } from '@/planner';
-import { describeSpec, parseSpec } from '@/rules';
+import { describeSpec, parseSpec, RuleSpecSchema } from '@/rules';
 import { explainPlan, missingDishIds } from '@/services/plan-generation';
 import { ALL_DAYS } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
@@ -33,9 +33,8 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     name: 'explain_plan_slot',
     description: 'Explain why a meal slot in the current weekly plan has the dish it has, or why a given dish is not there.',
     parameters: obj({
-      day: { type: 'string', description: 'Day of the week, e.g. Monday' },
-      meal: { type: 'string', description: 'Meal, e.g. breakfast, lunch or dinner' },
-      dishId: { type: 'integer', description: 'Optional dish id to ask about' },
+      day: { type: 'string', description: `Day of the week, lowercase: ${ALL_DAYS.join('|')}` },
+      meal: { type: 'string', description: `Meal, lowercase: ${MEALS.join('|')}` },
     }, ['day', 'meal']),
   },
   {
@@ -60,15 +59,20 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     description: 'Regenerate the plan with a proposed rule and show which slots would change, without saving anything.',
     parameters: obj({
       name: { type: 'string', description: 'Short rule name' },
-      template: { type: 'string', description: 'Rule template id' },
-      params: { type: 'object', description: 'Template parameters' },
-    }, ['name', 'template', 'params']),
+      spec: { type: 'object', description: 'Rule spec: { template, params }' },
+    }, ['name', 'spec']),
   },
 ];
 
 const SearchArgs = z.object({ query: z.string().trim().min(1) });
 const GetRuleArgs = z.object({ id: z.number().int() });
-const ExplainArgs = z.object({ day: z.enum(ALL_DAYS as [string, ...string[]]), meal: z.enum(MEALS) }).passthrough();
+const lower = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : v);
+const ExplainArgs = z.object({
+  day: z.preprocess(lower, z.enum(ALL_DAYS as [string, ...string[]])),
+  meal: z.preprocess(lower, z.enum(MEALS)),
+}).passthrough();
+const SimulateArgs = z.object({ name: z.string().trim().min(1), spec: z.record(z.string(), z.unknown()) });
+const MAX_CHANGES = 21;
 const NoArgs = z.object({}).passthrough();
 
 const capped = <T>(items: T[], key: string) => ({
@@ -86,7 +90,7 @@ function describeRule(r: AssistantData['rules'][number], data: AssistantData) {
   };
 }
 
-type Handler = (args: unknown, ctx: ToolContext) => ToolResult;
+type Handler = (args: unknown, ctx: ToolContext) => ToolResult | Promise<ToolResult>;
 const parse = <S extends z.ZodType>(schema: S, args: unknown): { ok: true; value: z.infer<S> } | { ok: false; error: string } => {
   const r = schema.safeParse(args);
   return r.success ? { ok: true, value: r.data } : { ok: false, error: `invalid arguments: ${r.error.issues.map((i) => i.message).join('; ')}` };
@@ -126,18 +130,42 @@ const HANDLERS: Record<string, Handler> = {
         meal,
         problems: problems.slice(0, MAX_LIST_ITEMS),
         ...(problems.length > MAX_LIST_ITEMS ? { more: problems.length - MAX_LIST_ITEMS } : {}),
-        ...(missing.length ? { missingDishIds: missing } : {}),
+        ...(missing.length
+          ? {
+              missingDishIds: missing,
+              deletedDishNote: 'Problems at these slots may stem from a deleted dish rather than a rule.',
+            }
+          : {}),
       },
+    };
+  },
+  async simulate_with_rule(args, ctx) {
+    const a = parse(SimulateArgs, args);
+    if (!a.ok) return a;
+    const spec = RuleSpecSchema.safeParse(a.value.spec);
+    if (!spec.success) return { ok: false, error: `invalid rule: ${spec.error.issues.map((i) => i.message).join('; ')}` };
+    const comparison = await ctx.compare(spec.data, a.value.name);
+    const { changes, identical, worse } = comparison;
+    return {
+      ok: true,
+      data: {
+        identical,
+        worse,
+        changes: changes.slice(0, MAX_CHANGES).map(({ day, meal, before, after, touchedByRule }) => ({ day, meal, before, after, touchedByRule })),
+        ...(changes.length > MAX_CHANGES ? { more: changes.length - MAX_CHANGES } : {}),
+        ...(worse ? { newProblems: comparison.newHardProblems.slice(0, MAX_LIST_ITEMS).map((p) => p.message) } : {}),
+      },
+      effect: { kind: 'comparison', comparison },
     };
   },
 };
 
 const NOT_AVAILABLE: ToolResult = { ok: false, error: 'not available' };
-const PENDING = new Set(['propose_rule', 'propose_dish', 'simulate_with_rule']);
+const PENDING = new Set(['propose_rule', 'propose_dish']);
 
 export async function runTool(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult> {
   try {
-    if (Object.hasOwn(HANDLERS, name)) return HANDLERS[name](args, ctx);
+    if (Object.hasOwn(HANDLERS, name)) return await HANDLERS[name](args, ctx);
     if (PENDING.has(name)) return NOT_AVAILABLE;
     return { ok: false, error: `unknown tool ${name}` };
   } catch (e) {

@@ -137,3 +137,81 @@ describe('explain_plan_slot', () => {
     expect((r as { data: { missingDishIds: number[] } }).data.missingDishIds).toEqual([55]);
   });
 });
+
+describe('explain_plan_slot declaration and results', () => {
+  const decl = TOOL_DECLARATIONS.find((t) => t.name === 'explain_plan_slot')!;
+  const props = (decl.parameters as { properties: Record<string, { description: string }> }).properties;
+
+  it('describes day and meal values in lowercase and has no dishId', () => {
+    expect(props.day.description).toMatch(/monday.*sunday/);
+    expect(props.day.description).not.toMatch(/Monday/);
+    expect(props.meal.description).toMatch(/breakfast\|lunch\|dinner/);
+    expect('dishId' in props).toBe(false);
+  });
+
+  it('accepts capitalised day and meal', async () => {
+    const plan: WeeklyPlan = { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 1, extra_ids: [] }] };
+    const r = await runTool('explain_plan_slot', { day: 'Monday', meal: 'Lunch' }, ctxOf({ library: [dish(1, 'Pulao')], plan }));
+    expect(r.ok).toBe(true);
+    expect((r as { data: { day: string } }).data.day).toBe('monday');
+  });
+
+  it('notes that problems may stem from a deleted dish when dishes are missing', async () => {
+    const ctx = ctxOf({ plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 55, extra_ids: [] }] } });
+    const d = (await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctx) as { data: { deletedDishNote?: string } }).data;
+    expect(d.deletedDishNote).toMatch(/deleted dish/);
+    const ok = ctxOf({ library: [dish(1, 'Pulao')], plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 1, extra_ids: [] }] } });
+    expect(((await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ok)) as { data: object }).data).not.toHaveProperty('deletedDishNote');
+  });
+});
+
+describe('simulate_with_rule', () => {
+  const spec = { template: 'exclude', params: { match: is('id', 2) } };
+  const slot = (i: number) => ({ day: 'monday' as const, meal: 'lunch' as const, before: `A${i}`, after: `B${i}`, touchedByRule: i % 2 === 0 });
+  const comparison = (n: number) => {
+    const plan: WeeklyPlan = { slots: [] };
+    return { before: plan, after: plan, changes: Array.from({ length: n }, (_, i) => slot(i)), identical: n === 0, worse: false, newHardProblems: [] };
+  };
+  const withCompare = (n: number, calls: unknown[] = []): ToolContext => ({
+    ...ctxOf(),
+    compare: async (s, name) => { calls.push([s, name]); return comparison(n); },
+  });
+
+  it('declares name and spec', () => {
+    const d = TOOL_DECLARATIONS.find((t) => t.name === 'simulate_with_rule')!;
+    expect(Object.keys((d.parameters as { properties: object }).properties)).toEqual(['name', 'spec']);
+  });
+
+  it('returns a compact diff and a comparison effect', async () => {
+    const calls: unknown[] = [];
+    const r = await runTool('simulate_with_rule', { name: 'No paneer', spec }, withCompare(2, calls));
+    expect(r.ok).toBe(true);
+    const ok = r as { data: { identical: boolean; worse: boolean; changes: unknown[] }; effect?: { kind: string } };
+    expect(ok.data).toMatchObject({ identical: false, worse: false });
+    expect(ok.data.changes).toEqual([
+      { day: 'monday', meal: 'lunch', before: 'A0', after: 'B0', touchedByRule: true },
+      { day: 'monday', meal: 'lunch', before: 'A1', after: 'B1', touchedByRule: false },
+    ]);
+    expect(ok.effect?.kind).toBe('comparison');
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as unknown[])[1]).toBe('No paneer');
+  });
+
+  it('caps the diff at 21 changes with a count of the rest', async () => {
+    const r = (await runTool('simulate_with_rule', { name: 'x', spec }, withCompare(25))) as { data: { changes: unknown[]; more?: number } };
+    expect(r.data.changes).toHaveLength(21);
+    expect(r.data.more).toBe(4);
+  });
+
+  it('rejects an invalid spec without comparing', async () => {
+    const calls: unknown[] = [];
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: { template: 'nope', params: {} } }, withCompare(1, calls));
+    expect(r.ok).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('turns a failing comparison into ok:false', async () => {
+    const r = await runTool('simulate_with_rule', { name: 'x', spec }, ctxOf());
+    expect(r).toEqual({ ok: false, error: 'unused' });
+  });
+});
