@@ -29,10 +29,6 @@ describe('tool registry', () => {
     expect((await runTool('drop_tables', {}, ctxOf())).ok).toBe(false);
   });
 
-  it('reports later-task tools as not available', async () => {
-    expect(await runTool('propose_rule', {}, ctxOf())).toEqual({ ok: false, error: 'not available' });
-  });
-
   it('turns a throwing tool into ok:false', async () => {
     const ctx = ctxOf();
     Object.defineProperty(ctx.data, 'library', { get() { throw new Error('boom'); } });
@@ -213,5 +209,113 @@ describe('simulate_with_rule', () => {
   it('turns a failing comparison into ok:false', async () => {
     const r = await runTool('simulate_with_rule', { name: 'x', spec }, ctxOf());
     expect(r).toEqual({ ok: false, error: 'unused' });
+  });
+});
+
+describe('propose_rule', () => {
+  const library = [dish(1, 'Sambar')];
+  const good = { template: 'exclude', params: { match: is('id', 1), strength: 'must' } };
+
+  it('returns a rule-draft effect for a valid spec', async () => {
+    const r = await runTool('propose_rule', { name: ' No sambar ', spec: good }, ctxOf({ library }));
+    expect(r.ok).toBe(true);
+    const effect = (r as { effect?: { kind: string; draft: { name: string; spec: unknown } } }).effect;
+    expect(effect?.kind).toBe('rule-draft');
+    expect(effect?.draft.name).toBe('No sambar');
+    expect((effect?.draft.spec as { template: string }).template).toBe('exclude');
+  });
+
+  it('rejects an unknown template without an effect', async () => {
+    const r = await runTool('propose_rule', { name: 'x', spec: { template: 'nonsense', params: {} } }, ctxOf({ library }));
+    expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('rejects a spec referencing a missing component', async () => {
+    const r = await runTool('propose_rule', { name: 'x', spec: { template: 'exclude', params: { match: is('id', 999), strength: 'must' } } }, ctxOf({ library }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain('component #999');
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('rejects a blank name', async () => {
+    expect((await runTool('propose_rule', { name: '  ', spec: good }, ctxOf({ library }))).ok).toBe(false);
+  });
+});
+
+describe('propose_dish', () => {
+  const categories = [
+    { id: 1, kind: 'base' as const, name: 'rice-based', created_at: '' },
+    { id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' },
+  ];
+  const library = [dish(1, 'Sambar'), dish(2, 'Sambar', { componentType: 'base' })];
+  const ctx = () => ctxOf({ library, categories });
+  const effectOf = (r: unknown) => (r as { effect?: { kind: string; draft: Record<string, unknown> } }).effect;
+
+  it('drafts a curry with its category and tags', async () => {
+    const r = await runTool('propose_dish', { name: ' Palak Paneer ', componentType: 'curry', curry_category: 'paneer', dietary_tags: ['veg'], protein_tag: 'paneer' }, ctx());
+    expect(r.ok).toBe(true);
+    expect(effectOf(r)).toEqual({
+      kind: 'dish-draft',
+      draft: { name: 'Palak Paneer', componentType: 'curry', curry_category: 'paneer', dietary_tags: ['veg'], protein_tag: 'paneer' },
+    });
+  });
+
+  it('resolves a base category name to its id', async () => {
+    const r = await runTool('propose_dish', { name: 'Jeera Rice', componentType: 'base', base_category: 'Rice-Based' }, ctx());
+    expect(effectOf(r)?.draft).toMatchObject({ componentType: 'base', base_category_id: 1 });
+  });
+
+  it('resolves an extra category name to its id', async () => {
+    const r = await runTool('propose_dish', { name: 'Papad', componentType: 'extra', extra_category: 'crunchy' }, ctx());
+    expect(effectOf(r)?.draft).toMatchObject({ componentType: 'extra', extra_category_id: 2 });
+  });
+
+  it('lists existing categories for an unknown name and creates none', async () => {
+    const r = await runTool('propose_dish', { name: 'Jeera Rice', componentType: 'base', base_category: 'grainy' }, ctx());
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain('rice-based');
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('rejects a category that does not fit the type', async () => {
+    expect((await runTool('propose_dish', { name: 'X', componentType: 'curry', base_category: 'rice-based' }, ctx())).ok).toBe(false);
+  });
+
+  it('rejects an unknown tag and lists valid values', async () => {
+    const r = await runTool('propose_dish', { name: 'X', componentType: 'curry', dietary_tags: ['tasty'] }, ctx());
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain('non-veg');
+  });
+
+  it('rejects an unknown type', async () => {
+    expect((await runTool('propose_dish', { name: 'X', componentType: 'dessert' }, ctx())).ok).toBe(false);
+  });
+
+  it('rejects a duplicate of the same type, ignoring case and spacing', async () => {
+    const r = await runTool('propose_dish', { name: '  SAMBAR ', componentType: 'curry' }, ctx());
+    expect(r).toEqual({ ok: false, error: expect.stringContaining('already in the library: Sambar') });
+  });
+
+  it('allows the same name under another type', async () => {
+    expect((await runTool('propose_dish', { name: 'Sambar', componentType: 'subzi' }, ctx())).ok).toBe(true);
+  });
+
+  it('flags near-duplicates but still drafts', async () => {
+    const r = await runTool('propose_dish', { name: 'Sambhar rice', componentType: 'base' }, ctxOf({ library: [dish(1, 'Sambar'), dish(2, 'Dal')], categories }));
+    expect(r.ok).toBe(true);
+    expect((r as { data: { similarExisting: string[] } }).data.similarExisting).toEqual(['Sambar']);
+    expect(effectOf(r)?.kind).toBe('dish-draft');
+  });
+
+  it('flags a name that contains an existing one and caps the list at five', async () => {
+    const many = Array.from({ length: 8 }, (_, i) => dish(i + 1, `Paneer ${i}`));
+    const r = await runTool('propose_dish', { name: 'Paneer', componentType: 'subzi' }, ctxOf({ library: many, categories }));
+    expect((r as { data: { similarExisting: string[] } }).data.similarExisting).toHaveLength(5);
+  });
+
+  it('has no similar dishes when nothing resembles it', async () => {
+    const r = await runTool('propose_dish', { name: 'Khichdi', componentType: 'base' }, ctx());
+    expect((r as { data: { similarExisting: string[] } }).data.similarExisting).toEqual([]);
   });
 });
