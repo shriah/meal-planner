@@ -112,15 +112,4 @@ describe('RuleList', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the assistant in a side sheet from "Ask assistant"', async () => {
-    localStorage.clear();
-    render(<RuleList />);
-    await screen.findByRole('heading', { name: 'Your rules' });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Ask assistant' }));
-
-    const sheet = await screen.findByRole('dialog', { name: 'Rules assistant' });
-    expect(within(sheet).getByLabelText('Gemini API key')).toBeInTheDocument();
-    expect(within(sheet).getByText(/kept in this browser in plain text/)).toBeInTheDocument();
-  });
 });

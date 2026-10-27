@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { AssistantButton } from '@/components/assistant/AssistantButton'
 
 export function AppNav() {
   return (
@@ -15,6 +16,7 @@ export function AppNav() {
         <Link href="/rules" className="text-sm text-muted-foreground hover:text-foreground">
           Rules
         </Link>
+        <AssistantButton />
       </div>
     </nav>
   )
