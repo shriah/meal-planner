@@ -89,7 +89,7 @@ interface FormState {
   day_mode: DayMode
   /** Specific days the dish may be planned on, when day_mode is 'specific'. */
   days: Day[]
-  /** Meals the dish may be planned at; all three when there is no restriction. */
+  /** Meals the dish may be planned at; none ticked means any meal. */
   meals: Meal[]
   /** Never planned automatically; can still be picked by hand. */
   never_auto: boolean
@@ -117,7 +117,7 @@ function initialFormState(
       frequency: component.frequency ?? 'normal',
       day_mode: dayModeOf(owned.days),
       days: owned.days,
-      meals: owned.meals.length ? owned.meals : [...MEALS],
+      meals: owned.meals,
       never_auto: owned.neverAuto,
     }
   }
@@ -135,7 +135,7 @@ function initialFormState(
     frequency: 'normal',
     day_mode: 'any',
     days: [],
-    meals: [...MEALS],
+    meals: [],
     never_auto: false,
   }
 }
@@ -528,14 +528,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
               <label key={meal} className="flex items-center gap-1.5 text-xs cursor-pointer">
                 <Checkbox
                   checked={form.meals.includes(meal)}
-                  // At least one meal stays allowed; all three means no restriction.
-                  disabled={form.meals.length === 1 && form.meals.includes(meal)}
                   onCheckedChange={() => setForm(s => ({ ...s, meals: toggleArrayValue(s.meals, meal) }))}
                 />
                 {meal}
               </label>
             ))}
           </div>
+          {form.meals.length === 0 && <p className="text-xs text-muted-foreground">None selected: any meal.</p>}
         </fieldset>
         <label className="flex items-center gap-1.5 text-xs cursor-pointer">
           <Checkbox

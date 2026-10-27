@@ -97,12 +97,12 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
-  it('saves the allowed meals as a rule the dish owns, and allowing all three again removes it', async () => {
+  it('saves the allowed meals as a rule the dish owns, and clearing them again removes it', async () => {
     render(<ComponentForm componentType="subzi" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    expect(screen.getByRole('checkbox', { name: 'lunch' })).toBeChecked();
-    await userEvent.click(screen.getByRole('checkbox', { name: 'lunch' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'dinner' }));
+    expect(screen.getByRole('checkbox', { name: 'breakfast' })).not.toBeChecked();
+    expect(screen.getByText('None selected: any meal.')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'breakfast' }));
     await userEvent.type(screen.getByLabelText('Name'), 'Breakfast Beans');
     await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
 
@@ -115,12 +115,10 @@ describe('ComponentForm dynamic category wiring', () => {
     cleanup();
     const [beans] = await getComponentsByType('subzi');
     render(<LiveEditForm componentId={beans.id} />);
-    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'lunch' })).not.toBeChecked());
-    expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked());
+    expect(screen.getByRole('checkbox', { name: 'lunch' })).not.toBeChecked();
 
-    await userEvent.click(screen.getByRole('checkbox', { name: 'lunch' }));
-    await userEvent.click(screen.getByRole('checkbox', { name: 'dinner' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'breakfast' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
     await waitFor(async () => expect(await getOwnedRule(beans.id, 'allowed_meals')).toBeUndefined());
   });
