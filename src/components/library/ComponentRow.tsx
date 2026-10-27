@@ -14,7 +14,7 @@ import {
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
 import { getOwnedRules } from '@/services/food-db'
-import { describeDays, readOwned } from '@/rules'
+import { describeDays, describeMeals, readOwned } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -52,6 +52,7 @@ export function ComponentRow({
   const compatibleBaseLabels = owned.bases.map((id) => getBaseCategoryLabel(baseCategoriesById, id))
   const clashLabels = owned.clashes
   const dayLabel = describeDays(owned.days)
+  const mealLabel = describeMeals(owned.meals)
   const showsCompatibleBaseSummary = compatibleBaseLabels.length > 0
   const showsNeverAutoWarning = owned.neverAuto
 
@@ -131,6 +132,12 @@ export function ComponentRow({
         {dayLabel && (
           <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
             {dayLabel}
+          </Badge>
+        )}
+
+        {mealLabel && (
+          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
+            {mealLabel}
           </Badge>
         )}
 

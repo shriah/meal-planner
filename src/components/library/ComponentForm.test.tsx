@@ -7,7 +7,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { clashCurryCategories, pairingCategories, pairingRule, ruleDays } from '@/rules';
+import { clashCurryCategories, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
 import { ComponentRow } from './ComponentRow';
@@ -95,6 +95,34 @@ describe('ComponentForm dynamic category wiring', () => {
       const rule = await getOwnedRule(beans.id, 'allowed_days');
       expect(rule && ruleDays(rule)).toEqual(days);
     });
+  });
+
+  it('saves the allowed meals as a rule the dish owns, and allowing all three again removes it', async () => {
+    render(<ComponentForm componentType="subzi" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    expect(screen.getByRole('checkbox', { name: 'lunch' })).toBeChecked();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lunch' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'dinner' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Breakfast Beans');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+
+    await waitFor(async () => {
+      const [beans] = await getComponentsByType('subzi');
+      const rule = await getOwnedRule(beans.id, 'allowed_meals');
+      expect(rule && ruleMeals(rule)).toEqual(['breakfast']);
+    });
+
+    cleanup();
+    const [beans] = await getComponentsByType('subzi');
+    render(<LiveEditForm componentId={beans.id} />);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'lunch' })).not.toBeChecked());
+    expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeDisabled();
+
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lunch' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'dinner' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+    await waitFor(async () => expect(await getOwnedRule(beans.id, 'allowed_meals')).toBeUndefined());
   });
 
   it('saves specific days as a rule the dish owns, and switching back to any day removes it', async () => {

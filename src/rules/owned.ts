@@ -1,14 +1,14 @@
 // Rules a component owns: edited on the component's form, stored as ordinary rules, at most one per
 // template. A curry or subzi owns its base pairing (`pairs_with`), an extra the curry types it never
 // goes with (`avoid_with`), and any dish the days it may be planned on (`allowed_days`) and whether
-// it is planned automatically at all (`exclude`).
-import { all, DAYS, is, isLeaf, oneOf, type Day, type Matcher } from '@/planner';
+// the meals it may be planned at (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
+import { all, DAYS, MEALS, is, isLeaf, oneOf, type Day, type Matcher, type Meal } from '@/planner';
 import type { ComponentType, CurryCategory } from '@/types/component';
 import type { RuleRecord } from './record';
 import type { RuleSpecInput } from './templates';
 
 export type OwnedRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'> & { owner_component_id: number };
-export const OWNED_TEMPLATES = ['pairs_with', 'avoid_with', 'allowed_days', 'exclude'] as const;
+export const OWNED_TEMPLATES = ['pairs_with', 'avoid_with', 'allowed_days', 'allowed_meals', 'exclude'] as const;
 export type OwnedTemplate = (typeof OWNED_TEMPLATES)[number];
 
 /** For each owned rule type: a builder that makes or updates the rule once the dish has an id, or null to remove it. */
@@ -18,6 +18,7 @@ const NAME_SUFFIX: Partial<Record<RuleSpecInput['template'], string>> = {
   pairs_with: 'base pairing',
   avoid_with: 'not with these curries',
   allowed_days: 'only on certain days',
+  allowed_meals: 'only at certain meals',
   exclude: 'never planned automatically',
 };
 
@@ -72,6 +73,19 @@ export function ruleDays(rule: Pick<RuleRecord, 'spec'>): Day[] | undefined {
   return rule.spec.template === 'allowed_days' ? [...rule.spec.params.days] : undefined;
 }
 
+export function mealRule(component: { id: number; name: string }, meals: readonly Meal[]): OwnedRule {
+  return {
+    name: ownedRuleName('allowed_meals', component.name),
+    spec: { template: 'allowed_meals', params: { match: is('id', component.id), meals: [...meals], strength: 'must' } },
+    owner_component_id: component.id,
+  };
+}
+
+/** Meals an allowed-meals rule permits, or undefined when the rule is not one. */
+export function ruleMeals(rule: Pick<RuleRecord, 'spec'>): Meal[] | undefined {
+  return rule.spec.template === 'allowed_meals' ? [...rule.spec.params.meals] : undefined;
+}
+
 /** The dish is never planned automatically; it can still be picked by hand, as an override. */
 export function exclusionRule(component: { id: number; name: string }): OwnedRule {
   return {
@@ -88,6 +102,8 @@ export interface OwnedValues {
   bases: number[];
   clashes: CurryCategory[];
   days: Day[];
+  /** Empty means any meal. */
+  meals: Meal[];
   neverAuto: boolean;
 }
 
@@ -99,15 +115,18 @@ export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValu
     bases: first(pairingCategories) ?? [],
     clashes: first(clashCurryCategories) ?? [],
     days: first(ruleDays) ?? [],
+    meals: first(ruleMeals) ?? [],
     neverAuto: rules.some((r) => r.spec.template === 'exclude'),
   };
 }
 
 /** The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered. */
 export function ownedChanges(componentType: ComponentType, values: OwnedValues): OwnedRuleChanges {
-  const { bases, clashes, days, neverAuto } = values;
+  const { bases, clashes, days, meals, neverAuto } = values;
   const changes: OwnedRuleChanges = {
     allowed_days: days.length ? (c) => dayRule(c, days) : null,
+    // Allowing every meal is the same as no rule.
+    allowed_meals: meals.length > 0 && meals.length < MEALS.length ? (c) => mealRule(c, meals) : null,
     exclude: neverAuto ? (c) => exclusionRule(c) : null,
   };
   if (componentType === 'curry' || componentType === 'subzi') changes.pairs_with = bases.length ? (c) => pairingRule(c, bases) : null;
@@ -143,4 +162,12 @@ export function describeDays(days: readonly Day[]): string | undefined {
   if (mode === 'weekends') return 'Weekends';
   const short = DAYS.filter((d) => days.includes(d)).map((d) => d.charAt(0).toUpperCase() + d.slice(1, 3));
   return `Only ${short.join(', ')}`;
+}
+
+// ─── Meals ────────────────────────────────────────────────────────────────────
+
+/** Badge text for a dish's meals: "Only breakfast, dinner", or undefined for any meal. */
+export function describeMeals(meals: readonly Meal[]): string | undefined {
+  if (meals.length === 0 || meals.length === MEALS.length) return undefined;
+  return `Only ${MEALS.filter((m) => meals.includes(m)).join(', ')}`;
 }

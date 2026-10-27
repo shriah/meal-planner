@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getOwnedRules, saveComponent } from '@/services/food-db'
 import { dayModeOf, daysOfMode, ownedChanges, readOwned, type DayMode, type RuleRecord } from '@/rules'
-import { DAYS, type Day } from '@/planner'
+import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -89,6 +89,8 @@ interface FormState {
   day_mode: DayMode
   /** Specific days the dish may be planned on, when day_mode is 'specific'. */
   days: Day[]
+  /** Meals the dish may be planned at; all three when there is no restriction. */
+  meals: Meal[]
   /** Never planned automatically; can still be picked by hand. */
   never_auto: boolean
 }
@@ -115,6 +117,7 @@ function initialFormState(
       frequency: component.frequency ?? 'normal',
       day_mode: dayModeOf(owned.days),
       days: owned.days,
+      meals: owned.meals.length ? owned.meals : [...MEALS],
       never_auto: owned.neverAuto,
     }
   }
@@ -132,6 +135,7 @@ function initialFormState(
     frequency: 'normal',
     day_mode: 'any',
     days: [],
+    meals: [...MEALS],
     never_auto: false,
   }
 }
@@ -236,6 +240,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         bases: form.compatible_base_category_ids,
         clashes: form.clash_curry_categories,
         days: daysOfMode(form.day_mode, form.days),
+        meals: form.meals,
         neverAuto: form.never_auto,
       })
       const id = mode === 'edit' ? component?.id : undefined
@@ -409,7 +414,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         <div>
           <h3 className="text-sm font-semibold">Planning</h3>
           <p className="text-xs text-muted-foreground">
-            Pairings, days and “never plan automatically” are saved as rules you can also see on the Rules page.
+            Pairings, days, meals and “never plan automatically” are saved as rules you can also see on the Rules page.
           </p>
         </div>
 
@@ -516,6 +521,22 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             </div>
           </div>
         )}
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-semibold">Meals</legend>
+          <div className="flex flex-wrap gap-3">
+            {MEALS.map(meal => (
+              <label key={meal} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={form.meals.includes(meal)}
+                  // At least one meal stays allowed; all three means no restriction.
+                  disabled={form.meals.length === 1 && form.meals.includes(meal)}
+                  onCheckedChange={() => setForm(s => ({ ...s, meals: toggleArrayValue(s.meals, meal) }))}
+                />
+                {meal}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <label className="flex items-center gap-1.5 text-xs cursor-pointer">
           <Checkbox
             checked={form.never_auto}
