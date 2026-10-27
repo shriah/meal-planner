@@ -125,10 +125,11 @@ export function ownedChanges(componentType: ComponentType, values: OwnedValues):
   const { bases, clashes, days, meals, neverAuto } = values;
   const changes: OwnedRuleChanges = {
     allowed_days: days.length ? (c) => dayRule(c, days) : null,
-    // Allowing every meal is the same as no rule.
-    allowed_meals: meals.length > 0 && meals.length < MEALS.length ? (c) => mealRule(c, meals) : null,
     exclude: neverAuto ? (c) => exclusionRule(c) : null,
   };
+  // Any dish may own a meals rule, but only bases are offered the setting. For the others a stored one is left
+  // alone. Allowing every meal is the same as no rule.
+  if (componentType === 'base') changes.allowed_meals = meals.length > 0 && meals.length < MEALS.length ? (c) => mealRule(c, meals) : null;
   if (componentType === 'curry' || componentType === 'subzi') changes.pairs_with = bases.length ? (c) => pairingRule(c, bases) : null;
   if (componentType === 'extra') changes.avoid_with = clashes.length ? (c) => curryClashRule(c, clashes) : null;
   return changes;

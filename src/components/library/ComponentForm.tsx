@@ -521,21 +521,23 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             </div>
           </div>
         )}
-        <fieldset className="space-y-1">
-          <legend className="text-xs font-semibold">Meals</legend>
-          <div className="flex flex-wrap gap-3">
-            {MEALS.map(meal => (
-              <label key={meal} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <Checkbox
-                  checked={form.meals.includes(meal)}
-                  onCheckedChange={() => setForm(s => ({ ...s, meals: toggleArrayValue(s.meals, meal) }))}
-                />
-                {meal}
-              </label>
-            ))}
-          </div>
-          {form.meals.length === 0 && <p className="text-xs text-muted-foreground">None selected: any meal.</p>}
-        </fieldset>
+        {componentType === 'base' && (
+          <fieldset className="space-y-1">
+            <legend className="text-xs font-semibold">Meals</legend>
+            <div className="flex flex-wrap gap-3">
+              {MEALS.map(meal => (
+                <label key={meal} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                  <Checkbox
+                    checked={form.meals.includes(meal)}
+                    onCheckedChange={() => setForm(s => ({ ...s, meals: toggleArrayValue(s.meals, meal) }))}
+                  />
+                  {meal}
+                </label>
+              ))}
+            </div>
+            {form.meals.length === 0 && <p className="text-xs text-muted-foreground">None selected: any meal.</p>}
+          </fieldset>
+        )}
         <label className="flex items-center gap-1.5 text-xs cursor-pointer">
           <Checkbox
             checked={form.never_auto}

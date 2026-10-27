@@ -55,8 +55,8 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
 
   const filtered = useMemo(() => {
     const byTags = filterComponents(components ?? [], searchText, activeDietaryTags, activeRegionalTags)
-    return activeMeal ? byTags.filter(c => allowedMealsOf(c, rules).includes(activeMeal)) : byTags
-  }, [components, rules, searchText, activeDietaryTags, activeRegionalTags, activeMeal])
+    return type === 'base' && activeMeal ? byTags.filter(c => allowedMealsOf(c, rules).includes(activeMeal)) : byTags
+  }, [type, components, rules, searchText, activeDietaryTags, activeRegionalTags, activeMeal])
 
   const lastPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1)
   const currentPage = Math.min(page, lastPage)
@@ -127,8 +127,8 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
           : !regionalTagHasMatches(tag as RegionalTag)}
       />
 
-      {/* Meal filter: dishes that may be planned at the chosen meal */}
-      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Meal">
+      {/* Meal filter (bases only): dishes that may be planned at the chosen meal */}
+      {type === 'base' && <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Meal">
         <span className="text-xs font-semibold">Meal</span>
         {MEALS.map(meal => (
           <Badge key={meal} asChild variant={activeMeal === meal ? 'default' : 'outline'} className="cursor-pointer text-sm px-2 py-0.5">
@@ -141,7 +141,7 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
             </button>
           </Badge>
         ))}
-      </div>
+      </div>}
 
       {/* Empty state: no components at all */}
       {isEmpty && (

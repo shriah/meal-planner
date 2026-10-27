@@ -26,16 +26,17 @@ describe('ownedChanges', () => {
   const v = { bases: [1], clashes: ['soup' as const], days: ['monday' as const], meals: ['lunch' as const], neverAuto: true };
 
   it('builds a rule for every value that is set and removes the others', () => {
+    expect(ownedChanges('base', NONE).allowed_meals).toBeNull();
     const changes = ownedChanges('curry', v);
     expect(changes.pairs_with?.(dish).spec).toMatchObject({ template: 'pairs_with', params: { baseCategories: [1] } });
     expect(changes.allowed_days?.(dish).spec).toMatchObject({ template: 'allowed_days', params: { days: ['monday'] } });
     expect(changes.exclude?.(dish).spec).toMatchObject({ template: 'exclude' });
-    expect(ownedChanges('curry', NONE)).toEqual({ pairs_with: null, allowed_days: null, allowed_meals: null, exclude: null });
+    expect(ownedChanges('curry', NONE)).toEqual({ pairs_with: null, allowed_days: null, exclude: null });
   });
 
   it('only offers each dish type the rules that make sense for it', () => {
-    expect(Object.keys(ownedChanges('subzi', NONE)).sort()).toEqual(['allowed_days', 'allowed_meals', 'exclude', 'pairs_with']);
-    expect(Object.keys(ownedChanges('extra', NONE)).sort()).toEqual(['allowed_days', 'allowed_meals', 'avoid_with', 'exclude']);
+    expect(Object.keys(ownedChanges('subzi', NONE)).sort()).toEqual(['allowed_days', 'exclude', 'pairs_with']);
+    expect(Object.keys(ownedChanges('extra', NONE)).sort()).toEqual(['allowed_days', 'avoid_with', 'exclude']);
     expect(Object.keys(ownedChanges('base', NONE)).sort()).toEqual(['allowed_days', 'allowed_meals', 'exclude']);
     expect(ownedChanges('extra', v).avoid_with?.(dish).spec).toMatchObject({ template: 'avoid_with' });
   });
@@ -67,6 +68,10 @@ describe('meals', () => {
     expect(build(['breakfast'])?.(dish).spec).toMatchObject({ template: 'allowed_meals', params: { meals: ['breakfast'] } });
     expect(build([])).toBeNull();
     expect(build(['breakfast', 'lunch', 'dinner'])).toBeNull();
+  });
+
+  it('only touches the meals rule for bases, so another dish keeps one it already has', () => {
+    for (const type of ['curry', 'subzi', 'extra'] as const) expect('allowed_meals' in ownedChanges(type, { ...NONE, meals: ['lunch'] })).toBe(false);
   });
 
   it('describes the restriction for a badge', () => {

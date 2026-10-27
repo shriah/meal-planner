@@ -134,4 +134,14 @@ describe('ComponentLibrary paging and meal filter', () => {
     expect(screen.getByText('Poori')).toBeInTheDocument();
     expect(screen.getByText('Idli')).toBeInTheDocument();
   });
+
+  it('offers the meal filter on the Bases tab only', async () => {
+    await db.components.add(dish('Sambar', 'curry'));
+    render(<ComponentLibrary />);
+    expect(await screen.findByRole('group', { name: 'Meal' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Curries' }));
+
+    expect(screen.queryByRole('group', { name: 'Meal' })).not.toBeInTheDocument();
+  });
 });

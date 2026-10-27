@@ -98,29 +98,42 @@ describe('ComponentForm dynamic category wiring', () => {
   });
 
   it('saves the allowed meals as a rule the dish owns, and clearing them again removes it', async () => {
-    render(<ComponentForm componentType="subzi" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await addCategory({ kind: 'base', name: 'Steamed' });
+    render(<ComponentForm componentType="base" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
     expect(screen.getByRole('checkbox', { name: 'breakfast' })).not.toBeChecked();
     expect(screen.getByText('None selected: any meal.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('checkbox', { name: 'breakfast' }));
-    await userEvent.type(screen.getByLabelText('Name'), 'Breakfast Beans');
-    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Base Category' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Steamed' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Breakfast Idli');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
 
     await waitFor(async () => {
-      const [beans] = await getComponentsByType('subzi');
+      const [beans] = await getComponentsByType('base');
       const rule = await getOwnedRule(beans.id, 'allowed_meals');
       expect(rule && ruleMeals(rule)).toEqual(['breakfast']);
     });
 
     cleanup();
-    const [beans] = await getComponentsByType('subzi');
+    const [beans] = await getComponentsByType('base');
     render(<LiveEditForm componentId={beans.id} />);
     await waitFor(() => expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked());
     expect(screen.getByRole('checkbox', { name: 'lunch' })).not.toBeChecked();
 
     await userEvent.click(screen.getByRole('checkbox', { name: 'breakfast' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
     await waitFor(async () => expect(await getOwnedRule(beans.id, 'allowed_meals')).toBeUndefined());
+  });
+
+  it('offers the meals setting for bases only', async () => {
+    const { rerender } = render(<ComponentForm componentType="base" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeInTheDocument();
+
+    for (const type of ['curry', 'subzi', 'extra'] as const) {
+      rerender(<ComponentForm key={type} componentType={type} mode="add" onSave={() => {}} onDiscard={() => {}} />);
+      expect(screen.queryByRole('checkbox', { name: 'breakfast' })).not.toBeInTheDocument();
+    }
   });
 
   it('saves specific days as a rule the dish owns, and switching back to any day removes it', async () => {
