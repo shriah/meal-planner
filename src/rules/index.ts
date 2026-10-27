@@ -26,3 +26,4 @@ export {
   TEMPLATE_FORMS, newSpec, validateDraft, previewMatches,
   type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
+export { allowedMealsOf } from './meals';

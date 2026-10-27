@@ -2,15 +2,22 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getComponentsByType } from '@/services/food-db'
+import { getComponentsByType, getRules } from '@/services/food-db'
+import { allowedMealsOf } from '@/rules'
+import { MEALS, type Meal } from '@/planner'
 import { filterComponents } from '@/lib/filter-components'
 import { Input } from '@/components/ui/input'
 import { TagFilter } from '@/components/ui/TagFilter'
+import { Pagination } from '@/components/ui/Pagination'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ComponentRow } from './ComponentRow'
 import { ComponentForm } from './ComponentForm'
 import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
+
+/** Dishes shown per page. */
+export const PAGE_SIZE = 25
 
 const SINGULAR_LABEL: Record<ComponentType, string> = {
   base: 'Base',
@@ -30,6 +37,8 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
   const [searchText, setSearchText] = useState('')
   const [activeDietaryTags, setActiveDietaryTags] = useState<DietaryTag[]>([])
   const [activeRegionalTags, setActiveRegionalTags] = useState<RegionalTag[]>([])
+  const [activeMeal, setActiveMeal] = useState<Meal | null>(null)
+  const [page, setPage] = useState(0)
   const [expandedId, setExpandedId] = useState<number | null>(focusId ?? null)
   // A deep link that arrives while this tab is open expands its dish too.
   const [seenFocusId, setSeenFocusId] = useState(focusId)
@@ -42,18 +51,26 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
 
   const components = useLiveQuery(() => getComponentsByType(type), [type], [])
 
-  const filtered = useMemo(
-    () => filterComponents(components ?? [], searchText, activeDietaryTags, activeRegionalTags),
-    [components, searchText, activeDietaryTags, activeRegionalTags],
-  )
+  const rules = useLiveQuery(getRules, [], [])
+
+  const filtered = useMemo(() => {
+    const byTags = filterComponents(components ?? [], searchText, activeDietaryTags, activeRegionalTags)
+    return activeMeal ? byTags.filter(c => allowedMealsOf(c, rules).includes(activeMeal)) : byTags
+  }, [components, rules, searchText, activeDietaryTags, activeRegionalTags, activeMeal])
+
+  const lastPage = Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1)
+  const currentPage = Math.min(page, lastPage)
+  const visible = filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE)
 
   function toggleDietaryTag(tag: DietaryTag) {
+    setPage(0)
     setActiveDietaryTags(prev =>
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag],
     )
   }
 
   function toggleRegionalTag(tag: RegionalTag) {
+    setPage(0)
     setActiveRegionalTags(prev =>
       prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag],
     )
@@ -72,9 +89,17 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
   }
 
   const hasFocusedDish = focusId !== undefined && (components ?? []).some(c => c.id === focusId)
+  // A deep link shows the page its dish is on, then scrolls to it.
+  const focusPage = hasFocusedDish ? Math.floor(filtered.findIndex(c => c.id === focusId) / PAGE_SIZE) : -1
+  const [jumpedTo, setJumpedTo] = useState<number | undefined>()
+  if (focusPage >= 0 && jumpedTo !== focusId) {
+    setJumpedTo(focusId)
+    setPage(focusPage)
+  }
+  const focusVisible = visible.some(c => c.id === focusId)
   useEffect(() => {
-    if (hasFocusedDish) document.getElementById(`dish-${focusId}`)?.scrollIntoView?.({ block: 'center' })
-  }, [hasFocusedDish, focusId])
+    if (focusVisible) document.getElementById(`dish-${focusId}`)?.scrollIntoView?.({ block: 'center' })
+  }, [focusVisible, focusId])
 
   const singularLabel = SINGULAR_LABEL[type]
   const isEmpty = (components ?? []).length === 0
@@ -87,7 +112,7 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
         type="search"
         placeholder={`Search ${label}...`}
         value={searchText}
-        onChange={e => setSearchText(e.target.value)}
+        onChange={e => { setSearchText(e.target.value); setPage(0) }}
         className="w-full"
       />
 
@@ -101,6 +126,22 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
           ? !dietaryTagHasMatches(tag as DietaryTag)
           : !regionalTagHasMatches(tag as RegionalTag)}
       />
+
+      {/* Meal filter: dishes that may be planned at the chosen meal */}
+      <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Meal">
+        <span className="text-xs font-semibold">Meal</span>
+        {MEALS.map(meal => (
+          <Badge key={meal} asChild variant={activeMeal === meal ? 'default' : 'outline'} className="cursor-pointer text-sm px-2 py-0.5">
+            <button
+              type="button"
+              aria-pressed={activeMeal === meal}
+              onClick={() => { setActiveMeal(activeMeal === meal ? null : meal); setPage(0) }}
+            >
+              {meal}
+            </button>
+          </Badge>
+        ))}
+      </div>
 
       {/* Empty state: no components at all */}
       {isEmpty && (
@@ -125,7 +166,7 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
       {/* Component list */}
       {!isEmpty && filtered.length > 0 && (
         <div className="rounded-md border border-border overflow-hidden">
-          {filtered.map((item, idx) => (
+          {visible.map((item, idx) => (
             <div key={item.id}>
               {idx > 0 && <Separator />}
               <ComponentRow
@@ -145,6 +186,8 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
           ))}
         </div>
       )}
+
+      <Pagination page={currentPage} pageSize={PAGE_SIZE} total={filtered.length} onPageChange={setPage} />
 
       {/* Add new inline form */}
       {addingNew && (
