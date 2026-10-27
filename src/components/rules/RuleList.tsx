@@ -13,8 +13,10 @@ import { RuleMigrationNotice } from './RuleMigrationNotice'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { AssistantPanel } from '@/components/assistant/AssistantPanel'
 import Link from 'next/link'
-import { Plus } from 'lucide-react'
+import { MessageSquare, Plus } from 'lucide-react'
 
 export function RuleList() {
   const rules = useLiveQuery(getRules)
@@ -22,6 +24,7 @@ export function RuleList() {
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
   const [query, setQuery] = useState('')
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
 
   // Names for descriptions, and the ids that exist, so rules pointing at deleted items are flagged.
   const { names, known } = useMemo(() => {
@@ -78,13 +81,29 @@ export function RuleList() {
     <main className="px-4 py-8 sm:px-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-[28px] font-semibold font-heading">Rules</h1>
-        <Button asChild>
-          <Link href="/rules/new">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Rule
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" onClick={() => setAssistantOpen(true)}>
+            <MessageSquare className="h-4 w-4 mr-2" />
+            Ask assistant
+          </Button>
+          <Button asChild>
+            <Link href="/rules/new">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Rule
+            </Link>
+          </Button>
+        </div>
       </div>
+      <Sheet open={assistantOpen} onOpenChange={setAssistantOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-lg">
+          <SheetHeader>
+            <SheetTitle>Rules assistant</SheetTitle>
+            <SheetDescription>Ask about your rules, dishes and plan. Drafts are only saved when you review and save them.</SheetDescription>
+          </SheetHeader>
+          {/* Mounted only while open: closing drops the conversation and cancels a running request. */}
+          <div className="min-h-0 flex-1 px-6 pb-6">{assistantOpen && <AssistantPanel />}</div>
+        </SheetContent>
+      </Sheet>
       <RuleMigrationNotice />
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         {shown.length > 0 && (

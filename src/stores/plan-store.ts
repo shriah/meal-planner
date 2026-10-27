@@ -7,7 +7,7 @@ import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
 import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
 import { generatePlan } from '@/services/planning'
 import type { PlanningOutcome, PlanProblem } from '@/services/plan-generation'
-import type { Pins } from '@/planner'
+import { pinsFromLocks } from '@/services/pins'
 import type { RuleIssue } from '@/rules'
 import type { ExportPlanPayload } from '@/services/export-template'
 
@@ -132,17 +132,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       set({ isGenerating: true, problemsDismissed: false })
       try {
         // Locked parts of the current plan are pinned: the planner keeps them and plans around them.
-        const pins: Pins = {}
-        for (const planSlot of plan.slots) {
-          const prefix = `${planSlot.day}-${planSlot.meal_slot}`
-          const slotPins: NonNullable<Pins[keyof Pins]> = {}
-          if (locks[`${prefix}-base`]) slotPins.base_id = planSlot.base_id
-          if (locks[`${prefix}-curry`] && planSlot.curry_id !== undefined) slotPins.curry_id = planSlot.curry_id
-          if (locks[`${prefix}-subzi`] && planSlot.subzi_id !== undefined) slotPins.subzi_id = planSlot.subzi_id
-          if (locks[`${prefix}-extras`]) slotPins.extra_ids = planSlot.extra_ids
-          if (Object.keys(slotPins).length) pins[prefix as keyof Pins] = slotPins
-        }
-        applyOutcome(await generatePlan({ pins }), currentWeekStart)
+        applyOutcome(await generatePlan({ pins: pinsFromLocks(plan, locks) }), currentWeekStart)
       } catch {
         set({ isGenerating: false })
       }
