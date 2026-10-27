@@ -416,3 +416,100 @@ describe('ComponentForm dynamic category wiring', () => {
     expect(screen.getByText(/use them in rules/i)).toBeInTheDocument();
   });
 });
+
+describe('ComponentForm draft prefill', () => {
+  it('opens a curry from a draft without writing, and saves it once', async () => {
+    render(
+      <ComponentForm
+        componentType="curry"
+        mode="add"
+        draft={{ name: 'Chole', curry_category: 'legume', protein_tag: 'none' }}
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText('Name')).toHaveValue('Chole');
+    expect(screen.getByRole('combobox', { name: 'Curry Type' })).toHaveTextContent('legume');
+    expect(await db.components.count()).toBe(0);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => {
+      const curries = await getComponentsByType('curry');
+      expect(curries).toHaveLength(1);
+      expect(curries[0].name).toBe('Chole');
+      expect(curries[0].curry_category).toBe('legume');
+    });
+  });
+
+  it('keeps the draft editable before saving', async () => {
+    render(
+      <ComponentForm componentType="curry" mode="add" draft={{ name: 'Chole' }} onSave={() => {}} onDiscard={() => {}} />,
+    );
+    await userEvent.type(screen.getByLabelText('Name'), ' Masala');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => expect((await getComponentsByType('curry'))[0]?.name).toBe('Chole Masala'));
+  });
+
+  it('prefills tags and stores the built-in base_type for a base draft', async () => {
+    await addCategory({ kind: 'base', name: 'rice-based' });
+    const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
+
+    render(
+      <ComponentForm
+        componentType="base"
+        mode="add"
+        draft={{ name: 'Phulka', base_category_id: breadId, dietary_tags: ['veg'], regional_tags: ['north-indian'] }}
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Base Category' })).toHaveTextContent('bread-based'));
+    expect(screen.getByLabelText('veg')).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => {
+      const [phulka] = await getComponentsByType('base');
+      expect(phulka.base_category_id).toBe(breadId);
+      expect(phulka.base_type).toBe('bread-based');
+      expect(phulka.dietary_tags).toEqual(['veg']);
+    });
+  });
+
+  it('stores the built-in extra_category for an extra draft', async () => {
+    await addCategory({ kind: 'extra', name: 'liquid' });
+    const crunchyId = await addCategory({ kind: 'extra', name: 'crunchy' });
+
+    render(
+      <ComponentForm
+        componentType="extra"
+        mode="add"
+        draft={{ name: 'Papad', extra_category_id: crunchyId }}
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Extra Category' })).toHaveTextContent('crunchy'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Extra' }));
+
+    await waitFor(async () => {
+      const [papad] = await getComponentsByType('extra');
+      expect(papad.extra_category_id).toBe(crunchyId);
+      expect(papad.extra_category).toBe('crunchy');
+    });
+  });
+
+  it('ignores a draft when editing an existing dish', async () => {
+    const id = await db.components.add({
+      name: 'Dal', componentType: 'curry', dietary_tags: [], regional_tags: [], occasion_tags: [],
+      created_at: new Date().toISOString(),
+    }) as number;
+    const component = (await db.components.get(id))!;
+    render(
+      <ComponentForm component={component} componentType="curry" mode="edit" draft={{ name: 'Other' }} onSave={() => {}} onDiscard={() => {}} />,
+    );
+    expect(screen.getByLabelText('Name')).toHaveValue('Dal');
+  });
+});
