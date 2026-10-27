@@ -25,7 +25,7 @@ export const NO_CHANGE_TEXT = 'This rule would not change the week.';
 export const EMPTY_REPLY_TEXT = 'Gemini returned no answer (it may have run out of room). Try a shorter question.';
 export const ERROR_MESSAGES: Record<GeminiError['kind'], string> = {
   auth: 'Check your Gemini key.',
-  rate: 'Gemini is rate limiting, try again shortly.',
+  rate: 'Gemini is busy or rate limiting, try again shortly.',
   network: "Couldn't reach Gemini.",
   model: "The Gemini model isn't available to this key.",
   other: 'Something went wrong talking to Gemini.',

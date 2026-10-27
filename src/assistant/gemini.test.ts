@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { GeminiError, streamGemini, type GeminiEvent } from './gemini';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FIRST_BYTE_TIMEOUT_MS, GeminiError, streamGemini, type GeminiEvent } from './gemini';
 
 const enc = new TextEncoder();
 
@@ -29,6 +29,8 @@ async function collect(gen: AsyncGenerator<GeminiEvent>) {
   for await (const e of gen) out.push(e);
   return out;
 }
+
+afterEach(() => vi.useRealTimers());
 
 describe('streamGemini', () => {
   it('yields text events then done, handling chunks split mid-line', async () => {
@@ -85,6 +87,20 @@ describe('streamGemini', () => {
       throw new TypeError('failed');
     };
     await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'network' });
+  });
+
+  it('gives up when Gemini does not start answering in time', async () => {
+    vi.useFakeTimers();
+    const f = (_u: unknown, init?: RequestInit) =>
+      new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
+    const result = expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'rate' });
+    await vi.advanceTimersByTimeAsync(FIRST_BYTE_TIMEOUT_MS + 1);
+    await result;
+  });
+
+  it('treats a 503 as busy', async () => {
+    const f = async () => new Response('{}', { status: 503 });
+    await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'rate' });
   });
 
   it('stops quietly when the signal is aborted', async () => {

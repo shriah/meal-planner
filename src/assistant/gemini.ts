@@ -37,6 +37,9 @@ export type GeminiCall = (req: {
 
 const ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:streamGenerateContent?alt=sse`;
 
+/** How long to wait for Gemini to start answering before giving up (an overloaded model can hang). */
+export const FIRST_BYTE_TIMEOUT_MS = 30_000;
+
 function isAbort(e: unknown): boolean {
   return e instanceof Error && e.name === 'AbortError';
 }
@@ -88,17 +91,32 @@ export async function* streamGemini(
   };
   if (req.tools.length > 0) body.tools = [{ functionDeclarations: req.tools }];
 
+  // Aborts on the caller's signal, or when no response headers arrive in time.
+  const ac = new AbortController();
+  const onAbort = () => ac.abort();
+  req.signal?.addEventListener('abort', onAbort);
+  if (req.signal?.aborted) ac.abort();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    ac.abort();
+  }, FIRST_BYTE_TIMEOUT_MS);
+
   let res: Response;
   try {
     res = await fetchImpl(ENDPOINT, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-goog-api-key': req.apiKey },
       body: JSON.stringify(body),
-      signal: req.signal,
+      signal: ac.signal,
     });
   } catch (e) {
+    if (timedOut) throw new GeminiError('rate', 'Gemini took too long to answer.');
     if (isAbort(e)) return;
     throw new GeminiError('network', 'Could not reach Gemini.');
+  } finally {
+    clearTimeout(timer);
+    req.signal?.removeEventListener('abort', onAbort);
   }
 
   if (!res.ok) {
@@ -113,7 +131,7 @@ export async function* streamGemini(
       throw new GeminiError('other', 'Gemini rejected the request.');
     }
     if (res.status === 404) throw new GeminiError('model', "The Gemini model isn't available to this key.");
-    if (res.status === 429) throw new GeminiError('rate', 'Gemini rate limit reached.');
+    if (res.status === 429 || res.status === 503) throw new GeminiError('rate', 'Gemini rate limit reached.');
     throw new GeminiError('other', `Gemini returned HTTP ${res.status}.`);
   }
   if (!res.body) throw new GeminiError('other', 'Gemini returned no body.');

@@ -369,7 +369,7 @@ describe('runAssistant: errors and abort', () => {
 
   it.each([
     ['auth', 'Check your Gemini key.'],
-    ['rate', 'Gemini is rate limiting, try again shortly.'],
+    ['rate', 'Gemini is busy or rate limiting, try again shortly.'],
     ['network', "Couldn't reach Gemini."],
     ['other', 'Something went wrong talking to Gemini.'],
     ['model', "The Gemini model isn't available to this key."],
