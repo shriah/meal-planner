@@ -29,6 +29,10 @@ describe('looksOffTopic', () => {
   it('is false when the slice mentions something', () => {
     expect(looksOffTopic('why no pulao on monday', slice(true))).toBe(false);
   });
+  it('is false for a message with no Latin words, leaving the call to Gemini', () => {
+    expect(looksOffTopic('सोमवार को पनीर क्यों नहीं है?', slice(false))).toBe(false);
+    expect(looksOffTopic('திங்கள் கிழமை என்ன சமையல்?', slice(false))).toBe(false);
+  });
   it('is false on app vocabulary', () => {
     expect(looksOffTopic('add chole', slice(false))).toBe(false);
     expect(looksOffTopic('swap paneer for dal', slice(false))).toBe(false);
@@ -50,6 +54,16 @@ describe('SYSTEM_PROMPT', () => {
     expect(specs.length).toBeGreaterThanOrEqual(2);
     for (const s of specs) expect(RuleSpecSchema.safeParse(s).success).toBe(true);
     expect(specs.some((s) => s.params.scope)).toBe(true);
+  });
+  it('asks for spec as JSON text', () => {
+    expect(SYSTEM_PROMPT).toMatch(/spec is JSON text of \{ template, params \}/);
+  });
+  it('asks for one simulation after a successful draft, described honestly', () => {
+    expect(SYSTEM_PROMPT).toMatch(/After a successful propose_rule, call simulate_with_rule once with the same rule/);
+    expect(SYSTEM_PROMPT).toMatch(/worse/);
+    expect(SYSTEM_PROMPT).toMatch(/changes nothing/);
+    expect(SYSTEM_PROMPT).toMatch(/touchedByRule/);
+    expect(SYSTEM_PROMPT).toMatch(/reshuffled/);
   });
   it('keeps day and meal out of match fields', () => {
     expect(SYSTEM_PROMPT).toMatch(/Match fields: [^.]*\./);

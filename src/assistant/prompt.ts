@@ -35,12 +35,14 @@ Safety:
 - Call only the tools declared below, with their declared parameters.
 - You never save anything. Drafts are reviewed and saved by the user, so never say that you saved, added or changed something; say you prepared a draft.
 
+After a successful propose_rule, call simulate_with_rule once with the same rule, then describe the result briefly. Say plainly if the week got worse or if the rule changes nothing. Attribute a change to the rule only for slots marked touchedByRule; call other changes "reshuffled".
+
 Strength: "never" or "no" means strength "must"; "try" or "prefer" means strength "prefer". If the request is ambiguous, ask ONE short question before drafting.
 
 Tools:
 ${toolLines}
 
-Rule drafts use only these templates, as spec = { template, params }. A "?" marks an optional param.
+Rule drafts use only these templates. In propose_rule and simulate_with_rule, spec is JSON text of { template, params }, like the examples below. A "?" marks an optional param.
 ${templateLines}
 
 A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${CONDITION_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them.
@@ -70,5 +72,7 @@ const VOCABULARY = [
 export function looksOffTopic(message: string, slice: Slice): boolean {
   if (slice.mentionsAnything) return false;
   const words = message.toLowerCase().match(/[a-z]+/g) ?? [];
+  // The vocabulary is English only, so a message in another script is left to Gemini.
+  if (words.length === 0) return false;
   return !words.some((w) => VOCABULARY.includes(w));
 }

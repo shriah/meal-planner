@@ -1,13 +1,13 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
-import { MEALS } from '@/planner';
-import { describeSpec, missingReferences, parseSpec, RuleSpecSchema, validateDraft, type KnownIds, type RuleSpec } from '@/rules';
-import { explainPlan, missingDishIds } from '@/services/plan-generation';
+import { MEALS, type Meal } from '@/planner';
+import { describeSpec, missingReferences, parseSpec, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type KnownIds, type RuleSpec } from '@/rules';
+import { explainPlan, missingDishIds, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
   type ComponentRecord, type ComponentType,
 } from '@/types/component';
-import { ALL_DAYS } from '@/types/plan';
+import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
 import { MAX_LIST_ITEMS } from './limits';
 import { namesFor, searchLibrary, type AssistantData } from './retrieve';
@@ -17,6 +17,12 @@ export type { AssistantEffect, ToolContext } from './types';
 export type ToolResult = { ok: true; data: unknown; effect?: AssistantEffect } | { ok: false; error: string };
 
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({ type: 'object', properties, required });
+
+// A string, not an object schema: Gemini rejects object parameters declared without properties.
+const SPEC_PARAM = {
+  type: 'string',
+  description: `JSON text of the rule spec: {"template": ..., "params": {...}}. template is one of ${TEMPLATE_IDS.join('|')}.`,
+};
 
 export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   {
@@ -34,11 +40,16 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     description: `List the user's planning rules (id, name, description, enabled), up to ${MAX_LIST_ITEMS}.`,
   },
   {
+    name: 'get_plan',
+    description: "Show the current weekly plan: for each day, the dish names at breakfast, lunch and dinner.",
+  },
+  {
     name: 'explain_plan_slot',
-    description: 'Explain why a meal slot in the current weekly plan has the dish it has, or why a given dish is not there.',
+    description: "Explain one meal slot of the current weekly plan: its dishes (id and name) and the rule problems there. With dish, also checks which rules that dish would break if it were put in the slot; when none would, no rule blocks it and the planner left it out for variety or preferences.",
     parameters: obj({
       day: { type: 'string', description: `Day of the week, lowercase: ${ALL_DAYS.join('|')}` },
       meal: { type: 'string', description: `Meal, lowercase: ${MEALS.join('|')}` },
+      dish: { type: 'string', description: 'Optional: a dish name or id, to ask why it is not in this slot' },
     }, ['day', 'meal']),
   },
   {
@@ -46,7 +57,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     description: 'Draft a new planning rule for the user to review and save. Does not save anything itself. Fails with the reasons if the spec is invalid or points at dishes or categories that do not exist; fix and retry.',
     parameters: obj({
       name: { type: 'string', description: 'Short rule name' },
-      spec: { type: 'object', description: 'Rule spec: { template, params }' },
+      spec: SPEC_PARAM,
     }, ['name', 'spec']),
   },
   {
@@ -69,7 +80,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     description: 'Regenerate the plan with a proposed rule and show which slots would change, without saving anything.',
     parameters: obj({
       name: { type: 'string', description: 'Short rule name' },
-      spec: { type: 'object', description: 'Rule spec: { template, params }' },
+      spec: SPEC_PARAM,
     }, ['name', 'spec']),
   },
 ];
@@ -80,9 +91,12 @@ const lower = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : 
 const ExplainArgs = z.object({
   day: z.preprocess(lower, z.enum(ALL_DAYS as [string, ...string[]])),
   meal: z.preprocess(lower, z.enum(MEALS)),
+  dish: z.union([z.string().trim().min(1), z.number().int()]).optional(),
 }).passthrough();
-const SimulateArgs = z.object({ name: z.string().trim().min(1), spec: z.record(z.string(), z.unknown()) });
-const ProposeRuleArgs = z.object({ name: z.string().trim().min(1), spec: z.record(z.string(), z.unknown()) });
+// spec arrives as JSON text (as declared); an already-parsed object is accepted too.
+const SpecArg = z.union([z.string(), z.record(z.string(), z.unknown())]);
+const SimulateArgs = z.object({ name: z.string().trim().min(1), spec: SpecArg });
+const ProposeRuleArgs = z.object({ name: z.string().trim().min(1), spec: SpecArg });
 const ProposeDishArgs = z.object({
   name: z.string().trim().min(1),
   componentType: z.string(),
@@ -119,7 +133,15 @@ const parse = <S extends z.ZodType>(schema: S, args: unknown): { ok: true; value
 };
 
 /** Shared by simulate_with_rule and propose_rule: the spec must satisfy the template schema. */
-function checkSpec(spec: unknown): { ok: true; spec: RuleSpec } | { ok: false; error: string } {
+function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; error: string } {
+  let spec = raw;
+  if (typeof raw === 'string') {
+    try {
+      spec = JSON.parse(raw);
+    } catch {
+      return { ok: false, error: 'spec is not valid JSON; send it again as valid JSON text of { "template": ..., "params": {...} }' };
+    }
+  }
   const r = RuleSpecSchema.safeParse(spec);
   return r.success ? { ok: true, spec: r.data } : { ok: false, error: `invalid rule: ${r.error.issues.map((i) => i.message).join('; ')}` };
 }
@@ -154,6 +176,95 @@ function badValues(label: string, values: string[] | undefined, valid: readonly 
   return bad.length ? `unknown ${label} ${bad.map((b) => `"${b}"`).join(', ')}; valid values: ${valid.join(', ')}` : undefined;
 }
 
+/**
+ * The problems that bear on one slot: week-level ones (no day or meal, which includes window
+ * groups), that exact slot, that whole day, and that meal across the week.
+ */
+export function problemsForSlot(problems: PlanProblem[], day: DayOfWeek, meal: Meal): PlanProblem[] {
+  return problems.filter((p) => (p.day === undefined || p.day === day) && (p.meal === undefined || p.meal === meal));
+}
+
+type DishRef = { id: number; name: string } | { id: number; deleted: true };
+const dishRef = (id: number, data: AssistantData): DishRef => {
+  const c = data.library.find((d) => d.id === id);
+  return c ? { id, name: c.name } : { id, deleted: true };
+};
+const dishLabel = (id: number, data: AssistantData) => data.library.find((d) => d.id === id)?.name ?? `#${id} (deleted)`;
+
+function slotDishes(slot: PlanSlot | undefined, data: AssistantData) {
+  if (!slot) return null;
+  return {
+    base: dishRef(slot.base_id, data),
+    ...(slot.curry_id !== undefined ? { curry: dishRef(slot.curry_id, data) } : {}),
+    ...(slot.subzi_id !== undefined ? { subzi: dishRef(slot.subzi_id, data) } : {}),
+    extras: slot.extra_ids.map((id) => dishRef(id, data)),
+  };
+}
+
+/** One day per entry (at most 7, under the list cap), each meal as its dish names. */
+function planByDay(plan: WeeklyPlan, data: AssistantData) {
+  return ALL_DAYS.flatMap((day) => {
+    const meals = MEALS.flatMap((meal) => {
+      const s = plan.slots.find((x) => x.day === day && x.meal_slot === meal);
+      if (!s) return [];
+      const ids = [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((id): id is number => id !== undefined);
+      return [[meal, ids.map((id) => dishLabel(id, data))] as const];
+    });
+    return meals.length ? [{ day, ...Object.fromEntries(meals) }] : [];
+  });
+}
+
+/** A dish named by id (number or numeric text), exact name, or a single search hit. */
+function resolveDish(wanted: string | number, data: AssistantData): { ok: true; dish: ComponentRecord } | { ok: false; error: string } {
+  const asId = typeof wanted === 'number' ? wanted : /^\d+$/.test(wanted) ? Number(wanted) : undefined;
+  if (asId !== undefined) {
+    const byId = data.library.find((c) => c.id === asId);
+    return byId ? { ok: true, dish: byId } : { ok: false, error: `no dish with id ${asId}. Use search_dishes to find it.` };
+  }
+  const name = String(wanted);
+  const exact = data.library.filter((c) => normName(c.name) === normName(name));
+  const hits = exact.length ? exact : searchLibrary(name, data);
+  if (hits.length === 1) return { ok: true, dish: hits[0] };
+  if (hits.length === 0) return { ok: false, error: `no dish named "${wanted}". Use search_dishes to find it.` };
+  const names = hits.slice(0, MAX_LIST_ITEMS_SIMILAR).map((c) => `${c.name} (id ${c.id})`).join(', ');
+  return { ok: false, error: `several dishes match "${wanted}": ${names}. Call again with one id.` };
+}
+
+const PART_OF: Record<ComponentType, SlotPart> = { base: 'base', curry: 'curry', subzi: 'subzi', extra: 'extras' };
+
+/** The plan without dishes that are no longer in the library, so scoring never meets an unknown id. */
+function knownOnly(plan: WeeklyPlan, data: AssistantData): WeeklyPlan {
+  const known = new Set(data.library.map((c) => c.id));
+  const keep = (id: number | undefined) => (id !== undefined && known.has(id) ? id : undefined);
+  return {
+    slots: plan.slots.map((s) => ({
+      ...s,
+      base_id: keep(s.base_id) as number,
+      curry_id: keep(s.curry_id),
+      subzi_id: keep(s.subzi_id),
+      extra_ids: s.extra_ids.filter((id) => known.has(id)),
+    })),
+  };
+}
+
+function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyPlan, data: AssistantData) {
+  const part = PART_OF[dish.componentType];
+  const ref = { id: dish.id, name: dish.name };
+  const slot = plan.slots.find((s) => s.day === day && s.meal_slot === meal);
+  const inSlot = slot && [slot.base_id, slot.curry_id, slot.subzi_id, ...slot.extra_ids].includes(dish.id);
+  if (inSlot) return { dish: ref, part, blockedBy: [], note: `${dish.name} is already in this slot.` };
+  const added = slotConflicts(data, knownOnly(plan, data), day, meal, part, [dish.id]).get(dish.id) ?? [];
+  return {
+    dish: ref,
+    part,
+    blockedBy: added.slice(0, MAX_LIST_ITEMS),
+    ...(added.length > MAX_LIST_ITEMS ? { more: added.length - MAX_LIST_ITEMS } : {}),
+    ...(added.length === 0
+      ? { note: `No rule blocks ${dish.name} here; the planner left it out for variety or preferences.` }
+      : { note: `Putting ${dish.name} here would break these rules.` }),
+  };
+}
+
 const HANDLERS: Record<string, Handler> = {
   search_dishes(args, { data }) {
     const a = parse(SearchArgs, args);
@@ -172,13 +283,26 @@ const HANDLERS: Record<string, Handler> = {
     if (!a.ok) return a;
     return { ok: true, data: capped(data.rules.map((r) => describeRule(r, data)), 'rules') };
   },
+  get_plan(args, { data }) {
+    const a = parse(NoArgs, args ?? {});
+    if (!a.ok) return a;
+    if (!data.plan) return { ok: true, data: { note: 'no plan' } };
+    return { ok: true, data: { days: planByDay(data.plan, data) } };
+  },
   explain_plan_slot(args, { data }) {
     const a = parse(ExplainArgs, args);
     if (!a.ok) return a;
     const { plan } = data;
     if (!plan) return { ok: true, data: { note: 'no plan' } };
-    const { day, meal } = a.value;
-    const problems = explainPlan(data, plan).filter((p) => (p.day === undefined && p.meal === undefined) || (p.day === day && p.meal === meal));
+    const day = a.value.day as DayOfWeek;
+    const meal = a.value.meal;
+    let why: ReturnType<typeof whyNot> | undefined;
+    if (a.value.dish !== undefined) {
+      const found = resolveDish(a.value.dish, data);
+      if (!found.ok) return found;
+      why = whyNot(found.dish, day, meal, plan, data);
+    }
+    const problems = problemsForSlot(explainPlan(data, plan), day, meal);
     const missing = missingDishIds(data, plan);
     return {
       ok: true,
@@ -186,6 +310,8 @@ const HANDLERS: Record<string, Handler> = {
         note: "Judged under today's rules, which may differ from the rules in force when the plan was made.",
         day,
         meal,
+        dishes: slotDishes(plan.slots.find((s) => s.day === day && s.meal_slot === meal), data),
+        ...(why ? { whyNot: why } : {}),
         problems: problems.slice(0, MAX_LIST_ITEMS),
         ...(problems.length > MAX_LIST_ITEMS ? { more: problems.length - MAX_LIST_ITEMS } : {}),
         ...(missing.length

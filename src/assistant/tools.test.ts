@@ -4,9 +4,11 @@ import type { RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
-import { TOOL_DECLARATIONS, runTool } from './tools';
-import { dayRule } from '@/rules';
-import type { WeeklyPlan } from '@/types/plan';
+import { TOOL_DECLARATIONS, problemsForSlot, runTool } from './tools';
+import type { PlanProblem } from '@/services/plan-generation';
+import { dayRule, TEMPLATE_IDS } from '@/rules';
+import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
+import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
 
 const dish = (id: number, name: string, extra: Partial<ComponentRecord> = {}): ComponentRecord =>
@@ -19,9 +21,9 @@ const ctxOf = (over: Partial<AssistantData> = {}): ToolContext => ({
 });
 
 describe('tool registry', () => {
-  it('declares the closed set of seven tools', () => {
+  it('declares the closed set of eight tools', () => {
     expect(TOOL_DECLARATIONS.map((t) => t.name)).toEqual([
-      'search_dishes', 'get_rule', 'list_rules', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule',
+      'search_dishes', 'get_rule', 'list_rules', 'get_plan', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule',
     ]);
   });
 
@@ -89,10 +91,25 @@ describe('list_rules', () => {
 });
 
 describe('declarations', () => {
-  it('never send an object parameter schema with empty properties', () => {
+  type Schema = { type?: string; properties?: Record<string, Schema>; items?: Schema };
+  /** Every schema node, nested properties and array items included, with its path. */
+  const nodes = (s: Schema | undefined, path: string): [string, Schema][] =>
+    s ? [[path, s], ...Object.entries(s.properties ?? {}).flatMap(([k, v]) => nodes(v, `${path}.${k}`)), ...nodes(s.items, `${path}[]`)] : [];
+
+  it('never send an object schema without properties, at any depth', () => {
     for (const t of TOOL_DECLARATIONS) {
-      const p = t.parameters as { type?: string; properties?: object } | undefined;
-      if (p?.type === 'object') expect(Object.keys(p.properties ?? {}).length, t.name).toBeGreaterThan(0);
+      for (const [path, n] of nodes(t.parameters as Schema | undefined, t.name)) {
+        if (n.type === 'object') expect(Object.keys(n.properties ?? {}).length, path).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it('declares spec as JSON text listing every template', () => {
+    for (const name of ['propose_rule', 'simulate_with_rule']) {
+      const spec = (TOOL_DECLARATIONS.find((t) => t.name === name)!.parameters as Schema & { properties: Record<string, { type: string; description: string }> }).properties.spec;
+      expect(spec.type, name).toBe('string');
+      expect(spec.description).toMatch(/JSON text of the rule spec/);
+      for (const id of TEMPLATE_IDS) expect(spec.description).toContain(id);
     }
   });
 });
@@ -123,7 +140,7 @@ describe('explain_plan_slot', () => {
     const data = (r as { data: { problems: { ruleId?: number; meal?: string; day?: string }[]; note: string } }).data;
     expect(data.note).toMatch(/today.s rules/);
     expect(data.problems.some((p) => p.ruleId === 7 && p.day === 'monday' && p.meal === 'lunch')).toBe(true);
-    expect(data.problems.every((p) => (p.day === undefined && p.meal === undefined) || (p.day === 'monday' && p.meal === 'lunch'))).toBe(true);
+    expect(data.problems.every((p) => (p.day === undefined || p.day === 'monday') && (p.meal === undefined || p.meal === 'lunch'))).toBe(true);
   });
 
   it('reports deleted dishes instead of throwing', async () => {
@@ -131,6 +148,143 @@ describe('explain_plan_slot', () => {
     const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctx);
     expect(r.ok).toBe(true);
     expect((r as { data: { missingDishIds: number[] } }).data.missingDishIds).toEqual([55]);
+  });
+});
+
+describe('problemsForSlot', () => {
+  const p = (over: Partial<PlanProblem>): PlanProblem => ({ level: 'hard', reason: 'r', message: 'm', ...over });
+  const week = p({ message: 'week' });
+  const exact = p({ message: 'exact', day: 'monday', meal: 'lunch' });
+  const dayOnly = p({ message: 'day', day: 'monday' });
+  const mealOnly = p({ message: 'meal', meal: 'lunch' });
+  const otherSlot = p({ message: 'other slot', day: 'monday', meal: 'dinner' });
+  const otherDay = p({ message: 'other day', day: 'tuesday' });
+  const otherMeal = p({ message: 'other meal', meal: 'dinner' });
+  const all = [week, exact, dayOnly, mealOnly, otherSlot, otherDay, otherMeal];
+  const kept = problemsForSlot(all, 'monday', 'lunch').map((x) => x.message);
+
+  it('keeps week-level problems (no day, no meal), which includes window groups', () => expect(kept).toContain('week'));
+  it('keeps problems at exactly that day and meal', () => expect(kept).toContain('exact'));
+  it('keeps day-level problems for that day', () => expect(kept).toContain('day'));
+  it('keeps meal-level problems for that meal', () => expect(kept).toContain('meal'));
+  it('drops problems located elsewhere', () => expect(kept).toEqual(['week', 'exact', 'day', 'meal']));
+});
+
+describe('explain_plan_slot: dishes and why not', () => {
+  const pulao = dish(1, 'Pulao', { componentType: 'base' });
+  const rice = dish(4, 'Jeera Rice', { componentType: 'base' });
+  const dal = dish(2, 'Dal Tadka');
+  const chole = dish(3, 'Chole');
+  const raita = dish(5, 'Raita', { componentType: 'extra' });
+  const library = [pulao, rice, dal, chole, raita];
+  const plan: WeeklyPlan = { slots: [
+    { day: 'monday', meal_slot: 'lunch', base_id: 1, curry_id: 2, extra_ids: [5] },
+    { day: 'tuesday', meal_slot: 'dinner', base_id: 55, extra_ids: [] },
+  ] };
+  const noCholeMonday: RuleRecord = {
+    id: 9, name: 'No chole on Monday', enabled: true, created_at: '',
+    spec: { template: 'exclude', params: { match: is('id', 3), scope: { days: ['monday'] }, strength: 'must' } } as RuleRecord['spec'],
+  };
+  type Data = { dishes: unknown; whyNot?: { dish: { id: number; name: string }; part: string; blockedBy: { ruleId?: number }[]; note?: string } };
+  const explain = async (args: object, over: Partial<AssistantData> = {}) =>
+    runTool('explain_plan_slot', { day: 'monday', meal: 'lunch', ...args }, ctxOf({ library, plan, ...over }));
+
+  it('returns the slot\'s dishes as id and name', async () => {
+    const r = await explain({});
+    expect((r as { data: Data }).data.dishes).toEqual({
+      base: { id: 1, name: 'Pulao' }, curry: { id: 2, name: 'Dal Tadka' }, extras: [{ id: 5, name: 'Raita' }],
+    });
+  });
+
+  it('marks a deleted dish in the slot instead of naming it', async () => {
+    const r = await runTool('explain_plan_slot', { day: 'tuesday', meal: 'dinner' }, ctxOf({ library, plan }));
+    expect((r as { data: Data }).data.dishes).toEqual({ base: { id: 55, deleted: true }, extras: [] });
+  });
+
+  it('says the slot is empty when the plan has nothing there', async () => {
+    const r = await runTool('explain_plan_slot', { day: 'friday', meal: 'breakfast' }, ctxOf({ library, plan }));
+    expect((r as { data: Data }).data.dishes).toBeNull();
+  });
+
+  it('declares an optional dish argument (name or id)', () => {
+    const d = TOOL_DECLARATIONS.find((t) => t.name === 'explain_plan_slot')!;
+    const params = d.parameters as { properties: Record<string, { type: string }>; required: string[] };
+    expect(params.properties.dish.type).toBe('string');
+    expect(params.required).not.toContain('dish');
+  });
+
+  it('reports the rule a named dish would break in that slot', async () => {
+    const r = await explain({ dish: 'chole' }, { rules: [noCholeMonday] });
+    expect(r.ok).toBe(true);
+    const why = (r as { data: Data }).data.whyNot!;
+    expect(why.dish).toEqual({ id: 3, name: 'Chole' });
+    expect(why.part).toBe('curry');
+    expect(why.blockedBy.some((p) => p.ruleId === 9)).toBe(true);
+  });
+
+  it('says no rule blocks a dish when none would be broken, pointing at variety and preferences', async () => {
+    const r = await explain({ dish: 'Chole' });
+    const why = (r as { data: Data }).data.whyNot!;
+    expect(why.blockedBy).toEqual([]);
+    expect(why.note).toMatch(/No rule blocks/);
+    expect(why.note).toMatch(/variety|preference/);
+  });
+
+  it('accepts a dish id as a number or numeric text', async () => {
+    for (const dishArg of [3, '3']) {
+      const why = ((await explain({ dish: dishArg }, { rules: [noCholeMonday] })) as { data: Data }).data.whyNot!;
+      expect(why.dish.id).toBe(3);
+    }
+  });
+
+  it('places an extra into the extras part', async () => {
+    const why = ((await explain({ dish: 'raita' })) as { data: Data }).data.whyNot!;
+    expect(why.part).toBe('extras');
+  });
+
+  it('says so when the dish is already in that slot', async () => {
+    const why = ((await explain({ dish: 'Dal Tadka' })) as { data: Data }).data.whyNot!;
+    expect(why.note).toMatch(/already/);
+  });
+
+  it('fails with a pointer to search_dishes for an unknown dish', async () => {
+    const r = await explain({ dish: 'Biryani' });
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/search_dishes/);
+  });
+
+  it('asks which dish when a name matches several, instead of guessing', async () => {
+    const r = await explain({ dish: 'rice' }, { library: [...library, dish(6, 'Lemon Rice', { componentType: 'base' })] });
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/Jeera Rice.*Lemon Rice|Lemon Rice.*Jeera Rice/);
+  });
+
+  it('works when another slot holds a deleted dish', async () => {
+    const r = await explain({ dish: 'Jeera Rice' }, { rules: [noCholeMonday] });
+    expect(r.ok).toBe(true);
+    expect((r as { data: Data }).data.whyNot!.part).toBe('base');
+  });
+});
+
+describe('get_plan', () => {
+  it('says so when there is no plan', async () => {
+    expect(await runTool('get_plan', {}, ctxOf())).toEqual({ ok: true, data: { note: 'no plan' } });
+  });
+
+  it('lists each day\'s meals as dish names, grouped by day, within the list cap', async () => {
+    const library = [dish(1, 'Pulao', { componentType: 'base' }), dish(2, 'Dal')];
+    const slots = ALL_DAYS.flatMap((day) => MEALS.map((meal) => ({ day, meal_slot: meal, base_id: 1, curry_id: 2, extra_ids: [] })));
+    const r = await runTool('get_plan', undefined, ctxOf({ library, plan: { slots } }));
+    const days = (r as { data: { days: { day: string; lunch?: string[] }[] } }).data.days;
+    expect(days).toHaveLength(7);
+    expect(days.length).toBeLessThanOrEqual(MAX_LIST_ITEMS);
+    expect(days[0]).toEqual({ day: 'monday', breakfast: ['Pulao', 'Dal'], lunch: ['Pulao', 'Dal'], dinner: ['Pulao', 'Dal'] });
+    expect(JSON.stringify(r)).not.toContain('secret');
+  });
+
+  it('marks deleted dishes and skips days without slots', async () => {
+    const r = await runTool('get_plan', {}, ctxOf({ plan: { slots: [{ day: 'wednesday', meal_slot: 'dinner', base_id: 55, extra_ids: [] }] } }));
+    expect((r as { data: unknown }).data).toEqual({ days: [{ day: 'wednesday', dinner: ['#55 (deleted)'] }] });
   });
 });
 
@@ -206,6 +360,21 @@ describe('simulate_with_rule', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('accepts the spec as JSON text', async () => {
+    const calls: unknown[] = [];
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: JSON.stringify(spec) }, withCompare(1, calls));
+    expect(r.ok).toBe(true);
+    expect((calls[0] as unknown[])[0]).toMatchObject({ template: 'exclude' });
+  });
+
+  it('rejects spec text that is not valid JSON without comparing, asking for valid JSON', async () => {
+    const calls: unknown[] = [];
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: '{template: exclude' }, withCompare(1, calls));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/valid JSON/);
+    expect(calls).toHaveLength(0);
+  });
+
   it('turns a failing comparison into ok:false', async () => {
     const r = await runTool('simulate_with_rule', { name: 'x', spec }, ctxOf());
     expect(r).toEqual({ ok: false, error: 'unused' });
@@ -235,6 +404,19 @@ describe('propose_rule', () => {
     const r = await runTool('propose_rule', { name: 'x', spec: { template: 'exclude', params: { match: is('id', 999), strength: 'must' } } }, ctxOf({ library }));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain('component #999');
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('accepts the spec as JSON text', async () => {
+    const r = await runTool('propose_rule', { name: 'No sambar', spec: JSON.stringify(good) }, ctxOf({ library }));
+    expect(r.ok).toBe(true);
+    expect((r as { effect?: { kind: string } }).effect?.kind).toBe('rule-draft');
+  });
+
+  it('rejects spec text that is not valid JSON, asking for valid JSON', async () => {
+    const r = await runTool('propose_rule', { name: 'x', spec: 'not json' }, ctxOf({ library }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/valid JSON/);
     expect(r).not.toHaveProperty('effect');
   });
 

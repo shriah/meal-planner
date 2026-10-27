@@ -4,7 +4,7 @@ import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
 import { loadPlanningInput } from '@/services/planning';
 import {
-  ERROR_MESSAGES, NO_CHANGE_TEXT, RATE_LIMITED_TEXT, TOO_MANY_STEPS_TEXT, runAssistant,
+  EMPTY_REPLY_TEXT, ERROR_MESSAGES, NO_CHANGE_TEXT, RATE_LIMITED_TEXT, TOO_MANY_STEPS_TEXT, runAssistant,
   type AgentDeps, type AssistantEvent,
 } from './agent';
 import { GeminiError, type GeminiCall, type GeminiContent, type GeminiEvent } from './gemini';
@@ -327,6 +327,40 @@ describe('runAssistant: effects never write to the database', () => {
   });
 });
 
+describe('runAssistant: empty replies', () => {
+  it('emits a notice instead of finishing silently when Gemini returns no text and no tool call', async () => {
+    const { gemini } = fakeGemini([async function* () { yield { type: 'done', finishReason: 'MAX_TOKENS' } as GeminiEvent; }]);
+    const events = await run('list rules', deps(gemini));
+    expect(events).toEqual([{ type: 'error', message: EMPTY_REPLY_TEXT }]);
+    expect(EMPTY_REPLY_TEXT).toMatch(/no answer/);
+  });
+
+  it('emits the notice when a stream ends empty without a done event', async () => {
+    const { gemini } = fakeGemini([async function* () { /* nothing */ }]);
+    expect(await run('list rules', deps(gemini))).toEqual([{ type: 'error', message: EMPTY_REPLY_TEXT }]);
+  });
+
+  it('finishes quietly when an earlier step produced an effect and the last reply is empty', async () => {
+    const { gemini } = fakeGemini([
+      callTool('simulate_with_rule', { name: 'x', spec: { template: 'exclude', params: { match: is('id', 1) } } }),
+      async function* () { yield { type: 'done' } as GeminiEvent; },
+    ]);
+    const events = await run('simulate rule', deps(gemini));
+    expect(events.map((e) => e.type)).toEqual(['effect', 'done']);
+  });
+
+  it('finishes quietly when earlier text was streamed before a tool call', async () => {
+    const { gemini } = fakeGemini([
+      async function* () {
+        yield { type: 'text', text: 'Looking' } as GeminiEvent;
+        yield { type: 'toolCall', name: 'list_rules', args: {} } as GeminiEvent;
+      },
+      async function* () { yield { type: 'done' } as GeminiEvent; },
+    ]);
+    expect((await run('list rules', deps(gemini))).map((e) => e.type)).toEqual(['text', 'done']);
+  });
+});
+
 describe('runAssistant: errors and abort', () => {
   const failing = (err: unknown) => async function* (): AsyncGenerator<GeminiEvent> {
     yield { type: 'text', text: 'partial' };
@@ -338,6 +372,7 @@ describe('runAssistant: errors and abort', () => {
     ['rate', 'Gemini is rate limiting, try again shortly.'],
     ['network', "Couldn't reach Gemini."],
     ['other', 'Something went wrong talking to Gemini.'],
+    ['model', "The Gemini model isn't available to this key."],
   ] as const)('maps GeminiError(%s) to a plain error event', async (kind, message) => {
     const { gemini } = fakeGemini([failing(new GeminiError(kind, `raw detail with key test-key-123`))]);
     const events = await run('list rules', deps(gemini));

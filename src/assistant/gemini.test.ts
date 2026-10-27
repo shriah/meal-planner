@@ -67,6 +67,19 @@ describe('streamGemini', () => {
     await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'other' });
   });
 
+  it('maps 404 to model, saying the model is not available to this key', async () => {
+    const f = async () => new Response('not found', { status: 404 });
+    await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'model' });
+  });
+
+  it('carries the last finishReason on the done event', async () => {
+    const f = async () => sseResponse([textChunk('a'), data({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [] } }] })]);
+    expect(await collect(streamGemini(req, f as typeof fetch))).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'done', finishReason: 'MAX_TOKENS' },
+    ]);
+  });
+
   it('maps a rejected fetch to network', async () => {
     const f = async () => {
       throw new TypeError('failed');

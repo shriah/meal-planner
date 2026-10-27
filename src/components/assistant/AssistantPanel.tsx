@@ -66,6 +66,8 @@ export function AssistantPanel({ gemini = streamGemini }: { gemini?: GeminiCall 
     let finished = false
     try {
       const input = await loadPlanningInput()
+      // Opened straight on /rules, nothing has loaded the plan yet; the tools need it.
+      if (!usePlanStore.getState().hydrated) await usePlanStore.getState().initFromDB()
       const { plan, locks } = usePlanStore.getState()
       const data: AssistantData = plan ? { ...input, plan } : input
       setNames(new Map(input.library.map((c) => [c.id, c.name])))
@@ -134,7 +136,7 @@ export function AssistantPanel({ gemini = streamGemini }: { gemini?: GeminiCall 
         <Button type="button" variant="ghost" size="sm" onClick={() => setEditingKey(true)}>Gemini key</Button>
       </div>
 
-      <div role="log" aria-label="Conversation" aria-live="polite" className="min-h-0 flex-1 space-y-3 overflow-y-auto">
+      <div role="log" aria-label="Conversation" aria-live="polite" aria-busy={running} className="min-h-0 flex-1 space-y-3 overflow-y-auto">
         {visible.length === 0 && (
           <p className="text-sm text-muted-foreground">
             Ask about your rules, dishes or this week’s plan, or describe a rule you want. Nothing is saved until you

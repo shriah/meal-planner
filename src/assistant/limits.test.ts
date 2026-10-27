@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampMessage, createRateLimiter, MAX_INPUT_CHARS } from './limits';
+import { clampMessage, createRateLimiter, MAX_INPUT_CHARS, MAX_OUTPUT_TOKENS } from './limits';
 
 describe('createRateLimiter', () => {
   it('allows 6 calls per window, refuses the 7th, then allows again after the window', () => {
@@ -21,5 +21,11 @@ describe('clampMessage', () => {
   });
   it('trims whitespace', () => {
     expect(clampMessage('  hi  ')).toBe('hi');
+  });
+});
+
+describe('MAX_OUTPUT_TOKENS', () => {
+  it('leaves room for a reply after any thinking', () => {
+    expect(MAX_OUTPUT_TOKENS).toBe(2048);
   });
 });

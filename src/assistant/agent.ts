@@ -22,10 +22,12 @@ export interface AgentDeps {
 export const RATE_LIMITED_TEXT = 'You are asking too quickly; wait a minute and try again.';
 export const TOO_MANY_STEPS_TEXT = 'That took too many steps. Try asking a simpler question.';
 export const NO_CHANGE_TEXT = 'This rule would not change the week.';
+export const EMPTY_REPLY_TEXT = 'Gemini returned no answer (it may have run out of room). Try a shorter question.';
 export const ERROR_MESSAGES: Record<GeminiError['kind'], string> = {
   auth: 'Check your Gemini key.',
   rate: 'Gemini is rate limiting, try again shortly.',
   network: "Couldn't reach Gemini.",
+  model: "The Gemini model isn't available to this key.",
   other: 'Something went wrong talking to Gemini.',
 };
 
@@ -74,6 +76,8 @@ export async function* runAssistant(
   ];
   const ctx = { data, compare: deps.compare };
   let toolCalls = 0;
+  // Whether any text or effect reached the user this turn; a turn that ends without one gets a notice.
+  let producedOutput = false;
 
   for (;;) {
     if (aborted()) return;
@@ -92,6 +96,7 @@ export async function* runAssistant(
         if (aborted()) return;
         if (ev.type === 'text') {
           text += ev.text;
+          producedOutput = true;
           yield { type: 'text', text: ev.text };
         } else if (ev.type === 'toolCall') {
           calls.push({ name: ev.name, args: ev.args, ...(ev.thoughtSignature ? { thoughtSignature: ev.thoughtSignature } : {}) });
@@ -105,6 +110,10 @@ export async function* runAssistant(
     if (aborted()) return;
 
     if (calls.length === 0) {
+      if (!producedOutput) {
+        yield { type: 'error', message: EMPTY_REPLY_TEXT };
+        return;
+      }
       yield { type: 'done' };
       return;
     }
@@ -121,6 +130,7 @@ export async function* runAssistant(
       const result = await runTool(call.name, call.args, ctx);
       if (aborted()) return;
       if (result.ok && result.effect) {
+        producedOutput = true;
         yield { type: 'effect', effect: result.effect };
         if (result.effect.kind === 'comparison' && result.effect.comparison.identical) {
           yield { type: 'text', text: NO_CHANGE_TEXT };

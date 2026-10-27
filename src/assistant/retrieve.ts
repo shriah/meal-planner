@@ -25,10 +25,12 @@ const TAG_VOCABULARY: readonly string[] = [
 ].filter((t) => t !== 'none');
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
-const words = (s: string) => norm(s).match(/[a-z0-9]+/g) ?? [];
+// Letters, combining marks (Devanagari and Tamil vowel signs) and digits in any script.
+const words = (s: string) => norm(s).match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** Whole-word (or whole-phrase) occurrence, so "rice" does not match "price". */
-const contains = (text: string, phrase: string) => phrase !== '' && new RegExp(`(^|[^a-z0-9])${escape(phrase)}($|[^a-z0-9])`).test(text);
+const contains = (text: string, phrase: string) =>
+  phrase !== '' && new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])${escape(phrase)}($|[^\\p{L}\\p{M}\\p{N}])`, 'u').test(text);
 
 function matchLibrary(message: string, data: AssistantData) {
   const text = norm(message);

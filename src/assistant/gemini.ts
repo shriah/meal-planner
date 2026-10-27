@@ -15,10 +15,10 @@ export type ToolDeclaration = { name: string; description: string; parameters?: 
 export type GeminiEvent =
   | { type: 'text'; text: string }
   | { type: 'toolCall'; name: string; args: unknown; thoughtSignature?: string }
-  | { type: 'done' };
+  | { type: 'done'; finishReason?: string };
 
 export class GeminiError extends Error {
-  kind: 'auth' | 'rate' | 'network' | 'other';
+  kind: 'auth' | 'rate' | 'network' | 'model' | 'other';
   constructor(kind: GeminiError['kind'], message: string) {
     super(message);
     this.name = 'GeminiError';
@@ -43,7 +43,8 @@ function isAbort(e: unknown): boolean {
 
 const BLOCK_REASONS = new Set(['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'RECITATION', 'IMAGE_SAFETY']);
 
-function eventsFromData(json: string): GeminiEvent[] {
+/** Events in one SSE data line; the candidate's finishReason, if any, is recorded on `seen`. */
+function eventsFromData(json: string, seen: { finishReason?: string }): GeminiEvent[] {
   let parsed: {
     error?: { message?: string };
     promptFeedback?: { blockReason?: string };
@@ -59,6 +60,7 @@ function eventsFromData(json: string): GeminiEvent[] {
   }
   const out: GeminiEvent[] = [];
   const candidate = parsed.candidates?.[0];
+  if (candidate?.finishReason) seen.finishReason = candidate.finishReason;
   for (const part of candidate?.content?.parts ?? []) {
     if ('functionCall' in part && part.functionCall) {
       const ev: GeminiEvent = { type: 'toolCall', name: part.functionCall.name, args: part.functionCall.args };
@@ -110,6 +112,7 @@ export async function* streamGemini(
       }
       throw new GeminiError('other', 'Gemini rejected the request.');
     }
+    if (res.status === 404) throw new GeminiError('model', "The Gemini model isn't available to this key.");
     if (res.status === 429) throw new GeminiError('rate', 'Gemini rate limit reached.');
     throw new GeminiError('other', `Gemini returned HTTP ${res.status}.`);
   }
@@ -118,6 +121,7 @@ export async function* streamGemini(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  const seen: { finishReason?: string } = {};
   try {
     for (;;) {
       const { done, value } = await reader.read();
@@ -126,11 +130,11 @@ export async function* streamGemini(
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() ?? '';
       for (const line of lines) {
-        if (line.startsWith('data:')) yield* eventsFromData(line.slice(5).trim());
+        if (line.startsWith('data:')) yield* eventsFromData(line.slice(5).trim(), seen);
       }
     }
     buffer += decoder.decode();
-    if (buffer.startsWith('data:')) yield* eventsFromData(buffer.slice(5).trim());
+    if (buffer.startsWith('data:')) yield* eventsFromData(buffer.slice(5).trim(), seen);
   } catch (e) {
     if (e instanceof GeminiError) throw e;
     if (isAbort(e)) return;
@@ -138,5 +142,5 @@ export async function* streamGemini(
   } finally {
     reader.cancel().catch(() => {});
   }
-  yield { type: 'done' };
+  yield seen.finishReason ? { type: 'done', finishReason: seen.finishReason } : { type: 'done' };
 }

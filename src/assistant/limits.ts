@@ -2,7 +2,7 @@
 
 export const MAX_INPUT_CHARS = 500;
 export const MAX_TOOL_CALLS = 4;
-export const MAX_OUTPUT_TOKENS = 1024;
+export const MAX_OUTPUT_TOKENS = 2048;
 export const HISTORY_TURNS = 6;
 export const MAX_LIST_ITEMS = 20;
 

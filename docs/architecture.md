@@ -145,8 +145,11 @@ Gemini directly with the user's own key; there is no server route.
 
 **Data flow.** Step 1 builds a small slice locally (matched dishes, the rules that reference them,
 a compact library summary, the discussed plan and its problems). Step 2 sends the slice and question to
-Gemini, which may call read-only tools (search dishes, get or list rules, explain a plan slot) and two
-draft tools (`propose_rule`, `propose_dish`) that only validate and return a draft. A rule draft opens in
+Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
+week's dish names, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
+named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
+(`propose_rule`, `propose_dish`) that only validate and return a draft. A rule spec travels as JSON text.
+If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in
 the existing `RuleEditor` sheet, a dish draft in the existing `ComponentForm`; nothing is saved except
 through their own Save button.
 
@@ -167,4 +170,6 @@ that relevant library data (names, ids, short descriptions, capped) goes to Goog
 
 **Known limits.** History is text-only (tool calls and results are not replayed on later turns), and
 is kept in memory for the open panel. `GEMINI_MODEL` in `gemini.ts` has not been checked against
-Google's live model list; update it if requests fail with an unknown-model error.
+Google's live model list; a 404 shows "The Gemini model isn't available to this key.", and then it needs
+updating. Replies are capped at 2048 output tokens; a turn that ends with no text and no draft shows a
+short notice instead of an empty reply.

@@ -9,7 +9,10 @@ import { runSeed } from '@/db/seed';
 import { is, TRUE } from '@/planner';
 import { GeminiError, type GeminiCall, type GeminiEvent } from '@/assistant/gemini';
 import { getApiKey, setApiKey } from '@/assistant/key-store';
+import { EMPTY_REPLY_TEXT } from '@/assistant/agent';
 import { MAX_INPUT_CHARS } from '@/assistant/limits';
+import { saveActivePlan } from '@/services/plan-db';
+import { usePlanStore } from '@/stores/plan-store';
 import { AssistantPanel } from './AssistantPanel';
 
 type Req = Parameters<GeminiCall>[0];
@@ -52,6 +55,8 @@ beforeEach(async () => {
   localStorage.clear();
   await Promise.all(db.tables.map((t) => t.clear()));
   await runSeed();
+  // The plan store is a module singleton; start every test unhydrated, as on a direct /rules load.
+  usePlanStore.setState({ plan: null, locks: {}, hydrated: false });
 });
 afterEach(() => cleanup());
 
@@ -258,5 +263,46 @@ describe('AssistantPanel: drafts and comparisons', () => {
     expect(screen.getByRole('table', { name: 'After' })).toBeInTheDocument();
     expect(document.querySelectorAll('[data-changed="true"]').length).toBeGreaterThan(0);
     expect(screen.getByText(/makes the week worse/)).toBeInTheDocument();
+  });
+});
+
+describe('AssistantPanel: plan and empty replies', () => {
+  beforeEach(() => setApiKey('test-key'));
+
+  it('loads the stored plan when the plan store is not hydrated, so tools see it', async () => {
+    const [base] = (await db.components.toArray()).filter((c) => c.componentType === 'base');
+    await saveActivePlan({ plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: base.id, extra_ids: [] }] }, locks: {} });
+    expect(usePlanStore.getState().hydrated).toBe(false);
+    const { gemini, calls } = fakeGemini([callTool('get_plan', {}), say('Here it is')]);
+    render(<AssistantPanel gemini={gemini} />);
+
+    await ask("what's in this week's plan?");
+    expect(await screen.findByText('Here it is')).toBeInTheDocument();
+    const responses = calls[1].contents.flatMap((c) => c.parts).flatMap((p) => ('functionResponse' in p ? [JSON.stringify(p.functionResponse)] : []));
+    expect(responses.join('')).toContain(base.name);
+    expect(responses.join('')).not.toContain('no plan');
+  });
+
+  it('shows a notice instead of a silent empty turn when Gemini returns nothing', async () => {
+    const { gemini } = fakeGemini([async function* () { yield { type: 'done', finishReason: 'MAX_TOKENS' } }]);
+    render(<AssistantPanel gemini={gemini} />);
+
+    await ask('list my rules');
+    expect(await screen.findByText(EMPTY_REPLY_TEXT)).toBeInTheDocument();
+    expect(screen.queryByText('Thinking…')).not.toBeInTheDocument();
+    await waitFor(() => expect(input()).toBeEnabled());
+  });
+
+  it('marks the conversation busy while a reply is running', async () => {
+    const g = gate();
+    const { gemini } = fakeGemini([async function* () { await g.opened; yield { type: 'text', text: 'ok' }; yield { type: 'done' } }]);
+    render(<AssistantPanel gemini={gemini} />);
+    const log = screen.getByRole('log', { name: 'Conversation' });
+    expect(log).toHaveAttribute('aria-busy', 'false');
+
+    await ask('list my rules');
+    await waitFor(() => expect(log).toHaveAttribute('aria-busy', 'true'));
+    await act(async () => g.open());
+    await waitFor(() => expect(log).toHaveAttribute('aria-busy', 'false'));
   });
 });

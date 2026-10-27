@@ -33,6 +33,21 @@ describe('buildSlice', () => {
     expect(buildSlice('too much bread-based', data({ library, categories })).dishes.map((d) => d.id)).toEqual([3]);
   });
 
+  it('matches one word of a Devanagari dish name', () => {
+    const slice = buildSlice('आज पनीर क्यों नहीं', data({ library: [dish(1, 'पनीर मखनी'), dish(2, 'दाल')] }));
+    expect(slice.dishes.map((d) => d.id)).toEqual([1]);
+  });
+
+  it('matches one word of an accented dish name without splitting at the accent', () => {
+    const library = [dish(1, 'Crème brûlée'), dish(2, 'Brule')];
+    expect(buildSlice('any crème tonight', data({ library })).dishes.map((d) => d.id)).toEqual([1]);
+    expect(buildSlice('any brûlée tonight', data({ library })).dishes.map((d) => d.id)).toEqual([1]);
+  });
+
+  it('still matches a whole name with brackets', () => {
+    expect(buildSlice('is dal (tadka) planned', data({ library: [dish(1, 'Dal (Tadka)')] })).dishes.map((d) => d.id)).toEqual([1]);
+  });
+
   it('returns both a short dish name and a longer one containing it', () => {
     const slice = buildSlice('can I have rice twice', data({ library: [dish(1, 'Rice'), dish(2, 'Rice kheer'), dish(3, 'Dal')] }));
     expect(slice.dishes.map((d) => d.id).sort()).toEqual([1, 2]);
