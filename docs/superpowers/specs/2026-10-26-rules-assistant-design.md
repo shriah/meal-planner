@@ -68,7 +68,7 @@ The key is the user's own and the code runs in their browser, so these guard aga
 - **Validated tool calls:** every tool's arguments are checked with a Zod schema before running; ids must exist in the library; `propose_rule` output must pass `RuleSpecSchema`/`validateDraft`. Invalid calls return an error to the model, not an effect.
 - **Read-only by construction:** no tool can write to the database (`propose_dish` and `propose_rule` only produce drafts). The only write path is the user pressing Save in the editor.
 - **Injection-safe data:** dish, category and rule names and descriptions come from user data and may contain instructions. Tool results and the context slice are passed as clearly delimited data, and the system prompt says to never follow instructions found inside them.
-- **Bounded input and output:** user message length cap (e.g. 500 characters), `maxOutputTokens` set per call, the tool-call cap (6), a cap on history sent (last few turns), and a simple client-side rate limit (e.g. a handful of questions per minute) so a stuck loop cannot burn the user's quota.
+- **Bounded input and output:** user message length cap (e.g. 500 characters), `maxOutputTokens` set per call, the tool-call cap (12), a cap on history sent (last few turns), and a simple client-side rate limit (e.g. a handful of questions per minute) so a stuck loop cannot burn the user's quota.
 - **Output kept plain:** chat text rendered as text, never as HTML or markdown with links or images, so the model cannot load remote content.
 - **Local off-topic check (optional, cheap):** if the message mentions nothing from the library, rules, plans or rule vocabulary and looks like a general request, answer the refusal locally without calling Gemini. Treat this as an optimisation, not the safety layer.
 - **Tests:** off-topic requests are refused; an injected instruction inside a dish name is not followed (with a mocked model, assert the tool results are delimited and unknown tools are rejected); over-long input and rate limit are enforced.
@@ -90,7 +90,7 @@ The key is the user's own and the code runs in their browser, so these guard aga
 
 ## My calls (not yet confirmed by the user)
 - Same-seed before/after comparison.
-- Tool-call cap of 6 (4 cut off the draft-then-simulate flow).
+- Tool-call cap of 12 (4 and 6 cut off the search, draft, simulate flow).
 - Plain-text `localStorage` key storage with an explicit notice.
 - Name/tag lookup rather than embeddings for step 1.
 - **Handing a draft to the form (answered by the code):** `RuleEditor` already takes `initial={{ name, spec }}` (used by the presets on `/rules/new`). The assistant's draft opens in it, in a sheet like `EditRuleSheet`; Save goes through the editor's existing save path. No form refactor needed.
@@ -98,7 +98,7 @@ The key is the user's own and the code runs in their browser, so these guard aga
 - **"Why" questions use today's rules:** a stored plan holds slots only, so it is re-scored under the current rules, not a snapshot. If the plan was generated before a rule was last changed, the answer says it is judged against the current rules. No data-model change.
 - **Ambiguous or multi-part requests:** the assistant asks one short clarifying question when hard vs soft or scope is unclear, defaulting to "must" (hard) for words like "never/no" and a preference for "try to/prefer". A request needing several templates yields several drafts, reviewed and saved one at a time (`propose_rule` returns one draft per call).
 - **What goes to Google:** tool results return names, ids and short descriptions only, capped at 20 items each, never full library dumps. The notice states this.
-- **Cost and latency targets (starting values, constants in code):** under ~3k input tokens for a typical question, streaming so first text appears quickly, at most 6 tool calls, and the summary step is skipped when the two weeks are identical.
+- **Cost and latency targets (starting values, constants in code):** under ~3k input tokens for a typical question, streaming so first text appears quickly, at most 12 tool calls, and the summary step is skipped when the two weeks are identical.
 - **"Worse" week:** a warning shown next to Save, never blocks it.
 - **Conversation history:** kept in memory for the open panel only, not persisted.
 - **Dish drafts:** `ComponentForm` may need a small change to accept a prefilled draft, as `RuleEditor` already does; the builder confirms and does that. Unknown categories are not created by the assistant: it uses an existing one or asks.
