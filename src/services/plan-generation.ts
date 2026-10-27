@@ -1,12 +1,13 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
   buildModel, explain, fromPlanSlots, planWeek, score, slotIndex,
-  type Justification, type Meal, type ModelInput, type Pins,
+  MEALS, type Justification, type Meal, type ModelInput, type Pins,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
-import type { DayOfWeek, WeeklyPlan } from '@/types/plan';
+import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
+import type { SlotChange } from '@/assistant/types';
 
 export interface PlanningInput {
   library: ComponentRecord[];
@@ -129,6 +130,58 @@ export function slotConflicts(
     put(id);
     const added = hard().filter((j) => j.units > (baseline.get(key(j)) ?? 0));
     if (added.length) out.set(id, added.map(problemOf));
+  }
+  return out;
+}
+
+/** Ids the plan uses that are no longer in the library, sorted. */
+export function missingDishIds(input: PlanningInput, plan: WeeklyPlan): number[] {
+  const known = new Set(input.library.map((c) => c.id));
+  const used = plan.slots.flatMap((s) => [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids]);
+  return [...new Set(used.filter((id): id is number => id !== undefined && !known.has(id)))].sort((a, b) => a - b);
+}
+
+/**
+ * Re-scores a stored plan under the rules as they are now (not as they were when it was made).
+ * Dishes that have since been deleted are left out of the check rather than failing it.
+ */
+export function explainPlan(input: PlanningInput, plan: WeeklyPlan): PlanProblem[] {
+  const { model, problemOf } = modelFromData(input);
+  const known = new Set(input.library.map((c) => c.id));
+  const state = fromPlanSlots(plan.slots);
+  for (const slot of state) {
+    if (slot.base !== undefined && !known.has(slot.base)) slot.base = undefined;
+    if (slot.curry !== undefined && !known.has(slot.curry)) slot.curry = undefined;
+    if (slot.subzi !== undefined && !known.has(slot.subzi)) slot.subzi = undefined;
+    slot.extras = slot.extras.filter((id) => known.has(id));
+  }
+  return score(buildModel(model), state, true).justifications.map(problemOf);
+}
+
+const slotIds = (s: PlanSlot | undefined): number[] =>
+  s ? [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((id): id is number => id !== undefined) : [];
+
+/**
+ * Slots whose dishes differ between two plans, in day-then-meal order, with the dishes named.
+ * `touches` says whether a dish is one a rule is about; a change is touched when any dish in
+ * either version of the slot is.
+ */
+export function diffPlans(
+  before: WeeklyPlan,
+  after: WeeklyPlan,
+  names: ReadonlyMap<number, string>,
+  touches: (id: number) => boolean = () => false,
+): SlotChange[] {
+  const find = (p: WeeklyPlan, day: DayOfWeek, meal: Meal) => p.slots.find((s) => s.day === day && s.meal_slot === meal);
+  const text = (ids: number[]) => (ids.length ? ids.map((id) => names.get(id) ?? `dish ${id}`).join(' + ') : 'nothing');
+  const out: SlotChange[] = [];
+  for (const day of ALL_DAYS) {
+    for (const meal of MEALS) {
+      const b = slotIds(find(before, day, meal));
+      const a = slotIds(find(after, day, meal));
+      if (b.join(',') === a.join(',')) continue;
+      out.push({ day, meal, before: text(b), after: text(a), touchedByRule: [...b, ...a].some(touches) });
+    }
   }
   return out;
 }

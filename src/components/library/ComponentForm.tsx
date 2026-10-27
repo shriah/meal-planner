@@ -68,6 +68,8 @@ interface ComponentFormProps {
   onSave: () => void
   onDiscard: () => void
   mode: 'edit' | 'add'
+  /** Starting values for a new dish (e.g. from the assistant); ignored when editing. */
+  draft?: Partial<ComponentRecord>
 }
 
 interface FormState {
@@ -95,6 +97,7 @@ function initialFormState(
   component: ComponentRecord | undefined,
   componentType: ComponentType,
   ownedRules: RuleRecord[] = [],
+  draft?: Partial<ComponentRecord>,
 ): FormState {
   const owned = readOwned(ownedRules)
   if (component) {
@@ -116,16 +119,16 @@ function initialFormState(
     }
   }
   return {
-    name: '',
-    base_category_id: '',
-    extra_category_id: '',
+    name: draft?.name ?? '',
+    base_category_id: componentType === 'base' ? String(draft?.base_category_id ?? '') : '',
+    extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
     compatible_base_category_ids: [],
-    curry_category: 'none',
+    curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
     clash_curry_categories: [],
-    dietary_tags: [],
-    protein_tag: 'none',
-    regional_tags: [],
-    occasion_tags: [],
+    dietary_tags: draft?.dietary_tags ?? [],
+    protein_tag: draft?.protein_tag ?? 'none',
+    regional_tags: draft?.regional_tags ?? [],
+    occasion_tags: draft?.occasion_tags ?? [],
     frequency: 'normal',
     day_mode: 'any',
     days: [],
@@ -165,8 +168,10 @@ function showsCompatibleBaseChecklist(componentType: ComponentType) {
   return componentType === 'curry' || componentType === 'subzi'
 }
 
-export function ComponentForm({ component, componentType, onSave, onDiscard, mode }: ComponentFormProps) {
-  const [form, setForm] = useState<FormState>(() => initialFormState(component, componentType))
+export function ComponentForm({ component, componentType, onSave, onDiscard, mode, draft }: ComponentFormProps) {
+  const [form, setForm] = useState<FormState>(() =>
+    initialFormState(component, componentType, [], mode === 'add' ? draft : undefined),
+  )
   const [saving, setSaving] = useState(false)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)

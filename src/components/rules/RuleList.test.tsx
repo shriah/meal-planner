@@ -37,28 +37,27 @@ beforeEach(async () => {
 const detailsOf = (summary: string) => screen.getByText(summary).closest('details')!;
 
 describe('RuleList', () => {
-  it('lists the user\'s rules, with planner defaults and dish settings tucked into collapsed sections', async () => {
+  it('lists the user\'s rules, with planner defaults tucked into a collapsed section, and no dish settings', async () => {
     render(<RuleList />);
 
     expect(await screen.findByRole('heading', { name: 'Your rules' })).toBeInTheDocument();
     expect(screen.getByText('No paneer on weekdays')).toBeInTheDocument();
     expect(detailsOf('Planner defaults (2)')).not.toHaveAttribute('open');
-    expect(detailsOf('Dish settings (2)')).not.toHaveAttribute('open');
     expect(within(detailsOf('Planner defaults (2)')).getByText('Vary dishes across the week')).toBeInTheDocument();
-    expect(within(detailsOf('Dish settings (2)')).getByText('Pulao: only on certain days')).toBeInTheDocument();
+    expect(screen.queryByText(/Dish settings/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Pulao: only on certain days')).not.toBeInTheDocument();
+    expect(screen.getByText('4 rules · 4 active')).toBeInTheDocument();
   });
 
   it('filters every section by name or description and opens the sections that have matches', async () => {
     render(<RuleList />);
     await screen.findByRole('heading', { name: 'Your rules' });
 
-    await userEvent.type(screen.getByRole('searchbox', { name: 'Search rules' }), 'pulao');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search rules' }), 'vary dishes');
 
     expect(screen.queryByRole('heading', { name: 'Your rules' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Planner defaults/)).not.toBeInTheDocument();
-    expect(detailsOf('Dish settings (1)')).toHaveAttribute('open');
-    expect(screen.getByText('Pulao: only on certain days')).toBeInTheDocument();
-    expect(screen.queryByText('Sambar: base pairing')).not.toBeInTheDocument();
+    expect(detailsOf('Planner defaults (1)')).toHaveAttribute('open');
+    expect(screen.getByText('Vary dishes across the week')).toBeInTheDocument();
 
     await userEvent.clear(screen.getByRole('searchbox', { name: 'Search rules' }));
     await userEvent.type(screen.getByRole('searchbox', { name: 'Search rules' }), 'never include dishes with paneer');
@@ -74,7 +73,6 @@ describe('RuleList', () => {
 
     expect(screen.getByText('No rules match “zzz”')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Your rules' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/Dish settings/)).not.toBeInTheDocument();
   });
 
   it('restores the missing planner defaults and reports how many came back', async () => {
@@ -100,19 +98,6 @@ describe('RuleList', () => {
     expect(await screen.findByText('Restored 10 default rules')).toBeInTheDocument();
   });
 
-  it('opens the section of the rule named in the URL hash, scrolls to it and marks it', async () => {
-    const dishRule = (await db.rules.toArray()).find((r) => r.name === 'Pulao: only on certain days')!;
-    window.location.hash = `#rule-${dishRule.id}`;
-    render(<RuleList />);
-
-    await waitFor(() => expect(detailsOf('Dish settings (2)')).toHaveAttribute('open'));
-    expect(detailsOf('Planner defaults (2)')).not.toHaveAttribute('open');
-    const row = document.getElementById(`rule-${dishRule.id}`)!;
-    expect(row).toBeInTheDocument();
-    await waitFor(() => expect(scrollIntoView).toHaveBeenCalled());
-    expect(row).toHaveAttribute('data-highlighted', 'true');
-  });
-
   it('opens the planner defaults for a default rule, and does nothing for a rule that is gone', async () => {
     const variety = (await db.rules.toArray()).find((r) => r.default_key === 'variety')!;
     window.location.hash = `#rule-${variety.id}`;
@@ -127,10 +112,4 @@ describe('RuleList', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
-  it('links a dish setting to its dish in the Library', async () => {
-    render(<RuleList />);
-    await screen.findByRole('heading', { name: 'Your rules' });
-    const links = within(detailsOf('Dish settings (2)')).getAllByRole('link', { name: 'Edit in Library' });
-    expect(links.map((l) => l.getAttribute('href'))).toEqual(['/library#dish-1', '/library#dish-2']);
-  });
 });
