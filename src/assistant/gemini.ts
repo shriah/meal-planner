@@ -1,7 +1,7 @@
 // Browser-side streaming client for the Gemini REST API. Plain fetch, no SDK.
 // The API key travels in the x-goog-api-key header, never in the URL.
 
-export const GEMINI_MODEL = 'gemini-3.8-flash';
+export const GEMINI_MODEL = 'gemini-3.5-flash';
 
 export type GeminiPart =
   | { text: string }
