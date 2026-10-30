@@ -56,7 +56,7 @@ EXAMPLE: ${EXAMPLE}
 scope is optional and strict: { days?: [...], meals?: [...] } with lowercase values (monday..sunday; breakfast, lunch, dinner) and no other keys. Leave it out for every day and meal.
 EXAMPLE: ${SCOPED_EXAMPLE}
 
-Style: short, plain text. No markdown links, images or HTML.`;
+Style: short, plain text. You may use **bold** for dish and rule names and "- " bullets. No other markdown, and no links, images, tables or HTML.`;
 
 /** Wraps a value as data for the model. Any closing tag inside the JSON is neutralised. */
 export function wrapData(label: string, value: unknown): string {

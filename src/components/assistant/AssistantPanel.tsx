@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { ComparisonView } from './ComparisonView'
 import { DraftSheets, type Review } from './DraftSheets'
 import { KeyPrompt } from './KeyPrompt'
+import { ChatText } from './ChatText'
 
 type Entry =
   | { id: number; role: 'user' | 'error'; text: string }
@@ -153,7 +154,7 @@ export function AssistantPanel({ gemini = streamGemini }: { gemini?: GeminiCall 
               e.role === 'error' && 'mr-4 border border-destructive/40 text-destructive',
             )}
           >
-            {e.text && <p className="whitespace-pre-wrap break-words">{e.text}</p>}
+            {e.text && <ChatText text={e.text} />}
             {e.role === 'assistant' && e.effects.map((effect, i) => (
               <div key={i} className="mt-2">
                 {effect.kind === 'rule-draft' && (
