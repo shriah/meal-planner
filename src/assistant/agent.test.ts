@@ -4,7 +4,7 @@ import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
 import { loadPlanningInput } from '@/services/planning';
 import {
-  EMPTY_REPLY_TEXT, ERROR_MESSAGES, NO_CHANGE_TEXT, RATE_LIMITED_TEXT, TOO_MANY_STEPS_TEXT, runAssistant,
+  EMPTY_REPLY_TEXT, ERROR_MESSAGES, NO_CHANGE_TEXT, OUT_OF_STEPS_AFTER_DRAFT_TEXT, RATE_LIMITED_TEXT, TOO_MANY_STEPS_TEXT, runAssistant,
   type AgentDeps, type AssistantEvent,
 } from './agent';
 import { GeminiError, type GeminiCall, type GeminiContent, type GeminiEvent } from './gemini';
@@ -307,6 +307,25 @@ describe('runAssistant: effects never write to the database', () => {
     expect(await db.components.count()).toBe(componentsBefore);
   });
 
+  describe('a draft the model proposes more than once', () => {
+    const propose = callTool('propose_rule', { name: 'No Idli', spec: { template: 'exclude', params: { match: is('id', 1) } } });
+    const data: AssistantData = { library: [{ id: 1, name: 'Idli', componentType: 'base', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' } as never], categories: [], rules: [] };
+
+    it('is shown once, and the model is told it already exists', async () => {
+      const { gemini, calls } = fakeGemini([propose, propose, say('Done.')]);
+      const events = await run('never idli', deps(gemini), { data });
+      expect(events.filter((e) => e.type === 'effect')).toHaveLength(1);
+      expect(JSON.stringify(functionResponses(calls[2]).at(-1))).toContain('already prepared');
+    });
+
+    it('is not reported as a failure when the steps run out afterwards', async () => {
+      const { gemini } = fakeGemini([propose, ...Array.from({ length: MAX_MODEL_REQUESTS - 1 }, () => callTool('list_rules', {}))]);
+      const events = await run('never idli', deps(gemini), { data });
+      expect(texts(events)).toEqual([OUT_OF_STEPS_AFTER_DRAFT_TEXT]);
+      expect(events.filter((e) => e.type === 'effect')).toHaveLength(1);
+    });
+  });
+
   it('emits an effect as soon as the tool returns, before the next Gemini call', async () => {
     const order: string[] = [];
     const { gemini } = fakeGemini([
@@ -377,7 +396,9 @@ describe('runAssistant: errors and abort', () => {
 
   it.each([
     ['auth', 'Check your Gemini key.'],
-    ['rate', 'Gemini is busy or rate limiting, try again shortly.'],
+    ['rate', 'Your Gemini key hit its per-minute limit. Wait a minute and try again.'],
+    ['busy', 'Gemini is overloaded right now. Try again in a minute.'],
+    ['timeout', 'Gemini took too long to answer. Try again.'],
     ['network', "Couldn't reach Gemini."],
     ['other', 'Something went wrong talking to Gemini.'],
     ['model', "The Gemini model isn't available to this key."],

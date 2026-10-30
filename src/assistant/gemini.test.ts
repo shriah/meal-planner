@@ -93,14 +93,15 @@ describe('streamGemini', () => {
     vi.useFakeTimers();
     const f = (_u: unknown, init?: RequestInit) =>
       new Promise<Response>((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))));
-    const result = expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'rate' });
+    const result = expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'timeout' });
     await vi.advanceTimersByTimeAsync(FIRST_BYTE_TIMEOUT_MS + 1);
     await result;
   });
 
-  it('treats a 503 as busy', async () => {
-    const f = async () => new Response('{}', { status: 503 });
-    await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'rate' });
+  it('tells a 503 (overloaded) from a 429 (rate limit)', async () => {
+    const status = (code: number) => async () => new Response('{}', { status: code });
+    await expect(collect(streamGemini(req, status(503) as typeof fetch))).rejects.toMatchObject({ kind: 'busy' });
+    await expect(collect(streamGemini(req, status(429) as typeof fetch))).rejects.toMatchObject({ kind: 'rate' });
   });
 
   it('stops quietly when the signal is aborted', async () => {
