@@ -146,9 +146,11 @@ Gemini directly with the user's own key; there is no server route.
 **Data flow.** Step 1 builds a small slice locally (matched dishes, the rules that reference them,
 a compact library summary, the discussed plan and its problems). Step 2 sends the slice and question to
 Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
-week's dish names, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
+week's dish names, `explain_rule` for whether a rule is active and where the plan breaks it, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
 named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
 (`propose_rule`, `propose_dish`) that only validate and return a draft. A rule spec travels as JSON text.
+Each question makes at most 4 requests to Gemini (the last one without tools, so it must answer); the prompt
+tells the model to answer from the slice when it can and to batch its tool calls into one step.
 If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in
 the existing `RuleEditor` sheet, a dish draft in the existing `ComponentForm`; nothing is saved except
 through their own Save button.

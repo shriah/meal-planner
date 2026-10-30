@@ -8,7 +8,7 @@ import {
   type AgentDeps, type AssistantEvent,
 } from './agent';
 import { GeminiError, type GeminiCall, type GeminiContent, type GeminiEvent } from './gemini';
-import { HISTORY_TURNS, MAX_INPUT_CHARS, MAX_TOOL_CALLS, createRateLimiter } from './limits';
+import { HISTORY_TURNS, MAX_INPUT_CHARS, MAX_MODEL_REQUESTS, MAX_TOOL_CALLS, createRateLimiter } from './limits';
 import { REFUSAL, SYSTEM_PROMPT } from './prompt';
 import type { AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS } from './tools';
@@ -245,15 +245,23 @@ describe('runAssistant: tool loop', () => {
     expect(result).toContain('unknown tool delete_everything');
   });
 
-  it(`stops after ${MAX_TOOL_CALLS} tool calls with the too-many-steps message, never asking Gemini again`, async () => {
-    const scripts = Array.from({ length: MAX_TOOL_CALLS + 1 }, () => callTool('list_rules', {}));
+  it(`asks Gemini at most ${MAX_MODEL_REQUESTS} times, taking the tools away from the last request`, async () => {
+    const scripts = Array.from({ length: MAX_MODEL_REQUESTS }, () => callTool('list_rules', {}));
     scripts.push(say('should never be reached'));
     const { gemini, calls } = fakeGemini(scripts);
     const events = await run('list my rules', deps(gemini));
-    expect(calls).toHaveLength(MAX_TOOL_CALLS + 1);
-    expect(calls.at(-1)!.contents.flatMap((c) => c.parts).filter((p) => 'functionResponse' in p)).toHaveLength(MAX_TOOL_CALLS);
+    expect(calls).toHaveLength(MAX_MODEL_REQUESTS);
+    expect(calls.slice(0, -1).every((c) => c.tools.length > 0)).toBe(true);
+    expect(calls.at(-1)!.tools).toEqual([]);
     expect(events).toEqual([{ type: 'text', text: TOO_MANY_STEPS_TEXT }, { type: 'done' }]);
     expect(TOO_MANY_STEPS_TEXT.toLowerCase()).toContain('that took too many steps');
+  });
+
+  it('lets the last request answer in text once the tools are taken away', async () => {
+    const scripts = [...Array.from({ length: MAX_MODEL_REQUESTS - 1 }, () => callTool('list_rules', {})), say('Here is what I found.')];
+    const { gemini } = fakeGemini(scripts);
+    const events = await run('list my rules', deps(gemini));
+    expect(events).toEqual([{ type: 'text', text: 'Here is what I found.' }, { type: 'done' }]);
   });
 
   it('applies the cap to parallel calls in one reply, unknown names included', async () => {

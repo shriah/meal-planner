@@ -44,6 +44,11 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     description: "Show the current weekly plan: for each day, the dish names at breakfast, lunch and dinner.",
   },
   {
+    name: 'explain_rule',
+    description: "Explain one planning rule against the current weekly plan in a single call: whether it is switched off or cannot be applied, and every slot where the plan breaks it. Use this for why a rule did not take effect.",
+    parameters: obj({ id: { type: 'integer', description: 'Rule id' } }, ['id']),
+  },
+  {
     name: 'explain_plan_slot',
     description: "Explain one meal slot of the current weekly plan: its dishes (id and name) and the rule problems there. With dish, also checks which rules that dish would break if it were put in the slot; when none would, no rule blocks it and the planner left it out for variety or preferences.",
     parameters: obj({
@@ -288,6 +293,37 @@ const HANDLERS: Record<string, Handler> = {
     if (!a.ok) return a;
     if (!data.plan) return { ok: true, data: { note: 'no plan' } };
     return { ok: true, data: { days: planByDay(data.plan, data) } };
+  },
+  explain_rule(args, { data }) {
+    const a = parse(GetRuleArgs, args);
+    if (!a.ok) return a;
+    const rule = data.rules.find((r) => r.id === a.value.id);
+    if (!rule) return { ok: false, error: `no rule ${a.value.id}` };
+    const parsed = parseSpec(rule.spec);
+    const missing = parsed.ok ? missingReferences(parsed.spec, knownIds(data)) : [];
+    const { plan } = data;
+    const broken = plan ? explainPlan(data, plan).filter((p) => p.ruleId === rule.id) : [];
+    const status = !rule.enabled
+      ? 'switched off, so the planner ignores it'
+      : !parsed.ok
+        ? 'invalid, so the planner ignores it'
+        : missing.length
+          ? 'refers to items that no longer exist, so the planner ignores it'
+          : !plan
+            ? 'active; there is no plan to check it against'
+            : broken.length
+              ? 'active, and the current plan breaks it'
+              : 'active, and the current plan follows it';
+    return {
+      ok: true,
+      data: {
+        note: "Judged under today's rules, which may differ from the rules in force when the plan was made. A soft preference can be unmet without any rule being broken.",
+        rule: describeRule(rule, data),
+        status,
+        ...(missing.length ? { missing } : {}),
+        ...capped(broken.map((p) => ({ level: p.level, where: p.message, ...(p.day ? { day: p.day } : {}), ...(p.meal ? { meal: p.meal } : {}) })), 'brokenAt'),
+      },
+    };
   },
   explain_plan_slot(args, { data }) {
     const a = parse(ExplainArgs, args);

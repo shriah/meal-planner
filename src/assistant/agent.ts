@@ -1,7 +1,7 @@
 // The assistant's agent loop: local guardrails first, then Gemini with tools, under a hard step cap.
 // Never writes to the database: drafts and comparisons leave as effect events for the user to review.
 import { GeminiError, type GeminiCall, type GeminiContent, type GeminiPart } from './gemini';
-import { HISTORY_TURNS, MAX_OUTPUT_TOKENS, MAX_TOOL_CALLS, clampMessage } from './limits';
+import { HISTORY_TURNS, MAX_MODEL_REQUESTS, MAX_OUTPUT_TOKENS, MAX_TOOL_CALLS, clampMessage } from './limits';
 import { REFUSAL, SYSTEM_PROMPT, looksOffTopic, wrapData } from './prompt';
 import { buildSlice, type AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS, runTool } from './tools';
@@ -76,6 +76,7 @@ export async function* runAssistant(
   ];
   const ctx = { data, compare: deps.compare };
   let toolCalls = 0;
+  let requests = 0;
   // Whether any text or effect reached the user this turn; a turn that ends without one gets a notice.
   let producedOutput = false;
 
@@ -83,12 +84,14 @@ export async function* runAssistant(
     if (aborted()) return;
     const calls: PendingCall[] = [];
     let text = '';
+    requests++;
     try {
       const stream = deps.gemini({
         apiKey,
         system: SYSTEM_PROMPT,
         contents: contents.map((c) => ({ ...c, parts: [...c.parts] })),
-        tools: TOOL_DECLARATIONS,
+        // The last allowed request gets no tools, so the model has to answer with what it has gathered.
+        tools: requests >= MAX_MODEL_REQUESTS ? [] : TOOL_DECLARATIONS,
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         signal,
       });
@@ -114,6 +117,12 @@ export async function* runAssistant(
         yield { type: 'error', message: EMPTY_REPLY_TEXT };
         return;
       }
+      yield { type: 'done' };
+      return;
+    }
+
+    if (requests >= MAX_MODEL_REQUESTS) {
+      yield { type: 'text', text: TOO_MANY_STEPS_TEXT };
       yield { type: 'done' };
       return;
     }

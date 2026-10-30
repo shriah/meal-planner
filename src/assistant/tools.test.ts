@@ -21,9 +21,9 @@ const ctxOf = (over: Partial<AssistantData> = {}): ToolContext => ({
 });
 
 describe('tool registry', () => {
-  it('declares the closed set of eight tools', () => {
+  it('declares the closed set of nine tools', () => {
     expect(TOOL_DECLARATIONS.map((t) => t.name)).toEqual([
-      'search_dishes', 'get_rule', 'list_rules', 'get_plan', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule',
+      'search_dishes', 'get_rule', 'list_rules', 'get_plan', 'explain_rule', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule',
     ]);
   });
 
@@ -148,6 +148,42 @@ describe('explain_plan_slot', () => {
     const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctx);
     expect(r.ok).toBe(true);
     expect((r as { data: { missingDishIds: number[] } }).data.missingDishIds).toEqual([55]);
+  });
+});
+
+describe('explain_rule', () => {
+  const pulao = dish(1, 'Pulao', { componentType: 'base' });
+  const tuesdayOnly = dayRule(pulao, ['tuesday']);
+  const stored = (over: Partial<RuleRecord> = {}): RuleRecord => ({ id: 7, name: tuesdayOnly.name, spec: tuesdayOnly.spec, enabled: true, created_at: '', ...over });
+  const plan: WeeklyPlan = { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 1, extra_ids: [] }] };
+  const explain = async (over: Partial<AssistantData>, id = 7) => {
+    const r = await runTool('explain_rule', { id }, ctxOf({ library: [pulao], ...over }));
+    return (r as { ok: true; data: { status: string; rule: { id: number }; brokenAt?: { day?: string; meal?: string }[]; missing?: string[] } }).data;
+  };
+
+  it('says where the current plan breaks an active rule, in one call', async () => {
+    const data = await explain({ rules: [stored()], plan });
+    expect(data.status).toBe('active, and the current plan breaks it');
+    expect(data.brokenAt?.[0]).toMatchObject({ day: 'monday', meal: 'lunch' });
+  });
+
+  it('says when the plan follows the rule', async () => {
+    const data = await explain({ rules: [stored()], plan: { slots: [{ day: 'tuesday', meal_slot: 'lunch', base_id: 1, extra_ids: [] }] } });
+    expect(data.status).toBe('active, and the current plan follows it');
+    expect(data.brokenAt).toEqual([]);
+  });
+
+  it('says why a rule is ignored: switched off, or pointing at a deleted dish', async () => {
+    expect((await explain({ rules: [stored({ enabled: false })], plan })).status).toMatch(/switched off/);
+    const gone = dayRule({ id: 99, name: 'Gone' }, ['tuesday']);
+    const data = await explain({ rules: [stored({ spec: gone.spec })], plan });
+    expect(data.status).toMatch(/no longer exist/);
+    expect(data.missing?.length).toBeGreaterThan(0);
+  });
+
+  it('copes with no plan and with an unknown rule', async () => {
+    expect((await explain({ rules: [stored()] })).status).toMatch(/no plan/);
+    expect((await runTool('explain_rule', { id: 404 }, ctxOf())).ok).toBe(false);
   });
 });
 
