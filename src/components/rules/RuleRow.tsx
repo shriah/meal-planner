@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import type { RuleRecord } from '@/db/client'
 import { describeSpec, missingReferences, parseSpec, TEMPLATES, type KnownIds, type Names } from '@/rules'
+import { toast } from 'sonner'
 import { updateRule, deleteRule } from '@/services/food-db'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -44,10 +45,12 @@ export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProp
 
   async function handleToggle() {
     await updateRule(rule.id, { enabled: !rule.enabled })
+    toast.success(`Rule “${rule.name}” switched ${rule.enabled ? 'off' : 'on'}`)
   }
 
   async function handleDelete() {
     await deleteRule(rule.id)
+    toast.success(`Rule “${rule.name}” deleted`)
     setConfirmingDelete(false)
   }
 

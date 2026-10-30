@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { toast } from 'sonner'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { db } from '@/db/client'
 import { ROLES, type Matcher } from '@/planner'
@@ -98,6 +99,7 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
     } else {
       await updateRule(ruleId, { name: result.name, spec: result.spec })
     }
+    toast.success(ruleId === undefined ? `Rule “${result.name}” added` : `Rule “${result.name}” saved`)
     onSaved()
   }
 

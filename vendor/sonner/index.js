@@ -33,9 +33,22 @@ function pushToast(type, message) {
   return toast.id;
 }
 
+const SUCCESS_MS = 4000;
+
+function dismiss(id) {
+  toastState = toastState.filter((t) => t.id !== id);
+  emit();
+}
+
 export const toast = {
   error(message) {
     return pushToast('error', message);
+  },
+  // Confirmations clear themselves; errors stay until the page is left.
+  success(message) {
+    const id = pushToast('success', message);
+    setTimeout(() => dismiss(id), SUCCESS_MS);
+    return id;
   },
 };
 
@@ -63,7 +76,7 @@ export function Toaster() {
           className:
             item.type === 'error'
               ? 'rounded-md border border-destructive/30 bg-background px-3 py-2 text-sm text-foreground shadow-lg'
-              : 'rounded-md border bg-background px-3 py-2 text-sm text-foreground shadow-lg',
+              : 'rounded-md border border-primary/30 bg-background px-3 py-2 text-sm text-foreground shadow-lg',
           role: 'status',
         },
         item.message,

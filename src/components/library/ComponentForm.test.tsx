@@ -3,6 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Toaster } from 'sonner';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
@@ -479,6 +480,13 @@ describe('ComponentForm draft prefill', () => {
       expect(curries[0].name).toBe('Chole');
       expect(curries[0].curry_category).toBe('legume');
     });
+  });
+
+  it('confirms a saved dish with a toast', async () => {
+    render(<><ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} /><Toaster /></>);
+    await userEvent.type(screen.getByLabelText('Name'), 'Toasted Chole');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    expect(await screen.findByText('Toasted Chole added to the library')).toBeInTheDocument();
   });
 
   it('keeps the draft editable before saving', async () => {

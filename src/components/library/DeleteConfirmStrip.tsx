@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { deleteComponent } from '@/services/food-db'
 import { Alert } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -24,6 +25,7 @@ export function DeleteConfirmStrip({
     setDeleting(true)
     try {
       await deleteComponent(componentId)
+      toast.success(`${componentName} deleted`)
       onDeleted()
     } catch {
       setDeleting(false)

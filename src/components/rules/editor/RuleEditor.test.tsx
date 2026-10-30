@@ -3,6 +3,7 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { Toaster } from 'sonner';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { all, any, is } from '@/planner';
@@ -25,7 +26,7 @@ async function choose(trigger: HTMLElement, option: string) {
 describe('RuleEditor', () => {
   it('creates a rule from conditions and shows its description and matches', async () => {
     const onSaved = vi.fn();
-    render(<RuleEditor onSaved={onSaved} />);
+    render(<><RuleEditor onSaved={onSaved} /><Toaster /></>);
 
     await userEvent.type(screen.getByLabelText(/Rule name/), 'No fish on Fridays');
     await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
@@ -39,6 +40,7 @@ describe('RuleEditor', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await screen.findByText('Rule “No fish on Fridays” added')).toBeInTheDocument();
     const [rule] = await db.rules.toArray();
     expect(rule).toMatchObject({
       name: 'No fish on Fridays',
@@ -115,13 +117,14 @@ describe('RuleEditor', () => {
       spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } },
     })) as number;
     const onSaved = vi.fn();
-    render(<RuleEditor ruleId={id} initial={{ name: 'Fish rule', spec: (await db.rules.get(id))!.spec }} onSaved={onSaved} />);
+    render(<><RuleEditor ruleId={id} initial={{ name: 'Fish rule', spec: (await db.rules.get(id))!.spec }} onSaved={onSaved} /><Toaster /></>);
 
     await choose(screen.getByRole('combobox', { name: 'Rule type' }), 'How often');
     expect(screen.getByText('Dishes with fish: at most 2 per week')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(await screen.findByText('Rule “Fish rule” saved')).toBeInTheDocument();
     expect((await db.rules.get(id))?.spec).toEqual({
       template: 'limit', params: { match: is('protein_tag', 'fish'), per: 'week', max: 2, strength: 'must' },
     });

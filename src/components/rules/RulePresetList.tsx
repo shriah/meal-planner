@@ -1,5 +1,6 @@
 'use client'
 
+import { toast } from 'sonner'
 import { addRule } from '@/services/food-db'
 import { describeSpec, parseSpec } from '@/rules'
 import { RULE_PRESETS, type RulePreset } from './presets'
@@ -9,6 +10,7 @@ export function RulePresetList({ onPick }: { onPick?: (preset: RulePreset) => vo
   async function pick(preset: RulePreset) {
     if (onPick) return onPick(preset)
     await addRule({ name: preset.name, enabled: true, spec: preset.spec, created_at: new Date().toISOString() })
+    toast.success(`Rule “${preset.name}” added`)
   }
 
   return (

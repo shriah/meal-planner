@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { toast } from 'sonner'
 import { getOwnedRules, saveComponent } from '@/services/food-db'
 import { dayModeOf, daysOfMode, ownedChanges, readOwned, type DayMode, type RuleRecord } from '@/rules'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
@@ -245,6 +246,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       })
       const id = mode === 'edit' ? component?.id : undefined
       await saveComponent(id, record, changes)
+      toast.success(id === undefined ? `${record.name} added to the library` : `${record.name} saved`)
       onSave()
     } finally {
       setSaving(false)
