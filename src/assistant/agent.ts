@@ -26,6 +26,7 @@ export const NO_CHANGE_TEXT = 'This rule would not change the week.';
 export const EMPTY_REPLY_TEXT = 'Gemini returned no answer (it may have run out of room). Try a shorter question.';
 export const ERROR_MESSAGES: Record<GeminiError['kind'], string> = {
   auth: 'Check your Gemini key.',
+  billing: "Google says this key's project is out of prepaid credits. Add credits or use a key from a free-tier project in AI Studio.",
   rate: 'Your Gemini key hit its per-minute limit. Wait a minute and try again.',
   busy: 'Gemini is overloaded right now. Try again in a minute.',
   timeout: 'Gemini took too long to answer. Try again.',

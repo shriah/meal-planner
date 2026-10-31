@@ -397,6 +397,7 @@ describe('runAssistant: errors and abort', () => {
   it.each([
     ['auth', 'Check your Gemini key.'],
     ['rate', 'Your Gemini key hit its per-minute limit. Wait a minute and try again.'],
+    ['billing', "Google says this key's project is out of prepaid credits. Add credits or use a key from a free-tier project in AI Studio."],
     ['busy', 'Gemini is overloaded right now. Try again in a minute.'],
     ['timeout', 'Gemini took too long to answer. Try again.'],
     ['network', "Couldn't reach Gemini."],

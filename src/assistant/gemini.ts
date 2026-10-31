@@ -18,7 +18,7 @@ export type GeminiEvent =
   | { type: 'done'; finishReason?: string };
 
 export class GeminiError extends Error {
-  kind: 'auth' | 'rate' | 'busy' | 'timeout' | 'network' | 'model' | 'other';
+  kind: 'auth' | 'billing' | 'rate' | 'busy' | 'timeout' | 'network' | 'model' | 'other';
   constructor(kind: GeminiError['kind'], message: string) {
     super(message);
     this.name = 'GeminiError';
@@ -131,6 +131,7 @@ export async function* streamGemini(
       throw new GeminiError('other', 'Gemini rejected the request.');
     }
     if (res.status === 404) throw new GeminiError('model', "The Gemini model isn't available to this key.");
+    if (res.status === 402) throw new GeminiError('billing', 'Gemini billing credits are depleted.');
     if (res.status === 429) throw new GeminiError('rate', 'Gemini rate limit reached.');
     if (res.status === 503) throw new GeminiError('busy', 'Gemini is overloaded.');
     throw new GeminiError('other', `Gemini returned HTTP ${res.status}.`);

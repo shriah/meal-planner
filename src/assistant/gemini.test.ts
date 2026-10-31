@@ -98,6 +98,11 @@ describe('streamGemini', () => {
     await result;
   });
 
+  it('reports a 402 as a billing problem', async () => {
+    const f = async () => new Response('{}', { status: 402 });
+    await expect(collect(streamGemini(req, f as typeof fetch))).rejects.toMatchObject({ kind: 'billing' });
+  });
+
   it('tells a 503 (overloaded) from a 429 (rate limit)', async () => {
     const status = (code: number) => async () => new Response('{}', { status: code });
     await expect(collect(streamGemini(req, status(503) as typeof fetch))).rejects.toMatchObject({ kind: 'busy' });
