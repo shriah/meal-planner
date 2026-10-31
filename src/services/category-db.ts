@@ -1,5 +1,5 @@
 import { db, normalizeComponentCategoryRefs } from '@/db/client';
-import { pairingCategories } from '@/rules';
+import { linkRule, readLink } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
 
@@ -37,16 +37,15 @@ export async function deleteCategory(id: number): Promise<void> {
       await db.components.put(normalizeComponentCategoryRefs(component, category) as ComponentRecord);
     }
 
-    if (category.kind === 'base') {
-      // A pairing left with no categories is removed, so the dish goes with any base.
-      await db.rules.where('owner_component_id').above(0).modify((rule, ref) => {
-        const bases = pairingCategories(rule);
-        if (!bases?.includes(id) || rule.spec.template !== 'pairs_with') return;
-        const rest = bases.filter((b) => b !== id);
-        if (rest.length === 0) delete (ref as { value?: unknown }).value;
-        else rule.spec = { ...rule.spec, params: { ...rule.spec.params, baseCategories: rest } };
-      });
-    }
+    // A link rule loses the deleted category; one left with none is removed (the dish is then unlimited).
+    const target = category.kind === 'base' ? 'base_category' : 'extra_category';
+    await db.rules.where('owner_component_id').above(0).modify((rule, ref) => {
+      const link = readLink(rule);
+      if (!link || link.target !== target || !link.values.includes(id)) return;
+      const rest = link.values.filter((v) => v !== id);
+      if (rest.length === 0) delete (ref as { value?: unknown }).value;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, target, rest).spec;
+    });
 
     await db.categories.delete(id);
   });

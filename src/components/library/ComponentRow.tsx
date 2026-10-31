@@ -14,7 +14,7 @@ import {
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
 import { getOwnedRules } from '@/services/food-db'
-import { describeDays, describeMeals, readOwned } from '@/rules'
+import { describeDays, describeMeals, LINK_TARGETS, readOwned } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -49,11 +49,19 @@ export function ComponentRow({
   // component owns; without them it goes with anything, on any day.
   const ownedRules = useLiveQuery(() => getOwnedRules(component.id), [component.id])
   const owned = readOwned(ownedRules ?? [])
-  const compatibleBaseLabels = owned.bases.map((id) => getBaseCategoryLabel(baseCategoriesById, id))
-  const clashLabels = owned.clashes
+  // One badge per link: bare base names for a goes-with link to base categories (the usual pairing), else "Only with" / "Not with".
+  const linkBadges = LINK_TARGETS.flatMap((target) => {
+    const { mode, values } = owned.links[target]
+    if (mode === 'any' || values.length === 0) return []
+    const names = values.map((v) =>
+      target === 'base_category' ? getBaseCategoryLabel(baseCategoriesById, Number(v))
+        : target === 'extra_category' ? getExtraCategoryLabel(extraCategoriesById, Number(v))
+        : String(v))
+    const prefix = mode === 'never' ? 'Not with ' : target === 'base_category' ? '' : 'Only with '
+    return [{ key: `${mode}:${target}`, text: prefix + names.join(', ') }]
+  })
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)
-  const showsCompatibleBaseSummary = compatibleBaseLabels.length > 0
   const showsNeverAutoWarning = owned.neverAuto
 
   function handleRowClick() {
@@ -141,17 +149,11 @@ export function ComponentRow({
           </Badge>
         )}
 
-        {clashLabels.length > 0 && (
-          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
-            Not with {clashLabels.join(', ')}
+        {linkBadges.map((badge) => (
+          <Badge key={badge.key} variant="outline" className="shrink-0 text-sm px-2 py-0.5">
+            {badge.text}
           </Badge>
-        )}
-
-        {showsCompatibleBaseSummary && (
-          <Badge variant="outline" className="shrink-0 text-sm px-2 py-0.5">
-            {compatibleBaseLabels.join(', ')}
-          </Badge>
-        )}
+        ))}
 
         {showsNeverAutoWarning && (
           <Badge variant="destructive" className="shrink-0 text-sm px-2 py-0.5">

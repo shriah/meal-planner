@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, ownedRuleName, pairedCategories, pairingRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, ownedRuleName, ownedSlot, pairedCategories, pairingRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -28,7 +28,7 @@ export async function updateComponent(id: number, changes: Partial<ComponentReco
     if (changes.name !== undefined) {
       const name = changes.name;
       await db.rules.where('owner_component_id').equals(id).modify((rule) => {
-        rule.name = ownedRuleName(rule.spec.template, name);
+        rule.name = ownedRuleName(ownedSlot(rule) ?? rule.spec.template, name);
       });
     }
   });
@@ -53,7 +53,7 @@ export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]>
 
 /** The rule of one type a component owns; each component owns at most one per type. */
 export async function getOwnedRule(componentId: number, template: OwnedTemplate): Promise<RuleRecord | undefined> {
-  return (await getOwnedRules(componentId)).find((r) => r.spec.template === template);
+  return (await getOwnedRules(componentId)).find((r) => ownedSlot(r) === template);
 }
 
 /** Add or update a component together with the rules it owns. Rule types left out are not touched. */
@@ -68,7 +68,7 @@ export async function saveComponent(
     const existing = await getOwnedRules(componentId);
     for (const [template, build] of Object.entries(owned) as [OwnedTemplate, OwnedRuleChanges[OwnedTemplate]][]) {
       if (build === undefined) continue;
-      const current = existing.find((r) => r.spec.template === template);
+      const current = existing.find((r) => ownedSlot(r) === template);
       if (build === null) {
         if (current) await db.rules.delete(current.id);
         continue;
@@ -92,7 +92,7 @@ export async function setCategoryPairings(categoryId: number, dishIds: readonly 
     const dishes = (await db.components.toArray()).filter((c) => c.componentType === 'curry' || c.componentType === 'subzi');
     const owned = await getOwnedRules();
     for (const dish of dishes) {
-      const current = owned.find((r) => r.owner_component_id === dish.id && r.spec.template === 'pairs_with');
+      const current = owned.find((r) => r.owner_component_id === dish.id && ownedSlot(r) === 'with:base_category');
       const has = pairedCategories(current, all);
       const next = dishIds.includes(dish.id) ? [...new Set([...has, categoryId])] : has.filter((id) => id !== categoryId);
       if (next.length === has.length && next.every((id) => has.includes(id))) continue;

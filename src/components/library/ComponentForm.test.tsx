@@ -8,13 +8,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { clashCurryCategories, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
+import { readLink, clashCurryCategories, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
 import { ComponentRow } from './ComponentRow';
 
 const pairedBases = async (id: number) => {
-  const rule = await getOwnedRule(id, 'pairs_with');
+  const rule = await getOwnedRule(id, 'with:base_category');
   return rule && pairingCategories(rule);
 };
 
@@ -230,7 +230,7 @@ describe('ComponentForm dynamic category wiring', () => {
 
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    expect(await screen.findByRole('checkbox', { name: 'Rice Plates' })).toBeChecked();
+    expect(await screen.findByRole('combobox', { name: 'Goes with base categories' })).toHaveValue('any');
     expect(screen.queryByText('Compatible Base Categories')).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
@@ -305,7 +305,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, { pairs_with: (c) => pairingRule(c, [riceId]) });
+    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
 
     render(
       <>
@@ -335,7 +335,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, { pairs_with: (c) => pairingRule(c, [riceId]) });
+    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
 
     render(<LiveEditForm componentId={curryId} />);
 
@@ -372,7 +372,7 @@ describe('ComponentForm dynamic category wiring', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Subzi' }));
     await waitFor(async () => expect(await getComponentsByType('subzi')).toHaveLength(1));
     const [beans] = await getComponentsByType('subzi');
-    expect(await getOwnedRule(beans.id, 'pairs_with')).toBeUndefined();
+    expect(await getOwnedRule(beans.id, 'with:base_category')).toBeUndefined();
   });
 
   it('saving a curry leaves the pairing rule it already has alone', async () => {
@@ -380,7 +380,7 @@ describe('ComponentForm dynamic category wiring', () => {
     await addCategory({ kind: 'base', name: 'Flatbreads' });
     const curryId = await saveComponent(undefined, {
       name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString(),
-    }, { pairs_with: (c) => pairingRule(c, [riceId]) });
+    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
 
     render(<LiveEditForm componentId={curryId} />);
     expect(await screen.findByText('Rice Plates')).toBeInTheDocument();
@@ -395,7 +395,8 @@ describe('ComponentForm dynamic category wiring', () => {
 
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    // Every base starts ticked; unticking Flatbreads limits the curry to rice.
+    // "Only with" starts with every base ticked; unticking Flatbreads limits the curry to rice.
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Goes with base categories' }), 'with');
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Flatbreads' }));
     await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
@@ -407,6 +408,7 @@ describe('ComponentForm dynamic category wiring', () => {
     cleanup();
     const [sambar] = await getComponentsByType('curry');
     render(<LiveEditForm componentId={sambar.id} />);
+    // Ticking Flatbreads again means every base: the rule goes.
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Flatbreads' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
     await waitFor(async () => expect(await pairedBases(sambar.id)).toBeUndefined());
@@ -418,6 +420,7 @@ describe('ComponentForm dynamic category wiring', () => {
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
     await userEvent.type(await screen.findByLabelText('Name'), 'Sambar');
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Goes with base categories' }), 'with');
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Rice Plates' }));
     expect(screen.getByRole('button', { name: 'Save Curry' })).toBeDisabled();
     await userEvent.click(screen.getByRole('checkbox', { name: 'Never plan automatically' }));
@@ -428,8 +431,8 @@ describe('ComponentForm dynamic category wiring', () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
     const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
-    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, { pairs_with: (c) => pairingRule(c, [riceId]) });
-    await saveComponent(undefined, { name: 'Chole', componentType: 'curry', ...tags }, { pairs_with: (c) => pairingRule(c, [breadId]) });
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    await saveComponent(undefined, { name: 'Chole', componentType: 'curry', ...tags }, { 'with:base_category': (c) => pairingRule(c, [breadId]) });
     await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags });
     const baseId = await saveComponent(undefined, { name: 'Steamed Rice', componentType: 'base', base_category_id: riceId, ...tags });
 
@@ -441,18 +444,46 @@ describe('ComponentForm dynamic category wiring', () => {
     expect(screen.queryByRole('link', { name: 'Chole' })).not.toBeInTheDocument();
   });
 
+  it('links a dish to the categories of any other kind of dish', async () => {
+  const liquid = await addCategory({ kind: 'extra', name: 'Liquid' });
+    await addCategory({ kind: 'extra', name: 'Crunchy' });
+    await addCategory({ kind: 'base', name: 'Rice Plates' });
+
+    render(<ComponentForm componentType="base" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    // A base is not offered base categories, but is offered extra categories and curry types.
+    expect(await screen.findByRole('combobox', { name: 'Goes with extra categories' })).toBeInTheDocument();
+    expect(screen.queryByRole('combobox', { name: 'Goes with base categories' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Goes with extra categories' }), 'never');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Liquid' }));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Goes with curry types' }), 'with');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'soup' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Idli');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => {
+      const [idli] = await getComponentsByType('base');
+      const clash = await getOwnedRule(idli.id, 'never:extra_category');
+      expect(clash && readLink(clash)?.values).toEqual([liquid]);
+      const only = await getOwnedRule(idli.id, 'with:curry_category');
+      expect(only && readLink(only)?.values).not.toContain('soup');
+      expect(only && readLink(only)?.values.length).toBeGreaterThan(0);
+    });
+  });
+
   it('saves the curry types an extra never goes with as a rule it owns', async () => {
     await addCategory({ kind: 'extra', name: 'Crunchy' });
 
     render(<ComponentForm componentType="extra" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    await userEvent.click(await screen.findByText('soup'));
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Goes with curry types' }), 'never');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'soup' }));
     await userEvent.type(screen.getByLabelText('Name'), 'Papad');
     await userEvent.click(screen.getByRole('button', { name: 'Save Extra' }));
 
     await waitFor(async () => {
       const [papad] = await getComponentsByType('extra');
-      const rule = await getOwnedRule(papad.id, 'avoid_with');
+      const rule = await getOwnedRule(papad.id, 'never:curry_category');
       expect(rule && clashCurryCategories(rule)).toEqual(['soup']);
     });
   });

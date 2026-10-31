@@ -87,14 +87,17 @@ Rules that are invalid or refer to deleted components or categories are skipped 
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
-component's form and listed under "Dish settings" on the Rules page. A curry's or subzi's compatible
-base categories are an `only with these bases` (`pairs_with`) rule, edited under "Goes with" on the dish's form or from the base category (Manage
-Categories → Goes With); every base ticked means no rule, and a base's form lists "Base to" its curries and subzis; an extra's "never with these
-curry types" is a `never together` (`avoid_with`) rule over `curry_category`; a dish's specific days
+component's form and listed under "Dish settings" on the Rules page. Any dish can own **goes with / never with** links to
+the categories of another kind of dish (base categories, extra categories, curry types; a base is not offered
+base categories). "Only with" limits the dish to the chosen categories, "never with" keeps it away from them; none
+chosen is no rule. A goes-with link to base categories is an `only with these bases` (`pairs_with`) rule, every other
+link a `never together` (`avoid_with`) rule whose other side is the dish type plus the (negated) categories. They are
+edited under "Goes with" on the dish's form; base pairings can also be set from the base category (Manage
+Categories → Goes With), and a base's form lists "Base to" its curries and subzis. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
 `festive`). Owned rules are renamed and deleted with their component and lose a deleted base category
-instead of being skipped; a pairing left with no category is removed. With nothing chosen, a dish
+instead of being skipped; a link left with no category is removed. With nothing chosen, a dish
 goes with any base, any curry and any day (it owns no rule). The meal picker marks a choice as an override
 when scoring the current plan with it adds a hard violation, so every rule counts there, not only
 pairings.

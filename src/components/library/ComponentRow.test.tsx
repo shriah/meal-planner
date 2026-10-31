@@ -187,7 +187,7 @@ describe('ComponentRow curry compatibility summary', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, { pairs_with: (c) => pairingRule(c, [riceId]) });
+    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
 
     function LiveRow() {
       const component = useLiveQuery(() => db.components.get(curryId), [curryId], undefined);

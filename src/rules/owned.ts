@@ -1,34 +1,59 @@
 // Rules a component owns: edited on the component's form, stored as ordinary rules, at most one per
-// template. A curry or subzi owns its base pairing (`pairs_with`), an extra the curry types it never
-// goes with (`avoid_with`), and any dish the days it may be planned on (`allowed_days`) and whether
-// the meals it may be planned at (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
-import { all, DAYS, MEALS, is, isLeaf, oneOf, type Day, type Matcher, type Meal } from '@/planner';
+// slot. Any dish may own "goes with" / "never with" links to the categories of another kind (base
+// categories, extra categories, curry types): a goes-with link to base categories is a `pairs_with` rule,
+// every other link an `avoid_with` rule. A dish also owns the days it may be planned on (`allowed_days`),
+// the meals (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
+import { all, DAYS, MEALS, is, isLeaf, not, oneOf, type Day, type Matcher, type Meal } from '@/planner';
 import type { ComponentType, CurryCategory } from '@/types/component';
 import type { RuleRecord } from './record';
-import type { RuleSpecInput } from './templates';
 
 export type OwnedRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'> & { owner_component_id: number };
-export const OWNED_TEMPLATES = ['pairs_with', 'avoid_with', 'allowed_days', 'allowed_meals', 'exclude'] as const;
-export type OwnedTemplate = (typeof OWNED_TEMPLATES)[number];
+
+// ─── Links: goes with / never with ────────────────────────────────────────────
+
+/** What a link points at: the categories of another kind of dish. */
+export const LINK_TARGETS = ['base_category', 'extra_category', 'curry_category'] as const;
+export type LinkTarget = (typeof LINK_TARGETS)[number];
+export type LinkValue = number | string;
+export type LinkSlot = `${'with' | 'never'}:${LinkTarget}`;
+/** `any` is no rule; `with` limits the dish to the chosen categories; `never` keeps it away from them. */
+export type LinkMode = 'any' | 'with' | 'never';
+export interface Link { mode: LinkMode; values: LinkValue[] }
+export type Links = Record<LinkTarget, Link>;
+
+const LINK_FIELD = { base_category: 'base_category_id', extra_category: 'extra_category_id', curry_category: 'curry_category' } as const;
+const LINK_DISH_TYPE = { base_category: 'base', extra_category: 'extra', curry_category: 'curry' } as const;
+export const LINK_LABEL: Record<LinkTarget, string> = { base_category: 'base categories', extra_category: 'extra categories', curry_category: 'curry types' };
+
+const PLAIN_SLOTS = ['allowed_days', 'allowed_meals', 'exclude'] as const;
+export const LINK_SLOTS: LinkSlot[] = LINK_TARGETS.flatMap((t) => [`with:${t}` as const, `never:${t}` as const]);
+export const OWNED_SLOTS = [...PLAIN_SLOTS, ...LINK_SLOTS] as const;
+export type OwnedSlot = (typeof OWNED_SLOTS)[number];
+export const OWNED_TEMPLATES = OWNED_SLOTS;
+export type OwnedTemplate = OwnedSlot;
 
 /** For each owned rule type: a builder that makes or updates the rule once the dish has an id, or null to remove it. */
 export type OwnedRuleChanges = Partial<Record<OwnedTemplate, ((c: { id: number; name: string }) => OwnedRule) | null>>;
 
-const NAME_SUFFIX: Partial<Record<RuleSpecInput['template'], string>> = {
-  pairs_with: 'base pairing',
-  avoid_with: 'not with these curries',
+const NAME_SUFFIX: Partial<Record<string, string>> = {
+  'with:base_category': 'base pairing',
+  'with:extra_category': 'only with these extras',
+  'with:curry_category': 'only with these curry types',
+  'never:base_category': 'not with these bases',
+  'never:extra_category': 'not with these extras',
+  'never:curry_category': 'not with these curries',
   allowed_days: 'only on certain days',
   allowed_meals: 'only at certain meals',
   exclude: 'never planned automatically',
 };
 
-/** Name of a rule owned by `componentName`, kept in step when the component is renamed. */
-export const ownedRuleName = (template: RuleSpecInput['template'], componentName: string): string =>
-  `${componentName}: ${NAME_SUFFIX[template] ?? 'rule'}`;
+/** Name of a rule owned by `componentName`, kept in step when the component is renamed. `slot` is an owned slot or a template id. */
+export const ownedRuleName = (slot: string, componentName: string): string =>
+  `${componentName}: ${NAME_SUFFIX[slot] ?? 'rule'}`;
 
 export function pairingRule(component: { id: number; name: string }, baseCategories: readonly number[]): OwnedRule {
   return {
-    name: ownedRuleName('pairs_with', component.name),
+    name: ownedRuleName('with:base_category', component.name),
     spec: { template: 'pairs_with', params: { match: is('id', component.id), baseCategories: [...baseCategories], strength: 'must' } },
     owner_component_id: component.id,
   };
@@ -48,25 +73,52 @@ export function pairedCategories(rule: Pick<RuleRecord, 'spec'> | undefined, all
   return own && own.length > 0 ? own.filter((id) => allCategoryIds.includes(id)) : [...allCategoryIds];
 }
 
-export function curryClashRule(component: { id: number; name: string }, curryCategories: readonly CurryCategory[]): OwnedRule {
+/** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
+export function linkRule(component: { id: number; name: string }, mode: 'with' | 'never', target: LinkTarget, values: readonly LinkValue[]): OwnedRule {
+  if (mode === 'with' && target === 'base_category') return pairingRule(component, values as number[]);
+  const set = oneOf(LINK_FIELD[target], [...values] as never);
+  const of = all(is('componentType', LINK_DISH_TYPE[target]), mode === 'never' ? set : not(set));
   return {
-    name: ownedRuleName('avoid_with', component.name),
-    spec: {
-      template: 'avoid_with',
-      params: { match: is('id', component.id), with: all(is('componentType', 'curry'), oneOf('curry_category', [...curryCategories])), strength: 'must' },
-    },
+    name: ownedRuleName(`${mode}:${target}`, component.name),
+    spec: { template: 'avoid_with', params: { match: is('id', component.id), with: of, strength: 'must' } },
     owner_component_id: component.id,
   };
 }
 
+/** The link a rule makes, or undefined when the rule is not a link. */
+export function readLink(rule: Pick<RuleRecord, 'spec'>): (Link & { mode: 'with' | 'never'; target: LinkTarget }) | undefined {
+  if (rule.spec.template === 'pairs_with') return { mode: 'with', target: 'base_category', values: [...(rule.spec.params.baseCategories ?? [])] };
+  if (rule.spec.template !== 'avoid_with') return undefined;
+  const side = rule.spec.params.with as Matcher;
+  if (!('all' in side) || side.all.length !== 2) return undefined;
+  const [kind, set] = side.all;
+  if (!isLeaf(kind) || kind.field !== 'componentType') return undefined;
+  const target = LINK_TARGETS.find((t) => LINK_DISH_TYPE[t] === kind.value);
+  if (!target) return undefined;
+  const negated = 'not' in set;
+  const leaf = negated ? set.not : set;
+  if (!isLeaf(leaf) || leaf.field !== LINK_FIELD[target]) return undefined;
+  return { mode: negated ? 'with' : 'never', target, values: [leaf.value].flat() as LinkValue[] };
+}
+
+/** Which owned slot a rule fills, or undefined when it is not one a dish form edits. */
+export function ownedSlot(rule: Pick<RuleRecord, 'spec'>): OwnedSlot | undefined {
+  const t = rule.spec.template;
+  if (t === 'pairs_with' || t === 'avoid_with') {
+    const link = readLink(rule);
+    return link && (`${link.mode}:${link.target}` as LinkSlot);
+  }
+  return (PLAIN_SLOTS as readonly string[]).includes(t) ? (t as OwnedSlot) : undefined;
+}
+
+/** Existing migrations: the curry types an extra never goes with. */
+export const curryClashRule = (component: { id: number; name: string }, curryCategories: readonly CurryCategory[]): OwnedRule =>
+  linkRule(component, 'never', 'curry_category', curryCategories);
+
 /** Curry types a clash rule keeps away, or undefined when the rule is not a curry clash. */
 export function clashCurryCategories(rule: Pick<RuleRecord, 'spec'>): CurryCategory[] | undefined {
-  if (rule.spec.template !== 'avoid_with') return undefined;
-  const find = (m: Matcher): CurryCategory[] | undefined => {
-    if (isLeaf(m)) return m.field === 'curry_category' ? [m.value].flat() as CurryCategory[] : undefined;
-    return 'all' in m ? m.all.map(find).find(Boolean) : undefined;
-  };
-  return find(rule.spec.params.with as Matcher) ?? [];
+  const link = readLink(rule);
+  return link?.mode === 'never' && link.target === 'curry_category' ? (link.values as CurryCategory[]) : undefined;
 }
 
 export function dayRule(component: { id: number; name: string }, days: readonly Day[]): OwnedRule {
@@ -106,35 +158,48 @@ export function exclusionRule(component: { id: number; name: string }): OwnedRul
 
 // ─── What a dish form edits ───────────────────────────────────────────────────
 
-/** The settings a dish owns, as a form edits them. Empty means "no rule": any base, any curry, any day. */
+/** The settings a dish owns, as a form edits them. Empty means "no rule": any base, any curry and any day. */
 export interface OwnedValues {
-  bases: number[];
-  clashes: CurryCategory[];
+  links: Links;
   days: Day[];
   /** Empty means any meal. */
   meals: Meal[];
   neverAuto: boolean;
 }
 
-/** Read a dish's settings from the rules it owns. */
+export const noLinks = (): Links => ({
+  base_category: { mode: 'any', values: [] },
+  extra_category: { mode: 'any', values: [] },
+  curry_category: { mode: 'any', values: [] },
+});
+
+/** Read a dish's settings from the rules it owns. A goes-with link wins over a never-with one for the same target. */
 export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValues {
   const first = <T>(read: (r: Pick<RuleRecord, 'spec'>) => T | undefined): T | undefined =>
     rules.map(read).find((v) => v !== undefined);
+  const links = noLinks();
+  const found = rules.map(readLink).filter((l) => l !== undefined);
+  for (const target of LINK_TARGETS) {
+    const link = found.find((l) => l.target === target && l.mode === 'with') ?? found.find((l) => l.target === target);
+    if (link) links[target] = { mode: link.mode, values: link.values };
+  }
   return {
-    bases: first(pairingCategories) ?? [],
-    clashes: first(clashCurryCategories) ?? [],
+    links,
     days: first(ruleDays) ?? [],
     meals: first(ruleMeals) ?? [],
     neverAuto: rules.some((r) => r.spec.template === 'exclude'),
   };
 }
 
+/** Whether a dish of this type is offered links to this kind of category. A base never "goes with" base categories. */
+export const offersLink = (componentType: ComponentType, target: LinkTarget): boolean => !(componentType === 'base' && target === 'base_category');
+
 /**
  * The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered.
- * A curry's or subzi's base pairing is edited on its form or from the base category; `bases` is left out when untouched.
+ * `links` is left out (or a target missing from it) when the dish's links are not being edited, so stored ones stay.
  */
-export function ownedChanges(componentType: ComponentType, values: Omit<OwnedValues, 'bases'> & { bases?: number[] }): OwnedRuleChanges {
-  const { bases, clashes, days, meals, neverAuto } = values;
+export function ownedChanges(componentType: ComponentType, values: Omit<OwnedValues, 'links'> & { links?: Partial<Links> }): OwnedRuleChanges {
+  const { links, days, meals, neverAuto } = values;
   const changes: OwnedRuleChanges = {
     allowed_days: days.length ? (c) => dayRule(c, days) : null,
     exclude: neverAuto ? (c) => exclusionRule(c) : null,
@@ -142,9 +207,14 @@ export function ownedChanges(componentType: ComponentType, values: Omit<OwnedVal
   // Any dish may own a meals rule, but only bases are offered the setting. For the others a stored one is left
   // alone. Allowing every meal is the same as no rule.
   if (componentType === 'base') changes.allowed_meals = meals.length > 0 && meals.length < MEALS.length ? (c) => mealRule(c, meals) : null;
-  // `bases` left out means the pairing is not being edited; empty means no rule (any base).
-  if ((componentType === 'curry' || componentType === 'subzi') && bases !== undefined) changes.pairs_with = bases.length ? (c) => pairingRule(c, bases) : null;
-  if (componentType === 'extra') changes.avoid_with = clashes.length ? (c) => curryClashRule(c, clashes) : null;
+  for (const target of LINK_TARGETS) {
+    const link = links?.[target];
+    if (!link || !offersLink(componentType, target)) continue;
+    for (const mode of ['with', 'never'] as const) {
+      const on = link.mode === mode && link.values.length > 0;
+      changes[`${mode}:${target}`] = on ? (c) => linkRule(c, mode, target, link.values) : null;
+    }
+  }
   return changes;
 }
 
