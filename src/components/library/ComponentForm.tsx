@@ -81,6 +81,8 @@ interface FormState {
   curry_category: CurryCategory | 'none'
   /** Curry types an extra never goes with. */
   clash_curry_categories: CurryCategory[]
+  /** Base categories a curry or subzi goes with; null until the user changes it (then the stored rule applies). */
+  goes_with: number[] | null
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
   regional_tags: RegionalTag[]
@@ -109,6 +111,7 @@ function initialFormState(
       extra_category_id: componentType === 'extra' ? String(component.extra_category_id ?? '') : '',
       curry_category: component.curry_category ?? 'none',
       clash_curry_categories: owned.clashes,
+      goes_with: null,
       dietary_tags: component.dietary_tags,
       protein_tag: component.protein_tag ?? 'none',
       regional_tags: component.regional_tags,
@@ -126,6 +129,7 @@ function initialFormState(
     extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
     curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
     clash_curry_categories: [],
+    goes_with: null,
     dietary_tags: draft?.dietary_tags ?? [],
     protein_tag: draft?.protein_tag ?? 'none',
     regional_tags: draft?.regional_tags ?? [],
@@ -187,9 +191,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     return { dishes, rules }
   }, [], undefined)
   const pairingRule = owned?.find((r) => r.spec.template === 'pairs_with')
-  const pairedBaseNames = baseCategories
-    ? pairedCategories(pairingRule, baseCategories.map((c) => c.id)).map((id) => baseCategories.find((c) => c.id === id)?.name ?? '')
-    : undefined
+  const goesWith = form.goes_with ?? pairedCategories(pairingRule, (baseCategories ?? []).map((c) => c.id))
   const pairingRuleId = pairingRule && pairingCategories(pairingRule)?.length ? pairingRule.id : undefined
   const baseGoesWith =
     componentType === 'base' && pairedDishes && baseCategories && component?.base_category_id != null
@@ -217,6 +219,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
   const selectedBaseCategory = findCategory(baseCategories, baseCategoryId)
   const selectedExtraCategory = findCategory(extraCategories, extraCategoryId)
+  const needsBase = (componentType === 'curry' || componentType === 'subzi') && (baseCategories?.length ?? 0) > 0
+  const canSaveGoesWith = !needsBase || goesWith.length > 0 || form.never_auto
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
 
@@ -250,7 +254,11 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       }
 
       // With nothing chosen, a dish goes with any base, any curry and any day.
+      // Ticking every base is the same as no rule.
+      const allBaseIds = (baseCategories ?? []).map((c) => c.id)
+      const goesWith = form.goes_with === null ? undefined : form.goes_with.length >= allBaseIds.length ? [] : form.goes_with
       const changes = ownedChanges(componentType, {
+        bases: goesWith,
         clashes: form.clash_curry_categories,
         days: daysOfMode(form.day_mode, form.days),
         meals: form.meals,
@@ -469,25 +477,31 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         </fieldset>
       )}
 
-      {/* Which bases a curry or subzi goes with is set from the base category; shown here, not edited. */}
-      {component?.id !== undefined && (componentType === 'curry' || componentType === 'subzi') && (
-        <div className="space-y-1">
-          <Label className="text-xs font-semibold">Goes with bases</Label>
-          <p className="text-xs text-muted-foreground">
-            {pairedBaseNames === undefined
-              ? 'Loading...'
-              : pairedBaseNames.length === 0
-                ? 'Any base.'
-                : pairedBaseNames.join(', ')}
-            {pairingRuleId !== undefined && (
-              <>
-                {' '}
-                <a className="underline" href={`/rules#rule-${pairingRuleId}`}>View rule</a>
-              </>
-            )}
-          </p>
-          <p className="text-xs text-muted-foreground">Change this under Manage Categories, on the base category.</p>
-        </div>
+      {/* Goes with: the bases a curry or subzi may be planned with, stored as its pairing rule */}
+      {(componentType === 'curry' || componentType === 'subzi') && (
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-semibold">Goes with</legend>
+          <div className="flex flex-wrap gap-3">
+            {(baseCategories ?? []).map((category) => (
+              <label key={category.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={goesWith.includes(category.id)}
+                  onCheckedChange={() => setForm(s => ({ ...s, goes_with: toggleArrayValue(goesWith, category.id) }))}
+                />
+                {category.name}
+              </label>
+            ))}
+          </div>
+          {baseCategories === undefined && <p className="text-xs text-muted-foreground">Loading bases...</p>}
+          {!canSaveGoesWith && (
+            <p className="text-xs text-destructive">Pick at least one base, or tick Never plan automatically.</p>
+          )}
+          {pairingRuleId !== undefined && (
+            <p className="text-xs text-muted-foreground">
+              Saved as a rule. <a className="underline" href={`/rules#rule-${pairingRuleId}`}>View rule</a>
+            </p>
+          )}
+        </fieldset>
       )}
 
       {/* Base to: the curries and subzis that go with this base's category */}
@@ -568,7 +582,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-2">
-        <Button onClick={handleSave} disabled={saving || !form.name.trim() || !canSaveBase || !canSaveExtra}>
+        <Button onClick={handleSave} disabled={saving || !form.name.trim() || !canSaveBase || !canSaveExtra || !canSaveGoesWith}>
           Save {singularLabel}
         </Button>
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>

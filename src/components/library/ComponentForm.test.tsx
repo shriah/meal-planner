@@ -225,14 +225,13 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
-  it('has no base checklist on a curry; the pairing is set from the base category', async () => {
+  it('saves no pairing rule for a new curry that goes with every base', async () => {
     await addCategory({ kind: 'base', name: 'Rice Plates' });
 
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    expect(await screen.findByLabelText('Name')).toBeInTheDocument();
+    expect(await screen.findByRole('checkbox', { name: 'Rice Plates' })).toBeChecked();
     expect(screen.queryByText('Compatible Base Categories')).not.toBeInTheDocument();
-    expect(screen.queryByText('Rice Plates')).not.toBeInTheDocument();
     await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
@@ -345,9 +344,8 @@ describe('ComponentForm dynamic category wiring', () => {
     await deleteCategory(riceId);
 
     await waitFor(() => {
-      expect(screen.getByText(/^any base\./i)).toBeInTheDocument();
+      expect(screen.queryByText('Rice-based')).not.toBeInTheDocument();
     });
-    expect(screen.queryByText('Rice-based')).not.toBeInTheDocument();
     expect(await pairedBases(curryId)).toBeUndefined();
   });
 
@@ -389,6 +387,41 @@ describe('ComponentForm dynamic category wiring', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
     await waitFor(async () => expect(await pairedBases(curryId)).toEqual([riceId]));
+  });
+
+  it('edits Goes with on a curry as its pairing rule, and all ticked means no rule', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    await addCategory({ kind: 'base', name: 'Flatbreads' });
+
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    // Every base starts ticked; unticking Flatbreads limits the curry to rice.
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Flatbreads' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => {
+      const [sambar] = await getComponentsByType('curry');
+      expect(await pairedBases(sambar.id)).toEqual([riceId]);
+    });
+
+    cleanup();
+    const [sambar] = await getComponentsByType('curry');
+    render(<LiveEditForm componentId={sambar.id} />);
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Flatbreads' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => expect(await pairedBases(sambar.id)).toBeUndefined());
+  });
+
+  it('will not save a curry that goes with no base unless it is never planned automatically', async () => {
+    await addCategory({ kind: 'base', name: 'Rice Plates' });
+
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    await userEvent.type(await screen.findByLabelText('Name'), 'Sambar');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Rice Plates' }));
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Never plan automatically' }));
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeEnabled();
   });
 
   it("lists on a base's form the curries and subzis that go with its category", async () => {

@@ -88,8 +88,8 @@ applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
 component's form and listed under "Dish settings" on the Rules page. A curry's or subzi's compatible
-base categories are an `only with these bases` (`pairs_with`) rule, edited from the base category (Manage
-Categories → Goes With) and shown read-only on the dish forms (a base's form lists "Base to" its curries and subzis); an extra's "never with these
+base categories are an `only with these bases` (`pairs_with`) rule, edited under "Goes with" on the dish's form or from the base category (Manage
+Categories → Goes With); every base ticked means no rule, and a base's form lists "Base to" its curries and subzis; an extra's "never with these
 curry types" is a `never together` (`avoid_with`) rule over `curry_category`; a dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,

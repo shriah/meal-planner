@@ -28,14 +28,15 @@ describe('ownedChanges', () => {
   it('builds a rule for every value that is set and removes the others', () => {
     expect(ownedChanges('base', NONE).allowed_meals).toBeNull();
     const changes = ownedChanges('curry', v);
-    expect('pairs_with' in changes).toBe(false);
+    expect(changes.pairs_with?.(dish).spec).toMatchObject({ template: 'pairs_with', params: { baseCategories: [1] } });
     expect(changes.allowed_days?.(dish).spec).toMatchObject({ template: 'allowed_days', params: { days: ['monday'] } });
     expect(changes.exclude?.(dish).spec).toMatchObject({ template: 'exclude' });
-    expect(ownedChanges('curry', NONE)).toEqual({ allowed_days: null, exclude: null });
+    expect(ownedChanges('curry', NONE)).toEqual({ pairs_with: null, allowed_days: null, exclude: null });
+    expect('pairs_with' in ownedChanges('curry', { clashes: [], days: [], meals: [], neverAuto: false })).toBe(false);
   });
 
   it('only offers each dish type the rules that make sense for it', () => {
-    expect(Object.keys(ownedChanges('subzi', NONE)).sort()).toEqual(['allowed_days', 'exclude']);
+    expect(Object.keys(ownedChanges('subzi', NONE)).sort()).toEqual(['allowed_days', 'exclude', 'pairs_with']);
     expect(Object.keys(ownedChanges('extra', NONE)).sort()).toEqual(['allowed_days', 'avoid_with', 'exclude']);
     expect(Object.keys(ownedChanges('base', NONE)).sort()).toEqual(['allowed_days', 'allowed_meals', 'exclude']);
     expect(ownedChanges('extra', v).avoid_with?.(dish).spec).toMatchObject({ template: 'avoid_with' });
