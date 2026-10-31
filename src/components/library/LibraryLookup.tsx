@@ -2,7 +2,7 @@
 
 import { createContext, useContext, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getAllComponents, getOwnedRules } from '@/services/food-db'
+import { getAllComponents, getRules } from '@/services/food-db'
 import { getCategoriesByKind } from '@/services/category-db'
 import type { Names, RuleRecord } from '@/rules'
 import type { ComponentRecord } from '@/types/component'
@@ -12,7 +12,7 @@ export interface LibraryLookup {
   dishes: ComponentRecord[]
   baseCategories: CategoryRecord[]
   extraCategories: CategoryRecord[]
-  /** Every rule a dish owns. */
+  /** Every rule: the ones dishes own, and the hand-written ones. Filter by `owner_component_id`. */
   rules: RuleRecord[]
   loaded: boolean
 }
@@ -24,7 +24,7 @@ function useLookupQueries(enabled: boolean): LibraryLookup {
   const dishes = useLiveQuery(() => (enabled ? getAllComponents() : []), [enabled], undefined)
   const baseCategories = useLiveQuery(() => (enabled ? getCategoriesByKind('base') : []), [enabled], undefined)
   const extraCategories = useLiveQuery(() => (enabled ? getCategoriesByKind('extra') : []), [enabled], undefined)
-  const rules = useLiveQuery(() => (enabled ? getOwnedRules() : []), [enabled], undefined)
+  const rules = useLiveQuery(() => (enabled ? getRules() : []), [enabled], undefined)
   return {
     dishes: dishes ?? [],
     baseCategories: baseCategories ?? [],

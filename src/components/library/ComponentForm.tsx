@@ -3,11 +3,11 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
+import { linkNames, ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -202,6 +202,16 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           return pairedCategories(rule, baseCategories.map((c) => c.id)).includes(component.base_category_id as number)
         })
       : []
+  // Hand-written rules (not owned by this dish) that name it, shown read-only with a link to the Rules page.
+  const names = linkNames(lookup)
+  const mentioning = component
+    ? lookup.rules.flatMap((r) => {
+        if (r.owner_component_id === component.id) return []
+        const parsed = parseSpec(r.spec)
+        if (!parsed.ok || !specReferences(parsed.spec).components.includes(component.id)) return []
+        return [{ id: r.id, enabled: r.enabled, text: describeSpec(parsed.spec, names) }]
+      })
+    : []
   // Re-sync the form when the edited record changes underneath it (e.g. live query update).
   // Adjusting state during render avoids the extra render pass an effect would cause.
   const sourceFormState = initialFormState(component, componentType, owned)
@@ -486,6 +496,20 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           </p>
         )}
       </div>
+
+      {mentioning.length > 0 && (
+        <div className="space-y-1">
+          <Label className="text-xs font-semibold">Other rules mentioning this dish</Label>
+          <ul className="space-y-0.5 text-xs text-muted-foreground">
+            {mentioning.map((r) => (
+              <li key={r.id}>
+                {r.text}{!r.enabled && ' (off)'}{' '}
+                <a className="underline" href={`/rules#rule-${r.id}`}>View rule</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* Base to: the curries and subzis that go with this base's category */}
       {componentType === 'base' && baseGoesWith.length > 0 && (

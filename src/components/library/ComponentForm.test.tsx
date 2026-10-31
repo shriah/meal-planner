@@ -7,6 +7,7 @@ import { Toaster } from 'sonner';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
+import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
 import { readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
 import * as foodDb from '@/services/food-db';
@@ -547,6 +548,25 @@ describe('ComponentForm links', () => {
 
     await waitFor(async () => expect(await pairedBases(curryId)).toBeUndefined());
     expect(await getOwnedRule(curryId, 'never:curry_category')).toBeDefined();
+  });
+
+  it('lists rules from the Rules page that mention the dish', async () => {
+    const dishId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {});
+    const rule = (name: string, enabled: boolean, owner?: number) => ({
+      name, enabled, created_at: new Date().toISOString(), owner_component_id: owner,
+      spec: { template: 'exclude', params: { match: is('id', dishId) } },
+    }) as never;
+    const onId = await db.rules.add(rule('No sambar', true));
+    const offId = await db.rules.add(rule('Skip sambar', false));
+    const ownedId = await db.rules.add(rule('Owned by dish', true, dishId));
+
+    render(<LiveEditForm componentId={dishId} />);
+    const section = (await screen.findByText('Other rules mentioning this dish')).parentElement!;
+    const links = within(section).getAllByRole('link');
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([`/rules#rule-${onId}`, `/rules#rule-${offId}`]);
+    expect(within(section).getByText(/\(off\)/)).toBeInTheDocument();
+    expect(within(section).queryByRole('link', { name: /Owned/ })).toBeNull();
+    expect(section.innerHTML).not.toContain(`rule-${ownedId}`);
   });
 
   it('saving without touching links writes no link rule changes', async () => {
