@@ -569,6 +569,28 @@ describe('ComponentForm links', () => {
     expect(section.innerHTML).not.toContain(`rule-${ownedId}`);
   });
 
+  it('does not prefill a new dish from hand-written rules', async () => {
+    const hand = (spec: unknown) => ({ name: 'Hand', enabled: true, created_at: new Date().toISOString(), spec }) as never;
+    await db.rules.add(hand({ template: 'exclude', params: { match: is('id', 999) } }));
+    await db.rules.add(hand({ template: 'allowed_days', params: { match: is('id', 999), days: ['Sat'] } }));
+
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const { owner_component_id: _owner, ...pairing } = pairingRule({ id: 999, name: 'Other' }, [riceId]);
+    await db.rules.add({ ...pairing, enabled: true, created_at: new Date().toISOString() } as never);
+
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await readyButton('Add link');
+    expect(screen.queryByText('View rule')).toBeNull();
+    expect(screen.queryByText(/only with Rice Plates/)).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Never plan automatically' })).not.toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Days' })).toHaveTextContent('Any day');
+    await userEvent.type(screen.getByLabelText('Name'), 'Rasam');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => expect((await getComponentsByType('curry')).length).toBe(1));
+    const [rasam] = await getComponentsByType('curry');
+    expect(await foodDb.getOwnedRules(rasam.id)).toEqual([]);
+  });
+
   it('saving without touching links writes no link rule changes', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {

@@ -188,7 +188,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const baseCategories = lookup.loaded ? lookup.baseCategories : undefined
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
   // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
-  const owned = lookup.rules.filter((r) => r.owner_component_id === component?.id)
+  const owned = component ? lookup.rules.filter((r) => r.owner_component_id === component.id) : []
   // A base's category decides which curries and subzis it is "base to"; those pairings are owned by the dishes.
   const allDishes = lookup.loaded ? lookup.dishes : undefined
   const storedLinks = readOwned(owned).links
