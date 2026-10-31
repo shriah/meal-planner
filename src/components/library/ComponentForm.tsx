@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
 import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
+import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { linkNames, ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
@@ -233,6 +234,31 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
 
+  /** The owned-rule changes saving would write; the preview plans with exactly these. */
+  function pendingChanges() {
+    // With nothing chosen, a dish goes with any base, any curry and any day.
+    // "Only with" every option and no day or meal limit is the same as no rule.
+    const coversAll = (l: DishLink) => {
+      const options = linkOptions(lookup, l.target, component?.id)
+      return l.mode === 'with' && !cleanScope(l.scope) && options.length > 0 && options.every((o) => l.values.includes(o.value))
+    }
+    const changes = ownedChanges(componentType, {
+      links: form.links?.filter((l) => !coversAll(l)),
+      days: daysOfMode(form.day_mode, form.days),
+      meals: form.meals,
+      neverAuto: form.never_auto,
+    })
+    // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
+    // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
+    if (form.links) {
+      const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
+      for (const slot of LINK_SLOTS) {
+        if (sameLink(slotOf(form.links, slot), slotOf(form.linksBase, slot))) delete changes[slot]
+      }
+    }
+    return changes
+  }
+
   async function handleSave() {
     setSaving(true)
     try {
@@ -262,26 +288,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           : {}),
       }
 
-      // With nothing chosen, a dish goes with any base, any curry and any day.
-      // "Only with" every option and no day or meal limit is the same as no rule.
-      const coversAll = (l: DishLink) => {
-        const options = linkOptions(lookup, l.target, component?.id)
-        return l.mode === 'with' && !cleanScope(l.scope) && options.length > 0 && options.every((o) => l.values.includes(o.value))
-      }
-      const changes = ownedChanges(componentType, {
-        links: form.links?.filter((l) => !coversAll(l)),
-        days: daysOfMode(form.day_mode, form.days),
-        meals: form.meals,
-        neverAuto: form.never_auto,
-      })
-      // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
-      // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
-      if (form.links) {
-        const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
-        for (const slot of LINK_SLOTS) {
-          if (sameLink(slotOf(form.links, slot), slotOf(form.linksBase, slot))) delete changes[slot]
-        }
-      }
+      const changes = pendingChanges()
       const id = mode === 'edit' ? component?.id : undefined
       await saveComponent(id, record, changes)
       toast.success(id === undefined ? `${record.name} added to the library` : `${record.name} saved`)
@@ -495,6 +502,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             ))}
           </p>
         )}
+        <LinkPreview dishId={mode === 'edit' ? component?.id : undefined} dishName={form.name} changes={pendingChanges()} />
       </div>
 
       {mentioning.length > 0 && (
