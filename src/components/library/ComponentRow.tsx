@@ -14,7 +14,7 @@ import {
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
 import { getAllComponents, getOwnedRules } from '@/services/food-db'
-import { describeDays, describeMeals, isDishTarget, LINK_TARGETS, readOwned } from '@/rules'
+import { describeDays, describeMeals, isDishTarget, linkSlotOf, readOwned } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -52,18 +52,18 @@ export function ComponentRow({
   const ownedRules = useLiveQuery(() => getOwnedRules(component.id), [component.id])
   const owned = readOwned(ownedRules ?? [])
   // One badge per link: bare base names for a goes-with link to base categories (the usual pairing), else "Only with" / "Not with".
-  const linkBadges = LINK_TARGETS.flatMap((target) => {
-    const { mode, values, strength } = owned.links[target]
-    if (mode === 'any' || values.length === 0) return []
+  const linkBadges = owned.links.flatMap((link) => {
+    const { mode, target, values, strength } = link
+    if (values.length === 0) return []
     const names = values.map((v) =>
       target === 'base_category' ? getBaseCategoryLabel(baseCategoriesById, Number(v))
         : target === 'extra_category' ? getExtraCategoryLabel(extraCategoriesById, Number(v))
         : isDishTarget(target) ? (dishNames.get(Number(v)) ?? 'Deleted dish')
         : String(v))
-    const soft = strength === 'always' ? '' : strength === 'usually' ? 'Usually ' : 'Sometimes '
+    const soft = { always: '', usually: 'Usually ', moderately: 'Moderately ', sometimes: 'Sometimes ' }[strength]
     const prefix = mode === 'never' ? 'not with ' : target === 'base_category' && !soft ? '' : 'only with '
     const text = soft ? soft + prefix + names.join(', ') : (prefix ? prefix.charAt(0).toUpperCase() + prefix.slice(1) : '') + names.join(', ')
-    return [{ key: `${mode}:${target}`, text }]
+    return [{ key: linkSlotOf(link), text }]
   })
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)

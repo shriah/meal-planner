@@ -44,7 +44,7 @@ export async function deleteCategory(id: number): Promise<void> {
       if (!link || link.target !== target || !link.values.includes(id)) return;
       const rest = link.values.filter((v) => v !== id);
       if (rest.length === 0) delete (ref as { value?: unknown }).value;
-      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, target, rest, link.strength).spec;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest }).spec;
     });
 
     await db.categories.delete(id);

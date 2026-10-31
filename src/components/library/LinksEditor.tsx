@@ -5,21 +5,25 @@ import { Label } from '@/components/ui/label'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
 import type { ComponentRecord } from '@/types/component'
-import { LINK_STRENGTHS, type LinkStrength, dishTypeOf, isDishTarget, LINK_LABEL, LINK_TARGETS, offersLink, type Link, type LinkMode, type LinkTarget, type LinkValue, type Links } from '@/rules'
+import { LINK_STRENGTHS, type LinkStrength, dishTypeOf, isDishTarget, LINK_LABEL, LINK_TARGETS, offersLink, type DishLink, type LinkTarget, type LinkValue } from '@/rules'
 
 interface LinksEditorProps {
   componentType: ComponentType
-  links: Links
+  links: DishLink[]
   baseCategories: CategoryRecord[] | undefined
   extraCategories: CategoryRecord[] | undefined
   /** Every dish in the library, for linking to specific dishes. */
   dishes: ComponentRecord[] | undefined
   /** The dish being edited, left out of its own choices. */
   selfId?: number
-  onChange: (target: LinkTarget, link: Link) => void
+  /** Replaces every link to `target` with `link`; undefined leaves the target with none. */
+  onChange: (target: LinkTarget, link: DishLink | undefined) => void
 }
 
-const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', sometimes: 'Sometimes' }
+/** `any` is no link to the target. */
+type LinkMode = 'any' | DishLink['mode']
+
+const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', moderately: 'Moderately', sometimes: 'Sometimes' }
 const MODE_LABEL: Record<LinkMode, string> = { any: 'Any', with: 'Only with', never: 'Never with' }
 
 /** "Goes with" / "Never with" for one kind of category at a time; the options follow the library's categories. */
@@ -37,11 +41,13 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
     <div className="space-y-3">
       {LINK_TARGETS.filter((t) => offersLink(componentType, t)).map((target) => {
         const all = options(target)
-        const link = links[target]
+        // One dropdown per target for now: a goes-with link shows ahead of a never-with one.
+        const current = links.find((l) => l.target === target && l.mode === 'with') ?? links.find((l) => l.target === target)
+        const link = current ?? { mode: 'any' as const, target, values: [], strength: 'always' as const }
         const label = LINK_LABEL[target]
         const setMode = (mode: LinkMode) =>
           // Limiting a dish starts from every category, so unticking is what narrows it; "never" starts from none.
-          onChange(target, { mode, values: mode === 'with' ? (all ?? []).map((o) => o.value) : [], strength: link.strength })
+          onChange(target, mode === 'any' ? undefined : { ...link, mode, values: mode === 'with' ? (all ?? []).map((o) => o.value) : [] })
         return (
           <fieldset key={target} className="space-y-2">
             <legend className="text-xs font-semibold capitalize">{`Goes with ${label}`}</legend>
@@ -60,7 +66,7 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
                 aria-label={`How firmly, ${label}`}
                 className="ml-2 h-8 rounded-md border border-input bg-background px-2 text-xs"
                 value={link.strength}
-                onChange={(e) => onChange(target, { ...link, strength: e.target.value as LinkStrength })}
+                onChange={(e) => current && onChange(target, { ...current, strength: e.target.value as LinkStrength })}
               >
                 {LINK_STRENGTHS.map((st) => (
                   <option key={st} value={st}>{STRENGTH_LABEL[st]}</option>
@@ -74,10 +80,9 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
                     <Checkbox
                       checked={link.values.includes(o.value)}
                       onCheckedChange={() =>
-                        onChange(target, {
-                          mode: link.mode,
-                          strength: link.strength,
-                          values: link.values.includes(o.value) ? link.values.filter((v) => v !== o.value) : [...link.values, o.value],
+                        current && onChange(target, {
+                          ...current,
+                          values: current.values.includes(o.value) ? current.values.filter((v) => v !== o.value) : [...current.values, o.value],
                         })
                       }
                     />

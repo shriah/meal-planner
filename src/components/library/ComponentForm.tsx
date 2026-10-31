@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
 import { getAllComponents, getOwnedRules, saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, dishTypeOf, LINK_TARGETS, noLinks, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type Link, type LinkEdit, type LinkTarget, type Links, type RuleRecord } from '@/rules'
+import { dayModeOf, daysOfMode, dishTypeOf, LINK_SLOTS, linkSlotOf, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type LinkTarget, type RuleRecord } from '@/rules'
 import { LinksEditor } from './LinksEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
@@ -74,14 +74,19 @@ interface ComponentFormProps {
   draft?: Partial<ComponentRecord>
 }
 
+const sameLink = (a: DishLink, b: DishLink | undefined) =>
+  b !== undefined && a.mode === b.mode && a.target === b.target && a.strength === b.strength &&
+  a.values.length === b.values.length && a.values.every((v) => b.values.includes(v)) &&
+  JSON.stringify(a.scope ?? {}) === JSON.stringify(b.scope ?? {})
+
 interface FormState {
   name: string
   base_category_id: string
   extra_category_id: string
   /** 'none' when the curry has no type. */
   curry_category: CurryCategory | 'none'
-  /** Links the user has changed; the others keep what the dish's rules say. */
-  links: Partial<Links>
+  /** The dish's links once the user has changed one; undefined keeps what the dish's rules say. */
+  links: DishLink[] | undefined
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
   regional_tags: RegionalTag[]
@@ -109,7 +114,7 @@ function initialFormState(
       base_category_id: componentType === 'base' ? String(component.base_category_id ?? '') : '',
       extra_category_id: componentType === 'extra' ? String(component.extra_category_id ?? '') : '',
       curry_category: component.curry_category ?? 'none',
-      links: {},
+      links: undefined,
       dietary_tags: component.dietary_tags,
       protein_tag: component.protein_tag ?? 'none',
       regional_tags: component.regional_tags,
@@ -126,7 +131,7 @@ function initialFormState(
     base_category_id: componentType === 'base' ? String(draft?.base_category_id ?? '') : '',
     extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
     curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
-    links: {},
+    links: undefined,
     dietary_tags: draft?.dietary_tags ?? [],
     protein_tag: draft?.protein_tag ?? 'none',
     regional_tags: draft?.regional_tags ?? [],
@@ -195,7 +200,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       : target === 'curry_category' ? CURRY_CATEGORIES.length
       : (allDishes ?? []).filter((d) => d.componentType === dishTypeOf(target) && d.id !== component?.id).length
   const storedLinks = readOwned(owned ?? []).links
-  const links: Links = { ...noLinks(), ...storedLinks, ...form.links }
+  const links = form.links ?? storedLinks
   const linkRuleIds = (owned ?? []).filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
   const baseGoesWith =
     componentType === 'base' && pairedDishes && baseCategories && component?.base_category_id != null
@@ -224,7 +229,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const selectedBaseCategory = findCategory(baseCategories, baseCategoryId)
   const selectedExtraCategory = findCategory(extraCategories, extraCategoryId)
   // "Only with" and nothing ticked would leave the dish with nowhere to go; "never planned automatically" is the way out.
-  const canSaveLinks = form.never_auto || LINK_TARGETS.every((t) => !offersLink(componentType, t) || links[t].mode !== 'with' || links[t].values.length > 0)
+  const canSaveLinks = form.never_auto || links.every((l) => !offersLink(componentType, l.target) || l.mode !== 'with' || l.values.length > 0)
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
 
@@ -258,20 +263,21 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       }
 
       // With nothing chosen, a dish goes with any base, any curry and any day.
-      // Only the links the user changed are written. "Only with" every category is the same as no rule.
-      const sizes = Object.fromEntries(LINK_TARGETS.map((t) => [t, linkOptionCount(t)])) as Record<LinkTarget, number>
-      const changedLinks: Partial<Record<LinkTarget, LinkEdit>> = {}
-      for (const target of LINK_TARGETS) {
-        const link = form.links[target]
-        if (!link) continue
-        changedLinks[target] = link.mode === 'with' && link.values.length >= sizes[target] ? { mode: 'any', values: [] } : link
-      }
+      // Only the links the user changed are written. "Only with" every option and no day or meal limit is the same as no rule.
+      const stored = (slot: string) => storedLinks.find((l) => linkSlotOf(l) === slot)
+      const nextLinks = form.links?.filter((l) =>
+        sameLink(l, stored(linkSlotOf(l))) || !(l.mode === 'with' && !l.scope && l.values.length >= linkOptionCount(l.target)))
       const changes = ownedChanges(componentType, {
-        links: changedLinks,
+        links: nextLinks,
         days: daysOfMode(form.day_mode, form.days),
         meals: form.meals,
         neverAuto: form.never_auto,
       })
+      // A link left as it was keeps its stored rule untouched (a hand-edited cost stays as it is).
+      for (const slot of LINK_SLOTS) {
+        const link = nextLinks?.find((l) => linkSlotOf(l) === slot)
+        if (link && sameLink(link, stored(slot))) delete changes[slot]
+      }
       const id = mode === 'edit' ? component?.id : undefined
       await saveComponent(id, record, changes)
       toast.success(id === undefined ? `${record.name} added to the library` : `${record.name} saved`)
@@ -474,7 +480,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           extraCategories={extraCategories}
           dishes={allDishes}
           selfId={component?.id}
-          onChange={(target: LinkTarget, link: Link) => setForm(s => ({ ...s, links: { ...s.links, [target]: link } }))}
+          onChange={(target: LinkTarget, link: DishLink | undefined) =>
+            setForm(s => ({ ...s, links: [...(s.links ?? storedLinks).filter((l) => l.target !== target), ...(link ? [link] : [])] }))}
         />
         {!canSaveLinks && (
           <p className="text-xs text-destructive">Pick at least one category, or tick Never plan automatically.</p>

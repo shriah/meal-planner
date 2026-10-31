@@ -44,7 +44,7 @@ export async function deleteComponent(id: number): Promise<void> {
       if (!link || !isDishTarget(link.target) || !link.values.includes(id)) return;
       const rest = link.values.filter((v) => v !== id);
       if (rest.length === 0) delete (ref as { value?: unknown }).value;
-      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, link.target, rest, link.strength).spec;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest }).spec;
     });
     await db.components.delete(id);
   });
@@ -105,11 +105,13 @@ export async function setCategoryPairings(categoryId: number, dishIds: readonly 
       const next = dishIds.includes(dish.id) ? [...new Set([...has, categoryId])] : has.filter((id) => id !== categoryId);
       if (next.length === has.length && next.every((id) => has.includes(id))) continue;
       if (next.length === 0) throw new Error(`${dish.name} must go with at least one base`);
-      if (next.length === all.length) {
+      const link = current && readLink(current);
+      // Every base is the same as no rule, unless the pairing only holds on some days or meals.
+      if (next.length === all.length && !link?.scope) {
         if (current) await db.rules.delete(current.id);
         continue;
       }
-      const rule = pairingRule(dish, next, (current && readLink(current)?.strength) || 'always');
+      const rule = link ? linkRule(dish, { ...link, values: next }) : pairingRule(dish, next);
       if (current) await db.rules.update(current.id, rule);
       else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
     }

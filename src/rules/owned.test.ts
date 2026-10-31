@@ -1,31 +1,52 @@
 import { describe, expect, it } from 'vitest';
 import {
   clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
-  mealRule, noLinks, offersLink, ownedSlot, linkRule, readLink, pairedCategories, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairedCategories, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  type DishLink,
 } from './owned';
 
 const dish = { id: 7, name: 'Sambar' };
 const NONE = { days: [], meals: [], neverAuto: false };
-const NO_LINKS = noLinks();
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as const;
+const link = (mode: DishLink['mode'], target: DishLink['target'], values: DishLink['values'], strength: DishLink['strength'] = 'always'): DishLink =>
+  ({ mode, target, values, strength });
 
 describe('readOwned', () => {
   it('reads nothing from no rules', () => {
-    expect(readOwned([])).toEqual({ ...NONE, links: NO_LINKS });
+    expect(readOwned([])).toEqual({ ...NONE, links: [] });
   });
 
   it('reads the value of each kind of owned rule', () => {
     const rules = [pairingRule(dish, [1, 3]), curryClashRule(dish, ['soup']), dayRule(dish, ['friday', 'sunday']), mealRule(dish, ['breakfast', 'dinner']), exclusionRule(dish)];
-    expect(readOwned(rules)).toEqual({ links: { ...NO_LINKS, base_category: { mode: 'with', values: [1, 3], strength: 'always' }, curry_category: { mode: 'never', values: ['soup'], strength: 'always' } }, days: ['friday', 'sunday'], meals: ['breakfast', 'dinner'], neverAuto: true });
+    expect(readOwned(rules)).toEqual({ links: [link('with', 'base_category', [1, 3]), link('never', 'curry_category', ['soup'])], days: ['friday', 'sunday'], meals: ['breakfast', 'dinner'], neverAuto: true });
     expect(pairingCategories(rules[0])).toEqual([1, 3]);
     expect(clashCurryCategories(rules[1])).toEqual(['soup']);
     expect(ruleDays(rules[2])).toEqual(['friday', 'sunday']);
+  });
+
+  it('keeps both modes of one target', () => {
+    const links = readOwned([linkRule(dish, link('with', 'base_dish', [1, 2])), linkRule(dish, link('never', 'base_dish', [2]))]).links;
+    expect(links).toHaveLength(2);
+    expect(links.map(linkSlotOf)).toEqual(['with:base_dish', 'never:base_dish']);
+  });
+
+  it('reads legacy rules as before', () => {
+    for (const rule of [pairingRule(dish, [1]), curryClashRule(dish, ['soup'])]) {
+      expect(readLink(rule)?.strength).toBe('always');
+      expect(readLink(rule)).not.toHaveProperty('scope');
+    }
+    const odd = linkRule(dish, link('never', 'extra_category', [4]));
+    odd.spec.params = { ...odd.spec.params, strength: 'prefer', cost: 5 } as never;
+    expect(readLink(odd)?.strength).toBe('moderately');
+    const bare = linkRule(dish, link('never', 'extra_category', [4]));
+    bare.spec.params = { ...bare.spec.params, strength: 'prefer' } as never;
+    expect(readLink(bare)?.strength).toBe('usually');
   });
 });
 
 describe('ownedChanges', () => {
   const v = {
-    links: { base_category: { mode: 'with' as const, values: [1] }, curry_category: { mode: 'never' as const, values: ['soup' as const] } },
+    links: [link('with', 'base_category', [1]), link('never', 'curry_category', ['soup'])],
     days: ['monday' as const], meals: ['lunch' as const], neverAuto: true,
   };
 
@@ -40,19 +61,25 @@ describe('ownedChanges', () => {
     expect(ownedChanges('curry', NONE)).toEqual({ allowed_days: null, exclude: null });
   });
 
-  it('removes a link rule when the mode is any or nothing is chosen, and the other mode of the same target', () => {
-    const none = ownedChanges('extra', { ...NONE, links: { extra_category: { mode: 'any', values: [] }, curry_category: { mode: 'with', values: [] } } });
-    expect(none['with:extra_category']).toBeNull();
-    expect(none['never:extra_category']).toBeNull();
+  it('sets or clears every offered slot from a list', () => {
+    const one = ownedChanges('extra', { ...NONE, links: [link('never', 'curry_category', ['soup'])] });
+    expect(one['never:curry_category']).toBeTypeOf('function');
+    for (const slot of LINK_SLOTS.filter((s) => s !== 'never:curry_category')) expect(one[slot]).toBeNull();
+    const curry = ownedChanges('curry', { ...NONE, links: [link('never', 'curry_category', ['soup'])] });
+    expect(curry).not.toHaveProperty('with:curry_dish');
+    expect(curry).not.toHaveProperty('never:curry_dish');
+    expect(Object.keys(ownedChanges('extra', NONE)).filter((k) => k.includes(':'))).toEqual([]);
+  });
+
+  it('removes a link rule when nothing is chosen', () => {
+    const none = ownedChanges('extra', { ...NONE, links: [link('with', 'curry_category', [])] });
     expect(none['with:curry_category']).toBeNull();
-    const swapped = ownedChanges('extra', { ...NONE, links: { curry_category: { mode: 'with', values: ['soup'] } } });
-    expect(swapped['with:curry_category']).toBeTypeOf('function');
-    expect(swapped['never:curry_category']).toBeNull();
+    expect(none['never:curry_category']).toBeNull();
   });
 
   it('offers every dish type links to the other kinds of category, but a base none to base categories', () => {
-    const all = { base_category: { mode: 'never' as const, values: [1] }, extra_category: { mode: 'never' as const, values: [2] }, curry_category: { mode: 'never' as const, values: ['soup' as const] } };
-    expect(Object.keys(ownedChanges('base', { ...NONE, links: all })).sort()).toEqual(
+    const all = [link('never', 'base_category', [1]), link('never', 'extra_category', [2]), link('never', 'curry_category', ['soup'])];
+    expect(Object.keys(ownedChanges('base', { ...NONE, links: all })).filter((k) => !k.endsWith('_dish')).sort()).toEqual(
       ['allowed_days', 'allowed_meals', 'exclude', 'never:curry_category', 'never:extra_category', 'with:curry_category', 'with:extra_category'],
     );
     expect(ownedChanges('extra', { ...NONE, links: all })['never:base_category']).toBeTypeOf('function');
@@ -61,11 +88,11 @@ describe('ownedChanges', () => {
 
 describe('links to specific dishes', () => {
   it('round-trips, listing the dish itself in "only with" without showing it back', () => {
-    const only = linkRule(dish, 'with', 'base_dish', [3, 4]);
+    const only = linkRule(dish, link('with', 'base_dish', [3, 4]));
     expect(JSON.stringify(only.spec)).toContain('7');
-    expect(readLink(only)).toEqual({ mode: 'with', target: 'base_dish', values: [3, 4], strength: 'always' });
-    expect(readLink(linkRule(dish, 'never', 'extra_dish', [9]))).toEqual({ mode: 'never', target: 'extra_dish', values: [9], strength: 'always' });
-    expect(ownedSlot(linkRule(dish, 'never', 'subzi_dish', [2]))).toBe('never:subzi_dish');
+    expect(readLink(only)).toEqual(link('with', 'base_dish', [3, 4]));
+    expect(readLink(linkRule(dish, link('never', 'extra_dish', [9])))).toEqual(link('never', 'extra_dish', [9]));
+    expect(ownedSlot(linkRule(dish, link('never', 'subzi_dish', [2])))).toBe('never:subzi_dish');
   });
 
   it('does not offer a dish its own kind where a meal holds one, or a base any base', () => {
@@ -78,24 +105,39 @@ describe('links to specific dishes', () => {
 });
 
 describe('link strength', () => {
-  it('writes always as a hard rule and usually / sometimes as a preference with a cost, and reads them back', () => {
-    for (const rule of [linkRule(dish, 'never', 'extra_category', [4]), linkRule(dish, 'with', 'base_category', [1])]) {
+  it('writes always as a hard rule and the others as a preference with a cost, and reads them back', () => {
+    for (const rule of [linkRule(dish, link('never', 'extra_category', [4])), linkRule(dish, link('with', 'base_category', [1]))]) {
       expect(rule.spec.params).toMatchObject({ strength: 'must' });
       expect(readLink(rule)?.strength).toBe('always');
     }
-    const usually = linkRule(dish, 'never', 'extra_dish', [4], 'usually');
+    const usually = linkRule(dish, link('never', 'extra_dish', [4], 'usually'));
     expect(usually.spec.params).toMatchObject({ strength: 'prefer', cost: 10 });
     expect(readLink(usually)?.strength).toBe('usually');
-    const sometimes = linkRule(dish, 'with', 'base_category', [1], 'sometimes');
+    const sometimes = linkRule(dish, link('with', 'base_category', [1], 'sometimes'));
     expect(sometimes.spec.params).toMatchObject({ strength: 'prefer', cost: 3 });
     expect(readLink(sometimes)?.strength).toBe('sometimes');
-    expect(readOwned([sometimes]).links.base_category).toEqual({ mode: 'with', values: [1], strength: 'sometimes' });
+    expect(readOwned([sometimes]).links).toEqual([link('with', 'base_category', [1], 'sometimes')]);
   });
 
   it('carries the strength into the rule change, and defaults to always', () => {
-    const c = ownedChanges('extra', { ...NONE, links: { extra_category: { mode: 'never', values: [2], strength: 'usually' }, curry_category: { mode: 'never', values: ['soup'] } } });
+    const c = ownedChanges('extra', { ...NONE, links: [link('never', 'extra_category', [2], 'usually'), { mode: 'never', target: 'curry_category', values: ['soup'] } as DishLink] });
     expect(c['never:extra_category']?.(dish).spec.params).toMatchObject({ strength: 'prefer', cost: 10 });
     expect(c['never:curry_category']?.(dish).spec.params).toMatchObject({ strength: 'must' });
+  });
+
+  it('round-trips scope and every strength through each link shape', () => {
+    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
+    for (const strength of ['always', 'usually', 'moderately', 'sometimes'] as const) {
+      for (const shape of [link('with', 'base_category', [1, 2], strength), link('never', 'extra_category', [4], strength), link('with', 'base_dish', [3], strength)]) {
+        const l: DishLink = { ...shape, scope };
+        const rule = linkRule(dish, l);
+        expect(readLink(rule)).toEqual(l);
+        expect(rule.spec.params).toMatchObject({ scope });
+      }
+    }
+    expect(linkRule(dish, link('never', 'extra_category', [4], 'moderately')).spec.params).toMatchObject({ strength: 'prefer', cost: 6 });
+    expect(linkRule(dish, { ...link('never', 'extra_category', [4]), scope: { days: [], meals: ['lunch'] } }).spec.params).toMatchObject({ scope: { meals: ['lunch'] } });
+    expect(linkRule(dish, { ...link('never', 'extra_category', [4]), scope: { days: [] } }).spec.params).not.toHaveProperty('scope');
   });
 });
 
@@ -103,13 +145,15 @@ describe('links', () => {
   it('round-trips each kind of link through its rule, and names the slot it fills', () => {
     for (const mode of ['with', 'never'] as const) {
       for (const [target, values] of [['base_category', [1, 2]], ['extra_category', [4]], ['curry_category', ['soup', 'legume']]] as const) {
-        const rule = linkRule(dish, mode, target, values);
-        expect(readLink(rule)).toEqual({ mode, target, values, strength: 'always' });
+        const l = link(mode, target, [...values]);
+        const rule = linkRule(dish, l);
+        expect(readLink(rule)).toEqual(l);
         expect(ownedSlot(rule)).toBe(`${mode}:${target}`);
+        expect(linkSlotOf(l)).toBe(`${mode}:${target}`);
       }
     }
-    expect(linkRule(dish, 'with', 'base_category', [1]).spec.template).toBe('pairs_with');
-    expect(linkRule(dish, 'never', 'extra_category', [4]).spec.template).toBe('avoid_with');
+    expect(linkRule(dish, link('with', 'base_category', [1])).spec.template).toBe('pairs_with');
+    expect(linkRule(dish, link('never', 'extra_category', [4])).spec.template).toBe('avoid_with');
   });
 
   it('does not take a hand-written never-together rule for a link', () => {

@@ -79,7 +79,7 @@ describe('links to specific dishes', () => {
     const [onlyBase] = byType('base');
     const [avoided] = byType('extra');
     const now = new Date().toISOString();
-    for (const rule of [linkRule(curry, 'with', 'base_dish', [onlyBase.id]), linkRule(curry, 'never', 'extra_dish', [avoided.id])]) {
+    for (const rule of [linkRule(curry, { mode: 'with', target: 'base_dish', values: [onlyBase.id] }), linkRule(curry, { mode: 'never', target: 'extra_dish', values: [avoided.id] })]) {
       await db.rules.add({ ...rule, enabled: true, created_at: now });
     }
 

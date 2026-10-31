@@ -89,7 +89,7 @@ const RequireWithParams = z
   .refine((p) => p.components.length + p.extraCategories.length > 0, { message: 'choose at least one component or extra category', path: ['components'] });
 
 const PairsWithParams = z
-  .object({ match: MatcherSchema, baseCategories: ids.min(1), strength: StrengthSchema, cost: CostSchema })
+  .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const AllowedDaysParams = z
@@ -279,12 +279,12 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     summary: 'Matching dishes only share a meal with a base from the chosen categories.',
     // A base without a category is outside every list.
     compile: (p) => [slotCount(
-      all(p.match, not(is('role', 'base'))), undefined, p.strength, undefined, 0,
+      all(p.match, not(is('role', 'base'))), p.scope, p.strength, undefined, 0,
       all(is('role', 'base'), not(oneOf('base_category_id', p.baseCategories))),
     )],
     describe: (p, n) => {
       const bases = p.baseCategories.map((id) => n.baseCategory?.(id) ?? `base category #${id}`);
-      return `${sentence(describeMatcher(p.match, n))} only with ${bases.join(' or ')} bases${strengthWord(p.strength)}`;
+      return `${sentence(describeMatcher(p.match, n))} only with ${bases.join(' or ')} bases${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => {
       const r = refsOf(p.match);

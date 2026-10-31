@@ -271,10 +271,13 @@ describe('Phase 14 category services', () => {
     const liquid = await addCategory({ kind: 'extra', name: 'Liquid' });
     const crunchy = await addCategory({ kind: 'extra', name: 'Crunchy' });
     const base = { componentType: 'base' as const, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
-    const idli = await saveComponent(undefined, { ...base, name: 'Idli' }, { 'never:extra_category': (c) => linkRule(c, 'never', 'extra_category', [liquid, crunchy]) });
+    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
+    const idli = await saveComponent(undefined, { ...base, name: 'Idli' }, {
+      'never:extra_category': (c) => linkRule(c, { mode: 'never', target: 'extra_category', values: [liquid, crunchy], strength: 'moderately', scope }),
+    });
 
     await deleteCategory(liquid);
-    expect(readLink((await getOwnedRule(idli, 'never:extra_category'))!)?.values).toEqual([crunchy]);
+    expect(readLink((await getOwnedRule(idli, 'never:extra_category'))!)).toEqual({ mode: 'never', target: 'extra_category', values: [crunchy], strength: 'moderately', scope });
     await deleteCategory(crunchy);
     expect(await getOwnedRule(idli, 'never:extra_category')).toBeUndefined();
   });
@@ -284,11 +287,11 @@ describe('Phase 14 category services', () => {
     const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' });
     const dosa = await saveComponent(undefined, { ...tags, name: 'Dosa', componentType: 'base' });
     const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {
-      'with:base_dish': (c) => linkRule(c, 'with', 'base_dish', [idli, dosa]),
+      'with:base_dish': (c) => linkRule(c, { mode: 'with', target: 'base_dish', values: [idli, dosa], strength: 'sometimes', scope: { days: ['friday'] } }),
     });
 
     await deleteComponent(idli);
-    expect(readLink((await getOwnedRule(sambar, 'with:base_dish'))!)?.values).toEqual([dosa]);
+    expect(readLink((await getOwnedRule(sambar, 'with:base_dish'))!)).toEqual({ mode: 'with', target: 'base_dish', values: [dosa], strength: 'sometimes', scope: { days: ['friday'] } });
     await deleteComponent(dosa);
     expect(await getOwnedRule(sambar, 'with:base_dish')).toBeUndefined();
   });
@@ -353,6 +356,21 @@ describe('setCategoryPairings', () => {
     const bread = (await getCategoriesByKind('base')).find((c) => c.name === 'Bread')!.id;
     await setCategoryPairings(bread, [sambar]);
     expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toMatchObject({ values: expect.arrayContaining([rice, bread]), strength: 'usually' });
+  });
+
+  it('keeps a pairing\'s scope and strength when the base side changes it', async () => {
+    const rice = await addCategory({ kind: 'base', name: 'Rice' });
+    const bread = await addCategory({ kind: 'base', name: 'Bread' });
+    const sambar = await dish('Sambar');
+    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
+    await saveComponent(sambar, { name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
+      'with:base_category': (c) => linkRule(c, { mode: 'with', target: 'base_category', values: [rice], strength: 'moderately', scope }),
+    });
+    // Every base ticked: a scoped pairing still means something, so it stays.
+    await setCategoryPairings(bread, [sambar]);
+    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toEqual({ mode: 'with', target: 'base_category', values: [rice, bread], strength: 'moderately', scope });
+    await setCategoryPairings(rice, []);
+    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toEqual({ mode: 'with', target: 'base_category', values: [bread], strength: 'moderately', scope });
   });
 
   it('refuses to leave a dish with no base, and ignores bases and extras', async () => {

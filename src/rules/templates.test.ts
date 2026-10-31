@@ -132,6 +132,14 @@ describe('rule templates in the planner', () => {
     expect(broken.map((j) => [j.group.day, j.group.meal, j.actual])).toEqual([['monday', 'dinner', 2], ['tuesday', 'lunch', 1]]);
   });
 
+  it('compiles a scoped pairing to a scoped constraint', () => {
+    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
+    const { constraints, issues } = compileRules([record({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope, strength: 'prefer', cost: 6 } })], known);
+    expect(issues).toEqual([]);
+    expect(constraints).toHaveLength(1);
+    expect(constraints[0]).toMatchObject({ scope });
+  });
+
   it.each(SEEDS)('allowed_days: Chole only on Saturday or Sunday (seed %i)', (seed) => {
     const r = plan([{ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } }], seed);
     expect(hard(r)).toEqual([]);
@@ -207,6 +215,8 @@ describe('rule template params', () => {
     expect(d({ template: 'limit', params: { match: is('dietary_tags', 'non-veg'), per: 'week', max: 2 } }))
       .toBe('Non-veg dishes: at most 2 per week');
     expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } })).toBe('Sambar only with Rice bases');
+    expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope: { days: ['monday'], meals: ['lunch'] } } }))
+      .toBe('Sambar only with Rice bases on Monday at lunch');
     expect(RuleSpecSchema.safeParse({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [] } }).success).toBe(false);
     expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'avoid', weight: 1 } })).toBe('Avoid dishes with fish (slightly)');
     expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'prefer', weight: 5 } })).toBe('Prefer dishes with fish (strongly)');
