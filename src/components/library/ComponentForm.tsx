@@ -7,7 +7,7 @@ import { dayModeOf, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot,
 import { LinkList } from './links/LinkList'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { useLibraryLookup } from './LibraryLookup'
+import { ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -467,13 +467,16 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Goes with / never with: links to the categories of other dishes, stored as rules the dish owns */}
       <div className="space-y-2">
-        <LinkList
-          dishName={form.name}
-          componentType={componentType}
-          selfId={component?.id}
-          links={links}
-          onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
-        />
+        {/* The list reads the form's lookup rather than querying again. */}
+        <ShareLibraryLookup value={lookup}>
+          <LinkList
+            dishName={form.name}
+            componentType={componentType}
+            selfId={component?.id}
+            links={links}
+            onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
+          />
+        </ShareLibraryLookup>
         {linkRuleIds.length > 0 && (
           <p className="text-xs text-muted-foreground">
             Saved as {linkRuleIds.length === 1 ? 'a rule' : 'rules'}.{' '}

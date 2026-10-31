@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, type DishLink } from '@/rules'
 import type { ComponentType } from '@/types/component'
-import { linkNames, useLibraryLookup } from '../LibraryLookup'
+import { linkNames, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
 
 interface LinkListProps {
@@ -29,19 +29,22 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
   const taken = links.map(linkSlotOf)
   const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
 
+  // The editor reads this lookup rather than starting its own, which would open with no options.
   const editor = (initial?: DishLink, at?: number) => (
-    <LinkEditor
-      componentType={componentType}
-      selfId={selfId}
-      dishName={dishName}
-      initial={initial}
-      taken={taken}
-      onCancel={() => setEditing(null)}
-      onDone={(link) => {
-        onChange(at === undefined ? [...links, link] : links.map((l, i) => (i === at ? link : l)))
-        setEditing(null)
-      }}
-    />
+    <ShareLibraryLookup value={lookup}>
+      <LinkEditor
+        componentType={componentType}
+        selfId={selfId}
+        dishName={dishName}
+        initial={initial}
+        taken={taken}
+        onCancel={() => setEditing(null)}
+        onDone={(link) => {
+          onChange(at === undefined ? [...links, link] : links.map((l, i) => (i === at ? link : l)))
+          setEditing(null)
+        }}
+      />
+    </ShareLibraryLookup>
   )
 
   return (

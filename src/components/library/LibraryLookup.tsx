@@ -39,6 +39,11 @@ export function LibraryLookupProvider({ children }: { children: ReactNode }) {
   return <LibraryLookupContext.Provider value={lookup}>{children}</LibraryLookupContext.Provider>
 }
 
+/** Hands a lookup already in hand to the components below, so they do not each run their own queries. */
+export function ShareLibraryLookup({ value, children }: { value: LibraryLookup; children: ReactNode }) {
+  return <LibraryLookupContext.Provider value={value}>{children}</LibraryLookupContext.Provider>
+}
+
 /** The shared lookup; outside a provider (a form opened on its own) it runs its own live queries. */
 export function useLibraryLookup(): LibraryLookup {
   const shared = useContext(LibraryLookupContext)

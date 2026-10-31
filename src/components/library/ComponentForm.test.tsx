@@ -29,6 +29,13 @@ beforeEach(async () => {
   await db.rules.clear();
 });
 
+/** A button once it can be used: the link buttons wait for the library lookup to load. */
+async function readyButton(name: string, container: HTMLElement = document.body) {
+  const button = await within(container).findByRole('button', { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
 function LiveComponentRow({ componentId }: { componentId: number }) {
   const component = useLiveQuery(() => db.components.get(componentId), [componentId], undefined);
 
@@ -448,7 +455,7 @@ describe('ComponentForm dynamic category wiring', () => {
 const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
 
 async function addLink(target: string, mode: 'Only with' | 'Never with', values: string[], strength?: string) {
-  await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+  await userEvent.click(await readyButton('Add link'));
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), target);
   await userEvent.click(screen.getByRole('button', { name: mode }));
   if (strength) await userEvent.click(screen.getByRole('button', { name: strength }));
@@ -465,7 +472,7 @@ describe('ComponentForm links', () => {
 
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Base categories');
     // Nothing ticked leaves the dish nowhere to go, so the link cannot be finished.
     expect(screen.getByRole('button', { name: 'Done' })).toBeDisabled();
@@ -482,7 +489,7 @@ describe('ComponentForm links', () => {
     const [sambar] = await getComponentsByType('curry');
     render(<LiveEditForm componentId={sambar.id} />);
     // Ticking Flatbreads too means every base: the rule goes.
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.click(await readyButton('Edit'));
     await userEvent.click(await screen.findByRole('checkbox', { name: 'Flatbreads' }));
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
@@ -491,7 +498,7 @@ describe('ComponentForm links', () => {
 
   it('offers each kind of dish only the links that suit it', async () => {
     const { rerender } = render(<ComponentForm componentType="base" mode="add" onSave={() => {}} onDiscard={() => {}} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     let targets = within(screen.getByRole('combobox', { name: 'Link to' })).getAllByRole('option').map((o) => o.textContent);
     expect(targets).toContain('Extra categories');
     expect(targets).toContain('Curry types');
@@ -499,7 +506,7 @@ describe('ComponentForm links', () => {
     expect(targets).not.toContain('Specific bases');
 
     rerender(<ComponentForm key="curry" componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     targets = within(screen.getByRole('combobox', { name: 'Link to' })).getAllByRole('option').map((o) => o.textContent);
     expect(targets).toContain('Specific bases');
     expect(targets).not.toContain('Specific curries');
@@ -535,7 +542,7 @@ describe('ComponentForm links', () => {
 
     render(<LiveEditForm componentId={curryId} />);
     const item = await screen.findByText(/planned only with Rice Plates/);
-    await userEvent.click(within(item.closest('li')!).getByRole('button', { name: 'Remove' }));
+    await userEvent.click(await readyButton('Remove', item.closest('li')!));
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
     await waitFor(async () => expect(await pairedBases(curryId)).toBeUndefined());

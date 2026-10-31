@@ -19,6 +19,13 @@ beforeEach(async () => {
   await db.rules.clear();
 });
 
+/** A button once it can be used: the link buttons wait for the library lookup to load. */
+async function readyButton(name: string, container: HTMLElement = document.body) {
+  const button = await within(container).findByRole('button', { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  return button;
+}
+
 const dish = (name: string, componentType: ComponentType) =>
   db.components.add({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' }) as Promise<number>;
 
@@ -52,7 +59,7 @@ describe('LinkList', () => {
     expect(items[1]).toHaveTextContent('Sambar is sometimes kept away from soup');
     expect(within(items[0]).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
 
-    await userEvent.click(within(items[1]).getByRole('button', { name: 'Remove' }));
+    await userEvent.click(await readyButton('Remove', items[1]));
     expect(onChange).toHaveBeenLastCalledWith([{ mode: 'with', target: 'base_category', values: [rice], strength: 'always' }]);
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
   });
@@ -81,7 +88,7 @@ describe('LinkList', () => {
       { mode: 'with', target: 'extra_category', values: [], strength: 'always' },
     ]} componentType="extra" onChange={onChange} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     const linkTo = screen.getByRole('combobox', { name: 'Link to' });
     const targets = within(linkTo).getAllByRole('option').map((o) => o.textContent);
     // Both curry type slots are used; extra categories still has "never with" free.
@@ -114,7 +121,7 @@ describe('LinkList', () => {
     const onChange = vi.fn();
     render(<Harness initial={[]} componentType="extra" selfId={self} onChange={onChange} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
     await userEvent.click(screen.getByRole('button', { name: 'Never with' }));
     // A dish is never offered itself.
@@ -143,7 +150,7 @@ describe('LinkList', () => {
     await addCategory({ kind: 'base', name: 'Flatbreads' });
     render(<Harness initial={[]} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Base categories');
     expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Select all' }));
@@ -156,7 +163,7 @@ describe('LinkList', () => {
     const onChange = vi.fn();
     render(<Harness initial={[]} onChange={onChange} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Add link' }));
+    await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Curry types');
     await userEvent.click(screen.getByRole('button', { name: 'Never with' }));
     await userEvent.click(screen.getByRole('checkbox', { name: 'soup' }));
@@ -182,7 +189,7 @@ describe('LinkList', () => {
     ]} onChange={onChange} />);
 
     const [, second] = await screen.findAllByRole('listitem');
-    await userEvent.click(within(second).getByRole('button', { name: 'Edit' }));
+    await userEvent.click(await readyButton('Edit', second));
     // The link's own slot is offered, and the editor starts from the link.
     expect(screen.getByRole('combobox', { name: 'Link to' })).toHaveValue('base_category');
     expect(screen.getByRole('button', { name: 'Usually' })).toHaveAttribute('aria-pressed', 'true');
@@ -202,7 +209,7 @@ describe('LinkList', () => {
     const onChange = vi.fn();
     render(<Harness initial={[{ mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' }]} onChange={onChange} />);
 
-    await userEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    await userEvent.click(await readyButton('Edit'));
     await userEvent.click(screen.getByRole('checkbox', { name: 'stew' }));
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onChange).not.toHaveBeenCalled();
