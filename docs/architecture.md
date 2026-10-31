@@ -90,7 +90,8 @@ A rule may be owned by a component (`owner_component_id`, at most one per templa
 component's form and listed under "Dish settings" on the Rules page. Any dish can own **goes with / never with** links to
 the categories of another kind of dish (base categories, extra categories, curry types) or to specific dishes (bases, curries, subzis, extras; a dish
 is never offered its own kind where a meal holds only one, and a base is not offered base categories or bases). "Only with" limits the dish to the chosen categories, "never with" keeps it away from them; none
-chosen is no rule. A goes-with link to base categories is an `only with these bases` (`pairs_with`) rule, every other
+chosen is no rule. A link also has a strength: **always** (a hard rule), **usually** or **sometimes** (a `prefer`
+rule with a soft cost of 10 or 3) that the planner may give up when it has to. A goes-with link to base categories is an `only with these bases` (`pairs_with`) rule, every other
 link a `never together` (`avoid_with`) rule whose other side is the dish type plus the (negated) categories. They are
 edited under "Goes with" on the dish's form; base pairings can also be set from the base category (Manage
 Categories → Goes With), and a base's form lists "Base to" its curries and subzis. A dish's specific days

@@ -53,15 +53,17 @@ export function ComponentRow({
   const owned = readOwned(ownedRules ?? [])
   // One badge per link: bare base names for a goes-with link to base categories (the usual pairing), else "Only with" / "Not with".
   const linkBadges = LINK_TARGETS.flatMap((target) => {
-    const { mode, values } = owned.links[target]
+    const { mode, values, strength } = owned.links[target]
     if (mode === 'any' || values.length === 0) return []
     const names = values.map((v) =>
       target === 'base_category' ? getBaseCategoryLabel(baseCategoriesById, Number(v))
         : target === 'extra_category' ? getExtraCategoryLabel(extraCategoriesById, Number(v))
         : isDishTarget(target) ? (dishNames.get(Number(v)) ?? 'Deleted dish')
         : String(v))
-    const prefix = mode === 'never' ? 'Not with ' : target === 'base_category' ? '' : 'Only with '
-    return [{ key: `${mode}:${target}`, text: prefix + names.join(', ') }]
+    const soft = strength === 'always' ? '' : strength === 'usually' ? 'Usually ' : 'Sometimes '
+    const prefix = mode === 'never' ? 'not with ' : target === 'base_category' && !soft ? '' : 'only with '
+    const text = soft ? soft + prefix + names.join(', ') : (prefix ? prefix.charAt(0).toUpperCase() + prefix.slice(1) : '') + names.join(', ')
+    return [{ key: `${mode}:${target}`, text }]
   })
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)

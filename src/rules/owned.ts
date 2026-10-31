@@ -18,8 +18,22 @@ export type LinkValue = number | string;
 export type LinkSlot = `${'with' | 'never'}:${LinkTarget}`;
 /** `any` is no rule; `with` limits the dish to the chosen categories; `never` keeps it away from them. */
 export type LinkMode = 'any' | 'with' | 'never';
-export interface Link { mode: LinkMode; values: LinkValue[] }
+/** How firmly a link holds: always is a hard rule; usually and sometimes are preferences the planner may give up. */
+export type LinkStrength = 'always' | 'usually' | 'sometimes';
+export const LINK_STRENGTHS: LinkStrength[] = ['always', 'usually', 'sometimes'];
+/** The soft cost each non-hard strength writes (see `LEVELS`: strongly, slightly). */
+const STRENGTH_COST = { usually: 10, sometimes: 3 } as const;
+export interface Link { mode: LinkMode; values: LinkValue[]; strength: LinkStrength }
+
+const strengthParams = (strength: LinkStrength) =>
+  strength === 'always' ? { strength: 'must' as const } : { strength: 'prefer' as const, cost: STRENGTH_COST[strength] };
+
+/** The strength a rule's params stand for; a soft cost of 8 or more reads as usually. */
+export const strengthOf = (params: { strength?: string; cost?: number }): LinkStrength =>
+  params.strength !== 'prefer' ? 'always' : (params.cost ?? 10) >= 8 ? 'usually' : 'sometimes';
 export type Links = Record<LinkTarget, Link>;
+/** A link as a form hands it over: strength left out means always. */
+export type LinkEdit = Omit<Link, 'strength'> & { strength?: LinkStrength };
 
 const LINK_FIELD = {
   base_category: 'base_category_id', extra_category: 'extra_category_id', curry_category: 'curry_category',
@@ -64,10 +78,10 @@ const NAME_SUFFIX: Partial<Record<string, string>> = {
 export const ownedRuleName = (slot: string, componentName: string): string =>
   `${componentName}: ${NAME_SUFFIX[slot] ?? 'rule'}`;
 
-export function pairingRule(component: { id: number; name: string }, baseCategories: readonly number[]): OwnedRule {
+export function pairingRule(component: { id: number; name: string }, baseCategories: readonly number[], strength: LinkStrength = 'always'): OwnedRule {
   return {
     name: ownedRuleName('with:base_category', component.name),
-    spec: { template: 'pairs_with', params: { match: is('id', component.id), baseCategories: [...baseCategories], strength: 'must' } },
+    spec: { template: 'pairs_with', params: { match: is('id', component.id), baseCategories: [...baseCategories], ...strengthParams(strength) } },
     owner_component_id: component.id,
   };
 }
@@ -87,22 +101,22 @@ export function pairedCategories(rule: Pick<RuleRecord, 'spec'> | undefined, all
 }
 
 /** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
-export function linkRule(component: { id: number; name: string }, mode: 'with' | 'never', target: LinkTarget, values: readonly LinkValue[]): OwnedRule {
-  if (mode === 'with' && target === 'base_category') return pairingRule(component, values as number[]);
+export function linkRule(component: { id: number; name: string }, mode: 'with' | 'never', target: LinkTarget, values: readonly LinkValue[], strength: LinkStrength = 'always'): OwnedRule {
+  if (mode === 'with' && target === 'base_category') return pairingRule(component, values as number[], strength);
   // A dish is never kept away from itself, so "only with" lists it too (it is dropped again on reading).
   const listed = mode === 'with' && isDishTarget(target) ? [...new Set([...values, component.id])] : [...values];
   const set = oneOf(LINK_FIELD[target], listed as never);
   const of = all(is('componentType', LINK_DISH_TYPE[target]), mode === 'never' ? set : not(set));
   return {
     name: ownedRuleName(`${mode}:${target}`, component.name),
-    spec: { template: 'avoid_with', params: { match: is('id', component.id), with: of, strength: 'must' } },
+    spec: { template: 'avoid_with', params: { match: is('id', component.id), with: of, ...strengthParams(strength) } },
     owner_component_id: component.id,
   };
 }
 
 /** The link a rule makes, or undefined when the rule is not a link. */
 export function readLink(rule: Pick<RuleRecord, 'spec'>): (Link & { mode: 'with' | 'never'; target: LinkTarget }) | undefined {
-  if (rule.spec.template === 'pairs_with') return { mode: 'with', target: 'base_category', values: [...(rule.spec.params.baseCategories ?? [])] };
+  if (rule.spec.template === 'pairs_with') return { mode: 'with', target: 'base_category', values: [...(rule.spec.params.baseCategories ?? [])], strength: strengthOf(rule.spec.params) };
   if (rule.spec.template !== 'avoid_with') return undefined;
   const side = rule.spec.params.with as Matcher;
   if (!('all' in side) || side.all.length !== 2) return undefined;
@@ -118,7 +132,7 @@ export function readLink(rule: Pick<RuleRecord, 'spec'>): (Link & { mode: 'with'
     const owner = rule.spec.params.match as Matcher;
     if (isLeaf(owner) && owner.field === 'id') values = values.filter((v) => v !== owner.value);
   }
-  return { mode: negated ? 'with' : 'never', target, values };
+  return { mode: negated ? 'with' : 'never', target, values, strength: strengthOf(rule.spec.params) };
 }
 
 /** Which owned slot a rule fills, or undefined when it is not one a dish form edits. */
@@ -188,7 +202,7 @@ export interface OwnedValues {
 }
 
 export const noLinks = (): Links =>
-  Object.fromEntries(LINK_TARGETS.map((t) => [t, { mode: 'any', values: [] }])) as unknown as Links;
+  Object.fromEntries(LINK_TARGETS.map((t) => [t, { mode: 'any', values: [], strength: 'always' }])) as unknown as Links;
 
 /** Read a dish's settings from the rules it owns. A goes-with link wins over a never-with one for the same target. */
 export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValues {
@@ -198,7 +212,7 @@ export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValu
   const found = rules.map(readLink).filter((l) => l !== undefined);
   for (const target of LINK_TARGETS) {
     const link = found.find((l) => l.target === target && l.mode === 'with') ?? found.find((l) => l.target === target);
-    if (link) links[target] = { mode: link.mode, values: link.values };
+    if (link) links[target] = { mode: link.mode, values: link.values, strength: link.strength };
   }
   return {
     links,
@@ -219,7 +233,7 @@ export const offersLink = (componentType: ComponentType, target: LinkTarget): bo
  * The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered.
  * `links` is left out (or a target missing from it) when the dish's links are not being edited, so stored ones stay.
  */
-export function ownedChanges(componentType: ComponentType, values: Omit<OwnedValues, 'links'> & { links?: Partial<Links> }): OwnedRuleChanges {
+export function ownedChanges(componentType: ComponentType, values: Omit<OwnedValues, 'links'> & { links?: Partial<Record<LinkTarget, LinkEdit>> }): OwnedRuleChanges {
   const { links, days, meals, neverAuto } = values;
   const changes: OwnedRuleChanges = {
     allowed_days: days.length ? (c) => dayRule(c, days) : null,
@@ -233,7 +247,7 @@ export function ownedChanges(componentType: ComponentType, values: Omit<OwnedVal
     if (!link || !offersLink(componentType, target)) continue;
     for (const mode of ['with', 'never'] as const) {
       const on = link.mode === mode && link.values.length > 0;
-      changes[`${mode}:${target}`] = on ? (c) => linkRule(c, mode, target, link.values) : null;
+      changes[`${mode}:${target}`] = on ? (c) => linkRule(c, mode, target, link.values, link.strength ?? 'always') : null;
     }
   }
   return changes;

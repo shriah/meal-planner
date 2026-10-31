@@ -44,7 +44,7 @@ export async function deleteComponent(id: number): Promise<void> {
       if (!link || !isDishTarget(link.target) || !link.values.includes(id)) return;
       const rest = link.values.filter((v) => v !== id);
       if (rest.length === 0) delete (ref as { value?: unknown }).value;
-      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, link.target, rest).spec;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, link.target, rest, link.strength).spec;
     });
     await db.components.delete(id);
   });
@@ -109,7 +109,7 @@ export async function setCategoryPairings(categoryId: number, dishIds: readonly 
         if (current) await db.rules.delete(current.id);
         continue;
       }
-      const rule = pairingRule(dish, next);
+      const rule = pairingRule(dish, next, (current && readLink(current)?.strength) || 'always');
       if (current) await db.rules.update(current.id, rule);
       else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
     }

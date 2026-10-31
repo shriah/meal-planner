@@ -5,7 +5,7 @@ import { Label } from '@/components/ui/label'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
 import type { ComponentRecord } from '@/types/component'
-import { dishTypeOf, isDishTarget, LINK_LABEL, LINK_TARGETS, offersLink, type Link, type LinkMode, type LinkTarget, type LinkValue, type Links } from '@/rules'
+import { LINK_STRENGTHS, type LinkStrength, dishTypeOf, isDishTarget, LINK_LABEL, LINK_TARGETS, offersLink, type Link, type LinkMode, type LinkTarget, type LinkValue, type Links } from '@/rules'
 
 interface LinksEditorProps {
   componentType: ComponentType
@@ -19,6 +19,7 @@ interface LinksEditorProps {
   onChange: (target: LinkTarget, link: Link) => void
 }
 
+const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', sometimes: 'Sometimes' }
 const MODE_LABEL: Record<LinkMode, string> = { any: 'Any', with: 'Only with', never: 'Never with' }
 
 /** "Goes with" / "Never with" for one kind of category at a time; the options follow the library's categories. */
@@ -40,7 +41,7 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
         const label = LINK_LABEL[target]
         const setMode = (mode: LinkMode) =>
           // Limiting a dish starts from every category, so unticking is what narrows it; "never" starts from none.
-          onChange(target, { mode, values: mode === 'with' ? (all ?? []).map((o) => o.value) : [] })
+          onChange(target, { mode, values: mode === 'with' ? (all ?? []).map((o) => o.value) : [], strength: link.strength })
         return (
           <fieldset key={target} className="space-y-2">
             <legend className="text-xs font-semibold capitalize">{`Goes with ${label}`}</legend>
@@ -55,6 +56,18 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
               ))}
             </select>
             {link.mode !== 'any' && (
+              <select
+                aria-label={`How firmly, ${label}`}
+                className="ml-2 h-8 rounded-md border border-input bg-background px-2 text-xs"
+                value={link.strength}
+                onChange={(e) => onChange(target, { ...link, strength: e.target.value as LinkStrength })}
+              >
+                {LINK_STRENGTHS.map((st) => (
+                  <option key={st} value={st}>{STRENGTH_LABEL[st]}</option>
+                ))}
+              </select>
+            )}
+            {link.mode !== 'any' && (
               <div className="flex max-h-40 flex-wrap gap-3 overflow-y-auto">
                 {(all ?? []).map((o) => (
                   <Label key={String(o.value)} className="flex items-center gap-1.5 text-xs font-normal cursor-pointer">
@@ -63,6 +76,7 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
                       onCheckedChange={() =>
                         onChange(target, {
                           mode: link.mode,
+                          strength: link.strength,
                           values: link.values.includes(o.value) ? link.values.filter((v) => v !== o.value) : [...link.values, o.value],
                         })
                       }

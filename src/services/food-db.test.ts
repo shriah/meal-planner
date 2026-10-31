@@ -342,6 +342,19 @@ describe('setCategoryPairings', () => {
     expect(await getOwnedRule(sambar, 'with:base_category')).toBeUndefined();
   });
 
+  it('keeps the strength of a dish\'s pairing when the base side changes it', async () => {
+    const rice = await addCategory({ kind: 'base', name: 'Rice' });
+    await addCategory({ kind: 'base', name: 'Bread' });
+    await addCategory({ kind: 'base', name: 'Other' });
+    const sambar = await dish('Sambar');
+    await saveComponent(sambar, { name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
+      'with:base_category': (c) => pairingRule(c, [rice], 'usually'),
+    });
+    const bread = (await getCategoriesByKind('base')).find((c) => c.name === 'Bread')!.id;
+    await setCategoryPairings(bread, [sambar]);
+    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toMatchObject({ values: expect.arrayContaining([rice, bread]), strength: 'usually' });
+  });
+
   it('refuses to leave a dish with no base, and ignores bases and extras', async () => {
     const rice = await addCategory({ kind: 'base', name: 'Rice' });
     const sambar = await dish('Sambar');

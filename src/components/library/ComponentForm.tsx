@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
 import { getAllComponents, getOwnedRules, saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, dishTypeOf, LINK_TARGETS, noLinks, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type Link, type LinkTarget, type Links, type RuleRecord } from '@/rules'
+import { dayModeOf, daysOfMode, dishTypeOf, LINK_TARGETS, noLinks, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type Link, type LinkEdit, type LinkTarget, type Links, type RuleRecord } from '@/rules'
 import { LinksEditor } from './LinksEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
@@ -260,7 +260,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       // With nothing chosen, a dish goes with any base, any curry and any day.
       // Only the links the user changed are written. "Only with" every category is the same as no rule.
       const sizes = Object.fromEntries(LINK_TARGETS.map((t) => [t, linkOptionCount(t)])) as Record<LinkTarget, number>
-      const changedLinks: Partial<Links> = {}
+      const changedLinks: Partial<Record<LinkTarget, LinkEdit>> = {}
       for (const target of LINK_TARGETS) {
         const link = form.links[target]
         if (!link) continue

@@ -493,6 +493,25 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
+  it('saves how firmly a link holds', async () => {
+    await addCategory({ kind: 'extra', name: 'Crunchy' });
+
+    render(<ComponentForm componentType="extra" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Goes with curry types' }), 'never');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'How firmly, curry types' }), 'sometimes');
+    await userEvent.click(screen.getByRole('checkbox', { name: 'soup' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Papad');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Extra' }));
+
+    await waitFor(async () => {
+      const [papad] = await getComponentsByType('extra');
+      const rule = await getOwnedRule(papad.id, 'never:curry_category');
+      expect(rule && readLink(rule)).toMatchObject({ values: ['soup'], strength: 'sometimes' });
+      expect(rule?.spec.params).toMatchObject({ strength: 'prefer', cost: 3 });
+    });
+  });
+
   it('saves the curry types an extra never goes with as a rule it owns', async () => {
     await addCategory({ kind: 'extra', name: 'Crunchy' });
 
