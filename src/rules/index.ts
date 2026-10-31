@@ -9,7 +9,7 @@ export { LEVELS, nearestLevel, type Level } from './levels';
 export { describeMatcher, describeScope, type Names } from './describe';
 export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
-  pairingRule, pairingCategories, curryClashRule, clashCurryCategories, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
+  pairingRule, pairingCategories, pairedCategories, curryClashRule, clashCurryCategories, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
   readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays, describeMeals,
   type OwnedRule, type OwnedTemplate, type OwnedRuleChanges, type OwnedValues, type DayMode,
 } from './owned';

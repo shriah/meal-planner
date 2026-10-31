@@ -39,6 +39,15 @@ export function pairingCategories(rule: Pick<RuleRecord, 'spec'>): number[] | un
   return rule.spec.template === 'pairs_with' ? [...(rule.spec.params.baseCategories ?? [])] : undefined;
 }
 
+/**
+ * The base categories a curry or subzi goes with, given its pairing rule (if any) and every base category id.
+ * No rule means any base. The result is what the base-category side ticks.
+ */
+export function pairedCategories(rule: Pick<RuleRecord, 'spec'> | undefined, allCategoryIds: readonly number[]): number[] {
+  const own = rule ? pairingCategories(rule) : undefined;
+  return own && own.length > 0 ? own.filter((id) => allCategoryIds.includes(id)) : [...allCategoryIds];
+}
+
 export function curryClashRule(component: { id: number; name: string }, curryCategories: readonly CurryCategory[]): OwnedRule {
   return {
     name: ownedRuleName('avoid_with', component.name),
@@ -120,9 +129,12 @@ export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValu
   };
 }
 
-/** The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered. */
-export function ownedChanges(componentType: ComponentType, values: OwnedValues): OwnedRuleChanges {
-  const { bases, clashes, days, meals, neverAuto } = values;
+/**
+ * The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered.
+ * A curry's or subzi's base pairing is not edited on its form: it is set from the base category (`pairedCategories`).
+ */
+export function ownedChanges(componentType: ComponentType, values: Omit<OwnedValues, 'bases'>): OwnedRuleChanges {
+  const { clashes, days, meals, neverAuto } = values;
   const changes: OwnedRuleChanges = {
     allowed_days: days.length ? (c) => dayRule(c, days) : null,
     exclude: neverAuto ? (c) => exclusionRule(c) : null,
@@ -130,7 +142,6 @@ export function ownedChanges(componentType: ComponentType, values: OwnedValues):
   // Any dish may own a meals rule, but only bases are offered the setting. For the others a stored one is left
   // alone. Allowing every meal is the same as no rule.
   if (componentType === 'base') changes.allowed_meals = meals.length > 0 && meals.length < MEALS.length ? (c) => mealRule(c, meals) : null;
-  if (componentType === 'curry' || componentType === 'subzi') changes.pairs_with = bases.length ? (c) => pairingRule(c, bases) : null;
   if (componentType === 'extra') changes.avoid_with = clashes.length ? (c) => curryClashRule(c, clashes) : null;
   return changes;
 }

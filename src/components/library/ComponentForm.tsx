@@ -3,8 +3,8 @@
 import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
-import { getOwnedRules, saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, ownedChanges, readOwned, type DayMode, type RuleRecord } from '@/rules'
+import { getAllComponents, getOwnedRules, saveComponent } from '@/services/food-db'
+import { dayModeOf, daysOfMode, ownedChanges, pairedCategories, pairingCategories, readOwned, type DayMode, type RuleRecord } from '@/rules'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
 import { Input } from '@/components/ui/input'
@@ -77,7 +77,6 @@ interface FormState {
   name: string
   base_category_id: string
   extra_category_id: string
-  compatible_base_category_ids: number[]
   /** 'none' when the curry has no type. */
   curry_category: CurryCategory | 'none'
   /** Curry types an extra never goes with. */
@@ -108,7 +107,6 @@ function initialFormState(
       name: component.name,
       base_category_id: componentType === 'base' ? String(component.base_category_id ?? '') : '',
       extra_category_id: componentType === 'extra' ? String(component.extra_category_id ?? '') : '',
-      compatible_base_category_ids: owned.bases,
       curry_category: component.curry_category ?? 'none',
       clash_curry_categories: owned.clashes,
       dietary_tags: component.dietary_tags,
@@ -126,7 +124,6 @@ function initialFormState(
     name: draft?.name ?? '',
     base_category_id: componentType === 'base' ? String(draft?.base_category_id ?? '') : '',
     extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
-    compatible_base_category_ids: [],
     curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
     clash_curry_categories: [],
     dietary_tags: draft?.dietary_tags ?? [],
@@ -169,10 +166,6 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
   return categories?.find((category) => String(category.id) === id)
 }
 
-function showsCompatibleBaseChecklist(componentType: ComponentType) {
-  return componentType === 'curry' || componentType === 'subzi'
-}
-
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode, draft }: ComponentFormProps) {
   const [form, setForm] = useState<FormState>(() =>
     initialFormState(component, componentType, [], mode === 'add' ? draft : undefined),
@@ -180,12 +173,32 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const [saving, setSaving] = useState(false)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
-  // Compatible bases (curry, subzi), clashing curry types (extra) and specific days are stored as
-  // rules the component owns.
+  // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
   const owned = useLiveQuery(
     () => (component?.id !== undefined ? getOwnedRules(component.id) : []),
     [component?.id],
   )
+  // A base's category decides which curries and subzis it is "base to"; those pairings are owned by the dishes.
+  const pairedDishes = useLiveQuery(async () => {
+    const [dishes, rules] = await Promise.all([
+      getAllComponents(),
+      getOwnedRules(),
+    ])
+    return { dishes, rules }
+  }, [], undefined)
+  const pairingRule = owned?.find((r) => r.spec.template === 'pairs_with')
+  const pairedBaseNames = baseCategories
+    ? pairedCategories(pairingRule, baseCategories.map((c) => c.id)).map((id) => baseCategories.find((c) => c.id === id)?.name ?? '')
+    : undefined
+  const pairingRuleId = pairingRule && pairingCategories(pairingRule)?.length ? pairingRule.id : undefined
+  const baseGoesWith =
+    componentType === 'base' && pairedDishes && baseCategories && component?.base_category_id != null
+      ? pairedDishes.dishes.filter((d) => {
+          if (d.componentType !== 'curry' && d.componentType !== 'subzi') return false
+          const rule = pairedDishes.rules.find((r) => r.owner_component_id === d.id && r.spec.template === 'pairs_with')
+          return pairedCategories(rule, baseCategories.map((c) => c.id)).includes(component.base_category_id as number)
+        })
+      : []
   // Re-sync the form when the edited record changes underneath it (e.g. live query update).
   // Adjusting state during render avoids the extra render pass an effect would cause.
   const sourceFormState = initialFormState(component, componentType, owned)
@@ -238,7 +251,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       // With nothing chosen, a dish goes with any base, any curry and any day.
       const changes = ownedChanges(componentType, {
-        bases: form.compatible_base_category_ids,
         clashes: form.clash_curry_categories,
         days: daysOfMode(form.day_mode, form.days),
         meals: form.meals,
@@ -457,36 +469,40 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         </fieldset>
       )}
 
-      {/* Compatible base categories (Curry and Subzi) */}
-      {showsCompatibleBaseChecklist(componentType) && (
-        <fieldset className="space-y-2">
-          <legend className="text-xs font-semibold">Compatible Base Categories</legend>
-          <div className="flex flex-wrap gap-3">
-            {(baseCategories ?? []).map((category) => (
-              <label key={category.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <Checkbox
-                  checked={form.compatible_base_category_ids.includes(category.id)}
-                  onCheckedChange={() =>
-                    setForm(s => ({
-                      ...s,
-                      compatible_base_category_ids: toggleArrayValue(
-                        s.compatible_base_category_ids,
-                        category.id,
-                      ),
-                    }))
-                  }
-                />
-                {category.name}
-              </label>
+      {/* Which bases a curry or subzi goes with is set from the base category; shown here, not edited. */}
+      {component?.id !== undefined && (componentType === 'curry' || componentType === 'subzi') && (
+        <div className="space-y-1">
+          <Label className="text-xs font-semibold">Goes with bases</Label>
+          <p className="text-xs text-muted-foreground">
+            {pairedBaseNames === undefined
+              ? 'Loading...'
+              : pairedBaseNames.length === 0
+                ? 'Any base.'
+                : pairedBaseNames.join(', ')}
+            {pairingRuleId !== undefined && (
+              <>
+                {' '}
+                <a className="underline" href={`/rules#rule-${pairingRuleId}`}>View rule</a>
+              </>
+            )}
+          </p>
+          <p className="text-xs text-muted-foreground">Change this under Manage Categories, on the base category.</p>
+        </div>
+      )}
+
+      {/* Base to: the curries and subzis that go with this base's category */}
+      {componentType === 'base' && baseGoesWith.length > 0 && (
+        <div className="space-y-1">
+          <Label className="text-xs font-semibold">Base to</Label>
+          <p className="text-xs text-muted-foreground">
+            {baseGoesWith.map((d, i) => (
+              <span key={d.id}>
+                {i > 0 && ', '}
+                <a className="underline" href={`/library#dish-${d.id}`}>{d.name}</a>
+              </span>
             ))}
-          </div>
-          {baseCategories === undefined && (
-            <p className="text-xs text-muted-foreground">Loading compatible base categories...</p>
-          )}
-          {form.compatible_base_category_ids.length === 0 && (
-            <p className="text-xs text-muted-foreground">None selected: goes with any base.</p>
-          )}
-        </fieldset>
+          </p>
+        </div>
       )}
 
       {/* Days and automatic planning, stored as rules the dish owns */}

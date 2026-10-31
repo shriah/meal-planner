@@ -22,6 +22,7 @@ import {
   getRules,
   restoreDefaultRules,
   saveComponent,
+  setCategoryPairings,
   updateComponent,
   updateRule,
 } from '@/services/food-db';
@@ -282,5 +283,43 @@ describe('Phase 14 category services', () => {
 
     expect(await restoreDefaultRules()).toBe(0);
     expect(await getRules()).toHaveLength(before + 2);
+  });
+});
+
+describe('setCategoryPairings', () => {
+  const dish = (name: string, componentType: 'curry' | 'subzi' = 'curry') =>
+    saveComponent(undefined, { name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() });
+  const bases = async (id: number) => {
+    const rule = await getOwnedRule(id, 'pairs_with');
+    return rule && pairingCategories(rule);
+  };
+
+  it('starts a dish that goes with any base as going with every other base, so ticking is exclusive', async () => {
+    const rice = await addCategory({ kind: 'base', name: 'Rice' });
+    const bread = await addCategory({ kind: 'base', name: 'Bread' });
+    const sambar = await dish('Sambar');
+    const dal = await dish('Dal');
+
+    // Only Sambar goes with Rice: Dal stops going with it.
+    await setCategoryPairings(rice, [sambar]);
+    expect(await bases(sambar)).toBeUndefined();
+    expect(await bases(dal)).toEqual([bread]);
+  });
+
+  it('adds and removes one base, and drops the rule when the dish goes with every base again', async () => {
+    const rice = await addCategory({ kind: 'base', name: 'Rice' });
+    const bread = await addCategory({ kind: 'base', name: 'Bread' });
+    const sambar = await dish('Sambar');
+    await setCategoryPairings(rice, []);
+    expect(await bases(sambar)).toEqual([bread]);
+    await setCategoryPairings(rice, [sambar]);
+    expect(await getOwnedRule(sambar, 'pairs_with')).toBeUndefined();
+  });
+
+  it('refuses to leave a dish with no base, and ignores bases and extras', async () => {
+    const rice = await addCategory({ kind: 'base', name: 'Rice' });
+    const sambar = await dish('Sambar');
+    await expect(setCategoryPairings(rice, [])).rejects.toThrow(/at least one base/);
+    expect(await getOwnedRule(sambar, 'pairs_with')).toBeUndefined();
   });
 });

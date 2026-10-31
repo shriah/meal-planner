@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, ownedRuleName, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, ownedRuleName, pairedCategories, pairingRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -78,6 +78,33 @@ export async function saveComponent(
       else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
     }
     return componentId;
+  });
+}
+
+/**
+ * Make `dishIds` (curries and subzis) the dishes that go with base category `categoryId`; every other curry and
+ * subzi stops going with it. The pairing stays a rule each dish owns, so the planner is unchanged. A dish that
+ * would then go with every base loses its rule; one that would go with no base is refused.
+ */
+export async function setCategoryPairings(categoryId: number, dishIds: readonly number[]): Promise<void> {
+  await db.transaction('rw', db.components, db.rules, db.categories, async () => {
+    const all = (await db.categories.where('kind').equals('base').toArray()).map((c) => c.id);
+    const dishes = (await db.components.toArray()).filter((c) => c.componentType === 'curry' || c.componentType === 'subzi');
+    const owned = await getOwnedRules();
+    for (const dish of dishes) {
+      const current = owned.find((r) => r.owner_component_id === dish.id && r.spec.template === 'pairs_with');
+      const has = pairedCategories(current, all);
+      const next = dishIds.includes(dish.id) ? [...new Set([...has, categoryId])] : has.filter((id) => id !== categoryId);
+      if (next.length === has.length && next.every((id) => has.includes(id))) continue;
+      if (next.length === 0) throw new Error(`${dish.name} must go with at least one base`);
+      if (next.length === all.length) {
+        if (current) await db.rules.delete(current.id);
+        continue;
+      }
+      const rule = pairingRule(dish, next);
+      if (current) await db.rules.update(current.id, rule);
+      else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
+    }
   });
 }
 

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { toast } from 'sonner';
 import { Alert } from '@/components/ui/alert';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
@@ -21,6 +22,8 @@ import {
   getCategoriesByKind,
   renameCategory,
 } from '@/services/category-db';
+import { getAllComponents, getOwnedRules, setCategoryPairings } from '@/services/food-db';
+import { pairedCategories } from '@/rules';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
 
 type DraftState = {
@@ -83,15 +86,25 @@ export function CategoryManager() {
   const [renameState, setRenameState] = useState<RenameState | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pairingId, setPairingId] = useState<number | null>(null);
 
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined);
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined);
+  // Curries and subzis, and the pairing rules they own, for the "Goes with" lists on base categories.
+  const pairingData = useLiveQuery(async () => {
+    const [components, rules] = await Promise.all([getAllComponents(), getOwnedRules()]);
+    return {
+      dishes: components.filter((c) => c.componentType === 'curry' || c.componentType === 'subzi'),
+      rules,
+    };
+  }, [], undefined);
   const activeCategories = activeKind === 'base' ? baseCategories : extraCategories;
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) {
       setActiveKind('base');
+      setPairingId(null);
       setDraft(null);
       setRenameState(null);
       setDeleteId(null);
@@ -151,6 +164,57 @@ export function CategoryManager() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleTogglePairing(category: CategoryRecord, dishId: number, on: boolean) {
+    if (!pairingData || saving) return;
+    const allIds = (baseCategories ?? []).map((c) => c.id);
+    const current = pairingData.dishes
+      .filter((d) => pairedCategories(pairingData.rules.find((r) => r.owner_component_id === d.id && r.spec.template === 'pairs_with'), allIds).includes(category.id))
+      .map((d) => d.id);
+    const next = on ? [...current, dishId] : current.filter((id) => id !== dishId);
+    setSaving(true);
+    try {
+      await setCategoryPairings(category.id, next);
+      toast.success(`${category.name} saved`);
+    } catch {
+      toast.error('Could not save pairings. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function renderPairings(category: CategoryRecord) {
+    if (!pairingData) return <p className="text-xs text-muted-foreground">Loading dishes...</p>;
+    const allIds = (baseCategories ?? []).map((c) => c.id);
+    if (pairingData.dishes.length === 0) return <p className="text-xs text-muted-foreground">No curries or subzis yet.</p>;
+    const goesWith = (id: number) =>
+      pairedCategories(pairingData.rules.find((r) => r.owner_component_id === id && r.spec.template === 'pairs_with'), allIds).includes(category.id);
+    const onlyBase = (id: number) =>
+      pairedCategories(pairingData.rules.find((r) => r.owner_component_id === id && r.spec.template === 'pairs_with'), allIds).length === 1;
+    return (
+      <fieldset className="space-y-2 rounded-md border border-border px-3 py-3">
+        <legend className="px-1 text-xs font-semibold">{`Goes with ${category.name}`}</legend>
+        <div className="flex flex-wrap gap-3">
+          {pairingData.dishes.map((dish) => {
+            const checked = goesWith(dish.id);
+            return (
+              <label key={dish.id} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <Checkbox
+                  checked={checked}
+                  disabled={saving || (checked && onlyBase(dish.id))}
+                  onCheckedChange={(value) => void handleTogglePairing(category, dish.id, value === true)}
+                />
+                {dish.name}
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Unticked dishes are never planned with this category. A dish needs at least one base.
+        </p>
+      </fieldset>
+    );
   }
 
   function renderCategoryRow(category: CategoryRecord) {
@@ -213,6 +277,17 @@ export function CategoryManager() {
               </>
             ) : (
               <>
+                {category.kind === 'base' && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    aria-expanded={pairingId === category.id}
+                    onClick={() => setPairingId((current) => current === category.id ? null : category.id)}
+                  >
+                    Goes With
+                  </Button>
+                )}
                 <Button
                   type="button"
                   size="sm"
@@ -245,6 +320,7 @@ export function CategoryManager() {
             )}
           </div>
         </div>
+        {category.kind === 'base' && pairingId === category.id && renderPairings(category)}
         {isDeleting && (
           <Alert variant="destructive" className="flex items-center justify-between gap-2">
             <span className="text-xs">

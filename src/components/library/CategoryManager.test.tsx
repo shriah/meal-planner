@@ -151,4 +151,31 @@ describe('CategoryManager', () => {
     expect(screen.getByText('No categories yet')).toBeInTheDocument();
     expect(screen.getByText('Add a category to make it available in components, rules, and generator matching.')).toBeInTheDocument();
   });
+
+  it('sets which curries and subzis go with a base category, as their own pairing rules', async () => {
+    await seedCategories();
+    const rice = (await getCategoriesByKind('base'))[0];
+    const bread = (await getCategoriesByKind('base'))[1];
+    const sambar = (await db.components.add({
+      name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString(),
+    })) as number;
+
+    render(
+      <>
+        <ComponentLibrary />
+        <Toaster />
+      </>,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Manage Categories' }));
+    const sheet = await screen.findByRole('dialog');
+    await userEvent.click((await within(sheet).findAllByRole('button', { name: 'Goes With' }))[0]);
+    await userEvent.click(await within(sheet).findByRole('checkbox', { name: 'Sambar' }));
+
+    await waitFor(async () => {
+      const rule = (await db.rules.where('owner_component_id').equals(sambar).toArray()).find((r) => r.spec.template === 'pairs_with');
+      expect(rule && 'baseCategories' in rule.spec.params && rule.spec.params.baseCategories).toEqual([bread.id]);
+    });
+    expect(rice.id).not.toBe(bread.id);
+    expect(await screen.findByText(`${rice.name} saved`)).toBeInTheDocument();
+  });
 });
