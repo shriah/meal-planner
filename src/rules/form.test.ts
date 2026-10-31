@@ -39,6 +39,15 @@ describe('rule forms', () => {
     expect(r).toEqual({ ok: true, name: 'No fish', spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } } });
   });
 
+  it('edits a pairing\'s days and meals, and keeps them through the form', () => {
+    const keys = TEMPLATE_FORMS.pairs_with.fields.map((f) => f.key);
+    expect(keys).toContain('scope');
+    expect(keys.indexOf('scope')).toBe(keys.indexOf('strength') - 1);
+    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
+    const r = validateDraft({ name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
+    expect(r).toEqual({ ok: true, name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
+  });
+
   it('previews which components a condition matches', () => {
     const lib = [
       { id: 1, name: 'Fish Curry', componentType: 'curry', protein_tag: 'fish', dietary_tags: ['non-veg'], regional_tags: [], occasion_tags: [] },

@@ -117,7 +117,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'match', kind: 'match', label: 'Dishes' },
       { key: 'baseCategories', kind: 'baseCategories', label: 'Only with a base from' },
-      strength, cost,
+      scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, baseCategories: [], strength: 'must' }),
   },

@@ -79,9 +79,16 @@ describe('ownedChanges', () => {
 
   it('offers every dish type links to the other kinds of category, but a base none to base categories', () => {
     const all = [link('never', 'base_category', [1]), link('never', 'extra_category', [2]), link('never', 'curry_category', ['soup'])];
-    expect(Object.keys(ownedChanges('base', { ...NONE, links: all })).filter((k) => !k.endsWith('_dish')).sort()).toEqual(
-      ['allowed_days', 'allowed_meals', 'exclude', 'never:curry_category', 'never:extra_category', 'with:curry_category', 'with:extra_category'],
-    );
+    const base = ownedChanges('base', { ...NONE, links: all });
+    expect(Object.keys(base).sort()).toEqual([
+      'allowed_days', 'allowed_meals', 'exclude',
+      'never:curry_category', 'never:curry_dish', 'never:extra_category', 'never:extra_dish', 'never:subzi_dish',
+      'with:curry_category', 'with:curry_dish', 'with:extra_category', 'with:extra_dish', 'with:subzi_dish',
+    ]);
+    expect(base['with:curry_dish']).toBeNull();
+    expect(base).not.toHaveProperty('with:base_dish');
+    expect(base).not.toHaveProperty('never:base_dish');
+    expect(base).not.toHaveProperty('never:base_category');
     expect(ownedChanges('extra', { ...NONE, links: all })['never:base_category']).toBeTypeOf('function');
   });
 });
