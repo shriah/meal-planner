@@ -1,13 +1,12 @@
 'use client'
 
 import { useState } from 'react'
-import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
-import { getAllComponents, getOwnedRules, saveComponent } from '@/services/food-db'
+import { saveComponent } from '@/services/food-db'
 import { dayModeOf, daysOfMode, dishTypeOf, LINK_SLOTS, linkSlotOf, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type LinkTarget, type RuleRecord } from '@/rules'
 import { LinksEditor } from './LinksEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { getCategoriesByKind } from '@/services/category-db'
+import { useLibraryLookup } from './LibraryLookup'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -177,36 +176,27 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     initialFormState(component, componentType, [], mode === 'add' ? draft : undefined),
   )
   const [saving, setSaving] = useState(false)
-  const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
-  const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
+  const lookup = useLibraryLookup()
+  const baseCategories = lookup.loaded ? lookup.baseCategories : undefined
+  const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
   // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
-  const owned = useLiveQuery(
-    () => (component?.id !== undefined ? getOwnedRules(component.id) : []),
-    [component?.id],
-  )
+  const owned = lookup.rules.filter((r) => r.owner_component_id === component?.id)
   // A base's category decides which curries and subzis it is "base to"; those pairings are owned by the dishes.
-  const pairedDishes = useLiveQuery(async () => {
-    const [dishes, rules] = await Promise.all([
-      getAllComponents(),
-      getOwnedRules(),
-    ])
-    return { dishes, rules }
-  }, [], undefined)
-  const allDishes = pairedDishes?.dishes
+  const allDishes = lookup.loaded ? lookup.dishes : undefined
   // How many choices a link target has, for "only with every one of them" meaning no rule.
   const linkOptionCount = (target: LinkTarget) =>
     target === 'base_category' ? (baseCategories ?? []).length
       : target === 'extra_category' ? (extraCategories ?? []).length
       : target === 'curry_category' ? CURRY_CATEGORIES.length
       : (allDishes ?? []).filter((d) => d.componentType === dishTypeOf(target) && d.id !== component?.id).length
-  const storedLinks = readOwned(owned ?? []).links
+  const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
-  const linkRuleIds = (owned ?? []).filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
+  const linkRuleIds = owned.filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
   const baseGoesWith =
-    componentType === 'base' && pairedDishes && baseCategories && component?.base_category_id != null
-      ? pairedDishes.dishes.filter((d) => {
+    componentType === 'base' && allDishes && baseCategories && component?.base_category_id != null
+      ? allDishes.filter((d) => {
           if (d.componentType !== 'curry' && d.componentType !== 'subzi') return false
-          const rule = pairedDishes.rules.find((r) => r.owner_component_id === d.id && r.spec.template === 'pairs_with')
+          const rule = lookup.rules.find((r) => r.owner_component_id === d.id && r.spec.template === 'pairs_with')
           return pairedCategories(rule, baseCategories.map((c) => c.id)).includes(component.base_category_id as number)
         })
       : []

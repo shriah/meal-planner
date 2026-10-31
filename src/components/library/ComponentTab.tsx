@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { ComponentRow } from './ComponentRow'
 import { ComponentForm } from './ComponentForm'
+import { LibraryLookupProvider } from './LibraryLookup'
 import type { ComponentType, DietaryTag, RegionalTag } from '@/types/component'
 
 /** Dishes shown per page. */
@@ -106,6 +107,7 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
   const noResults = !isEmpty && filtered.length === 0
 
   return (
+    <LibraryLookupProvider>
     <div className="mt-4 space-y-3">
       {/* Search input */}
       <Input
@@ -215,5 +217,6 @@ export function ComponentTab({ type, label, focusId }: ComponentTabProps) {
         </Button>
       </div>
     </div>
+    </LibraryLookupProvider>
   )
 }

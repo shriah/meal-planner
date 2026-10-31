@@ -3,12 +3,14 @@
 import '@testing-library/jest-dom/vitest';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { dayRule, exclusionRule, pairingRule } from '@/rules';
+import { dayRule, exclusionRule, linkRule, pairingRule } from '@/rules';
+import * as foodDb from '@/services/food-db';
 import { saveComponent } from '@/services/food-db';
 import { ComponentRow } from './ComponentRow';
+import { ComponentTab } from './ComponentTab';
 
 /** Compatible bases are stored as a pairing rule the curry owns. */
 const addPairing = (id: number, name: string, baseCategories: number[]) =>
@@ -236,5 +238,26 @@ describe('ComponentRow curry compatibility summary', () => {
 
     rerender(<ComponentRow component={{ ...base, frequency: 'normal' }} {...handlers} />);
     await waitFor(() => expect(screen.queryByText(label)).not.toBeInTheDocument());
+  });
+});
+
+describe('ComponentTab library lookup', () => {
+  it('renders 25 rows from one lookup', async () => {
+    const dish = (name: string, componentType: 'base' | 'curry') =>
+      ({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' });
+    const idliId = (await db.components.add(dish('Idli', 'base'))) as number;
+    for (let i = 1; i <= 30; i++) {
+      const id = (await db.components.add(dish(`Curry ${String(i).padStart(2, '0')}`, 'curry'))) as number;
+      if (i === 1) {
+        await db.rules.add({ ...linkRule({ id, name: `Curry 01` }, { mode: 'with', target: 'base_dish', values: [idliId] }), enabled: true, created_at: '' });
+      }
+    }
+    const spy = vi.spyOn(foodDb, 'getAllComponents');
+    render(<ComponentTab type="curry" label="Curries" />);
+
+    expect(await screen.findByText('Only with Idli')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Delete Curry/ })).toHaveLength(25);
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
   });
 });
