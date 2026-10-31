@@ -10,7 +10,7 @@ import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
-export const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' }
+const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' }
 const MODE_LABEL = { with: 'Only with', never: 'Never with' } as const
 const MODES = ['with', 'never'] as const
 

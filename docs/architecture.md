@@ -87,18 +87,35 @@ Rules that are invalid or refer to deleted components or categories are skipped 
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
-component's form and listed under "Dish settings" on the Rules page. Any dish can own **goes with / never with** links to
-the categories of another kind of dish (base categories, extra categories, curry types) or to specific dishes (bases, curries, subzis, extras; a dish
-is never offered its own kind where a meal holds only one, and a base is not offered base categories or bases). "Only with" limits the dish to the chosen categories, "never with" keeps it away from them; none
-chosen is no rule. A link also has a strength: **always** (a hard rule), **usually** or **sometimes** (a `prefer`
-rule with a soft cost of 10 or 3) that the planner may give up when it has to. A goes-with link to base categories is an `only with these bases` (`pairs_with`) rule, every other
-link a `never together` (`avoid_with`) rule whose other side is the dish type plus the (negated) categories. They are
-edited under "Goes with" on the dish's form; base pairings can also be set from the base category (Manage
-Categories → Goes With), and a base's form lists "Base to" its curries and subzis. A dish's specific days
+component's form and listed under "Dish settings" on the Rules page. Any dish can own a list of **goes with / never with**
+links (`DishLink` in `src/rules/owned.ts`). A link has a mode, a target, values, a strength and an optional scope. The target is
+the categories of another kind of dish (base categories, extra categories, curry types) or specific dishes (bases, curries,
+subzis, extras); a dish is never offered its own kind where a meal holds only one, and a base is not offered base categories or
+bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
+of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`).
+
+Strength is **always** (`must`) or **usually**, **moderately**, **sometimes** (`prefer` with cost 10, 6 or 3). A stored cost reads
+back as usually at 8 or more, moderately at 5 to 7 and sometimes at 4 or less ("Often" in the UI for moderately), so older
+links keep their meaning. A scope limits a link to some days or meals. Storage is unchanged: "only with base categories" is a
+`pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other link an `avoid_with` rule whose other
+side is the dish type plus the (negated) categories.
+
+On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
+`src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
+option picker and optional day and meal limits. Links left untouched are never rewritten on save. `link-warnings.ts` shows
+non-blocking warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
+day limits. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
+a "Preview on this week" button that compares the current plan with and without the unsaved links
+(`compareRuleSets` and `pendingRules` in `src/services/compare-rules.ts`; it needs a stored plan). Rows and forms share one
+library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
+own queries).
+
+Base pairings can also be set from the base category (Manage Categories → Goes With), which keeps the link's strength and
+scope, and a base's form lists "Base to" its curries and subzis. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
-`festive`). Owned rules are renamed and deleted with their component and lose a deleted base category
-instead of being skipped; a link left with no category is removed. With nothing chosen, a dish
+`festive`). Owned rules are renamed and deleted with their component and lose a deleted value
+instead of being skipped, keeping the link's scope and strength; a link left with no value is removed. With nothing chosen, a dish
 goes with any base, any curry and any day (it owns no rule). The meal picker marks a choice as an override
 when scoring the current plan with it adds a hard violation, so every rule counts there, not only
 pairings.
@@ -143,7 +160,7 @@ Gemini directly with the user's own key; there is no server route.
 - `retrieve.ts`: step 1, a local no-LLM slice of the library and rules relevant to the message.
 - `prompt.ts`: constant system prompt, the `<data>` wrapper for untrusted text, and a cheap off-topic shortcut.
 - `tools.ts` / `types.ts`: the closed tool set (declarations plus a never-throwing, Zod-validated dispatcher) and shared shapes.
-- `compare.ts`: before-and-after sample week via the planning service.
+- `compare.ts`: the assistant's before-and-after sample week; a thin wrapper over `compareRuleSets` in `src/services/compare-rules.ts`, which the dish form's link preview also uses.
 - `agent.ts`: the loop that ties these together and emits text, draft and comparison events.
 - `src/components/assistant`: `AssistantPanel`, `KeyPrompt`, `ComparisonView`, `DraftSheets`. Supporting
   pieces: `src/services/pins.ts` (locks to pins), `explainPlan` in `plan-generation.ts`, and a `draft` prop on `ComponentForm`.
