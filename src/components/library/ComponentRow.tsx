@@ -11,9 +11,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
-import { describeDays, describeMeals, isDishTarget, linkSlotOf, readOwned } from '@/rules'
+import { describeDays, describeMeals, linkSlotOf, readOwned, shortLink } from '@/rules'
 import { ComponentForm } from './ComponentForm'
-import { useLibraryLookup } from './LibraryLookup'
+import { linkNames, useLibraryLookup } from './LibraryLookup'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
 
@@ -44,23 +44,12 @@ export function ComponentRow({
   const isCurry = component.componentType === 'curry'
   // Compatible bases (curry, subzi), clashing curry types (extra) and specific days live in rules the
   // component owns; without them it goes with anything, on any day.
-  const dishNames = useMemo(() => new Map(lookup.dishes.map((d) => [d.id, d.name])), [lookup.dishes])
   const ownedRules = useMemo(() => lookup.rules.filter((r) => r.owner_component_id === component.id), [lookup.rules, component.id])
   const owned = readOwned(ownedRules)
-  // One badge per link: bare base names for a goes-with link to base categories (the usual pairing), else "Only with" / "Not with".
-  const linkBadges = owned.links.flatMap((link) => {
-    const { mode, target, values, strength } = link
-    if (values.length === 0) return []
-    const names = values.map((v) =>
-      target === 'base_category' ? getBaseCategoryLabel(baseCategoriesById, Number(v))
-        : target === 'extra_category' ? getExtraCategoryLabel(extraCategoriesById, Number(v))
-        : isDishTarget(target) ? (dishNames.get(Number(v)) ?? 'Deleted dish')
-        : String(v))
-    const soft = { always: '', usually: 'Usually ', moderately: 'Moderately ', sometimes: 'Sometimes ' }[strength]
-    const prefix = mode === 'never' ? 'not with ' : target === 'base_category' && !soft ? '' : 'only with '
-    const text = soft ? soft + prefix + names.join(', ') : (prefix ? prefix.charAt(0).toUpperCase() + prefix.slice(1) : '') + names.join(', ')
-    return [{ key: linkSlotOf(link), text }]
-  })
+  const names = useMemo(() => linkNames(lookup), [lookup])
+  const linkBadges = owned.links
+    .filter((link) => link.values.length > 0)
+    .map((link) => ({ key: linkSlotOf(link), text: shortLink(link, names) }))
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)
   const showsNeverAutoWarning = owned.neverAuto
