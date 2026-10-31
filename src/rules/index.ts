@@ -12,7 +12,7 @@ export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMI
 export {
   pairingRule, pairingCategories, pairedCategories, curryClashRule, clashCurryCategories, linkRule, readLink, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, LINK_TARGETS, LINK_SLOTS, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
   readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays, describeMeals,
-  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkValue, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
+  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
 } from './owned';
 export { compileRules, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export {

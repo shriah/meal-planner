@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, dishTypeOf, LINK_SLOTS, linkSlotOf, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type LinkTarget, type RuleRecord } from '@/rules'
-import { LinksEditor } from './LinksEditor'
+import { dayModeOf, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { LinkList } from './links/LinkList'
+import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { useLibraryLookup } from './LibraryLookup'
 import { Input } from '@/components/ui/input'
@@ -73,10 +74,13 @@ interface ComponentFormProps {
   draft?: Partial<ComponentRecord>
 }
 
-const sameLink = (a: DishLink, b: DishLink | undefined) =>
-  b !== undefined && a.mode === b.mode && a.target === b.target && a.strength === b.strength &&
-  a.values.length === b.values.length && a.values.every((v) => b.values.includes(v)) &&
-  JSON.stringify(a.scope ?? {}) === JSON.stringify(b.scope ?? {})
+const sameSet = <T,>(a: readonly T[] = [], b: readonly T[] = []) => a.length === b.length && a.every((v) => b.includes(v))
+
+/** Same link in meaning: order of values, days and meals does not matter, and an empty scope is no scope. */
+const sameLink = (a: DishLink | undefined, b: DishLink | undefined) =>
+  a === undefined || b === undefined ? a === b
+    : a.mode === b.mode && a.target === b.target && a.strength === b.strength && sameSet(a.values, b.values) &&
+      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals)
 
 interface FormState {
   name: string
@@ -84,8 +88,10 @@ interface FormState {
   extra_category_id: string
   /** 'none' when the curry has no type. */
   curry_category: CurryCategory | 'none'
-  /** The dish's links once the user has changed one; undefined keeps what the dish's rules say. */
-  links: DishLink[] | undefined
+  /** The dish's links once the user has changed one; null keeps what the dish's rules say and writes no link rule. */
+  links: DishLink[] | null
+  /** The stored links at the first edit; only slots that differ from them are written. */
+  linksBase: DishLink[] | null
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
   regional_tags: RegionalTag[]
@@ -113,7 +119,8 @@ function initialFormState(
       base_category_id: componentType === 'base' ? String(component.base_category_id ?? '') : '',
       extra_category_id: componentType === 'extra' ? String(component.extra_category_id ?? '') : '',
       curry_category: component.curry_category ?? 'none',
-      links: undefined,
+      links: null,
+      linksBase: null,
       dietary_tags: component.dietary_tags,
       protein_tag: component.protein_tag ?? 'none',
       regional_tags: component.regional_tags,
@@ -130,7 +137,8 @@ function initialFormState(
     base_category_id: componentType === 'base' ? String(draft?.base_category_id ?? '') : '',
     extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
     curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
-    links: undefined,
+    links: null,
+    linksBase: null,
     dietary_tags: draft?.dietary_tags ?? [],
     protein_tag: draft?.protein_tag ?? 'none',
     regional_tags: draft?.regional_tags ?? [],
@@ -183,12 +191,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const owned = lookup.rules.filter((r) => r.owner_component_id === component?.id)
   // A base's category decides which curries and subzis it is "base to"; those pairings are owned by the dishes.
   const allDishes = lookup.loaded ? lookup.dishes : undefined
-  // How many choices a link target has, for "only with every one of them" meaning no rule.
-  const linkOptionCount = (target: LinkTarget) =>
-    target === 'base_category' ? (baseCategories ?? []).length
-      : target === 'extra_category' ? (extraCategories ?? []).length
-      : target === 'curry_category' ? CURRY_CATEGORIES.length
-      : (allDishes ?? []).filter((d) => d.componentType === dishTypeOf(target) && d.id !== component?.id).length
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
   const linkRuleIds = owned.filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
@@ -218,8 +220,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
   const selectedBaseCategory = findCategory(baseCategories, baseCategoryId)
   const selectedExtraCategory = findCategory(extraCategories, extraCategoryId)
-  // "Only with" and nothing ticked would leave the dish with nowhere to go; "never planned automatically" is the way out.
-  const canSaveLinks = form.never_auto || links.every((l) => !offersLink(componentType, l.target) || l.mode !== 'with' || l.values.length > 0)
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
 
@@ -253,20 +253,24 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       }
 
       // With nothing chosen, a dish goes with any base, any curry and any day.
-      // Only the links the user changed are written. "Only with" every option and no day or meal limit is the same as no rule.
-      const stored = (slot: string) => storedLinks.find((l) => linkSlotOf(l) === slot)
-      const nextLinks = form.links?.filter((l) =>
-        sameLink(l, stored(linkSlotOf(l))) || !(l.mode === 'with' && !l.scope && l.values.length >= linkOptionCount(l.target)))
+      // "Only with" every option and no day or meal limit is the same as no rule.
+      const coversAll = (l: DishLink) => {
+        const options = linkOptions(lookup, l.target, component?.id)
+        return l.mode === 'with' && !cleanScope(l.scope) && options.length > 0 && options.every((o) => l.values.includes(o.value))
+      }
       const changes = ownedChanges(componentType, {
-        links: nextLinks,
+        links: form.links?.filter((l) => !coversAll(l)),
         days: daysOfMode(form.day_mode, form.days),
         meals: form.meals,
         neverAuto: form.never_auto,
       })
-      // A link left as it was keeps its stored rule untouched (a hand-edited cost stays as it is).
-      for (const slot of LINK_SLOTS) {
-        const link = nextLinks?.find((l) => linkSlotOf(l) === slot)
-        if (link && sameLink(link, stored(slot))) delete changes[slot]
+      // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
+      // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
+      if (form.links) {
+        const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
+        for (const slot of LINK_SLOTS) {
+          if (sameLink(slotOf(form.links, slot), slotOf(form.linksBase, slot))) delete changes[slot]
+        }
       }
       const id = mode === 'edit' ? component?.id : undefined
       await saveComponent(id, record, changes)
@@ -463,19 +467,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Goes with / never with: links to the categories of other dishes, stored as rules the dish owns */}
       <div className="space-y-2">
-        <LinksEditor
+        <LinkList
+          dishName={form.name}
           componentType={componentType}
-          links={links}
-          baseCategories={baseCategories}
-          extraCategories={extraCategories}
-          dishes={allDishes}
           selfId={component?.id}
-          onChange={(target: LinkTarget, link: DishLink | undefined) =>
-            setForm(s => ({ ...s, links: [...(s.links ?? storedLinks).filter((l) => l.target !== target), ...(link ? [link] : [])] }))}
+          links={links}
+          onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
         />
-        {!canSaveLinks && (
-          <p className="text-xs text-destructive">Pick at least one category, or tick Never plan automatically.</p>
-        )}
         {linkRuleIds.length > 0 && (
           <p className="text-xs text-muted-foreground">
             Saved as {linkRuleIds.length === 1 ? 'a rule' : 'rules'}.{' '}
@@ -564,7 +562,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-2">
-        <Button onClick={handleSave} disabled={saving || !form.name.trim() || !canSaveBase || !canSaveExtra || !canSaveLinks}>
+        <Button onClick={handleSave} disabled={saving || !form.name.trim() || !canSaveBase || !canSaveExtra}>
           Save {singularLabel}
         </Button>
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>
