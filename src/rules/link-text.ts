@@ -18,7 +18,7 @@ function valueName(link: DishLink, value: number | string, names: Names): string
 }
 
 /** ", on weekdays at breakfast", or "" when the link holds everywhere. */
-function scopeText(link: DishLink): string {
+export function scopeText(link: Pick<DishLink, 'scope'>): string {
   const parts: string[] = [];
   const days = link.scope?.days?.length ? describeDays(link.scope.days) : undefined;
   if (days) parts.push(`on ${days.replace(/^Only /, '').replace(/^(Weekdays|Weekends)$/, (w) => w.toLowerCase())}`);
@@ -29,12 +29,17 @@ function scopeText(link: DishLink): string {
   return parts.length ? `, ${parts.join(' ')}` : '';
 }
 
-/** "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast". */
-export function describeLink(dishName: string, link: DishLink, names: Names): string {
+/** "Idli or Dosa": a link's chosen values in words, a long list cut short. */
+export function listValues(link: DishLink, names: Names): string {
   const all = link.values.map((v) => valueName(link, v, names));
-  const listed = all.length > LONG_LIST
+  return all.length > LONG_LIST
     ? `${all.slice(0, 3).join(', ')} and ${all.length - 3} more`
     : all.length > 1 ? `${all.slice(0, -1).join(', ')} or ${all[all.length - 1]}` : all.join('');
+}
+
+/** "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast". */
+export function describeLink(dishName: string, link: DishLink, names: Names): string {
+  const listed = listValues(link, names);
   const what = link.mode === 'with' ? 'planned only with' : 'kept away from';
   return `${dishName} is ${STRENGTH_WORD[link.strength]} ${what} ${listed}${scopeText(link)}`;
 }

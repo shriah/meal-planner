@@ -57,6 +57,15 @@ describe('LinkList', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
   });
 
+  it('warns beside a link that cannot work', async () => {
+    const idli = await dish('Idli', 'base');
+    await db.rules.add({ name: 'Idli: never planned automatically', spec: { template: 'exclude', params: { match: { field: 'id', value: idli }, strength: 'must' } }, owner_component_id: idli, enabled: true, created_at: '' } as never);
+    render(<Harness initial={[{ mode: 'with', target: 'base_dish', values: [idli], strength: 'always' }]} />);
+    const warning = await screen.findByText('No dish in Idli can be planned, so Sambar would never be planned.');
+    expect(warning).toHaveClass('text-amber-700');
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled();
+  });
+
   it('says a dish with no links goes with anything', async () => {
     render(<Harness initial={[]} />);
     expect(await screen.findByText('Goes with anything.')).toBeInTheDocument();

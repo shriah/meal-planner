@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { describeLink, LINK_TARGETS, linkSlotOf, offersLink, type DishLink } from '@/rules'
+import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, type DishLink } from '@/rules'
 import type { ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
@@ -21,11 +21,13 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
   // The index being edited, 'new' while adding, or null.
   const [editing, setEditing] = useState<number | 'new' | null>(null)
   const names = linkNames(lookup)
-  const name = dishName.trim() || 'This dish'
-  const taken = links.map(linkSlotOf)
-  const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
   const ready = lookup.loaded
+  const name = dishName.trim() || 'This dish'
+  // Nothing is known about the library until it has loaded, so every link would look unpairable.
+  const warnings = ready ? linkWarnings({ id: selfId, name: dishName, componentType }, links, lookup, names) : []
+  const taken = links.map(linkSlotOf)
+  const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
 
   const editor = (initial?: DishLink, at?: number) => (
     <LinkEditor
@@ -60,6 +62,9 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
                   </Button>
                 </div>
               )}
+              {editing !== i && warnings.filter((w) => w.link === i).map((w) => (
+                <p key={w.message} className="text-amber-700 dark:text-amber-400">{w.message}</p>
+              ))}
             </li>
           ))}
         </ul>

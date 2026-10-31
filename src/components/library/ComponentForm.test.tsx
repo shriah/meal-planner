@@ -339,12 +339,12 @@ describe('ComponentForm dynamic category wiring', () => {
 
     render(<LiveEditForm componentId={curryId} />);
 
-    expect(await screen.findByText(/Rice-based/)).toBeInTheDocument();
+    expect(await screen.findByText(/planned only with Rice-based/)).toBeInTheDocument();
 
     await deleteCategory(riceId);
 
     await waitFor(() => {
-      expect(screen.queryByText(/Rice-based/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/planned only with Rice-based/)).not.toBeInTheDocument();
     });
     expect(screen.getByText('Goes with anything.')).toBeInTheDocument();
     expect(await pairedBases(curryId)).toBeUndefined();
@@ -384,7 +384,7 @@ describe('ComponentForm dynamic category wiring', () => {
     }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
 
     render(<LiveEditForm componentId={curryId} />);
-    expect(await screen.findByText(/Rice Plates/)).toBeInTheDocument();
+    expect(await screen.findByText(/planned only with Rice Plates/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
     await waitFor(async () => expect(await pairedBases(curryId)).toEqual([riceId]));
