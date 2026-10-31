@@ -575,7 +575,7 @@ describe('ComponentForm links', () => {
     await db.rules.add(hand({ template: 'allowed_days', params: { match: is('id', 999), days: ['Sat'] } }));
 
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const { owner_component_id: _owner, ...pairing } = pairingRule({ id: 999, name: 'Other' }, [riceId]);
+    const pairing = { ...pairingRule({ id: 999, name: 'Other' }, [riceId]), owner_component_id: undefined };
     await db.rules.add({ ...pairing, enabled: true, created_at: new Date().toISOString() } as never);
 
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
