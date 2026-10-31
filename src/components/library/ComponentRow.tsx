@@ -13,8 +13,8 @@ import {
 } from '@/components/ui/tooltip'
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
 import { getCategoriesByKind } from '@/services/category-db'
-import { getOwnedRules } from '@/services/food-db'
-import { describeDays, describeMeals, LINK_TARGETS, readOwned } from '@/rules'
+import { getAllComponents, getOwnedRules } from '@/services/food-db'
+import { describeDays, describeMeals, isDishTarget, LINK_TARGETS, readOwned } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
 import type { ComponentRecord } from '@/types/component'
@@ -40,6 +40,7 @@ export function ComponentRow({
   onCancelDelete,
   onDelete,
 }: ComponentRowProps) {
+  const allDishes = useLiveQuery(() => getAllComponents(), [], undefined)
   const baseCategories = useLiveQuery(() => getCategoriesByKind('base'), [], undefined)
   const extraCategories = useLiveQuery(() => getCategoriesByKind('extra'), [], undefined)
   const baseCategoriesById = useMemo(() => buildCategoryMap(baseCategories ?? []), [baseCategories])
@@ -47,6 +48,7 @@ export function ComponentRow({
   const isCurry = component.componentType === 'curry'
   // Compatible bases (curry, subzi), clashing curry types (extra) and specific days live in rules the
   // component owns; without them it goes with anything, on any day.
+  const dishNames = useMemo(() => new Map((allDishes ?? []).map((d) => [d.id, d.name])), [allDishes])
   const ownedRules = useLiveQuery(() => getOwnedRules(component.id), [component.id])
   const owned = readOwned(ownedRules ?? [])
   // One badge per link: bare base names for a goes-with link to base categories (the usual pairing), else "Only with" / "Not with".
@@ -56,6 +58,7 @@ export function ComponentRow({
     const names = values.map((v) =>
       target === 'base_category' ? getBaseCategoryLabel(baseCategoriesById, Number(v))
         : target === 'extra_category' ? getExtraCategoryLabel(extraCategoriesById, Number(v))
+        : isDishTarget(target) ? (dishNames.get(Number(v)) ?? 'Deleted dish')
         : String(v))
     const prefix = mode === 'never' ? 'Not with ' : target === 'base_category' ? '' : 'Only with '
     return [{ key: `${mode}:${target}`, text: prefix + names.join(', ') }]

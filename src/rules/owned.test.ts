@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
-  mealRule, noLinks, ownedSlot, linkRule, readLink, pairedCategories, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  mealRule, noLinks, offersLink, ownedSlot, linkRule, readLink, pairedCategories, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
 } from './owned';
 
 const dish = { id: 7, name: 'Sambar' };
@@ -56,6 +56,24 @@ describe('ownedChanges', () => {
       ['allowed_days', 'allowed_meals', 'exclude', 'never:curry_category', 'never:extra_category', 'with:curry_category', 'with:extra_category'],
     );
     expect(ownedChanges('extra', { ...NONE, links: all })['never:base_category']).toBeTypeOf('function');
+  });
+});
+
+describe('links to specific dishes', () => {
+  it('round-trips, listing the dish itself in "only with" without showing it back', () => {
+    const only = linkRule(dish, 'with', 'base_dish', [3, 4]);
+    expect(JSON.stringify(only.spec)).toContain('7');
+    expect(readLink(only)).toEqual({ mode: 'with', target: 'base_dish', values: [3, 4] });
+    expect(readLink(linkRule(dish, 'never', 'extra_dish', [9]))).toEqual({ mode: 'never', target: 'extra_dish', values: [9] });
+    expect(ownedSlot(linkRule(dish, 'never', 'subzi_dish', [2]))).toBe('never:subzi_dish');
+  });
+
+  it('does not offer a dish its own kind where a meal holds one, or a base any base', () => {
+    expect(offersLink('curry', 'curry_dish')).toBe(false);
+    expect(offersLink('subzi', 'subzi_dish')).toBe(false);
+    expect(offersLink('base', 'base_dish')).toBe(false);
+    expect(offersLink('extra', 'extra_dish')).toBe(true);
+    expect(offersLink('extra', 'curry_dish')).toBe(true);
   });
 });
 

@@ -279,6 +279,20 @@ describe('Phase 14 category services', () => {
     expect(await getOwnedRule(idli, 'never:extra_category')).toBeUndefined();
   });
 
+  it('drops a deleted dish from other dishes\' links, and the link when none is left', async () => {
+    const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' });
+    const dosa = await saveComponent(undefined, { ...tags, name: 'Dosa', componentType: 'base' });
+    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {
+      'with:base_dish': (c) => linkRule(c, 'with', 'base_dish', [idli, dosa]),
+    });
+
+    await deleteComponent(idli);
+    expect(readLink((await getOwnedRule(sambar, 'with:base_dish'))!)?.values).toEqual([dosa]);
+    await deleteComponent(dosa);
+    expect(await getOwnedRule(sambar, 'with:base_dish')).toBeUndefined();
+  });
+
   it('restores deleted default rules without touching ones that are still there, edited or not', async () => {
     await runSeed();
     const byKey = async (key: string) => (await getRules()).find((r) => r.default_key === key);

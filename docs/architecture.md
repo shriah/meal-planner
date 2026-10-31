@@ -88,8 +88,8 @@ applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
 component's form and listed under "Dish settings" on the Rules page. Any dish can own **goes with / never with** links to
-the categories of another kind of dish (base categories, extra categories, curry types; a base is not offered
-base categories). "Only with" limits the dish to the chosen categories, "never with" keeps it away from them; none
+the categories of another kind of dish (base categories, extra categories, curry types) or to specific dishes (bases, curries, subzis, extras; a dish
+is never offered its own kind where a meal holds only one, and a base is not offered base categories or bases). "Only with" limits the dish to the chosen categories, "never with" keeps it away from them; none
 chosen is no rule. A goes-with link to base categories is an `only with these bases` (`pairs_with`) rule, every other
 link a `never together` (`avoid_with`) rule whose other side is the dish type plus the (negated) categories. They are
 edited under "Goes with" on the dish's form; base pairings can also be set from the base category (Manage

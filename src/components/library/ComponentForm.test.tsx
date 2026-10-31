@@ -471,6 +471,28 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
+  it('links a dish to specific dishes', async () => {
+    const baseCategory = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: baseCategory, ...tags });
+    await saveComponent(undefined, { name: 'Dosa', componentType: 'base', base_category_id: baseCategory, ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags });
+
+    render(<LiveEditForm componentId={sambar} />);
+
+    // A curry is offered specific bases, but not specific curries (a meal has only one).
+    expect(screen.queryByRole('combobox', { name: 'Goes with specific curries' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: 'Goes with specific bases' }), 'with');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Dosa' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+
+    await waitFor(async () => {
+      const rule = await getOwnedRule(sambar, 'with:base_dish');
+      expect(rule && readLink(rule)?.values).toEqual([idli]);
+    });
+  });
+
   it('saves the curry types an extra never goes with as a rule it owns', async () => {
     await addCategory({ kind: 'extra', name: 'Crunchy' });
 

@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
 import { getAllComponents, getOwnedRules, saveComponent } from '@/services/food-db'
-import { dayModeOf, daysOfMode, LINK_TARGETS, noLinks, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type Link, type LinkTarget, type Links, type RuleRecord } from '@/rules'
+import { dayModeOf, daysOfMode, dishTypeOf, LINK_TARGETS, noLinks, offersLink, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type Link, type LinkTarget, type Links, type RuleRecord } from '@/rules'
 import { LinksEditor } from './LinksEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { getCategoriesByKind } from '@/services/category-db'
@@ -187,6 +187,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     ])
     return { dishes, rules }
   }, [], undefined)
+  const allDishes = pairedDishes?.dishes
+  // How many choices a link target has, for "only with every one of them" meaning no rule.
+  const linkOptionCount = (target: LinkTarget) =>
+    target === 'base_category' ? (baseCategories ?? []).length
+      : target === 'extra_category' ? (extraCategories ?? []).length
+      : target === 'curry_category' ? CURRY_CATEGORIES.length
+      : (allDishes ?? []).filter((d) => d.componentType === dishTypeOf(target) && d.id !== component?.id).length
   const storedLinks = readOwned(owned ?? []).links
   const links: Links = { ...noLinks(), ...storedLinks, ...form.links }
   const linkRuleIds = (owned ?? []).filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
@@ -252,11 +259,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       // With nothing chosen, a dish goes with any base, any curry and any day.
       // Only the links the user changed are written. "Only with" every category is the same as no rule.
-      const sizes: Record<LinkTarget, number> = {
-        base_category: (baseCategories ?? []).length,
-        extra_category: (extraCategories ?? []).length,
-        curry_category: CURRY_CATEGORIES.length,
-      }
+      const sizes = Object.fromEntries(LINK_TARGETS.map((t) => [t, linkOptionCount(t)])) as Record<LinkTarget, number>
       const changedLinks: Partial<Links> = {}
       for (const target of LINK_TARGETS) {
         const link = form.links[target]
@@ -469,6 +472,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           links={links}
           baseCategories={baseCategories}
           extraCategories={extraCategories}
+          dishes={allDishes}
+          selfId={component?.id}
           onChange={(target: LinkTarget, link: Link) => setForm(s => ({ ...s, links: { ...s.links, [target]: link } }))}
         />
         {!canSaveLinks && (

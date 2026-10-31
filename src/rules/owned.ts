@@ -12,7 +12,7 @@ export type OwnedRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'> & { ow
 // ─── Links: goes with / never with ────────────────────────────────────────────
 
 /** What a link points at: the categories of another kind of dish. */
-export const LINK_TARGETS = ['base_category', 'extra_category', 'curry_category'] as const;
+export const LINK_TARGETS = ['base_category', 'extra_category', 'curry_category', 'base_dish', 'curry_dish', 'subzi_dish', 'extra_dish'] as const;
 export type LinkTarget = (typeof LINK_TARGETS)[number];
 export type LinkValue = number | string;
 export type LinkSlot = `${'with' | 'never'}:${LinkTarget}`;
@@ -21,9 +21,22 @@ export type LinkMode = 'any' | 'with' | 'never';
 export interface Link { mode: LinkMode; values: LinkValue[] }
 export type Links = Record<LinkTarget, Link>;
 
-const LINK_FIELD = { base_category: 'base_category_id', extra_category: 'extra_category_id', curry_category: 'curry_category' } as const;
-const LINK_DISH_TYPE = { base_category: 'base', extra_category: 'extra', curry_category: 'curry' } as const;
-export const LINK_LABEL: Record<LinkTarget, string> = { base_category: 'base categories', extra_category: 'extra categories', curry_category: 'curry types' };
+const LINK_FIELD = {
+  base_category: 'base_category_id', extra_category: 'extra_category_id', curry_category: 'curry_category',
+  base_dish: 'id', curry_dish: 'id', subzi_dish: 'id', extra_dish: 'id',
+} as const;
+const LINK_DISH_TYPE = {
+  base_category: 'base', extra_category: 'extra', curry_category: 'curry',
+  base_dish: 'base', curry_dish: 'curry', subzi_dish: 'subzi', extra_dish: 'extra',
+} as const;
+export const LINK_LABEL: Record<LinkTarget, string> = {
+  base_category: 'base categories', extra_category: 'extra categories', curry_category: 'curry types',
+  base_dish: 'specific bases', curry_dish: 'specific curries', subzi_dish: 'specific subzis', extra_dish: 'specific extras',
+};
+/** Targets that name individual dishes (by id) rather than a category. */
+export const isDishTarget = (t: LinkTarget): t is 'base_dish' | 'curry_dish' | 'subzi_dish' | 'extra_dish' => LINK_FIELD[t] === 'id';
+/** The kind of dish a dish target lists. */
+export const dishTypeOf = (t: LinkTarget): ComponentType => LINK_DISH_TYPE[t];
 
 const PLAIN_SLOTS = ['allowed_days', 'allowed_meals', 'exclude'] as const;
 export const LINK_SLOTS: LinkSlot[] = LINK_TARGETS.flatMap((t) => [`with:${t}` as const, `never:${t}` as const]);
@@ -76,7 +89,9 @@ export function pairedCategories(rule: Pick<RuleRecord, 'spec'> | undefined, all
 /** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
 export function linkRule(component: { id: number; name: string }, mode: 'with' | 'never', target: LinkTarget, values: readonly LinkValue[]): OwnedRule {
   if (mode === 'with' && target === 'base_category') return pairingRule(component, values as number[]);
-  const set = oneOf(LINK_FIELD[target], [...values] as never);
+  // A dish is never kept away from itself, so "only with" lists it too (it is dropped again on reading).
+  const listed = mode === 'with' && isDishTarget(target) ? [...new Set([...values, component.id])] : [...values];
+  const set = oneOf(LINK_FIELD[target], listed as never);
   const of = all(is('componentType', LINK_DISH_TYPE[target]), mode === 'never' ? set : not(set));
   return {
     name: ownedRuleName(`${mode}:${target}`, component.name),
@@ -93,12 +108,17 @@ export function readLink(rule: Pick<RuleRecord, 'spec'>): (Link & { mode: 'with'
   if (!('all' in side) || side.all.length !== 2) return undefined;
   const [kind, set] = side.all;
   if (!isLeaf(kind) || kind.field !== 'componentType') return undefined;
-  const target = LINK_TARGETS.find((t) => LINK_DISH_TYPE[t] === kind.value);
-  if (!target) return undefined;
   const negated = 'not' in set;
   const leaf = negated ? set.not : set;
-  if (!isLeaf(leaf) || leaf.field !== LINK_FIELD[target]) return undefined;
-  return { mode: negated ? 'with' : 'never', target, values: [leaf.value].flat() as LinkValue[] };
+  if (!isLeaf(leaf)) return undefined;
+  const target = LINK_TARGETS.find((t) => LINK_DISH_TYPE[t] === kind.value && LINK_FIELD[t] === leaf.field);
+  if (!target) return undefined;
+  let values = [leaf.value].flat() as LinkValue[];
+  if (negated && isDishTarget(target)) {
+    const owner = rule.spec.params.match as Matcher;
+    if (isLeaf(owner) && owner.field === 'id') values = values.filter((v) => v !== owner.value);
+  }
+  return { mode: negated ? 'with' : 'never', target, values };
 }
 
 /** Which owned slot a rule fills, or undefined when it is not one a dish form edits. */
@@ -167,11 +187,8 @@ export interface OwnedValues {
   neverAuto: boolean;
 }
 
-export const noLinks = (): Links => ({
-  base_category: { mode: 'any', values: [] },
-  extra_category: { mode: 'any', values: [] },
-  curry_category: { mode: 'any', values: [] },
-});
+export const noLinks = (): Links =>
+  Object.fromEntries(LINK_TARGETS.map((t) => [t, { mode: 'any', values: [] }])) as unknown as Links;
 
 /** Read a dish's settings from the rules it owns. A goes-with link wins over a never-with one for the same target. */
 export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValues {
@@ -191,8 +208,12 @@ export function readOwned(rules: readonly Pick<RuleRecord, 'spec'>[]): OwnedValu
   };
 }
 
-/** Whether a dish of this type is offered links to this kind of category. A base never "goes with" base categories. */
-export const offersLink = (componentType: ComponentType, target: LinkTarget): boolean => !(componentType === 'base' && target === 'base_category');
+/** Whether a dish of this type is offered links to this target: not to its own kind where a meal holds only one. */
+export const offersLink = (componentType: ComponentType, target: LinkTarget): boolean => {
+  if (componentType === 'base' && (target === 'base_category' || target === 'base_dish')) return false;
+  // A meal has one curry and one subzi, so those never need keeping apart from another of their own kind.
+  return !((componentType === 'curry' && target === 'curry_dish') || (componentType === 'subzi' && target === 'subzi_dish'));
+};
 
 /**
  * The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered.

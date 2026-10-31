@@ -4,21 +4,29 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
-import { LINK_LABEL, LINK_TARGETS, offersLink, type Link, type LinkMode, type LinkTarget, type LinkValue, type Links } from '@/rules'
+import type { ComponentRecord } from '@/types/component'
+import { dishTypeOf, isDishTarget, LINK_LABEL, LINK_TARGETS, offersLink, type Link, type LinkMode, type LinkTarget, type LinkValue, type Links } from '@/rules'
 
 interface LinksEditorProps {
   componentType: ComponentType
   links: Links
   baseCategories: CategoryRecord[] | undefined
   extraCategories: CategoryRecord[] | undefined
+  /** Every dish in the library, for linking to specific dishes. */
+  dishes: ComponentRecord[] | undefined
+  /** The dish being edited, left out of its own choices. */
+  selfId?: number
   onChange: (target: LinkTarget, link: Link) => void
 }
 
 const MODE_LABEL: Record<LinkMode, string> = { any: 'Any', with: 'Only with', never: 'Never with' }
 
 /** "Goes with" / "Never with" for one kind of category at a time; the options follow the library's categories. */
-export function LinksEditor({ componentType, links, baseCategories, extraCategories, onChange }: LinksEditorProps) {
+export function LinksEditor({ componentType, links, baseCategories, extraCategories, dishes, selfId, onChange }: LinksEditorProps) {
   const options = (target: LinkTarget): { value: LinkValue; label: string }[] | undefined => {
+    if (isDishTarget(target)) {
+      return dishes?.filter((d) => d.componentType === dishTypeOf(target) && d.id !== selfId).map((d) => ({ value: d.id, label: d.name }))
+    }
     if (target === 'curry_category') return CURRY_CATEGORIES.map((c) => ({ value: c, label: c }))
     const categories = target === 'base_category' ? baseCategories : extraCategories
     return categories?.map((c) => ({ value: c.id, label: c.name }))
@@ -47,7 +55,7 @@ export function LinksEditor({ componentType, links, baseCategories, extraCategor
               ))}
             </select>
             {link.mode !== 'any' && (
-              <div className="flex flex-wrap gap-3">
+              <div className="flex max-h-40 flex-wrap gap-3 overflow-y-auto">
                 {(all ?? []).map((o) => (
                   <Label key={String(o.value)} className="flex items-center gap-1.5 text-xs font-normal cursor-pointer">
                     <Checkbox

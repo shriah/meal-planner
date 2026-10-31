@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, ownedRuleName, ownedSlot, pairedCategories, pairingRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, isDishTarget, linkRule, ownedRuleName, readLink, ownedSlot, pairedCategories, pairingRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -38,6 +38,14 @@ export async function updateComponent(id: number, changes: Partial<ComponentReco
 export async function deleteComponent(id: number): Promise<void> {
   await db.transaction('rw', db.components, db.rules, async () => {
     await db.rules.where('owner_component_id').equals(id).delete();
+    // Other dishes' links to this one lose it; a link left with no dish is removed.
+    await db.rules.where('owner_component_id').above(0).modify((rule, ref) => {
+      const link = readLink(rule);
+      if (!link || !isDishTarget(link.target) || !link.values.includes(id)) return;
+      const rest = link.values.filter((v) => v !== id);
+      if (rest.length === 0) delete (ref as { value?: unknown }).value;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, link.mode, link.target, rest).spec;
+    });
     await db.components.delete(id);
   });
 }

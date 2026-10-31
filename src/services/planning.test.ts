@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
+import { linkRule } from '@/rules';
 import { addRule } from '@/services/food-db';
 import { planFromData, slotConflicts } from './plan-generation';
 import { generatePlan, loadPlanningInput } from './planning';
@@ -66,6 +67,34 @@ describe('planFromData', () => {
     const extras = input.library.filter((c) => c.componentType === 'extra').map((c) => c.id);
     const outcome = planFromData(input, { seed: 4, pins: { 'monday-lunch': { extra_ids: extras.slice(0, 2) } } });
     expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', reason: 'Extras: at most 1 per meal at lunch', message: 'Extras: at most 1 per meal at lunch — Monday lunch' }));
+  });
+});
+
+describe('links to specific dishes', () => {
+  it('plans a curry only with the chosen bases and never with the chosen extra', async () => {
+    await runSeed();
+    const input = await loadPlanningInput();
+    const byType = (t: string) => input.library.filter((c) => c.componentType === t);
+    const curry = byType('curry')[0];
+    const [onlyBase] = byType('base');
+    const [avoided] = byType('extra');
+    const now = new Date().toISOString();
+    for (const rule of [linkRule(curry, 'with', 'base_dish', [onlyBase.id]), linkRule(curry, 'never', 'extra_dish', [avoided.id])]) {
+      await db.rules.add({ ...rule, enabled: true, created_at: now });
+    }
+
+    let seen = 0;
+    for (const seed of [1, 2, 3]) {
+      const { plan, problems } = await generatePlan({ seed });
+      expect(problems.filter((p) => p.level === 'hard')).toEqual([]);
+      const withCurry = plan.slots.filter((s) => s.curry_id === curry.id);
+      seen += withCurry.length;
+      for (const slot of withCurry) {
+        expect(slot.base_id).toBe(onlyBase.id);
+        expect(slot.extra_ids).not.toContain(avoided.id);
+      }
+    }
+    expect(seen).toBeGreaterThan(0);
   });
 });
 
