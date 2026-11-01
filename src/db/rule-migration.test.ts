@@ -266,6 +266,8 @@ describe('v14 rule migration', () => {
       rule(10, 'When sambar', pairing(is('id', sambar), [chutney])),
       rule(11, 'With extras', pairing(is('id', idli), [chutney], { extraCategories: [1] })),
       rule(12, 'Compound', pairing(all(is('componentType', 'base'), is('id', idli)), [chutney])),
+      rule(18, 'Missing base', pairing(is('id', 99), [chutney])),
+      rule(19, 'Missing category', pairing(is('base_category_id', 99), [chutney])),
     ];
     await v18.table('rules').bulkAdd([
       rule(1, 'Hand rule', handRule),
@@ -279,8 +281,10 @@ describe('v14 rule migration', () => {
       rule(9, 'Rasam with other', pairing(is('base_category_id', breakfastCat), [rasam])),
       ...misfits,
       { id: 13, ...linkRule({ id: aloo, name: 'Aloo' }, { mode: 'serve', target: 'base_dish', values: [dosa] }), enabled: true, created_at: '' },
+      // Sometimes, so merging it into Aloo's always link would make it a hard rule: it stays as it is.
       rule(14, 'Aloo with idli', pairing(is('id', idli), [aloo], { cost: 3 })),
-      { id: 15, ...linkRule({ id: pickle, name: 'Pickle' }, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, created_at: '' },
+      rule(20, 'Aloo with idli, always', pairing(is('id', idli), [aloo], { strength: 'must', cost: undefined })),
+      { id: 15, ...linkRule({ id: pickle, name: 'Pickle' }, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'moderately' }), enabled: true, created_at: '' },
       // Switched off, so merging it into Pickle's live link would switch it on: it stays as it is.
       rule(16, 'Pickle with dosa, off', pairing(is('id', dosa), [pickle]), { enabled: false }),
       // Sambar's new link holds at breakfast only, so this one keeps Sambar; Pickle merges.
@@ -293,7 +297,7 @@ describe('v14 rule migration', () => {
     const rules = await db.rules.toArray();
     const byId = new Map(rules.map((r) => [r.id, r]));
     expect(rules.filter((r) => r.name === 'Hand rule').map((r) => r.id)).toEqual([1]);
-    expect([3, 4, 7, 8, 9, 14].filter((id) => byId.has(id))).toEqual([]);
+    expect([3, 4, 7, 8, 9, 20].filter((id) => byId.has(id))).toEqual([]);
     expect(rules.some((r) => r.default_key === 'want-curry' || r.default_key === 'want-subzi')).toBe(false);
     expect(byId.get(5)).toMatchObject({ name: 'My curry wish', enabled: false });
     expect(byId.get(6)).toMatchObject({ name: 'A subzi in every meal', enabled: true });
@@ -312,10 +316,11 @@ describe('v14 rule migration', () => {
     expect(readLink(owned(rasam)[0])).toMatchObject({ mode: 'serve', target: 'base_category', values: [breakfastCat] });
     expect(owned(aloo).map((r) => r.id)).toEqual([13]);
     expect(readLink(owned(aloo)[0])).toEqual({ mode: 'serve', target: 'base_dish', values: [dosa, idli], strength: 'always' });
+    expect(byId.get(14)?.spec).toEqual(pairing(is('id', idli), [aloo], { cost: 3 }));
     expect(byId.get(16)).toMatchObject({ enabled: false, spec: pairing(is('id', dosa), [pickle]) });
     expect(byId.get(17)?.spec).toEqual(pairing(is('id', dosa), [sambar]));
     expect(owned(pickle).map((r) => r.id)).toEqual([15]);
-    expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'always' });
+    expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'moderately' });
     for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
   });
 });

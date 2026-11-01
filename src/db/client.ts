@@ -1023,9 +1023,10 @@ db.version(19).stores({
         added.push(own);
         continue;
       }
-      // Merging keeps the link's strength, but never switches a pairing on or widens its days and meals.
+      // Merge only into a link that holds just as firmly, at the same times and is just as switched on, so no
+      // pairing changes meaning; otherwise the dish stays in the hand-written rule.
       const link = readLink(existing)!;
-      if (existing.enabled !== rule.enabled || !sameValue(link.scope, readLink(own)!.scope)) {
+      if (existing.enabled !== rule.enabled || link.strength !== strengthOf(p) || !sameValue(link.scope, readLink(own)!.scope)) {
         left.push(id);
         continue;
       }
