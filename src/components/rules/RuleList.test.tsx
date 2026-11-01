@@ -28,7 +28,7 @@ beforeEach(async () => {
     stored({ name: 'No paneer on weekdays', spec: { template: 'exclude', params: { match: is('protein_tag', 'paneer'), strength: 'must' } } }),
     stored({ name: 'Fish Fridays', spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } } }),
     stored(defaults.find((r) => r.default_key === 'variety')!),
-    stored(defaults.find((r) => r.default_key === 'want-curry')!),
+    stored(defaults.find((r) => r.default_key === 'prefer-frequent')!),
     stored(pairingRule({ id: 1, name: 'Sambar' }, [1])),
     stored(dayRule({ id: 2, name: 'Pulao' }, ['saturday', 'sunday'])),
   ]);
@@ -81,12 +81,12 @@ describe('RuleList', () => {
 
     await userEvent.click(within(detailsOf('Planner defaults (2)')).getByRole('button', { name: 'Restore defaults' }));
 
-    expect(await screen.findByText('Restored 8 default rules')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('Planner defaults (10)')).toBeInTheDocument());
+    expect(await screen.findByText('Restored 6 default rules')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Planner defaults (8)')).toBeInTheDocument());
 
-    await userEvent.click(within(detailsOf('Planner defaults (10)')).getByRole('button', { name: 'Restore defaults' }));
+    await userEvent.click(within(detailsOf('Planner defaults (8)')).getByRole('button', { name: 'Restore defaults' }));
     expect(await screen.findByText('All default rules are already there')).toBeInTheDocument();
-    expect(await db.rules.count()).toBe(2 + 10 + 2);
+    expect(await db.rules.count()).toBe(2 + 8 + 2);
   });
 
   it('still offers the defaults when every one has been deleted', async () => {
@@ -95,7 +95,7 @@ describe('RuleList', () => {
 
     expect(await screen.findByText('Planner defaults (0)')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Restore defaults' }));
-    expect(await screen.findByText('Restored 10 default rules')).toBeInTheDocument();
+    expect(await screen.findByText('Restored 8 default rules')).toBeInTheDocument();
   });
 
   it('opens the planner defaults for a default rule, and does nothing for a rule that is gone', async () => {

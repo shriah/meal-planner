@@ -70,6 +70,32 @@ describe('planFromData', () => {
   });
 });
 
+describe('sides', () => {
+  it('leaves curries, subzis and extras out unless a rule asks for them', async () => {
+    await runSeed();
+    for (const seed of [1, 2]) {
+      const { plan } = await generatePlan({ seed });
+      expect(plan.slots.filter((s) => s.curry_id || s.subzi_id || s.extra_ids.length)).toEqual([]);
+    }
+  });
+
+  it('adds the sides a rule asks for, and only those', async () => {
+    await runSeed();
+    const library = await db.components.toArray();
+    const dosa = library.find((c) => c.name === 'Dosa')!;
+    const sambar = library.find((c) => c.name === 'Sambar')!;
+    await addRule({ name: 'Sambar with Dosa', enabled: true, created_at: '', spec: { template: 'require_with', params: { when: is('id', dosa.id), components: [sambar.id], strength: 'must' } } });
+
+    const { plan } = await generatePlan({ seed: 1, pins: { 'monday-breakfast': { base_id: dosa.id } } });
+    for (const slot of plan.slots) {
+      if (slot.base_id === dosa.id) expect(slot.curry_id).toBe(sambar.id);
+      else expect(slot.curry_id).toBeUndefined();
+      expect(slot.subzi_id).toBeUndefined();
+      expect(slot.extra_ids).toEqual([]);
+    }
+  });
+});
+
 describe('links to specific dishes', () => {
   it('plans a curry only with the chosen bases and never with the chosen extra', async () => {
     await runSeed();
@@ -82,6 +108,8 @@ describe('links to specific dishes', () => {
     for (const rule of [linkRule(curry, { mode: 'with', target: 'base_dish', values: [onlyBase.id] }), linkRule(curry, { mode: 'never', target: 'extra_dish', values: [avoided.id] })]) {
       await db.rules.add({ ...rule, enabled: true, created_at: now });
     }
+    // Sides are left out unless a rule asks for them, so ask for this curry wherever it fits.
+    await addRule({ name: 'This curry when it fits', enabled: true, created_at: now, spec: { template: 'require', params: { match: is('id', curry.id), strength: 'prefer' } } });
 
     let seen = 0;
     for (const seed of [1, 2, 3]) {

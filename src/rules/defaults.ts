@@ -1,6 +1,7 @@
 // The rules every library starts with: how many extras each meal may hold, and the preferences that
-// make a week feel planned (a curry and subzi in each meal, variety, frequent dishes over rare ones).
-// They are ordinary stored rules, so they can be edited, disabled or deleted like any other.
+// make a week feel planned (variety, frequent dishes over rare ones). A meal is its base alone unless a
+// rule asks for a curry, subzi or extra. They are ordinary stored rules, so they can be edited,
+// disabled or deleted like any other.
 import { DAYS, MEALS, is, oneOf, type Day, type Meal } from '@/planner';
 import type { RuleRecord } from './record';
 
@@ -12,7 +13,9 @@ export const DEFAULT_EXTRA_LIMITS: Record<Meal, number> = { breakfast: 2, lunch:
 // Soft costs. Repeating a dish across the week is normal (few curries suit some bases); repeating it
 // on the same or the next day is what makes a week feel monotonous. A user's own `prefer` rules cost
 // more (PREFER_COST), so they win over these.
-const MISSING_ROLE_COST = 5;
+// Above the reward of `prefer-frequent` (1), so a frequent side is still left out unless a rule asks;
+// below a `prefer` rule's default cost, so any rule asking for a side wins.
+const SIDE_COST = 2;
 const REUSE_COST = 2;
 const CLOSE_REPEAT_COST = 3;
 
@@ -25,16 +28,6 @@ export function defaultRules(extraLimits: Record<Meal, number> = DEFAULT_EXTRA_L
       spec: { template: 'limit', params: { match: is('componentType', 'extra'), per: 'meal', max: extraLimits[meal], scope: { meals: [meal] }, strength: 'must' } },
     })),
     {
-      default_key: 'want-curry',
-      name: 'A curry in every meal',
-      spec: { template: 'require', params: { match: is('componentType', 'curry'), strength: 'prefer', cost: MISSING_ROLE_COST } },
-    },
-    {
-      default_key: 'want-subzi',
-      name: 'A subzi in every meal',
-      spec: { template: 'require', params: { match: is('componentType', 'subzi'), strength: 'prefer', cost: MISSING_ROLE_COST } },
-    },
-    {
       default_key: 'variety',
       name: 'Vary dishes across the week',
       spec: { template: 'no_repeat', params: { match: dishes, within: 'week', strength: 'prefer', cost: REUSE_COST } },
@@ -45,9 +38,9 @@ export function defaultRules(extraLimits: Record<Meal, number> = DEFAULT_EXTRA_L
       spec: { template: 'no_repeat', params: { match: dishes, within: 2, strength: 'prefer', cost: CLOSE_REPEAT_COST } },
     },
     {
-      default_key: 'extras-only-when-asked',
-      name: 'Extras only when a rule asks for them',
-      spec: { template: 'prefer', params: { match: is('componentType', 'extra'), direction: 'avoid', weight: 1 } },
+      default_key: 'sides-only-when-asked',
+      name: 'Curries, subzis and extras only when a rule asks for them',
+      spec: { template: 'prefer', params: { match: oneOf('componentType', ['curry', 'subzi', 'extra']), direction: 'avoid', weight: SIDE_COST } },
     },
     {
       default_key: 'prefer-frequent',
@@ -69,8 +62,15 @@ export function defaultRules(extraLimits: Record<Meal, number> = DEFAULT_EXTRA_L
 export function defaultKeyForName(name: string): string | undefined {
   const limit = /^Extras at (breakfast|lunch|dinner): at most \d+$/.exec(name);
   if (limit) return `extras-limit-${limit[1]}`;
-  return defaultRules().find((r) => r.name === name)?.default_key;
+  return defaultRules().find((r) => r.name === name)?.default_key ?? RETIRED_DEFAULT_NAMES[name];
 }
+
+/** Defaults an older library may still hold, by their original name; v18 switches them off or replaces them. */
+export const RETIRED_DEFAULT_NAMES: Record<string, string> = {
+  'A curry in every meal': 'want-curry',
+  'A subzi in every meal': 'want-subzi',
+  'Extras only when a rule asks for them': 'extras-only-when-asked',
+};
 
 const WEEKDAYS: Day[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'];
 const WEEKEND: Day[] = ['saturday', 'sunday'];

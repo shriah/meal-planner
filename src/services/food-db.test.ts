@@ -301,14 +301,14 @@ describe('Phase 14 category services', () => {
     const byKey = async (key: string) => (await getRules()).find((r) => r.default_key === key);
     await deleteRule((await byKey('variety'))!.id);
     await deleteRule((await byKey('spacing'))!.id);
-    const wantCurry = (await byKey('want-curry'))!;
-    await updateRule(wantCurry.id, { name: 'My curry wish', enabled: false });
+    const avoidRare = (await byKey('avoid-rare'))!;
+    await updateRule(avoidRare.id, { name: 'My rare wish', enabled: false });
     const before = (await getRules()).length;
 
     expect(await restoreDefaultRules()).toBe(2);
     expect(await getRules()).toHaveLength(before + 2);
     expect((await byKey('variety'))?.name).toBe('Vary dishes across the week');
-    expect(await byKey('want-curry')).toMatchObject({ name: 'My curry wish', enabled: false });
+    expect(await byKey('avoid-rare')).toMatchObject({ name: 'My rare wish', enabled: false });
 
     expect(await restoreDefaultRules()).toBe(0);
     expect(await getRules()).toHaveLength(before + 2);

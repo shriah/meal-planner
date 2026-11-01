@@ -908,4 +908,30 @@ db.version(17).stores({
   }),
 );
 
+// v18: a meal is its base alone unless a rule asks for more. "A curry in every meal" and "A subzi in
+// every meal" are switched off (kept, so they can be switched back on), and "Extras only when a rule asks
+// for them" becomes the same preference for curries and subzis too.
+db.version(18).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade((tx) => {
+  const sides = defaultRules().find((r) => r.default_key === 'sides-only-when-asked')!;
+  return tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+    if (rule.owner_component_id !== undefined) return;
+    if (rule.default_key === 'want-curry' || rule.default_key === 'want-subzi') rule.enabled = false;
+    if (rule.default_key === 'extras-only-when-asked') {
+      rule.default_key = sides.default_key;
+      rule.name = sides.name;
+      rule.spec = sides.spec;
+    }
+  });
+});
+
 export { db, normalizeComponentCategoryRefs };

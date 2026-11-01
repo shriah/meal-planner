@@ -23,8 +23,8 @@ describe('default rules', () => {
 
   it('each have a stable, unique key', () => {
     expect(defaultRules().map((r) => r.default_key)).toEqual([
-      'extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner', 'want-curry', 'want-subzi', 'variety', 'spacing',
-      'extras-only-when-asked', 'prefer-frequent', 'avoid-rare',
+      'extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner', 'variety', 'spacing',
+      'sides-only-when-asked', 'prefer-frequent', 'avoid-rare',
     ]);
   });
 

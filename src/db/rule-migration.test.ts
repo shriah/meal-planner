@@ -193,4 +193,33 @@ describe('v14 rule migration', () => {
       'Sambar: base pairing': undefined,
     });
   });
+
+  it('v18 switches off the curry and subzi defaults and widens extras-only-when-asked to every side', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+
+    const v17 = new Dexie('FoodPlannerDB');
+    v17.version(17).stores({ ...V13_STORES, rules: '++id, owner_component_id', notices: 'id' });
+    await v17.open();
+    const stored = (name: string, extra: object = {}) => ({ name, enabled: true, created_at: '', spec: { template: 'exclude', params: { match: is('id', 1), strength: 'must' } }, ...extra });
+    await v17.table('rules').bulkAdd([
+      stored('A curry in every meal', { default_key: 'want-curry' }),
+      stored('My subzi wish', { default_key: 'want-subzi' }),
+      stored('Extras only when a rule asks for them', { default_key: 'extras-only-when-asked' }),
+      stored('Vary dishes across the week', { default_key: 'variety' }),
+      stored('Always a curry', {}),
+    ]);
+    v17.close();
+
+    await db.open();
+
+    const byName = Object.fromEntries((await db.rules.toArray()).map((r) => [r.name, r]));
+    expect(byName['A curry in every meal'].enabled).toBe(false);
+    expect(byName['My subzi wish'].enabled).toBe(false);
+    expect(byName['Vary dishes across the week'].enabled).toBe(true);
+    expect(byName['Always a curry'].enabled).toBe(true);
+    const sides = byName['Curries, subzis and extras only when a rule asks for them'];
+    expect(sides).toMatchObject({ default_key: 'sides-only-when-asked', enabled: true, spec: { template: 'prefer' } });
+    expect(byName['Extras only when a rule asks for them']).toBeUndefined();
+  });
 });

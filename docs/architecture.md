@@ -75,10 +75,12 @@ when, only with these bases, never together, only on certain days, prefer/avoid)
 it references, and form metadata the editor is generated from. Count-based templates take a
 `must` (hard) or `prefer` (soft) strength, and a `prefer` rule may set its own `cost` (1–10).
 
-Every library starts with **default rules** (`src/rules/defaults.ts`): extras per meal, a curry and a
-subzi in every meal, variety across the week, no dish on the same or next day, extras only when a
-rule asks, and frequent over rare dishes. They are ordinary rules that can be edited or switched off;
-their costs (5, 2, 3, 1) sit below a user's own `prefer` rules (10 by default). Each carries a stable
+Every library starts with **default rules** (`src/rules/defaults.ts`): extras per meal, variety across
+the week, no dish on the same or next day, curries, subzis and extras only when a rule asks, and
+frequent over rare dishes. A meal is therefore its base alone until a rule (for example "also include
+when" or "always include") asks for a side. They are ordinary rules that can be edited or switched off;
+their costs (2, 3, 2, 1) sit below a user's own `prefer` rules (10 by default). Libraries from before v18
+keep "A curry in every meal" and "A subzi in every meal", switched off, so they can be turned back on. Each carries a stable
 `default_key`, so it stays recognisable after a rename and "Restore defaults" can add back any that
 were deleted without touching the ones that remain. Soft strength is shown in words (Slightly,
 Moderately, Strongly); the stored numbers are unchanged.
@@ -136,7 +138,7 @@ flowchart TD
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
     D --> E{"No hard violations and no improvement for N iterations, or time cap?"}
     E -->|no| D
-    E -->|yes| F["Polish: drop extras that do not help"]
+    E -->|yes| F["Polish: drop curries, subzis and extras that do not help"]
     F --> G["Best plan + score (hard, soft) + justification per violated group"]
 ```
 

@@ -201,7 +201,18 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     history[h] = current;
   }
 
-  // Polish: drop any free extra whose removal strictly improves the best plan.
+  // Polish: drop any free curry, subzi or extra whose removal strictly improves the best plan. Sides
+  // cost something unless a rule asks for them, and random search does not always find every removal.
+  for (const r of ['curry', 'subzi'] as const) {
+    for (const i of free[r]) {
+      const old = bestPlan[i][r];
+      if (old === undefined) continue;
+      bestPlan[i][r] = undefined;
+      const s = evaluate(bestPlan);
+      if (compareScore(s, best) < 0) best = s;
+      else bestPlan[i][r] = old;
+    }
+  }
   for (const i of free.extras) {
     for (let k = bestPlan[i].extras.length - 1; k >= 0; k--) {
       const old = bestPlan[i].extras;
