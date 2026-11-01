@@ -165,6 +165,33 @@ describe('plan-store', () => {
     slots().forEach((s, i) => { if (i !== 0 && i !== 3) expect(s).toBe(before[i]); });
   }, 10_000);
 
+  it('keeps a curry picked by hand while its meal is being re-planned', async () => {
+    let finish!: () => void;
+    const planned = makePlan();
+    planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
+    vi.spyOn(planningService, 'generatePlan').mockImplementation(() =>
+      new Promise((resolve) => { finish = () => resolve({ plan: planned, problems: [], ruleIssues: [] } as never); }));
+    usePlanStore.setState({ plan: makePlan() });
+
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', 40);
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(usePlanStore.getState().plan!.slots[0]).toMatchObject({ base_id: 2, curry_id: 40 });
+  });
+
+  it('applies the re-plan of a meal left as it was picked', async () => {
+    const planned = makePlan();
+    planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
+    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [] } as never);
+    usePlanStore.setState({ plan: makePlan() });
+
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
+
+    await vi.waitFor(() => expect(usePlanStore.getState().plan!.slots[0]).toMatchObject({ base_id: 2, curry_id: 30 }));
+  });
+
   it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {
     const plan = makePlan();
     usePlanStore.setState({ plan });

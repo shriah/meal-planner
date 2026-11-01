@@ -51,9 +51,13 @@ export const usePlanStore = create<PlanStore>((set, get) => {
   }
 
   // A base picked by hand re-plans its meal, so the sides follow every rule. Other meals and locked parts stay.
-  async function replanMeal(day: DayOfWeek, slot: MealSlot, baseId: number) {
+  async function replanMeal(day: DayOfWeek, slot: MealSlot) {
     const { plan, locks, currentWeekStart } = get()
     if (!plan) return
+    const i = plan.slots.findIndex(s => s.day === day && s.meal_slot === slot)
+    // The meal as picked by hand: any later change to it (or a whole new plan) makes this re-plan stale.
+    const picked = plan.slots[i]
+    if (!picked) return
     let outcome: PlanningOutcome
     try {
       outcome = await generatePlan({ pins: pinsForMeal(plan, locks, day, slot) })
@@ -62,9 +66,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     }
     const planned = outcome.plan.slots.find(s => s.day === day && s.meal_slot === slot)
     const now = get()
-    const i = now.plan?.slots.findIndex(s => s.day === day && s.meal_slot === slot) ?? -1
-    // The base or the week may have changed while the meal was planned.
-    if (!planned || !now.plan || i === -1 || now.plan.slots[i].base_id !== baseId || now.currentWeekStart !== currentWeekStart) return
+    if (!planned || !now.plan || now.isGenerating || now.plan.slots[i] !== picked || now.currentWeekStart !== currentWeekStart) return
     const slots = [...now.plan.slots]
     slots[i] = planned
     set({ plan: { slots }, problems: outcome.problems, ruleIssues: outcome.ruleIssues })
@@ -145,7 +147,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const newPlan = { slots: updatedSlots }
       set({ plan: newPlan })
       saveWeekPlan(currentWeekStart, newPlan, locks)
-      if (componentType === 'base') void replanMeal(day, slot, componentId)
+      if (componentType === 'base') void replanMeal(day, slot)
     },
 
     regenerate: async () => {
