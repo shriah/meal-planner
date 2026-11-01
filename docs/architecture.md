@@ -79,11 +79,18 @@ Every library starts with **default rules** (`src/rules/defaults.ts`): extras pe
 the week, no dish on the same or next day, curries, subzis and extras only when a rule asks, and
 frequent over rare dishes. A meal is therefore its base alone until a rule (for example "also include
 when" or "always include") asks for a side. They are ordinary rules that can be edited or switched off;
-their costs (2, 3, 2, 1) sit below a user's own `prefer` rules (10 by default). Libraries from before v18
-keep "A curry in every meal" and "A subzi in every meal", switched off, so they can be turned back on. Each carries a stable
+their costs (2, 3, 2, 1) sit below a user's own `prefer` rules (10 by default). Those two are no longer defaults (v19 removes them from libraries
+where they were still off and unedited, and otherwise drops their `default_key`). Each remaining default carries a stable
 `default_key`, so it stays recognisable after a rename and "Restore defaults" can add back any that
-were deleted without touching the ones that remain. Soft strength is shown in words (Slightly,
-Moderately, Strongly); the stored numbers are unchanged.
+were deleted without touching the ones that remain. The seed runs once (`runSeed` has an in-flight guard and one
+transaction), so React running effects twice cannot duplicate rules. Prefer and avoid weights are shown as Slightly,
+Moderately or Strongly (`LEVELS`, weight only); the stored numbers are unchanged.
+
+The v19 upgrade also removes duplicate unowned rules (same name, spec and enabled flag; the lowest id stays) and converts
+exact-shape hand-written `require_with` pairings (unowned, no extra categories, `when` a single base `id` or `base_category_id`
+leaf, components all existing curries, subzis or extras) into dish-owned served-with links, keeping strength, scope and enabled.
+It merges into a dish's existing served-with link only when enabled, strength and scope match; otherwise the hand-written rule
+stays, trimmed.
 
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
@@ -96,18 +103,21 @@ subzis, extras); a dish is never offered its own kind where a meal holds only on
 bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
 of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A curry, subzi or extra may also be
 **served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
-is the meal's base, the dish is added. The planner does this through the rule; picking a base by hand on the plan fills the
-unlocked curry, subzi and extras from these links (`servedWith` in `src/rules/served.ts`, called from the plan store).
+is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner does this through the rule;
+picking a base by hand on the plan re-plans only that meal through the planner: `pinsForMeal` in `src/services/pins.ts` pins every
+other meal exactly (and holds a role empty with `null` in `SlotPins`), so the meal's sides follow every rule and locked parts stay.
 
-Strength is **always** (`must`) or **usually**, **moderately**, **sometimes** (`prefer` with cost 10, 6 or 3). A stored cost reads
-back as usually at 8 or more, moderately at 5 to 7 and sometimes at 4 or less ("Often" in the UI for moderately), so older
-links keep their meaning. A scope limits a link to some days or meals. Storage is unchanged: "only with base categories" is a
+Strength is one set of words, `STRENGTH_WORDS` in `src/rules/levels.ts`: **Always** (`must`), **Usually**, **Often** and
+**Sometimes** (`prefer` with cost 10, 6 or 3). Links, the Rules page cost select and the assistant all use it. A stored cost
+reads back as Usually at 8 or more, Often at 5 to 7 and Sometimes at 4 or less, so older links keep their meaning. A scope limits a link to some days or meals. Storage is unchanged: "only with base categories" is a
 `pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other link an `avoid_with` rule whose other
 side is the dish type plus the (negated) categories.
 
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
-option picker and optional day and meal limits. Links left untouched are never rewritten on save. `link-warnings.ts` shows
+option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
+flow offers: Served with first; "Only with" only for base categories, base dishes and extra categories; specific curries,
+subzis and extras only when the dish already links to that target. Existing links always stay listed and editable. Links left untouched are never rewritten on save. `link-warnings.ts` shows
 non-blocking warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
@@ -115,8 +125,8 @@ a "Preview on this week" button that compares the current plan with and without 
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
 own queries).
 
-Base pairings can also be set from the base category (Manage Categories → Goes With), which keeps the link's strength and
-scope, and a base's form lists "Base to" its curries and subzis. A dish's specific days
+Manage Categories has no pairing editor. A base's form shows a read-only "Served with this base" list of the curries, subzis
+and extras that link to it; the links are edited on those dishes. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
 `festive`). Owned rules are renamed and deleted with their component and lose a deleted value
@@ -176,12 +186,14 @@ a compact library summary, the discussed plan and its problems). Step 2 sends th
 Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
 week's dish names, `explain_rule` for whether a rule is active and where the plan breaks it, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
 named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
-(`propose_rule`, `propose_dish`) that only validate and return a draft. A rule spec travels as JSON text. `propose_dish` can
-include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together.
+(`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text. `propose_dish` can
+include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together. `propose_pairing` drafts served-with links for a dish that
+already exists; "Review pairing" opens that dish's form in edit mode with the draft merged over its stored links, and saving
+writes only the new link.
 Each question makes at most 5 requests to Gemini (the last one without tools, so it must answer); the prompt
 tells the model to answer from the slice when it can and to batch its tool calls into one step.
 If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in
-the existing `RuleEditor` sheet, a dish draft in the existing `ComponentForm`; nothing is saved except
+the existing `RuleEditor` sheet, a dish draft in the existing `ComponentForm` (a pairing draft in edit mode); nothing is saved except
 through their own Save button.
 
 **Comparison.** For a rule draft the app plans the current week twice with the same seed and the same
