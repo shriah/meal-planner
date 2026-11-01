@@ -128,25 +128,42 @@ describe('plan-store', () => {
     expect(state.locks).toEqual({});
   });
 
-  it('swapComponent fills a hand-picked base with the dishes served with it, leaving locked parts alone', async () => {
+  it('re-plans only the meal whose base was picked by hand', async () => {
     await db.components.clear();
     await db.rules.clear();
     const now = '';
-    const idli = await db.components.add({ name: 'Idli', componentType: 'base', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
-    const sambar = await db.components.add({ name: 'Sambar', componentType: 'curry', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
-    const chutney = await db.components.add({ name: 'Chutney', componentType: 'extra', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
-    for (const id of [sambar, chutney]) {
-      await db.rules.add({ ...linkRule({ id, name: 'x' }, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, created_at: now } as RuleRecord);
-    }
-    usePlanStore.setState({ plan: makePlan(), locks: { 'tuesday-breakfast-extras': true } });
+    const add = async (name: string, componentType: 'base' | 'curry' | 'extra') =>
+      await db.components.add({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
+    const rice = await add('Rice', 'base');
+    const idli = await add('Idli', 'base');
+    const dal = await add('Dal', 'curry');
+    const sambar = await add('Sambar', 'curry');
+    const rasam = await add('Rasam', 'curry');
+    const chutney = await add('Chutney', 'extra');
+    const podi = await add('Podi', 'extra');
+    const store = async (rule: ReturnType<typeof linkRule>) => { await db.rules.add({ ...rule, enabled: true, created_at: now } as RuleRecord); };
+    await store(linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [idli] }));
+    await store(linkRule({ id: podi, name: 'Podi' }, { mode: 'serve', target: 'base_dish', values: [idli] }));
+    await store(linkRule({ id: chutney, name: 'Chutney' }, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'usually' }));
+    await store(linkRule({ id: chutney, name: 'Chutney' }, { mode: 'never', target: 'extra_dish', values: [podi] }));
+
+    const plan = makePlan();
+    plan.slots = plan.slots.map((s, i) => ({ ...s, base_id: rice, ...(i % 2 ? { curry_id: dal } : {}), extra_ids: i % 3 ? [] : [chutney] }));
+    plan.slots[0] = { ...plan.slots[0], curry_id: dal, extra_ids: [] };
+    plan.slots[3] = { ...plan.slots[3], curry_id: rasam, extra_ids: [] };
+    const before = plan.slots;
+    usePlanStore.setState({ plan, locks: { 'tuesday-breakfast-curry': true } });
 
     usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', idli);
     usePlanStore.getState().swapComponent('tuesday', 'breakfast', 'base', idli);
 
-    const slot = (day: string) => usePlanStore.getState().plan?.slots.find((s) => s.day === day && s.meal_slot === 'breakfast');
-    await vi.waitFor(() => expect(slot('monday')).toMatchObject({ base_id: idli, curry_id: sambar, extra_ids: [chutney] }));
-    await vi.waitFor(() => expect(slot('tuesday')).toMatchObject({ base_id: idli, curry_id: sambar, extra_ids: [] }));
-  });
+    const slots = () => usePlanStore.getState().plan!.slots;
+    await vi.waitFor(() => {
+      expect(slots()[0]).toEqual({ day: 'monday', meal_slot: 'breakfast', base_id: idli, curry_id: sambar, extra_ids: [podi] });
+      expect(slots()[3]).toEqual({ day: 'tuesday', meal_slot: 'breakfast', base_id: idli, curry_id: rasam, extra_ids: [podi] });
+    }, { timeout: 5000 });
+    slots().forEach((s, i) => { if (i !== 0 && i !== 3) expect(s).toBe(before[i]); });
+  }, 10_000);
 
   it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {
     const plan = makePlan();

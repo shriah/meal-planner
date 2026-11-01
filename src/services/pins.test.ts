@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WeeklyPlan } from '@/types/plan';
-import { pinsFromLocks } from './pins';
+import { pinsForMeal, pinsFromLocks } from './pins';
 
 const plan: WeeklyPlan = {
   slots: [
@@ -18,5 +18,15 @@ describe('pinsFromLocks', () => {
   it('pins a locked base and subzi', () => {
     expect(pinsFromLocks(plan, { 'tuesday-dinner-base': true, 'tuesday-dinner-subzi': true }))
       .toEqual({ 'tuesday-dinner': { base_id: 3, subzi_id: 4 } });
+  });
+});
+
+describe('pinsForMeal', () => {
+  it('pins other meals exactly, and only the base and locked parts of the meal', () => {
+    expect(pinsForMeal(plan, { 'monday-lunch-subzi': true, 'monday-lunch-extras': true, 'tuesday-dinner-curry': true }, 'monday', 'lunch'))
+      .toEqual({
+        'monday-lunch': { base_id: 1, subzi_id: null, extra_ids: [5] },
+        'tuesday-dinner': { base_id: 3, curry_id: null, subzi_id: 4, extra_ids: [] },
+      });
   });
 });

@@ -47,6 +47,15 @@ describe('solver', () => {
     ]);
   });
 
+  it('keeps a role pinned empty', () => {
+    const wantCurry = { kind: 'count' as const, id: 'want-curry', label: 'Want a curry', origin: 'rule' as const, select: is('componentType', 'curry'), groupBy: 'slot' as const, bounds: { hardMin: 1 } };
+    const r = solve(buildModel({ library, constraints: [wantCurry] }), {
+      ...quick, seed: 1, pins: { 'friday-lunch': { base_id: 2, curry_id: null } },
+    });
+    expect(r.plan[slotIndex('friday', 'lunch')]).toMatchObject({ base: 2, curry: undefined });
+    expect(r.plan[slotIndex('friday', 'dinner')].curry).toBeDefined();
+  });
+
   it('satisfies a weekly minimum the greedy generator could not express', () => {
     const fishTwice = { kind: 'count' as const, id: 'fish-2', label: 'Fish twice a week', origin: 'rule' as const, select: is('protein_tag', 'fish'), groupBy: 'plan' as const, bounds: { hardMin: 2 } };
     const r = solve(buildModel({ library, constraints: [fishTwice] }), { ...quick, seed: 5 });

@@ -58,7 +58,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   );
   const plan: PlanState = emptyPlan().map((s, i) => {
     const p = pins[i];
-    return { base: p.base_id, curry: p.curry_id, subzi: p.subzi_id, extras: p.extra_ids ? [...p.extra_ids] : s.extras };
+    return { base: p.base_id, curry: p.curry_id ?? undefined, subzi: p.subzi_id ?? undefined, extras: p.extra_ids ? [...p.extra_ids] : s.extras };
   });
   const isFree = (i: number, r: PickRole | 'extras') => pins[i][PIN_KEY[r]] === undefined;
 

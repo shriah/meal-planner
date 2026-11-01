@@ -7,9 +7,8 @@ import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
 import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
 import { generatePlan } from '@/services/planning'
 import type { PlanningOutcome, PlanProblem } from '@/services/plan-generation'
-import { pinsFromLocks } from '@/services/pins'
-import { servedWith, type RuleIssue } from '@/rules'
-import { getAllComponents, getRules } from '@/services/food-db'
+import { pinsForMeal, pinsFromLocks } from '@/services/pins'
+import type { RuleIssue } from '@/rules'
 import type { ExportPlanPayload } from '@/services/export-template'
 
 type LockableComponent = 'base' | 'curry' | 'subzi' | 'extras'
@@ -51,27 +50,25 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     saveWeekPlan(weekStart, outcome.plan, get().locks)
   }
 
-  // A base picked by hand brings the dishes served with it, as the planner would. Locked parts stay.
-  async function fillServed(day: DayOfWeek, slot: MealSlot, baseId: number) {
-    const [library, rules] = await Promise.all([getAllComponents(), getRules()])
-    const base = library.find(c => c.id === baseId)
-    if (!base) return
-    const served = servedWith(base, { day, meal: slot }, library, rules)
+  // A base picked by hand re-plans its meal, so the sides follow every rule. Other meals and locked parts stay.
+  async function replanMeal(day: DayOfWeek, slot: MealSlot, baseId: number) {
     const { plan, locks, currentWeekStart } = get()
-    const i = plan?.slots.findIndex(s => s.day === day && s.meal_slot === slot) ?? -1
-    // The base may have been changed again while the library loaded.
-    if (!plan || i === -1 || plan.slots[i].base_id !== baseId) return
-    const current = plan.slots[i]
-    const free = (part: LockableComponent) => !locks[`${day}-${slot}-${part}`]
-    const next = { ...current }
-    if (served.curry !== undefined && free('curry')) next.curry_id = served.curry
-    if (served.subzi !== undefined && free('subzi')) next.subzi_id = served.subzi
-    if (served.extras.length && free('extras')) next.extra_ids = [...new Set([...current.extra_ids, ...served.extras])]
-    if (next.curry_id === current.curry_id && next.subzi_id === current.subzi_id && next.extra_ids.length === current.extra_ids.length) return
-    const slots = [...plan.slots]
-    slots[i] = next
-    set({ plan: { slots } })
-    saveWeekPlan(currentWeekStart, { slots }, locks)
+    if (!plan) return
+    let outcome: PlanningOutcome
+    try {
+      outcome = await generatePlan({ pins: pinsForMeal(plan, locks, day, slot) })
+    } catch {
+      return
+    }
+    const planned = outcome.plan.slots.find(s => s.day === day && s.meal_slot === slot)
+    const now = get()
+    const i = now.plan?.slots.findIndex(s => s.day === day && s.meal_slot === slot) ?? -1
+    // The base or the week may have changed while the meal was planned.
+    if (!planned || !now.plan || i === -1 || now.plan.slots[i].base_id !== baseId || now.currentWeekStart !== currentWeekStart) return
+    const slots = [...now.plan.slots]
+    slots[i] = planned
+    set({ plan: { slots }, problems: outcome.problems, ruleIssues: outcome.ruleIssues })
+    saveWeekPlan(currentWeekStart, { slots }, now.locks)
   }
 
   return {
@@ -148,7 +145,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const newPlan = { slots: updatedSlots }
       set({ plan: newPlan })
       saveWeekPlan(currentWeekStart, newPlan, locks)
-      if (componentType === 'base') void fillServed(day, slot, componentId)
+      if (componentType === 'base') void replanMeal(day, slot, componentId)
     },
 
     regenerate: async () => {

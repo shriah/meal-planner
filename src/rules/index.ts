@@ -29,4 +29,3 @@ export {
   type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
 export { allowedMealsOf } from './meals';
-export { servedWith, type Served } from './served';

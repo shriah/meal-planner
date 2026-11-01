@@ -60,11 +60,11 @@ export const slotDay = (i: number): Day => DAYS[Math.floor(i / MEALS.length)];
 export const slotMeal = (i: number): Meal => MEALS[i % MEALS.length];
 export const emptyPlan = (): PlanState => Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
 
-/** Locked values for one slot. The solver never moves a pinned value. */
+/** Locked values for one slot. The solver never moves a pinned value. A `null` curry or subzi holds that role empty. */
 export interface SlotPins {
   base_id?: number;
-  curry_id?: number;
-  subzi_id?: number;
+  curry_id?: number | null;
+  subzi_id?: number | null;
   extra_ids?: number[];
 }
 export type Pins = Partial<Record<`${Day}-${Meal}`, SlotPins>>;
