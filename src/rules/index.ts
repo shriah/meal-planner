@@ -11,9 +11,9 @@ export { linkWarnings, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, type Names } from './describe';
 export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
-  pairingRule, pairingCategories, pairedCategories, curryClashRule, clashCurryCategories, linkRule, readLink, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, LINK_TARGETS, LINK_SLOTS, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
+  pairingRule, pairingCategories, pairedCategories, curryClashRule, clashCurryCategories, linkRule, readLink, offersServe, isServeTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, LINK_TARGETS, LINK_SLOTS, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
   readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays, describeMeals,
-  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
+  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type ServeTarget, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
 } from './owned';
 export { compileRules, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export {
@@ -29,3 +29,4 @@ export {
   type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
 export { allowedMealsOf } from './meals';
+export { servedWith, type Served } from './served';

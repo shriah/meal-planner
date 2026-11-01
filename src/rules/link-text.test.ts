@@ -69,3 +69,11 @@ describe('shortLink', () => {
     expect(shortLink(link({ values: [99] }), names)).toBe('Only with a deleted dish');
   });
 });
+
+describe('served with', () => {
+  it('reads as served with, in both forms', () => {
+    expect(describeLink('Sambar', link({ mode: 'serve', values: [1] }), names)).toBe('Sambar is always served with Idli');
+    expect(shortLink(link({ mode: 'serve', values: [1, 2] }), names)).toBe('Served with Idli, Dosa');
+    expect(shortLink(link({ mode: 'serve', values: [1], strength: 'usually', scope: { meals: ['breakfast'] } }), names)).toBe('Usually served with Idli, at breakfast');
+  });
+});

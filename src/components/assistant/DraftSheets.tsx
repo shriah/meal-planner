@@ -1,7 +1,7 @@
 'use client'
 
 import type { AssistantEffect } from '@/assistant/types'
-import type { Draft } from '@/rules'
+import type { DishLink, Draft } from '@/rules'
 import { ComponentForm } from '@/components/library/ComponentForm'
 import { RuleEditor } from '@/components/rules/editor/RuleEditor'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -10,7 +10,7 @@ type DishDraft = Extract<AssistantEffect, { kind: 'dish-draft' }>['draft']
 
 export type Review =
   | { kind: 'rule'; draft: Draft; id: number }
-  | { kind: 'dish'; draft: DishDraft; id: number }
+  | { kind: 'dish'; draft: DishDraft; links?: DishLink[]; id: number }
 
 /** Opens an assistant draft in the normal editor. Nothing is stored except by that editor's own Save. */
 export function DraftSheets({ review, onClose }: { review: Review | null; onClose: () => void }) {
@@ -44,6 +44,7 @@ export function DraftSheets({ review, onClose }: { review: Review | null; onClos
                 mode="add"
                 componentType={review.draft.componentType}
                 draft={review.draft}
+                draftLinks={review.links}
                 onSave={onClose}
                 onDiscard={onClose}
               />

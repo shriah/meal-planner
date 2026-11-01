@@ -73,6 +73,8 @@ interface ComponentFormProps {
   mode: 'edit' | 'add'
   /** Starting values for a new dish (e.g. from the assistant); ignored when editing. */
   draft?: Partial<ComponentRecord>
+  /** Links for a new dish (e.g. the bases the assistant would serve it with); saved with the dish. */
+  draftLinks?: DishLink[]
 }
 
 const sameSet = <T,>(a: readonly T[] = [], b: readonly T[] = []) => a.length === b.length && a.every((v) => b.includes(v))
@@ -112,6 +114,7 @@ function initialFormState(
   componentType: ComponentType,
   ownedRules: RuleRecord[] = [],
   draft?: Partial<ComponentRecord>,
+  draftLinks?: DishLink[],
 ): FormState {
   const owned = readOwned(ownedRules)
   if (component) {
@@ -138,8 +141,9 @@ function initialFormState(
     base_category_id: componentType === 'base' ? String(draft?.base_category_id ?? '') : '',
     extra_category_id: componentType === 'extra' ? String(draft?.extra_category_id ?? '') : '',
     curry_category: componentType === 'curry' ? (draft?.curry_category ?? 'none') : 'none',
-    links: null,
-    linksBase: null,
+    // Drafted links count as edits against nothing stored, so saving writes them all.
+    links: draftLinks?.length ? draftLinks : null,
+    linksBase: draftLinks?.length ? [] : null,
     dietary_tags: draft?.dietary_tags ?? [],
     protein_tag: draft?.protein_tag ?? 'none',
     regional_tags: draft?.regional_tags ?? [],
@@ -180,9 +184,9 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
   return categories?.find((category) => String(category.id) === id)
 }
 
-export function ComponentForm({ component, componentType, onSave, onDiscard, mode, draft }: ComponentFormProps) {
+export function ComponentForm({ component, componentType, onSave, onDiscard, mode, draft, draftLinks }: ComponentFormProps) {
   const [form, setForm] = useState<FormState>(() =>
-    initialFormState(component, componentType, [], mode === 'add' ? draft : undefined),
+    initialFormState(component, componentType, [], mode === 'add' ? draft : undefined, mode === 'add' ? draftLinks : undefined),
   )
   const [saving, setSaving] = useState(false)
   // An open link editor holds a link that Save would silently drop.

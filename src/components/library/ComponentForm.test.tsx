@@ -679,6 +679,30 @@ describe('ComponentForm links', () => {
 });
 
 describe('ComponentForm draft prefill', () => {
+  it('saves a drafted served-with link together with the new dish', async () => {
+    await addCategory({ kind: 'extra', name: 'Condiment' });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' });
+    render(
+      <ComponentForm
+        componentType="extra"
+        mode="add"
+        draft={{ name: 'Coconut Chutney', componentType: 'extra' }}
+        draftLinks={[{ mode: 'serve', target: 'base_dish', values: [idli], strength: 'usually' }]}
+        onSave={() => {}}
+        onDiscard={() => {}}
+      />,
+    );
+
+    expect(await screen.findByText(/Coconut Chutney is usually served with Idli/)).toBeInTheDocument();
+    await userEvent.click(await readyButton('Save Extra'));
+
+    await waitFor(async () => {
+      const [chutney] = await getComponentsByType('extra');
+      const rule = await getOwnedRule(chutney.id, 'serve:base_dish');
+      expect(rule && readLink(rule)).toEqual({ mode: 'serve', target: 'base_dish', values: [idli], strength: 'usually' });
+    });
+  });
+
   it('opens a curry from a draft without writing, and saves it once', async () => {
     render(
       <ComponentForm

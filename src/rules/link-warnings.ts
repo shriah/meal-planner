@@ -2,7 +2,7 @@
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { Names } from './describe';
 import { listValues, scopeText } from './link-text';
-import { isDishTarget, ruleDays, ruleMeals, type DishLink } from './owned';
+import { isDishTarget, readLink, ruleDays, ruleMeals, type DishLink } from './owned';
 import type { RuleRecord } from './record';
 
 export interface LinkWarning { link: number; message: string }
@@ -37,14 +37,25 @@ export function linkWarnings(
   links.forEach((link, i) => {
     if (link.values.length === 0) return;
 
-    if (link.mode === 'with') {
+    if (link.mode === 'with' || link.mode === 'serve') {
       const other = links.find((l) => l.mode === 'never' && l.target === link.target);
       const clash = other ? link.values.filter((v) => other.values.includes(v)) : [];
       if (clash.length > 0) {
         const said = clash.map((v) => listValues({ ...link, values: [v] }, names));
-        const text = `${said.length > 1 ? `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]} are` : `${said[0]} is`} both allowed and ruled out.`;
+        const both = link.mode === 'serve' ? 'both served with and ruled out' : 'both allowed and ruled out';
+        const text = `${said.length > 1 ? `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]} are` : `${said[0]} is`} ${both}.`;
         out.push({ link: i, message: text.charAt(0).toUpperCase() + text.slice(1) });
       }
+    }
+
+    // A meal holds one curry and one subzi, so two of them always served with the same base cannot both be.
+    if (link.mode === 'serve' && link.strength === 'always' && (self.componentType === 'curry' || self.componentType === 'subzi')) {
+      const rival = lookup.dishes.find((d) => d.id !== self.id && d.componentType === self.componentType && ownedBy(d.id).some((r) => {
+        const theirs = readLink(r);
+        return theirs?.mode === 'serve' && theirs.strength === 'always' && theirs.target === link.target
+          && theirs.values.some((v) => link.values.includes(v));
+      }));
+      if (rival) out.push({ link: i, message: `${rival.name} is also always served with one of these, and a meal holds one ${self.componentType}.` });
     }
 
     if (link.mode !== 'with' || link.strength !== 'always') return;

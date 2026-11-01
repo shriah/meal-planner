@@ -96,6 +96,21 @@ describe('sides', () => {
   });
 });
 
+describe('served with', () => {
+  it('adds a dish to every meal whose base it is served with', async () => {
+    await runSeed();
+    const library = await db.components.toArray();
+    const dosa = library.find((c) => c.name === 'Dosa')!;
+    const sambar = library.find((c) => c.name === 'Sambar')!;
+    await db.rules.add({ ...linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [dosa.id] }), enabled: true, created_at: '' });
+
+    const { plan } = await generatePlan({ seed: 1, pins: { 'monday-breakfast': { base_id: dosa.id } } });
+    const dosaMeals = plan.slots.filter((s) => s.base_id === dosa.id);
+    expect(dosaMeals.length).toBeGreaterThan(0);
+    for (const slot of dosaMeals) expect(slot.curry_id).toBe(sambar.id);
+  });
+});
+
 describe('links to specific dishes', () => {
   it('plans a curry only with the chosen bases and never with the chosen extra', async () => {
     await runSeed();

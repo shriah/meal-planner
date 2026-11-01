@@ -479,6 +479,25 @@ describe('propose_dish', () => {
     });
   });
 
+  it('drafts a dish with the bases it is served with, resolved by name', async () => {
+    const lib = [...library, dish(3, 'Idli', { componentType: 'base' })];
+    const r = await runTool('propose_dish', { name: 'Coconut Chutney', componentType: 'extra', served_with_bases: ['idli'], served_with_base_categories: ['Rice-Based'], served_with_strength: 'Often' }, ctxOf({ library: lib, categories }));
+    expect(r.ok).toBe(true);
+    expect((r as { effect: { links: unknown } }).effect.links).toEqual([
+      { mode: 'serve', target: 'base_dish', values: [3], strength: 'moderately' },
+      { mode: 'serve', target: 'base_category', values: [1], strength: 'moderately' },
+    ]);
+    expect((r as { data: { servedWith: string[] } }).data.servedWith).toEqual(['idli', 'Rice-Based']);
+  });
+
+  it('refuses unknown bases, and serving a base with bases', async () => {
+    const unknown = await runTool('propose_dish', { name: 'Chutney', componentType: 'extra', served_with_bases: ['Pesarattu'] }, ctx());
+    expect(unknown.ok).toBe(false);
+    expect((unknown as { error: string }).error).toContain('no base named "Pesarattu"');
+    const base = await runTool('propose_dish', { name: 'Upma', componentType: 'base', served_with_bases: ['Sambar'] }, ctx());
+    expect(base.ok).toBe(false);
+  });
+
   it('resolves a base category name to its id', async () => {
     const r = await runTool('propose_dish', { name: 'Jeera Rice', componentType: 'base', base_category: 'Rice-Based' }, ctx());
     expect(effectOf(r)?.draft).toMatchObject({ componentType: 'base', base_category_id: 1 });

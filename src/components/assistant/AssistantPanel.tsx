@@ -168,7 +168,7 @@ export function AssistantPanel({ gemini = streamGemini }: { gemini?: GeminiCall 
                 {effect.kind === 'dish-draft' && (
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-muted-foreground">Dish draft: {effect.draft.name}</span>
-                    <Button type="button" size="sm" variant="outline" onClick={() => setReview({ kind: 'dish', draft: effect.draft, id: newId() })}>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setReview({ kind: 'dish', draft: effect.draft, links: effect.links, id: newId() })}>
                       Review dish
                     </Button>
                   </div>

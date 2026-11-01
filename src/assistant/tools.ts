@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeSpec, missingReferences, parseSpec, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type KnownIds, type RuleSpec } from '@/rules';
+import { describeSpec, missingReferences, parseSpec, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -23,6 +23,10 @@ const SPEC_PARAM = {
   type: 'string',
   description: `JSON text of the rule spec: {"template": ..., "params": {...}}. template is one of ${TEMPLATE_IDS.join('|')}.`,
 };
+
+// The strengths a served-with pairing may take, in the words the model uses.
+const SERVE_STRENGTHS = ['always', 'usually', 'often', 'sometimes'] as const;
+const SERVE_STRENGTH: Record<(typeof SERVE_STRENGTHS)[number], LinkStrength> = { always: 'always', usually: 'usually', often: 'moderately', sometimes: 'sometimes' };
 
 export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   {
@@ -67,7 +71,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   },
   {
     name: 'propose_dish',
-    description: 'Draft a new dish for the user to review and save. Does not save anything itself and never creates categories: base_category and extra_category must name an existing category.',
+    description: 'Draft a new dish for the user to review and save. Does not save anything itself and never creates categories: base_category and extra_category must name an existing category. For a curry, subzi or extra, served_with_bases / served_with_base_categories pair it with bases: whenever one of them is the meal\'s base, the dish is added too.',
     parameters: obj({
       name: { type: 'string', description: 'Dish name' },
       componentType: { type: 'string', enum: [...COMPONENT_TYPES], description: 'Dish type' },
@@ -78,6 +82,9 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
       protein_tag: { type: 'string', enum: [...PROTEIN_TAGS] },
       regional_tags: { type: 'array', items: { type: 'string', enum: [...REGIONAL_TAGS] } },
       occasion_tags: { type: 'array', items: { type: 'string', enum: [...OCCASION_TAGS] } },
+      served_with_bases: { type: 'array', items: { type: 'string' }, description: 'Existing base dish names to serve this dish with (not for base dishes)' },
+      served_with_base_categories: { type: 'array', items: { type: 'string' }, description: 'Existing base category names to serve this dish with (not for base dishes)' },
+      served_with_strength: { type: 'string', enum: [...SERVE_STRENGTHS], description: 'How firmly: always (default), usually, often or sometimes' },
     }, ['name', 'componentType']),
   },
   {
@@ -112,6 +119,9 @@ const ProposeDishArgs = z.object({
   protein_tag: z.string().optional(),
   regional_tags: z.array(z.string()).optional(),
   occasion_tags: z.array(z.string()).optional(),
+  served_with_bases: z.array(z.string().trim().min(1)).optional(),
+  served_with_base_categories: z.array(z.string().trim().min(1)).optional(),
+  served_with_strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
 });
 const MAX_CHANGES = 21;
 const NoArgs = z.object({}).passthrough();
@@ -405,6 +415,31 @@ const HANDLERS: Record<string, Handler> = {
     const dup = data.library.find((c) => c.componentType === componentType && normName(c.name) === key);
     if (dup) return { ok: false, error: `already in the library: ${dup.name} (${componentType}). Do not propose it again.` };
 
+    // Bases the dish is served with, by name; a base is never served with another base.
+    const servedBases = v.served_with_bases ?? [];
+    const servedCategories = v.served_with_base_categories ?? [];
+    if ((servedBases.length || servedCategories.length) && componentType === 'base') {
+      return { ok: false, error: 'a base cannot be served with bases; draft the curry, subzi or extra that goes with it instead' };
+    }
+    const bases = data.library.filter((c) => c.componentType === 'base');
+    const baseIds: number[] = [];
+    for (const wanted of servedBases) {
+      const hit = bases.find((c) => normName(c.name) === normName(wanted));
+      if (!hit) return { ok: false, error: `no base named "${wanted}". Existing bases: ${bases.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
+      baseIds.push(hit.id);
+    }
+    const categoryIds: number[] = [];
+    for (const wanted of servedCategories) {
+      const hit = resolve('base', wanted);
+      if (hit.error) return { ok: false, error: hit.error };
+      categoryIds.push(hit.id!);
+    }
+    const strength = SERVE_STRENGTH[v.served_with_strength ?? 'always'];
+    const links: DishLink[] = [
+      ...(baseIds.length ? [{ mode: 'serve' as const, target: 'base_dish' as const, values: [...new Set(baseIds)], strength }] : []),
+      ...(categoryIds.length ? [{ mode: 'serve' as const, target: 'base_category' as const, values: [...new Set(categoryIds)], strength }] : []),
+    ];
+
     const draft: Partial<ComponentRecord> & { componentType: ComponentType } = {
       name: v.name,
       componentType,
@@ -416,7 +451,12 @@ const HANDLERS: Record<string, Handler> = {
       ...(v.regional_tags ? { regional_tags: v.regional_tags as ComponentRecord['regional_tags'] } : {}),
       ...(v.occasion_tags ? { occasion_tags: v.occasion_tags as ComponentRecord['occasion_tags'] } : {}),
     };
-    return { ok: true, data: { similarExisting: similarNames(v.name, data.library) }, effect: { kind: 'dish-draft', draft } };
+    const servedWith = [...servedBases, ...servedCategories];
+    return {
+      ok: true,
+      data: { similarExisting: similarNames(v.name, data.library), ...(servedWith.length ? { servedWith } : {}) },
+      effect: { kind: 'dish-draft', draft, ...(links.length ? { links } : {}) },
+    };
   },
   async simulate_with_rule(args, ctx) {
     const a = parse(SimulateArgs, args);

@@ -148,6 +148,30 @@ describe('link strength', () => {
   });
 });
 
+describe('served with', () => {
+  it('stores a serve link as an also-include rule the dish owns, and reads it back', () => {
+    for (const target of ['base_dish', 'base_category'] as const) {
+      const link = { mode: 'serve' as const, target, values: [3, 4], strength: 'usually' as const, scope: { meals: ['breakfast' as const] } };
+      const rule = linkRule(dish, link);
+      expect(rule.spec).toMatchObject({ template: 'require_with', params: { components: [7], strength: 'prefer', cost: 10, scope: { meals: ['breakfast'] } } });
+      expect(readLink(rule)).toEqual(link);
+      expect(ownedSlot(rule)).toBe(`serve:${target}`);
+    }
+  });
+
+  it('does not read a hand-written also-include rule as a link', () => {
+    const odd = { spec: { template: 'require_with' as const, params: { when: { field: 'id' as const, op: 'eq' as const, value: 3 }, components: [7, 8], extraCategories: [], strength: 'must' as const } } };
+    expect(readLink(odd as never)).toBeUndefined();
+  });
+
+  it('offers serving with bases to every dish but a base', () => {
+    const serve = { ...NONE, links: [{ mode: 'serve' as const, target: 'base_dish' as const, values: [3], strength: 'always' as const }] };
+    expect(ownedChanges('curry', serve)['serve:base_dish']?.(dish).spec.template).toBe('require_with');
+    expect(ownedChanges('extra', serve)['serve:base_category']).toBeNull();
+    expect('serve:base_dish' in ownedChanges('base', serve)).toBe(false);
+  });
+});
+
 describe('links', () => {
   it('round-trips each kind of link through its rule, and names the slot it fills', () => {
     for (const mode of ['with', 'never'] as const) {

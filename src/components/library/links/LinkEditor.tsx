@@ -5,14 +5,13 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { describeLink, dishTypeOf, isDishTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersLink, type DishLink, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
+import { describeLink, dishTypeOf, isDishTarget, isServeTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersLink, offersServe, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
 const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' }
-const MODE_LABEL = { with: 'Only with', never: 'Never with' } as const
-const MODES = ['with', 'never'] as const
+const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with' }
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -53,8 +52,13 @@ export function LinkEditor({ componentType, selfId, dishName, initial, taken, on
     const slot = linkSlotOf({ mode, target })
     return slot === own || !taken.includes(slot)
   }
-  const targets = LINK_TARGETS.filter((t) => offersLink(componentType, t) && MODES.some((m) => free(m, t)))
-  const firstMode = (target: LinkTarget) => MODES.find((m) => free(m, target)) ?? 'with'
+  // "Served with" adds the dish to meals with that base, so it is offered for base targets on non-base dishes.
+  const modesFor = (t: LinkTarget): LinkMode[] => [
+    ...(isServeTarget(t) && offersServe(componentType) ? ['serve' as const] : []),
+    ...(offersLink(componentType, t) ? ['with' as const, 'never' as const] : []),
+  ]
+  const targets = LINK_TARGETS.filter((t) => modesFor(t).some((m) => free(m, t)))
+  const firstMode = (target: LinkTarget) => modesFor(target).find((m) => free(m, target)) ?? 'with'
 
   const [target, setTarget] = useState<LinkTarget | undefined>(initial?.target ?? targets[0])
   const [mode, setMode] = useState<DishLink['mode']>(initial?.mode ?? (targets[0] ? firstMode(targets[0]) : 'with'))
@@ -77,7 +81,7 @@ export function LinkEditor({ componentType, selfId, dishName, initial, taken, on
   const link: DishLink = { mode, target, values, strength, ...(scope ? { scope } : {}) }
   const pickTarget = (next: LinkTarget) => {
     setTarget(next)
-    if (!free(mode, next)) setMode(firstMode(next))
+    if (!modesFor(next).includes(mode) || !free(mode, next)) setMode(firstMode(next))
     // Values of one target mean nothing for another.
     if (next !== target) setValues([])
   }
@@ -98,7 +102,7 @@ export function LinkEditor({ componentType, selfId, dishName, initial, taken, on
       </div>
 
       <div className="flex flex-wrap gap-1" role="group" aria-label="Mode">
-        {MODES.map((m) => (
+        {modesFor(target).map((m) => (
           <Button key={m} type="button" size="sm" variant={mode === m ? 'secondary' : 'outline'} aria-pressed={mode === m}
             disabled={!free(m, target)} onClick={() => setMode(m)}>
             {MODE_LABEL[m]}

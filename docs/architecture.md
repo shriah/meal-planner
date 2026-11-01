@@ -94,7 +94,10 @@ links (`DishLink` in `src/rules/owned.ts`). A link has a mode, a target, values,
 the categories of another kind of dish (base categories, extra categories, curry types) or specific dishes (bases, curries,
 subzis, extras); a dish is never offered its own kind where a meal holds only one, and a base is not offered base categories or
 bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
-of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`).
+of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A curry, subzi or extra may also be
+**served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
+is the meal's base, the dish is added. The planner does this through the rule; picking a base by hand on the plan fills the
+unlocked curry, subzi and extras from these links (`servedWith` in `src/rules/served.ts`, called from the plan store).
 
 Strength is **always** (`must`) or **usually**, **moderately**, **sometimes** (`prefer` with cost 10, 6 or 3). A stored cost reads
 back as usually at 8 or more, moderately at 5 to 7 and sometimes at 4 or less ("Often" in the UI for moderately), so older
@@ -173,7 +176,8 @@ a compact library summary, the discussed plan and its problems). Step 2 sends th
 Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
 week's dish names, `explain_rule` for whether a rule is active and where the plan breaks it, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
 named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
-(`propose_rule`, `propose_dish`) that only validate and return a draft. A rule spec travels as JSON text.
+(`propose_rule`, `propose_dish`) that only validate and return a draft. A rule spec travels as JSON text. `propose_dish` can
+include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together.
 Each question makes at most 5 requests to Gemini (the last one without tools, so it must answer); the prompt
 tells the model to answer from the slice when it can and to batch its tool calls into one step.
 If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in

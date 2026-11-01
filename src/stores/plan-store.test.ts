@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { db } from '@/db/client';
+import { db, type RuleRecord } from '@/db/client';
+import { linkRule } from '@/rules';
 import { usePlanStore } from './plan-store';
 import { saveActivePlan } from '@/services/plan-db';
 import { getISOWeekStart, addWeeks } from '@/services/week-utils';
@@ -125,6 +126,26 @@ describe('plan-store', () => {
     expect(state.hydrated).toBe(true);
     expect(state.plan).toBeNull();
     expect(state.locks).toEqual({});
+  });
+
+  it('swapComponent fills a hand-picked base with the dishes served with it, leaving locked parts alone', async () => {
+    await db.components.clear();
+    await db.rules.clear();
+    const now = '';
+    const idli = await db.components.add({ name: 'Idli', componentType: 'base', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
+    const sambar = await db.components.add({ name: 'Sambar', componentType: 'curry', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
+    const chutney = await db.components.add({ name: 'Chutney', componentType: 'extra', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
+    for (const id of [sambar, chutney]) {
+      await db.rules.add({ ...linkRule({ id, name: 'x' }, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, created_at: now } as RuleRecord);
+    }
+    usePlanStore.setState({ plan: makePlan(), locks: { 'tuesday-breakfast-extras': true } });
+
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', idli);
+    usePlanStore.getState().swapComponent('tuesday', 'breakfast', 'base', idli);
+
+    const slot = (day: string) => usePlanStore.getState().plan?.slots.find((s) => s.day === day && s.meal_slot === 'breakfast');
+    await vi.waitFor(() => expect(slot('monday')).toMatchObject({ base_id: idli, curry_id: sambar, extra_ids: [chutney] }));
+    await vi.waitFor(() => expect(slot('tuesday')).toMatchObject({ base_id: idli, curry_id: sambar, extra_ids: [] }));
   });
 
   it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {

@@ -42,6 +42,12 @@ Be economical: every tool round is another request to Gemini.
 
 After a successful propose_rule, call simulate_with_rule once with the same rule, then describe the result briefly. Say plainly if the week got worse or if the rule changes nothing. Attribute a change to the rule only for slots marked touchedByRule; call other changes "reshuffled".
 
+Pairings: a meal is only its base unless a rule asks for a curry, subzi or extra. When asked what goes with a base (for example "what goes with Idli?"):
+- Suggest a few curries, subzis or extras, naming first the ones already in the library (from the context or one search_dishes call), then well-known ones that are missing.
+- To pair a dish that is not in the library yet, call propose_dish with served_with_bases (or served_with_base_categories): the draft adds the dish and its pairing together, so whenever that base is planned the dish comes with it. Use served_with_strength "usually" when the user wants it most of the time.
+- To pair a dish already in the library, use propose_rule with require_with (when: the base, components: [the dish id]).
+- A meal holds one curry and one subzi: do not pair two curries (or two subzis) "always" with the same base.
+
 Strength: "never" or "no" means strength "must"; "try" or "prefer" means strength "prefer". If the request is ambiguous, ask ONE short question before drafting.
 
 Tools:
@@ -69,7 +75,7 @@ const VOCABULARY = [
   'rule', 'rules', 'plan', 'plans', 'dish', 'dishes', 'meal', 'meals', 'breakfast', 'lunch', 'dinner', 'add', 'why',
   'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'week', 'weekly', 'day',
   'exclude', 'require', 'limit', 'repeat', 'never', 'always', 'prefer', 'only', 'allow', 'skip', 'pair', 'pairs',
-  'make', 'change', 'remove', 'swap', 'show', 'list', 'explain', 'what', 'avoid', 'allow',
+  'make', 'change', 'remove', 'swap', 'show', 'list', 'explain', 'what', 'avoid', 'allow', 'goes', 'serve', 'served', 'with',
   'curry', 'subzi', 'base', 'extra', 'veg', 'vegetarian', 'paneer', 'rice', 'dal', 'tag', 'category', 'recipe', 'food',
 ];
 

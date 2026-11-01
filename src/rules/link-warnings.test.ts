@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ComponentRecord, ComponentType } from '@/types/component';
-import { exclusionRule, mealRule, dayRule, type DishLink } from './owned';
+import { exclusionRule, linkRule, mealRule, dayRule, type DishLink } from './owned';
 import { linkWarnings } from './link-warnings';
 import type { RuleRecord } from './record';
 
@@ -72,5 +72,22 @@ describe('linkWarnings', () => {
     expect(linkWarnings(self, [link({ strength: 'usually' })], { dishes, rules }, names)).toEqual([]);
     expect(linkWarnings(self, [link({ mode: 'never' })], { dishes, rules }, names)).toEqual([]);
     expect(linkWarnings(self, [link({ values: [2] })], { dishes, rules }, names)).toEqual([]);
+  });
+});
+
+describe('served-with warnings', () => {
+  it('flags a base both served with and ruled out', () => {
+    const links = [link({ mode: 'serve', values: [1, 2] }), link({ mode: 'never', values: [2] })];
+    expect(linkWarnings(self, links, { dishes, rules: [] }, names)).toEqual([{ link: 0, message: 'Dosa is both served with and ruled out.' }]);
+  });
+
+  it('flags another curry always served with the same base, but not a softer one', () => {
+    const rasam = dish(11, 'curry', { name: 'Rasam' });
+    const theirs = (strength: 'always' | 'usually') => rec(linkRule({ id: 11, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [1], strength }), 50);
+    const links = [link({ mode: 'serve', values: [1] })];
+    expect(linkWarnings(self, links, { dishes: [...dishes, rasam], rules: [theirs('always')] }, names)).toEqual([
+      { link: 0, message: 'Rasam is also always served with one of these, and a meal holds one curry.' },
+    ]);
+    expect(linkWarnings(self, links, { dishes: [...dishes, rasam], rules: [theirs('usually')] }, names)).toEqual([]);
   });
 });

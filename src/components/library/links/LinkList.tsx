@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, type DishLink } from '@/rules'
+import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, offersServe, SERVE_TARGETS, type DishLink } from '@/rules'
 import type { ComponentType } from '@/types/component'
 import { linkNames, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
@@ -35,6 +35,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange, onE
   const warnings = ready ? linkWarnings({ id: selfId, name: dishName, componentType }, links, lookup, names) : []
   const taken = links.map(linkSlotOf)
   const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
+    || (offersServe(componentType) && SERVE_TARGETS.some((t) => !taken.includes(linkSlotOf({ mode: 'serve', target: t }))))
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
   const editor = (initial?: DishLink) => (
