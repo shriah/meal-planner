@@ -266,6 +266,27 @@ export const offersLink = (componentType: ComponentType, target: LinkTarget): bo
   return !((componentType === 'curry' && target === 'curry_dish') || (componentType === 'subzi' && target === 'subzi_dish'));
 };
 
+/** Targets "Only with" may be offered for; a limit to specific curries, subzis or extras is too narrow to start. */
+const ONLY_WITH_TARGETS: readonly LinkTarget[] = ['base_category', 'base_dish', 'extra_category'];
+
+/**
+ * The link slots "Add link" may create for a dish: served with bases, never with every offered target,
+ * only with the broad targets. Specific curries, subzis and extras are offered only where the dish already
+ * links to them. Slots the dish already fills are left out.
+ */
+export const addableSlots = (componentType: ComponentType, links: DishLink[]): LinkSlot[] => {
+  const taken = links.map(linkSlotOf);
+  const out: LinkSlot[] = [];
+  for (const target of LINK_TARGETS) {
+    const known = !isDishTarget(target) || target === 'base_dish' || links.some((l) => l.target === target);
+    if (isServeTarget(target) && offersServe(componentType)) out.push(linkSlotOf({ mode: 'serve', target }));
+    if (!offersLink(componentType, target)) continue;
+    if (ONLY_WITH_TARGETS.includes(target)) out.push(linkSlotOf({ mode: 'with', target }));
+    if (known) out.push(linkSlotOf({ mode: 'never', target }));
+  }
+  return out.filter((slot) => !taken.includes(slot));
+};
+
 /**
  * The rule changes that make a dish's stored rules match `values`; only types that suit the dish are offered.
  * With `links` given, every offered link slot is set from the list or removed. Left out, stored links stay.

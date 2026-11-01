@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
+  addableSlots, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
   mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
   type DishLink,
 } from './owned';
@@ -230,5 +230,41 @@ describe('meals', () => {
     expect(describeMeals([])).toBeUndefined();
     expect(describeMeals(['breakfast', 'lunch', 'dinner'])).toBeUndefined();
     expect(describeMeals(['dinner', 'breakfast'])).toBe('Only breakfast, dinner');
+  });
+});
+
+describe('addableSlots', () => {
+  it('offers a curry served with bases, never with every broad target, only with the broad ones', () => {
+    expect(addableSlots('curry', []).sort()).toEqual([
+      'never:base_category', 'never:base_dish', 'never:curry_category', 'never:extra_category',
+      'serve:base_category', 'serve:base_dish', 'with:base_category', 'with:base_dish', 'with:extra_category',
+    ].sort());
+  });
+
+  it('offers an extra the same, plus never with curry types', () => {
+    const slots = addableSlots('extra', []);
+    expect(slots).toContain('serve:base_category');
+    expect(slots).toContain('never:curry_category');
+    expect(slots).not.toContain('with:curry_category');
+    expect(slots).not.toContain('never:curry_dish');
+    expect(slots).not.toContain('with:extra_dish');
+  });
+
+  it('offers a base no served-with and no base targets', () => {
+    const slots = addableSlots('base', []);
+    expect(slots.some((s) => s.startsWith('serve:') || s.endsWith('base_category') || s.endsWith('base_dish'))).toBe(false);
+    expect(slots).toContain('never:curry_category');
+  });
+
+  it('offers a specific-dish target only where the dish already links to it', () => {
+    const slots = addableSlots('extra', [link('with', 'curry_dish', [3])]);
+    expect(slots).toContain('never:curry_dish');
+    expect(slots).not.toContain('with:curry_dish');
+  });
+
+  it('leaves out slots already taken', () => {
+    const slots = addableSlots('curry', [link('serve', 'base_category', [1])]);
+    expect(slots).not.toContain('serve:base_category');
+    expect(slots).toContain('serve:base_dish');
   });
 });

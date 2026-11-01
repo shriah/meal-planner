@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, offersServe, SERVE_TARGETS, type DishLink } from '@/rules'
+import { addableSlots, describeLink, linkWarnings, linkSlotOf, type DishLink } from '@/rules'
 import type { ComponentType } from '@/types/component'
 import { linkNames, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
@@ -33,9 +33,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange, onE
   const name = dishName.trim() || 'This dish'
   // Nothing is known about the library until it has loaded, so every link would look unpairable.
   const warnings = ready ? linkWarnings({ id: selfId, name: dishName, componentType }, links, lookup, names) : []
-  const taken = links.map(linkSlotOf)
-  const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
-    || (offersServe(componentType) && SERVE_TARGETS.some((t) => !taken.includes(linkSlotOf({ mode: 'serve', target: t }))))
+  const slotsLeft = addableSlots(componentType, links).length > 0
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
   const editor = (initial?: DishLink) => (
@@ -45,7 +43,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange, onE
         selfId={selfId}
         dishName={dishName}
         initial={initial}
-        taken={taken}
+        links={links}
         onCancel={() => setEditing(null)}
         onDone={(link) => {
           onChange(initial === undefined ? [...links, link] : links.map((l) => (linkSlotOf(l) === linkSlotOf(initial) ? link : l)))

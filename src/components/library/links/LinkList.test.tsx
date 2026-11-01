@@ -95,7 +95,7 @@ describe('LinkList', () => {
     expect(targets).not.toContain('Curry types');
     expect(targets).toContain('Extra categories');
     await userEvent.selectOptions(linkTo, 'Extra categories');
-    expect(screen.getByRole('button', { name: 'Only with' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Never with' })).toHaveAttribute('aria-pressed', 'true');
 
     await userEvent.selectOptions(linkTo, 'Base categories');
@@ -119,7 +119,9 @@ describe('LinkList', () => {
     const ids: Record<string, number> = {};
     for (const name of ['Pickle', 'Raita', 'Rasam', 'Curd', 'Chips', 'Salad', 'Chutney', 'Payasam', 'Buttermilk']) ids[name] = await dish(name, 'extra');
     const onChange = vi.fn();
-    render(<Harness initial={[]} componentType="extra" selfId={self} onChange={onChange} />);
+    // Specific extras are offered only where the dish already links to them.
+    const stored: DishLink = { mode: 'with', target: 'extra_dish', values: [ids.Pickle], strength: 'always' };
+    render(<Harness initial={[stored]} componentType="extra" selfId={self} onChange={onChange} />);
 
     await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
@@ -141,8 +143,55 @@ describe('LinkList', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     expect(onChange).toHaveBeenLastCalledWith([
+      stored,
       { mode: 'never', target: 'extra_dish', values: [ids.Rasam, ids.Chips], strength: 'always' },
     ]);
+  });
+
+  it('offers a new curry link served with first, and only the allowed targets', async () => {
+    await addCategory({ kind: 'base', name: 'Rice Plates' });
+    render(<Harness initial={[]} />);
+
+    await userEvent.click(await readyButton('Add link'));
+    const linkTo = screen.getByRole('combobox', { name: 'Link to' });
+    expect(within(linkTo).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Base categories', 'Extra categories', 'Curry types', 'Specific bases',
+    ]);
+    expect(linkTo).toHaveValue('base_category');
+    expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Only with' })).toBeInTheDocument();
+    await userEvent.selectOptions(linkTo, 'Curry types');
+    expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Served with' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Never with' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('offers an extra the same, with no specific dishes', async () => {
+    render(<Harness initial={[]} componentType="extra" />);
+
+    await userEvent.click(await readyButton('Add link'));
+    const linkTo = screen.getByRole('combobox', { name: 'Link to' });
+    expect(within(linkTo).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Base categories', 'Extra categories', 'Curry types', 'Specific bases',
+    ]);
+    expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('keeps a stored only-with link on specific curries listed, editable and removable', async () => {
+    const other = await dish('Kootu', 'curry');
+    const onChange = vi.fn();
+    render(<Harness initial={[{ mode: 'with', target: 'curry_dish', values: [other], strength: 'always' }]} componentType="extra" onChange={onChange} />);
+
+    const item = await screen.findByRole('listitem');
+    await waitFor(() => expect(item).toHaveTextContent('Sambar is always planned only with Kootu'));
+    await userEvent.click(await readyButton('Edit', item));
+    expect(screen.getByRole('combobox', { name: 'Link to' })).toHaveValue('curry_dish');
+    expect(screen.getByRole('button', { name: 'Only with' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Sometimes' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onChange).toHaveBeenLastCalledWith([{ mode: 'with', target: 'curry_dish', values: [other], strength: 'sometimes' }]);
+    await userEvent.click(await readyButton('Remove'));
+    expect(onChange).toHaveBeenLastCalledWith([]);
   });
 
   it('selects all and clears the options', async () => {
