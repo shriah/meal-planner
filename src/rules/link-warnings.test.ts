@@ -22,6 +22,17 @@ describe('linkWarnings', () => {
     expect(linkWarnings(self, links, { dishes, rules: [] }, names)).toEqual([{ link: 0, message: 'Dosa is both allowed and ruled out.' }]);
   });
 
+  it('capitalises a clash that starts with a deleted value', () => {
+    const links = [link({ values: [99] }), link({ mode: 'never', values: [99] })];
+    expect(linkWarnings(self, links, { dishes, rules: [] }, names)[0]).toEqual({ link: 0, message: 'A deleted dish is both allowed and ruled out.' });
+  });
+
+  it('words a dish target as "None of"', () => {
+    const rules = [rec(exclusionRule(idli), 1), rec(exclusionRule({ id: 2, name: 'Dosa' }), 2)];
+    expect(linkWarnings(self, [link({ values: [1, 2] })], { dishes, rules }, names)[0].message)
+      .toBe('None of Idli or Dosa can be planned, so Sambar would never be planned.');
+  });
+
   it('flags an always link whose dishes never plan automatically', () => {
     const rules = [rec(exclusionRule(idli), 1)];
     expect(linkWarnings(self, [link({ target: 'base_category', values: [1] }), ], { dishes: [dishes[0]], rules }, names)).toEqual([
@@ -37,7 +48,7 @@ describe('linkWarnings', () => {
 
   it('uses "this dish" when the dish has no name yet', () => {
     const w = linkWarnings({ componentType: 'curry' }, [link({ values: [99] })], { dishes, rules: [] }, names);
-    expect(w[0].message).toBe('No dish in a deleted dish can be planned, so this dish would never be planned.');
+    expect(w[0].message).toBe('None of a deleted dish can be planned, so this dish would never be planned.');
   });
 
   it('flags chosen dishes that their own meals rule hides from the link scope', () => {

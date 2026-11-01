@@ -61,7 +61,8 @@ describe('shortLink', () => {
   });
 
   it('spells out a scoped base category link', () => {
-    expect(shortLink(link({ target: 'base_category', values: [1], scope: { meals: ['lunch'] } }), names)).toBe('Only with Rice-based');
+    expect(shortLink(link({ target: 'base_category', values: [1], scope: { meals: ['lunch'] } }), names)).toBe('Only with Rice-based, at lunch');
+    expect(shortLink(link({ mode: 'never', scope: { days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], meals: ['dinner'] } }), names)).toBe('Not with Idli, Dosa, on weekdays at dinner');
   });
 
   it('names deleted values', () => {

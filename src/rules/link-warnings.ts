@@ -42,14 +42,18 @@ export function linkWarnings(
       const clash = other ? link.values.filter((v) => other.values.includes(v)) : [];
       if (clash.length > 0) {
         const said = clash.map((v) => listValues({ ...link, values: [v] }, names));
-        out.push({ link: i, message: `${said.length > 1 ? `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]} are` : `${said[0]} is`} both allowed and ruled out.` });
+        const text = `${said.length > 1 ? `${said.slice(0, -1).join(', ')} and ${said[said.length - 1]} are` : `${said[0]} is`} both allowed and ruled out.`;
+        out.push({ link: i, message: text.charAt(0).toUpperCase() + text.slice(1) });
       }
     }
 
     if (link.mode !== 'with' || link.strength !== 'always') return;
     const usable = chosenDishes(link, self.id, lookup.dishes).filter((d) => !ownedBy(d.id).some((r) => r.spec.template === 'exclude'));
     if (usable.length === 0) {
-      out.push({ link: i, message: `No dish in ${listValues(link, names)} can be planned, so ${mine} would never be planned.` });
+      const listed = listValues(link, names);
+      out.push({ link: i, message: isDishTarget(link.target)
+        ? `None of ${listed} can be planned, so ${mine} would never be planned.`
+        : `No dish in ${listed} can be planned, so ${mine} would never be planned.` });
       return;
     }
 

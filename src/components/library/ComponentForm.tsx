@@ -185,6 +185,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     initialFormState(component, componentType, [], mode === 'add' ? draft : undefined),
   )
   const [saving, setSaving] = useState(false)
+  // An open link editor holds a link that Save would silently drop.
+  const [editingLink, setEditingLink] = useState(false)
   const lookup = useLibraryLookup()
   const baseCategories = lookup.loaded ? lookup.baseCategories : undefined
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
@@ -203,11 +205,11 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
           return pairedCategories(rule, baseCategories.map((c) => c.id)).includes(component.base_category_id as number)
         })
       : []
-  // Hand-written rules (not owned by this dish) that name it, shown read-only with a link to the Rules page.
+  // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.
   const names = linkNames(lookup)
   const mentioning = component
     ? lookup.rules.flatMap((r) => {
-        if (r.owner_component_id === component.id) return []
+        if (r.owner_component_id != null) return []
         const parsed = parseSpec(r.spec)
         if (!parsed.ok || !specReferences(parsed.spec).components.includes(component.id)) return []
         return [{ id: r.id, enabled: r.enabled, text: describeSpec(parsed.spec, names) }]
@@ -491,6 +493,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             componentType={componentType}
             selfId={component?.id}
             links={links}
+            onEditingChange={setEditingLink}
             onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
           />
         </ShareLibraryLookup>
@@ -597,12 +600,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-2">
-        <Button onClick={handleSave} disabled={saving || !form.name.trim() || !canSaveBase || !canSaveExtra}>
+        <Button onClick={handleSave} disabled={saving || editingLink || !form.name.trim() || !canSaveBase || !canSaveExtra}>
           Save {singularLabel}
         </Button>
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>
           Discard changes
         </Button>
+        {editingLink && <p className="self-center text-xs text-muted-foreground">Finish or cancel the link first.</p>}
       </div>
     </div>
   )

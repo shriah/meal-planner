@@ -497,6 +497,29 @@ describe('ComponentForm links', () => {
     await waitFor(async () => expect(await pairedBases(sambar.id)).toBeUndefined());
   });
 
+  it('holds back Save while a link is being built, then saves it', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    // Ticking every category would mean no rule at all.
+    await addCategory({ kind: 'base', name: 'Flatbreads' });
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await userEvent.click(await readyButton('Add link'));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Base categories');
+    await userEvent.click(screen.getByRole('button', { name: 'Only with' }));
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Rice Plates' }));
+    await userEvent.type(screen.getByLabelText('Name'), 'Sambar');
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeDisabled();
+    expect(screen.getByText('Finish or cancel the link first.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByText('Finish or cancel the link first.')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
+    await waitFor(async () => {
+      const [sambar] = await getComponentsByType('curry');
+      expect(await pairedBases(sambar.id)).toEqual([riceId]);
+    });
+  });
+
   it('offers each kind of dish only the links that suit it', async () => {
     const { rerender } = render(<ComponentForm componentType="base" mode="add" onSave={() => {}} onDiscard={() => {}} />);
     await userEvent.click(await readyButton('Add link'));
@@ -559,6 +582,9 @@ describe('ComponentForm links', () => {
     const onId = await db.rules.add(rule('No sambar', true));
     const offId = await db.rules.add(rule('Skip sambar', false));
     const ownedId = await db.rules.add(rule('Owned by dish', true, dishId));
+    // Another dish's own link that names this one is part of that dish's links, not a hand-written rule.
+    const otherId = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags }, {});
+    const otherOwnedId = await db.rules.add(rule('Owned by Idli', true, otherId));
 
     render(<LiveEditForm componentId={dishId} />);
     const section = (await screen.findByText('Other rules mentioning this dish')).parentElement!;
@@ -567,6 +593,7 @@ describe('ComponentForm links', () => {
     expect(within(section).getByText(/\(off\)/)).toBeInTheDocument();
     expect(within(section).queryByRole('link', { name: /Owned/ })).toBeNull();
     expect(section.innerHTML).not.toContain(`rule-${ownedId}`);
+    expect(section.innerHTML).not.toContain(`rule-${otherOwnedId}`);
   });
 
   it('does not prefill a new dish from hand-written rules', async () => {

@@ -44,12 +44,12 @@ export function describeLink(dishName: string, link: DishLink, names: Names): st
   return `${dishName} is ${STRENGTH_WORD[link.strength]} ${what} ${listed}${scopeText(link)}`;
 }
 
-/** "Usually only with Idli, Dosa"; for an unscoped, always goes-with link to base categories, just the names. */
+/** "Usually only with Idli, Dosa, at lunch"; for an unscoped, always goes-with link to base categories, just the names. */
 export function shortLink(link: DishLink, names: Names): string {
   const listed = link.values.map((v) => valueName(link, v, names)).join(', ');
   const unscoped = !link.scope?.days?.length && !link.scope?.meals?.length;
   if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
   const word = SHORT_WORD[link.strength];
   const what = link.mode === 'with' ? 'only with' : 'not with';
-  return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}`;
+  return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${scopeText(link)}`;
 }

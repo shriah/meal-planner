@@ -68,7 +68,7 @@ describe('LinkList', () => {
     const idli = await dish('Idli', 'base');
     await db.rules.add({ name: 'Idli: never planned automatically', spec: { template: 'exclude', params: { match: { field: 'id', value: idli }, strength: 'must' } }, owner_component_id: idli, enabled: true, created_at: '' } as never);
     render(<Harness initial={[{ mode: 'with', target: 'base_dish', values: [idli], strength: 'always' }]} />);
-    const warning = await screen.findByText('No dish in Idli can be planned, so Sambar would never be planned.');
+    const warning = await screen.findByText('None of Idli can be planned, so Sambar would never be planned.');
     expect(warning).toHaveClass('text-amber-700');
     expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled();
   });

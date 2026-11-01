@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { describeLink, linkWarnings, LINK_TARGETS, linkSlotOf, offersLink, type DishLink } from '@/rules'
 import type { ComponentType } from '@/types/component'
@@ -13,13 +13,20 @@ interface LinkListProps {
   selfId?: number
   links: DishLink[]
   onChange: (links: DishLink[]) => void
+  /** Tells the form whether a link is being built, so it can hold back Save. */
+  onEditingChange?: (open: boolean) => void
 }
 
 /** A dish's links as sentences, each editable in place, plus an "Add link" flow. */
-export function LinkList({ dishName, componentType, selfId, links, onChange }: LinkListProps) {
+export function LinkList({ dishName, componentType, selfId, links, onChange, onEditingChange }: LinkListProps) {
   const lookup = useLibraryLookup()
-  // The index being edited, 'new' while adding, or null.
-  const [editing, setEditing] = useState<number | 'new' | null>(null)
+  // The slot of the link being edited (not its index, which shifts when the form re-syncs), 'new' while adding, or null.
+  const [editing, setEditing] = useState<string | null>(null)
+  const open = editing !== null
+  useEffect(() => {
+    onEditingChange?.(open)
+    return () => onEditingChange?.(false)
+  }, [open, onEditingChange])
   const names = linkNames(lookup)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
   const ready = lookup.loaded
@@ -30,7 +37,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
   const slotsLeft = LINK_TARGETS.some((t) => offersLink(componentType, t) && (['with', 'never'] as const).some((mode) => !taken.includes(linkSlotOf({ mode, target: t }))))
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
-  const editor = (initial?: DishLink, at?: number) => (
+  const editor = (initial?: DishLink) => (
     <ShareLibraryLookup value={lookup}>
       <LinkEditor
         componentType={componentType}
@@ -40,7 +47,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
         taken={taken}
         onCancel={() => setEditing(null)}
         onDone={(link) => {
-          onChange(at === undefined ? [...links, link] : links.map((l, i) => (i === at ? link : l)))
+          onChange(initial === undefined ? [...links, link] : links.map((l) => (linkSlotOf(l) === linkSlotOf(initial) ? link : l)))
           setEditing(null)
         }}
       />
@@ -55,17 +62,17 @@ export function LinkList({ dishName, componentType, selfId, links, onChange }: L
         <ul className="space-y-1">
           {links.map((link, i) => (
             <li key={linkSlotOf(link)} className="text-xs">
-              {editing === i ? editor(link, i) : (
+              {editing === linkSlotOf(link) ? editor(link) : (
                 <div className="flex items-center gap-2">
                   <span className="flex-1">{describeLink(name, link, names)}</span>
-                  <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null} onClick={() => setEditing(i)}>Edit</Button>
+                  <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null} onClick={() => setEditing(linkSlotOf(link))}>Edit</Button>
                   <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null}
                     onClick={() => onChange(links.filter((_, j) => j !== i))}>
                     Remove
                   </Button>
                 </div>
               )}
-              {editing !== i && warnings.filter((w) => w.link === i).map((w) => (
+              {editing !== linkSlotOf(link) && warnings.filter((w) => w.link === i).map((w) => (
                 <p key={w.message} className="text-amber-700 dark:text-amber-400">{w.message}</p>
               ))}
             </li>
