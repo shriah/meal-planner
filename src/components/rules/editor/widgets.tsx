@@ -2,7 +2,7 @@
 
 import { X } from 'lucide-react'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { LEVELS, nearestLevel, type Scope } from '@/rules'
+import { LEVELS, nearestLevel, STRENGTH_COST, STRENGTH_WORDS, strengthOf, type Scope } from '@/rules'
 import { Combobox, type ComboboxOption } from '@/components/ui/combobox'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -112,9 +112,21 @@ export function LevelSelect({ label, kind, value, onChange }: {
   value: number
   onChange: (next: number) => void
 }) {
-  const current = nearestLevel(kind, value)
+  if (kind === 'cost') {
+    const current = strengthOf({ strength: 'prefer', cost: value })
+    const soft = Object.keys(STRENGTH_COST) as (keyof typeof STRENGTH_COST)[]
+    return (
+      <Select value={current} onValueChange={(x) => onChange(STRENGTH_COST[x as keyof typeof STRENGTH_COST])}>
+        <SelectTrigger className="w-36" aria-label={label}><SelectValue>{STRENGTH_WORDS[current].label}</SelectValue></SelectTrigger>
+        <SelectContent>
+          {soft.map((s) => <SelectItem key={s} value={s}>{STRENGTH_WORDS[s].label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    )
+  }
+  const current = nearestLevel(value)
   return (
-    <Select value={current.label} onValueChange={(x) => onChange(LEVELS.find((l) => l.label === x)![kind])}>
+    <Select value={current.label} onValueChange={(x) => onChange(LEVELS.find((l) => l.label === x)!.weight)}>
       <SelectTrigger className="w-36" aria-label={label}><SelectValue /></SelectTrigger>
       <SelectContent>
         {LEVELS.map((l) => <SelectItem key={l.label} value={l.label}>{l.label}</SelectItem>)}

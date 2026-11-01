@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -26,7 +26,9 @@ const SPEC_PARAM = {
 
 // The strengths a served-with pairing may take, in the words the model uses.
 const SERVE_STRENGTHS = ['always', 'usually', 'often', 'sometimes'] as const;
-const SERVE_STRENGTH: Record<(typeof SERVE_STRENGTHS)[number], LinkStrength> = { always: 'always', usually: 'usually', often: 'moderately', sometimes: 'sometimes' };
+const SERVE_STRENGTH = Object.fromEntries(
+  (Object.keys(STRENGTH_WORDS) as LinkStrength[]).map((s) => [STRENGTH_WORDS[s].word, s]),
+) as Record<(typeof SERVE_STRENGTHS)[number], LinkStrength>;
 
 export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   {

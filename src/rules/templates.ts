@@ -311,7 +311,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Prefer or avoid',
     summary: 'Nudge the planner towards or away from matching components without forbidding anything.',
     compile: (p) => [{ kind: 'prefer', select: p.match, weight: p.direction === 'prefer' ? -p.weight : p.weight }],
-    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (${nearestLevel('weight', p.weight).label.toLowerCase()})`,
+    describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (${nearestLevel(p.weight).label.toLowerCase()})`,
     references: (p) => refsOf(p.match),
   },
 };

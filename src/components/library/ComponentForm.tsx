@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, readLink, readOwned, STRENGTH_WORD, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, readLink, readOwned, STRENGTH_WORDS, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
@@ -212,7 +212,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             : link.target === 'base_category' && component.base_category_id != null && link.values.includes(component.base_category_id)
           return names ? [link] : []
         })[0]
-        return hit ? [{ id: d.id, name: d.name, word: hit.strength === 'always' ? '' : STRENGTH_WORD[hit.strength] }] : []
+        return hit ? [{ id: d.id, name: d.name, word: hit.strength === 'always' ? '' : STRENGTH_WORDS[hit.strength].word }] : []
       })
     : []
   // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.

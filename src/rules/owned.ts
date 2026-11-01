@@ -4,6 +4,7 @@
 // every other link an `avoid_with` rule. A curry, subzi or extra may also be "served with" bases: when one
 // of them is the meal's base, the dish is added too (a `require_with` rule). A dish also owns the days it may be planned on (`allowed_days`),
 // the meals (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
+import { STRENGTH_COST } from './levels';
 import { all, DAYS, MEALS, is, isLeaf, not, oneOf, type Day, type Matcher, type Meal } from '@/planner';
 import type { ComponentType, CurryCategory } from '@/types/component';
 import type { RuleRecord } from './record';
@@ -24,8 +25,6 @@ export type LinkSlot = `${'with' | 'never'}:${LinkTarget}` | `serve:${ServeTarge
 /** How firmly a link holds: always is a hard rule; the others are preferences the planner may give up. */
 export type LinkStrength = 'always' | 'usually' | 'moderately' | 'sometimes';
 export const LINK_STRENGTHS: LinkStrength[] = ['always', 'usually', 'moderately', 'sometimes'];
-/** The soft cost each non-hard strength writes (see `LEVELS`: strongly, moderately, slightly). */
-const STRENGTH_COST = { usually: 10, moderately: 6, sometimes: 3 } as const;
 /** The days and meals a link holds on; left out, it holds everywhere. */
 export interface LinkScope { days?: Day[]; meals?: Meal[] }
 /** `with` limits the dish to the chosen values; `never` keeps it away from them; `serve` adds it to meals

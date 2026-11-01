@@ -1,10 +1,9 @@
 // One plain sentence for a dish link, for the library row badges and the links editor.
 import { MEALS } from '@/planner';
 import type { Names } from './describe';
+import { STRENGTH_WORDS } from './levels';
 import { describeDays, isDishTarget, type DishLink } from './owned';
 
-export const STRENGTH_WORD = { always: 'always', usually: 'usually', moderately: 'often', sometimes: 'sometimes' } as const;
-const SHORT_WORD = { always: '', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' } as const;
 const LONG_LIST = 4;
 
 function valueName(link: DishLink, value: number | string, names: Names): string {
@@ -41,7 +40,7 @@ export function listValues(link: DishLink, names: Names): string {
 export function describeLink(dishName: string, link: DishLink, names: Names): string {
   const listed = listValues(link, names);
   const what = link.mode === 'with' ? 'planned only with' : link.mode === 'serve' ? 'served with' : 'kept away from';
-  return `${dishName} is ${STRENGTH_WORD[link.strength]} ${what} ${listed}${scopeText(link)}`;
+  return `${dishName} is ${STRENGTH_WORDS[link.strength].word} ${what} ${listed}${scopeText(link)}`;
 }
 
 /** "Usually only with Idli, Dosa, at lunch"; for an unscoped, always goes-with link to base categories, just the names. */
@@ -49,7 +48,7 @@ export function shortLink(link: DishLink, names: Names): string {
   const listed = link.values.map((v) => valueName(link, v, names)).join(', ');
   const unscoped = !link.scope?.days?.length && !link.scope?.meals?.length;
   if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
-  const word = SHORT_WORD[link.strength];
+  const word = link.strength === 'always' ? '' : STRENGTH_WORDS[link.strength].label;
   const what = link.mode === 'with' ? 'only with' : link.mode === 'serve' ? 'served with' : 'not with';
   return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${scopeText(link)}`;
 }

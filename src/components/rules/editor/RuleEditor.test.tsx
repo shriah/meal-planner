@@ -71,20 +71,26 @@ describe('RuleEditor', () => {
   });
 
   it.each([
-    ['Slightly', 3],
-    ['Strongly', undefined],
+    ['Sometimes', 3],
+    ['Usually', undefined],
   ])('sets how much a preferred rule matters in words: %s', async (level, cost) => {
-    const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: level === 'Slightly' ? undefined : 3 } } as const;
+    const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: level === 'Sometimes' ? undefined : 3 } } as const;
     const id = (await db.rules.add({ name: 'Fish', enabled: true, created_at: '', spec })) as number;
     render(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
 
-    expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent(level === 'Slightly' ? 'Strongly' : 'Slightly');
+    expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent(level === 'Sometimes' ? 'Usually' : 'Sometimes');
     await choose(screen.getByRole('combobox', { name: 'How much it matters' }), level);
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
 
     await waitFor(async () => expect((await db.rules.get(id))?.spec.params).toMatchObject({ strength: 'prefer' }));
     if (cost === undefined) expect((await db.rules.get(id))?.spec.params).not.toHaveProperty('cost');
     else expect((await db.rules.get(id))?.spec.params).toHaveProperty('cost', cost);
+  });
+
+  it('shows a stored cost of 6 as Often', async () => {
+    const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: 6 } } as const;
+    render(<RuleEditor initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+    expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent('Often');
   });
 
   it('uses the same words for the weight of a prefer or avoid rule', async () => {

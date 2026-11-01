@@ -5,12 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { describeLink, dishTypeOf, isDishTarget, isServeTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersLink, offersServe, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
+import { describeLink, dishTypeOf, isDishTarget, isServeTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersLink, offersServe, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
-const STRENGTH_LABEL: Record<LinkStrength, string> = { always: 'Always', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' }
 const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with' }
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
@@ -114,7 +113,7 @@ export function LinkEditor({ componentType, selfId, dishName, initial, taken, on
         {LINK_STRENGTHS.map((s) => (
           <Button key={s} type="button" size="sm" variant={strength === s ? 'secondary' : 'outline'} aria-pressed={strength === s}
             onClick={() => setStrength(s)}>
-            {STRENGTH_LABEL[s]}
+            {STRENGTH_WORDS[s].label}
           </Button>
         ))}
       </div>
