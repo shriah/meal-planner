@@ -123,7 +123,8 @@ pairings.
 The Rules page groups rules as "Your rules", "Planner defaults" and "Dish settings" (the last two
 collapsed), with a search box. A plan problem carries a plain `reason` (the rule's description, or a
 built-in's label) and a `message` that adds where; links of the form `/rules#rule-<id>` and
-`/library#dish-<id>` open and scroll to a rule or dish. A rule being edited is checked against the
+`/library#dish-<id>` scroll to a rule or dish, highlight it and open its editor; a link to a dish
+setting goes to the dish that owns it. A rule being edited is checked against the
 library automatically once editing pauses.
 
 ## Planner (`src/planner`)

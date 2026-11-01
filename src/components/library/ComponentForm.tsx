@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
@@ -196,7 +196,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const allDishes = lookup.loaded ? lookup.dishes : undefined
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
-  const linkRuleIds = owned.filter((r) => ownedSlot(r)?.includes(':')).map((r) => r.id)
   const baseGoesWith =
     componentType === 'base' && allDishes && baseCategories && component?.base_category_id != null
       ? allDishes.filter((d) => {
@@ -497,14 +496,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
           />
         </ShareLibraryLookup>
-        {linkRuleIds.length > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Saved as {linkRuleIds.length === 1 ? 'a rule' : 'rules'}.{' '}
-            {linkRuleIds.map((id, i) => (
-              <span key={id}>{i > 0 && ', '}<a className="underline" href={`/rules#rule-${id}`}>View rule</a></span>
-            ))}
-          </p>
-        )}
         <LinkPreview dishId={mode === 'edit' ? component?.id : undefined} dishName={form.name} changes={pendingChanges()} />
       </div>
 

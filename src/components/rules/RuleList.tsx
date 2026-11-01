@@ -42,13 +42,18 @@ export function RuleList() {
 
   const groups = useMemo(() => groupRules(rules ?? []), [rules])
 
-  // A deep link (`/rules#rule-12`) opens the section holding that rule and scrolls to it.
+  // A deep link (`/rules#rule-12`) opens the section holding that rule, scrolls to it and opens its editor.
+  // A dish setting is not listed here, so its link goes to the dish that owns it instead.
   const target = parseHash(useUrlHash()).rule
   const targetGroup = target === undefined ? undefined
     : (['defaults', 'mine'] as const).find((g) => groups[g].some((r) => r.id === target))
+  const targetOwner = target === undefined ? undefined : groups.dish.find((r) => r.id === target)?.owner_component_id
   useEffect(() => {
     if (targetGroup) document.getElementById(`rule-${target}`)?.scrollIntoView?.({ block: 'center' })
   }, [target, targetGroup])
+  useEffect(() => {
+    if (targetOwner !== undefined) window.location.replace(`/library#dish-${targetOwner}`)
+  }, [targetOwner])
 
   if (!rules) return null
 

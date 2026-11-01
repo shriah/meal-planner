@@ -112,4 +112,23 @@ describe('RuleList', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
+  it('scrolls to a linked rule, highlights it and opens its editor', async () => {
+    const fish = (await db.rules.toArray()).find((r) => r.name === 'Fish Fridays')!;
+    window.location.hash = `#rule-${fish.id}`;
+    const { container } = render(<RuleList />);
+
+    expect(await screen.findByRole('heading', { name: 'Edit rule' })).toBeInTheDocument();
+    expect(container.querySelector(`#rule-${fish.id}`)).toHaveAttribute('data-highlighted', 'true');
+    expect(scrollIntoView).toHaveBeenCalled();
+  });
+
+  it('sends a link to a dish setting to the dish that owns it', async () => {
+    const replace = vi.spyOn(window.location, 'replace').mockImplementation(() => {});
+    const pairing = (await db.rules.toArray()).find((r) => r.owner_component_id === 1)!;
+    window.location.hash = `#rule-${pairing.id}`;
+    render(<RuleList />);
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith('/library#dish-1'));
+    replace.mockRestore();
+  });
 });

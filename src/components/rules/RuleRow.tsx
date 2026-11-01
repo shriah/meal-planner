@@ -42,6 +42,13 @@ export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProp
   const summary = parsed.ok ? describeSpec(parsed.spec, names) : 'This rule cannot be read'
   const problem = problemOf(rule, known)
   const owned = rule.owner_component_id !== undefined
+  // A deep link to this rule opens its editor once; closing it leaves the row highlighted.
+  const [openedForLink, setOpenedForLink] = useState(false)
+  if (highlighted && !owned && !openedForLink) {
+    setOpenedForLink(true)
+    setEditing(true)
+  }
+  if (!highlighted && openedForLink) setOpenedForLink(false)
 
   async function handleToggle() {
     await updateRule(rule.id, { enabled: !rule.enabled })
@@ -58,7 +65,7 @@ export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProp
     <div
       id={`rule-${rule.id}`}
       data-highlighted={highlighted ? 'true' : undefined}
-      className={cn(highlighted && 'rounded-md ring-2 ring-primary/40')}
+      className={cn(highlighted && 'rounded-md bg-primary/10 ring-2 ring-primary')}
     >
       <div
         className={cn(
