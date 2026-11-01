@@ -22,6 +22,7 @@ export type CompareFn = (spec: RuleSpecInput, name: string) => Promise<Compariso
 export type AssistantEffect =
   | { kind: 'rule-draft'; draft: Draft }
   | { kind: 'dish-draft'; draft: Partial<ComponentRecord> & { componentType: ComponentType }; links?: DishLink[] }
+  | { kind: 'dish-links'; dishId: number; dishName: string; links: DishLink[] }
   | { kind: 'comparison'; comparison: Comparison };
 
 export interface ToolContext {

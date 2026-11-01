@@ -250,6 +250,25 @@ describe('AssistantPanel: drafts and comparisons', () => {
     expect(await db.components.count()).toBe(componentsBefore);
   });
 
+  it('opens a proposed pairing in the dish\'s own form, merged over its links, without saving it', async () => {
+    const all = await db.components.toArray();
+    const side = all.find((c) => c.componentType === 'curry')!;
+    const base = all.find((c) => c.componentType === 'base')!;
+    const rulesBefore = await db.rules.toArray();
+    const { gemini } = fakeGemini([
+      callTool('propose_pairing', { dish: side.id, served_with_bases: [String(base.id)], served_with_strength: 'sometimes' }),
+      say('Pairing drafted.'),
+    ]);
+    render(<AssistantPanel gemini={gemini} />);
+
+    await ask(`serve ${side.name} with ${base.name}`);
+    expect(await screen.findByText(`Pairing draft: ${side.name}`)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Review pairing' }));
+    expect(await screen.findByDisplayValue(side.name)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(`sometimes served with .*${base.name}`))).toBeInTheDocument();
+    expect(await db.rules.toArray()).toEqual(rulesBefore);
+  });
+
   it('shows the before and after weeks, highlights changes, and warns when the week gets worse', async () => {
     const { gemini } = fakeGemini([
       callTool('simulate_with_rule', { name: 'No food', spec: { template: 'exclude', params: { match: TRUE } } }),

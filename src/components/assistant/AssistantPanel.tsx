@@ -173,6 +173,14 @@ export function AssistantPanel({ gemini = streamGemini }: { gemini?: GeminiCall 
                     </Button>
                   </div>
                 )}
+                {effect.kind === 'dish-links' && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Pairing draft: {effect.dishName}</span>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setReview({ kind: 'pairing', dishId: effect.dishId, links: effect.links, id: newId() })}>
+                      Review pairing
+                    </Button>
+                  </div>
+                )}
                 {effect.kind === 'comparison' && <ComparisonView comparison={effect.comparison} names={names} />}
               </div>
             ))}

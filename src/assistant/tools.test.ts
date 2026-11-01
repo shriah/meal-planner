@@ -6,7 +6,7 @@ import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS, problemsForSlot, runTool } from './tools';
 import type { PlanProblem } from '@/services/plan-generation';
-import { dayRule, TEMPLATE_IDS } from '@/rules';
+import { dayRule, linkRule, TEMPLATE_IDS } from '@/rules';
 import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
 import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
@@ -21,9 +21,9 @@ const ctxOf = (over: Partial<AssistantData> = {}): ToolContext => ({
 });
 
 describe('tool registry', () => {
-  it('declares the closed set of nine tools', () => {
+  it('declares the closed set of ten tools', () => {
     expect(TOOL_DECLARATIONS.map((t) => t.name)).toEqual([
-      'search_dishes', 'get_rule', 'list_rules', 'get_plan', 'explain_rule', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'simulate_with_rule',
+      'search_dishes', 'get_rule', 'list_rules', 'get_plan', 'explain_rule', 'explain_plan_slot', 'propose_rule', 'propose_dish', 'propose_pairing', 'simulate_with_rule',
     ]);
   });
 
@@ -554,5 +554,49 @@ describe('propose_dish', () => {
   it('has no similar dishes when nothing resembles it', async () => {
     const r = await runTool('propose_dish', { name: 'Khichdi', componentType: 'base' }, ctx());
     expect((r as { data: { similarExisting: string[] } }).data.similarExisting).toEqual([]);
+  });
+});
+
+describe('propose_pairing', () => {
+  const categories = [{ id: 1, kind: 'base' as const, name: 'rice-based', created_at: '' }];
+  const library = [dish(1, 'Sambar'), dish(2, 'Sambar', { componentType: 'base' }), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Dosa', { componentType: 'base' })];
+  const ctx = (over: Partial<AssistantData> = {}) => ctxOf({ library, categories, ...over });
+
+  it('pairs an existing dish with bases and base categories, resolved by name or id', async () => {
+    const r = await runTool('propose_pairing', { dish: 'sambar', served_with_bases: ['IDLI', '4'], served_with_base_categories: ['Rice-Based'], served_with_strength: 'usually' }, ctx());
+    expect(r.ok).toBe(true);
+    expect((r as { effect: unknown }).effect).toEqual({
+      kind: 'dish-links',
+      dishId: 1,
+      dishName: 'Sambar',
+      links: [
+        { mode: 'serve', target: 'base_dish', values: [3, 4], strength: 'usually' },
+        { mode: 'serve', target: 'base_category', values: [1], strength: 'usually' },
+      ],
+    });
+    const byId = await runTool('propose_pairing', { dish: 1, served_with_bases: ['Idli'] }, ctx());
+    expect((byId as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }]);
+  });
+
+  it('keeps the bases the dish is already served with', async () => {
+    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
+    const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
+    expect((r as { effect: { links: unknown } }).effect.links).toEqual([
+      { mode: 'serve', target: 'base_dish', values: [4, 3], strength: 'sometimes', scope: { meals: ['breakfast'] } },
+    ]);
+    expect((r as { data: { alreadyServedWith: string[] } }).data.alreadyServedWith).toEqual(['Dosa']);
+  });
+
+  it('rejects bases, unknown names and a pairing with nothing to pair', async () => {
+    const base = await runTool('propose_pairing', { dish: 'Idli', served_with_bases: ['Dosa'] }, ctx());
+    expect(base.ok).toBe(false);
+    expect((base as { error: string }).error).toContain('a base cannot be served with bases');
+    const unknownDish = await runTool('propose_pairing', { dish: 'Pesarattu', served_with_bases: ['Idli'] }, ctx());
+    expect((unknownDish as { error: string }).error).toContain('no dish named "Pesarattu"');
+    const unknownBase = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Pesarattu'] }, ctx());
+    expect((unknownBase as { error: string }).error).toContain('no base named "Pesarattu"');
+    const unknownCategory = await runTool('propose_pairing', { dish: 'Sambar', served_with_base_categories: ['grainy'] }, ctx());
+    expect((unknownCategory as { error: string }).error).toContain('no base category named "grainy"');
+    expect((await runTool('propose_pairing', { dish: 'Sambar' }, ctx())).ok).toBe(false);
   });
 });

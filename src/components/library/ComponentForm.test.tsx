@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { linkRule, readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
+import { linkRule, readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals, type DishLink } from '@/rules';
 import * as foodDb from '@/services/food-db';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
@@ -58,7 +58,7 @@ function LiveComponentRow({ componentId }: { componentId: number }) {
   );
 }
 
-function LiveEditForm({ componentId }: { componentId: number }) {
+function LiveEditForm({ componentId, draftLinks }: { componentId: number; draftLinks?: DishLink[] }) {
   const component = useLiveQuery(() => db.components.get(componentId), [componentId], undefined);
 
   if (!component) {
@@ -70,6 +70,7 @@ function LiveEditForm({ componentId }: { componentId: number }) {
       component={component}
       componentType={component.componentType}
       mode="edit"
+      draftLinks={draftLinks}
       onSave={() => {}}
       onDiscard={() => {}}
     />
@@ -806,6 +807,30 @@ describe('ComponentForm draft prefill', () => {
       expect(papad.extra_category_id).toBe(crunchyId);
       expect(papad.extra_category).toBe('crunchy');
     });
+  });
+
+  it('merges drafted links over a dish\'s stored links and saves only those', async () => {
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
+      'never:curry_category': (c) => curryClashRule(c, ['soup']),
+    });
+    const stored = (await getOwnedRule(curryId, 'never:curry_category'))!;
+    await db.rules.update(stored.id, { spec: { ...stored.spec, params: { ...stored.spec.params, cost: 5 } } as typeof stored.spec });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags });
+    const save = vi.spyOn(foodDb, 'saveComponent');
+
+    render(<LiveEditForm componentId={curryId} draftLinks={[{ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }]} />);
+    expect(await screen.findByText(/Sambar is always served with Idli/)).toBeInTheDocument();
+    expect(await screen.findByText(/Sambar is always kept away from soup/)).toBeInTheDocument();
+    await userEvent.click(await readyButton('Save Curry'));
+
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const changes = save.mock.calls[0][2] ?? {};
+    expect(Object.keys(changes).filter((k) => k.includes(':'))).toEqual(['serve:base_dish']);
+    await waitFor(async () => {
+      const rule = await getOwnedRule(curryId, 'serve:base_dish');
+      expect(rule && readLink(rule)).toEqual({ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' });
+    });
+    expect((await getOwnedRule(curryId, 'never:curry_category'))?.spec.params).toMatchObject({ cost: 5 });
   });
 
   it('ignores a draft when editing an existing dish', async () => {

@@ -73,7 +73,10 @@ interface ComponentFormProps {
   mode: 'edit' | 'add'
   /** Starting values for a new dish (e.g. from the assistant); ignored when editing. */
   draft?: Partial<ComponentRecord>
-  /** Links for a new dish (e.g. the bases the assistant would serve it with); saved with the dish. */
+  /**
+   * Drafted links (e.g. the bases the assistant would serve the dish with). A new dish saves them all; an
+   * existing dish gets each one in place of its stored link in that slot, and saving writes only those slots.
+   */
   draftLinks?: DishLink[]
 }
 
@@ -230,6 +233,18 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   if (component && sourceKey !== syncedKey) {
     setSyncedKey(sourceKey)
     setForm(sourceFormState)
+  }
+  // Drafted links on an existing dish are merged once its stored links have loaded; the updater runs after the
+  // resync above, which can fire in the same render.
+  const [draftMerged, setDraftMerged] = useState(false)
+  if (mode === 'edit' && draftLinks?.length && lookup.loaded && !draftMerged) {
+    setDraftMerged(true)
+    const drafted = (slot: string) => draftLinks.find((l) => linkSlotOf(l) === slot)
+    const merged = [
+      ...storedLinks.map((l) => drafted(linkSlotOf(l)) ?? l),
+      ...draftLinks.filter((l) => !storedLinks.some((s) => linkSlotOf(s) === linkSlotOf(l))),
+    ]
+    setForm((s) => ({ ...s, links: merged, linksBase: storedLinks }))
   }
 
   // Until the user picks one, default to the first category of the matching kind.

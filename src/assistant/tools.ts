@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeSpec, missingReferences, parseSpec, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -88,6 +88,16 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
     }, ['name', 'componentType']),
   },
   {
+    name: 'propose_pairing',
+    description: 'Pair a curry, subzi or extra already in the library with bases, for the user to review and save: whenever one of the bases is the meal\'s base, the dish is added too. Does not save anything itself. Bases the dish is already served with are kept.',
+    parameters: obj({
+      dish: { type: 'string', description: 'Name or id of the curry, subzi or extra' },
+      served_with_bases: { type: 'array', items: { type: 'string' }, description: 'Existing base dish names or ids to serve it with' },
+      served_with_base_categories: { type: 'array', items: { type: 'string' }, description: 'Existing base category names to serve it with' },
+      served_with_strength: { type: 'string', enum: [...SERVE_STRENGTHS], description: 'How firmly: always (default), usually, often or sometimes' },
+    }, ['dish']),
+  },
+  {
     name: 'simulate_with_rule',
     description: 'Regenerate the plan with a proposed rule and show which slots would change, without saving anything.',
     parameters: obj({
@@ -120,6 +130,12 @@ const ProposeDishArgs = z.object({
   regional_tags: z.array(z.string()).optional(),
   occasion_tags: z.array(z.string()).optional(),
   served_with_bases: z.array(z.string().trim().min(1)).optional(),
+  served_with_base_categories: z.array(z.string().trim().min(1)).optional(),
+  served_with_strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
+});
+const ProposePairingArgs = z.object({
+  dish: z.union([z.string().trim().min(1), z.number().int()]),
+  served_with_bases: z.array(z.union([z.string().trim().min(1), z.number().int()])).optional(),
   served_with_base_categories: z.array(z.string().trim().min(1)).optional(),
   served_with_strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
 });
@@ -243,6 +259,47 @@ function resolveDish(wanted: string | number, data: AssistantData): { ok: true; 
   if (hits.length === 0) return { ok: false, error: `no dish named "${wanted}". Use search_dishes to find it.` };
   const names = hits.slice(0, MAX_LIST_ITEMS_SIMILAR).map((c) => `${c.name} (id ${c.id})`).join(', ');
   return { ok: false, error: `several dishes match "${wanted}": ${names}. Call again with one id.` };
+}
+
+const BASE_SERVED_WITH_BASES = 'a base cannot be served with bases; draft the curry, subzi or extra that goes with it instead';
+
+/** An existing category of this kind by name; categories are never created by the assistant. */
+function resolveCategory(kind: 'base' | 'extra', wanted: string | undefined, data: AssistantData): { id?: number; error?: string } {
+  if (wanted === undefined) return {};
+  const options = data.categories.filter((c) => c.kind === kind);
+  const hit = options.find((c) => normName(c.name) === normName(wanted));
+  if (hit) return { id: hit.id };
+  return { error: `no ${kind} category named "${wanted}". Existing ${kind} categories: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
+}
+
+/** Served-with links to existing bases (by name or id) and base categories (by name). */
+function servedWithLinks(
+  data: AssistantData,
+  wantedBases: (string | number)[],
+  wantedCategories: string[],
+  strength: LinkStrength,
+): { ok: true; links: DishLink[] } | { ok: false; error: string } {
+  const bases = data.library.filter((c) => c.componentType === 'base');
+  const baseIds: number[] = [];
+  for (const wanted of wantedBases) {
+    const asId = typeof wanted === 'number' ? wanted : /^\d+$/.test(wanted) ? Number(wanted) : undefined;
+    const hit = bases.find((c) => (asId !== undefined ? c.id === asId : normName(c.name) === normName(String(wanted))));
+    if (!hit) return { ok: false, error: `no base named "${wanted}". Existing bases: ${bases.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
+    baseIds.push(hit.id);
+  }
+  const categoryIds: number[] = [];
+  for (const wanted of wantedCategories) {
+    const hit = resolveCategory('base', wanted, data);
+    if (hit.error) return { ok: false, error: hit.error };
+    categoryIds.push(hit.id!);
+  }
+  return {
+    ok: true,
+    links: [
+      ...(baseIds.length ? [{ mode: 'serve' as const, target: 'base_dish' as const, values: [...new Set(baseIds)], strength }] : []),
+      ...(categoryIds.length ? [{ mode: 'serve' as const, target: 'base_category' as const, values: [...new Set(categoryIds)], strength }] : []),
+    ],
+  };
 }
 
 const PART_OF: Record<ComponentType, SlotPart> = { base: 'base', curry: 'curry', subzi: 'subzi', extra: 'extras' };
@@ -399,16 +456,9 @@ const HANDLERS: Record<string, Handler> = {
     if (v.base_category && componentType !== 'base') return { ok: false, error: 'base_category only applies to base dishes' };
     if (v.extra_category && componentType !== 'extra') return { ok: false, error: 'extra_category only applies to extra dishes' };
 
-    const resolve = (kind: 'base' | 'extra', wanted: string | undefined): { id?: number; error?: string } => {
-      if (wanted === undefined) return {};
-      const options = data.categories.filter((c) => c.kind === kind);
-      const hit = options.find((c) => normName(c.name) === normName(wanted));
-      if (hit) return { id: hit.id };
-      return { error: `no ${kind} category named "${wanted}". Existing ${kind} categories: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
-    };
-    const base = resolve('base', v.base_category);
+    const base = resolveCategory('base', v.base_category, data);
     if (base.error) return { ok: false, error: base.error };
-    const extra = resolve('extra', v.extra_category);
+    const extra = resolveCategory('extra', v.extra_category, data);
     if (extra.error) return { ok: false, error: extra.error };
 
     const key = normName(v.name);
@@ -419,26 +469,11 @@ const HANDLERS: Record<string, Handler> = {
     const servedBases = v.served_with_bases ?? [];
     const servedCategories = v.served_with_base_categories ?? [];
     if ((servedBases.length || servedCategories.length) && componentType === 'base') {
-      return { ok: false, error: 'a base cannot be served with bases; draft the curry, subzi or extra that goes with it instead' };
+      return { ok: false, error: BASE_SERVED_WITH_BASES };
     }
-    const bases = data.library.filter((c) => c.componentType === 'base');
-    const baseIds: number[] = [];
-    for (const wanted of servedBases) {
-      const hit = bases.find((c) => normName(c.name) === normName(wanted));
-      if (!hit) return { ok: false, error: `no base named "${wanted}". Existing bases: ${bases.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
-      baseIds.push(hit.id);
-    }
-    const categoryIds: number[] = [];
-    for (const wanted of servedCategories) {
-      const hit = resolve('base', wanted);
-      if (hit.error) return { ok: false, error: hit.error };
-      categoryIds.push(hit.id!);
-    }
-    const strength = SERVE_STRENGTH[v.served_with_strength ?? 'always'];
-    const links: DishLink[] = [
-      ...(baseIds.length ? [{ mode: 'serve' as const, target: 'base_dish' as const, values: [...new Set(baseIds)], strength }] : []),
-      ...(categoryIds.length ? [{ mode: 'serve' as const, target: 'base_category' as const, values: [...new Set(categoryIds)], strength }] : []),
-    ];
+    const served = servedWithLinks(data, servedBases, servedCategories, SERVE_STRENGTH[v.served_with_strength ?? 'always']);
+    if (!served.ok) return served;
+    const { links } = served;
 
     const draft: Partial<ComponentRecord> & { componentType: ComponentType } = {
       name: v.name,
@@ -456,6 +491,50 @@ const HANDLERS: Record<string, Handler> = {
       ok: true,
       data: { similarExisting: similarNames(v.name, data.library), ...(servedWith.length ? { servedWith } : {}) },
       effect: { kind: 'dish-draft', draft, ...(links.length ? { links } : {}) },
+    };
+  },
+  propose_pairing(args, { data }) {
+    const a = parse(ProposePairingArgs, args);
+    if (!a.ok) return a;
+    const v = a.value;
+    // Look among the sides first, so a side that shares its name with a base is not ambiguous.
+    const sides = data.library.filter((c) => c.componentType !== 'base');
+    const found = resolveDish(v.dish, { ...data, library: sides });
+    if (!found.ok) {
+      const any = resolveDish(v.dish, data);
+      return any.ok && any.dish.componentType === 'base' ? { ok: false, error: BASE_SERVED_WITH_BASES } : found;
+    }
+    const { dish } = found;
+    const wantedBases = v.served_with_bases ?? [];
+    const wantedCategories = v.served_with_base_categories ?? [];
+    if (!wantedBases.length && !wantedCategories.length) {
+      return { ok: false, error: 'name at least one base in served_with_bases or base category in served_with_base_categories' };
+    }
+    const requested = v.served_with_strength && SERVE_STRENGTH[v.served_with_strength];
+    const served = servedWithLinks(data, wantedBases, wantedCategories, requested ?? 'always');
+    if (!served.ok) return served;
+    // The drafted link replaces the stored one in its slot, so carry over the bases already there and their limits.
+    const stored = readOwned(data.rules.filter((r) => r.owner_component_id === dish.id)).links;
+    const already: number[] = [];
+    const links = served.links.map((link) => {
+      const before = stored.find((l) => linkSlotOf(l) === linkSlotOf(link));
+      if (!before) return link;
+      if (link.target === 'base_dish') already.push(...before.values.filter((id) => typeof id === 'number'));
+      return {
+        ...link,
+        values: [...new Set([...before.values, ...link.values])],
+        strength: requested ?? before.strength,
+        ...(before.scope ? { scope: before.scope } : {}),
+      };
+    });
+    return {
+      ok: true,
+      data: {
+        dish: dish.name,
+        servedWith: [...wantedBases.map(String), ...wantedCategories],
+        ...(already.length ? { alreadyServedWith: already.map((id) => dishLabel(id, data)) } : {}),
+      },
+      effect: { kind: 'dish-links', dishId: dish.id, dishName: dish.name, links },
     };
   },
   async simulate_with_rule(args, ctx) {
