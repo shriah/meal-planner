@@ -1,6 +1,6 @@
 // Plans the week with two rule sets (same seed and pins) and reports which meals change.
 import type { Pins } from '@/planner';
-import { OWNED_SLOTS, ownedSlot, type OwnedRuleChanges, type RuleRecord } from '@/rules';
+import { isLinkSlot, OWNED_SLOTS, ownedSlot, type OwnedRuleChanges, type RuleRecord } from '@/rules';
 import type { Comparison } from '@/assistant/types';
 import { diffPlans, type PlanningInput, type PlanProblem } from './plan-generation';
 import { runPlanning } from './planning';
@@ -47,8 +47,8 @@ export function pendingRules(rules: RuleRecord[], dishId: number, changes: Owned
       continue;
     }
     const rule = build({ id: dishId, name: dishName });
-    // An update keeps the stored rule's id, on/off state and date, as the database update does.
-    if (current) out = out.map((r) => (r === current ? { ...current, ...rule } : r));
+    // An update keeps the stored rule's id and date, as the database update does, and switches a written link on.
+    if (current) out = out.map((r) => (r === current ? { ...current, ...rule, ...(isLinkSlot(slot) ? { enabled: true } : {}) } : r));
     else out.push({ ...rule, id: nextId--, enabled: true, created_at: '' });
   }
   return out;

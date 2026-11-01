@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, isDishTarget, linkRule, ownedRuleName, readLink, ownedSlot, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, isDishTarget, isLinkSlot, linkRule, ownedRuleName, readLink, ownedSlot, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -82,7 +82,8 @@ export async function saveComponent(
         continue;
       }
       const rule = build({ id: componentId, name: component.name });
-      if (current) await db.rules.update(current.id, rule);
+      // A link that is written is meant to be in force, so one that was switched off is switched on again.
+      if (current) await db.rules.update(current.id, isLinkSlot(template) ? { ...rule, enabled: true } : rule);
       else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
     }
     return componentId;

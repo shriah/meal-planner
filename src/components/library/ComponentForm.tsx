@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, readLink, readOwned, STRENGTH_WORDS, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, readLink, readOwned, STRENGTH_WORDS, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
@@ -201,6 +201,11 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const owned = component ? lookup.rules.filter((r) => r.owner_component_id === component.id) : []
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
+  const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
+  // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
+  // off and is marked so; a changed one is switched on when saved.
+  const offSlots = LINK_SLOTS.filter((slot) => owned.find((r) => ownedSlot(r) === slot)?.enabled === false)
+  const shownOff = offSlots.filter((slot) => slotOf(links, slot) && sameLink(slotOf(links, slot), slotOf(form.linksBase ?? storedLinks, slot)))
   // Read only: the pairing is edited on the side dish. Enabled serve links that name this base or its category.
   const servedWith = componentType === 'base' && component && lookup.loaded
     ? lookup.dishes.flatMap((d) => {
@@ -244,7 +249,9 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       ...storedLinks.map((l) => drafted(linkSlotOf(l)) ?? l),
       ...draftLinks.filter((l) => !storedLinks.some((s) => linkSlotOf(s) === linkSlotOf(l))),
     ]
-    setForm((s) => ({ ...s, links: merged, linksBase: storedLinks }))
+    // A drafted link replaces a switched-off one even when it says the same, so saving switches it on.
+    const base = storedLinks.filter((l) => !(offSlots.includes(linkSlotOf(l)) && drafted(linkSlotOf(l))))
+    setForm((s) => ({ ...s, links: merged, linksBase: base }))
   }
 
   // Until the user picks one, default to the first category of the matching kind.
@@ -275,7 +282,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
     // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
     if (form.links) {
-      const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
       for (const slot of LINK_SLOTS) {
         if (sameLink(slotOf(form.links, slot), slotOf(form.linksBase, slot))) delete changes[slot]
       }
@@ -515,6 +521,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             componentType={componentType}
             selfId={component?.id}
             links={links}
+            offSlots={shownOff}
             onEditingChange={setEditingLink}
             onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
           />

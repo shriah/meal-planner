@@ -12,13 +12,15 @@ interface LinkListProps {
   componentType: ComponentType
   selfId?: number
   links: DishLink[]
+  /** Slots of links that are stored switched off; they are shown marked "(off)". */
+  offSlots?: readonly string[]
   onChange: (links: DishLink[]) => void
   /** Tells the form whether a link is being built, so it can hold back Save. */
   onEditingChange?: (open: boolean) => void
 }
 
 /** A dish's links as sentences, each editable in place, plus an "Add link" flow. */
-export function LinkList({ dishName, componentType, selfId, links, onChange, onEditingChange }: LinkListProps) {
+export function LinkList({ dishName, componentType, selfId, links, offSlots = [], onChange, onEditingChange }: LinkListProps) {
   const lookup = useLibraryLookup()
   // The slot of the link being edited (not its index, which shifts when the form re-syncs), 'new' while adding, or null.
   const [editing, setEditing] = useState<string | null>(null)
@@ -63,7 +65,7 @@ export function LinkList({ dishName, componentType, selfId, links, onChange, onE
             <li key={linkSlotOf(link)} className="text-xs">
               {editing === linkSlotOf(link) ? editor(link) : (
                 <div className="flex items-center gap-2">
-                  <span className="flex-1">{describeLink(name, link, names)}</span>
+                  <span className="flex-1">{describeLink(name, link, names)}{offSlots.includes(linkSlotOf(link)) && ' (off)'}</span>
                   <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null} onClick={() => setEditing(linkSlotOf(link))}>Edit</Button>
                   <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null}
                     onClick={() => onChange(links.filter((_, j) => j !== i))}>

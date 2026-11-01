@@ -501,6 +501,11 @@ const HANDLERS: Record<string, Handler> = {
     const v = a.value;
     // Look among the sides first, so a side that shares its name with a base is not ambiguous.
     const sides = data.library.filter((c) => c.componentType !== 'base');
+    // An exact base name is that base, not a side whose name merely contains it ("Idli" is not "Idli podi").
+    const exactly = (c: ComponentRecord) => typeof v.dish === 'string' && normName(c.name) === normName(v.dish);
+    if (!sides.some(exactly) && data.library.some((c) => c.componentType === 'base' && exactly(c))) {
+      return { ok: false, error: BASE_SERVED_WITH_BASES };
+    }
     const found = resolveDish(v.dish, { ...data, library: sides });
     if (!found.ok) {
       const any = resolveDish(v.dish, data);
@@ -516,11 +521,18 @@ const HANDLERS: Record<string, Handler> = {
     const served = servedWithLinks(data, wantedBases, wantedCategories, requested ?? 'always');
     if (!served.ok) return served;
     // The drafted link replaces the stored one in its slot, so carry over the bases already there and their limits.
-    const stored = readOwned(data.rules.filter((r) => r.owner_component_id === dish.id)).links;
+    // A switched-off link is not in force: nothing is carried over from it, and saving the draft switches the slot on.
+    const owned = data.rules.filter((r) => r.owner_component_id === dish.id);
+    const stored = readOwned(owned.filter((r) => r.enabled)).links;
+    const off = readOwned(owned.filter((r) => !r.enabled)).links.map(linkSlotOf);
     const already: number[] = [];
+    let replacesOff = false;
     const links = served.links.map((link) => {
       const before = stored.find((l) => linkSlotOf(l) === linkSlotOf(link));
-      if (!before) return link;
+      if (!before) {
+        if (off.includes(linkSlotOf(link))) replacesOff = true;
+        return link;
+      }
       if (link.target === 'base_dish') already.push(...before.values.filter((id) => typeof id === 'number'));
       return {
         ...link,
@@ -535,6 +547,7 @@ const HANDLERS: Record<string, Handler> = {
         dish: dish.name,
         servedWith: [...wantedBases.map(String), ...wantedCategories],
         ...(already.length ? { alreadyServedWith: already.map((id) => dishLabel(id, data)) } : {}),
+        ...(replacesOff ? { replacesSwitchedOffLink: true } : {}),
       },
       effect: { kind: 'dish-links', dishId: dish.id, dishName: dish.name, links },
     };

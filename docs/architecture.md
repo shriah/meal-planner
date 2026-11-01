@@ -96,7 +96,7 @@ Rules that are invalid or refer to deleted components or categories are skipped 
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
-component's form and listed under "Dish settings" on the Rules page. Any dish can own a list of **goes with / never with**
+component's form; the Rules page does not list owned rules, and a link to one goes to its dish. Any dish can own a list of **goes with / never with**
 links (`DishLink` in `src/rules/owned.ts`). A link has a mode, a target, values, a strength and an optional scope. The target is
 the categories of another kind of dish (base categories, extra categories, curry types) or specific dishes (bases, curries,
 subzis, extras); a dish is never offered its own kind where a meal holds only one, and a base is not offered base categories or
@@ -116,8 +116,10 @@ side is the dish type plus the (negated) categories.
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
 option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
-flow offers: Served with first; "Only with" only for base categories, base dishes and extra categories; specific curries,
-subzis and extras only when the dish already links to that target. Existing links always stay listed and editable. Links left untouched are never rewritten on save. `link-warnings.ts` shows
+flow offers: Served with first; "Only with" only for base categories, base dishes and extra categories; "Never with" for every
+offered target, but for specific curries, subzis and extras only when the dish already links to that target. Existing links
+always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links left untouched are never rewritten on save. `link-warnings.ts` shows
 non-blocking warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
@@ -135,8 +137,8 @@ goes with any base, any curry and any day (it owns no rule). The meal picker mar
 when scoring the current plan with it adds a hard violation, so every rule counts there, not only
 pairings.
 
-The Rules page groups rules as "Your rules", "Planner defaults" and "Dish settings" (the last two
-collapsed), with a search box. A plan problem carries a plain `reason` (the rule's description, or a
+The Rules page groups rules as "Your rules" and "Planner defaults" (the last collapsed), with a
+search box; dish settings (owned rules) are not listed there. A plan problem carries a plain `reason` (the rule's description, or a
 built-in's label) and a `message` that adds where; links of the form `/rules#rule-<id>` and
 `/library#dish-<id>` scroll to a rule or dish, highlight it and open its editor; a link to a dish
 setting goes to the dish that owns it. A rule being edited is checked against the

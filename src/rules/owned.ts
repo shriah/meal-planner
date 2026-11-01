@@ -73,6 +73,8 @@ export const LINK_SLOTS: LinkSlot[] = [
   ...LINK_TARGETS.flatMap((t) => [`with:${t}` as const, `never:${t}` as const]),
   ...SERVE_TARGETS.map((t) => `serve:${t}` as const),
 ];
+/** Whether an owned slot holds a link (rather than days, meals or "never auto-pick"). */
+export const isLinkSlot = (slot: string): slot is LinkSlot => (LINK_SLOTS as readonly string[]).includes(slot);
 export const isServeTarget = (t: LinkTarget): t is ServeTarget => (SERVE_TARGETS as readonly string[]).includes(t);
 export const OWNED_SLOTS = [...PLAIN_SLOTS, ...LINK_SLOTS] as const;
 export type OwnedSlot = (typeof OWNED_SLOTS)[number];

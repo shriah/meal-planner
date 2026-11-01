@@ -587,6 +587,21 @@ describe('propose_pairing', () => {
     expect((r as { data: { alreadyServedWith: string[] } }).data.alreadyServedWith).toEqual(['Dosa']);
   });
 
+  it('replaces a switched-off link instead of keeping its bases', async () => {
+    const stored = { id: 9, enabled: false, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
+    const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
+    expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }]);
+    const data = (r as { data: Record<string, unknown> }).data;
+    expect(data.alreadyServedWith).toBeUndefined();
+    expect(data.replacesSwitchedOffLink).toBe(true);
+  });
+
+  it('takes an exact base name as that base, not a side that contains it', async () => {
+    const r = await runTool('propose_pairing', { dish: 'idli', served_with_bases: ['Dosa'] }, ctx({ library: [...library, dish(5, 'Idli podi', { componentType: 'extra' })] }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toContain('a base cannot be served with bases');
+  });
+
   it('rejects bases, unknown names and a pairing with nothing to pair', async () => {
     const base = await runTool('propose_pairing', { dish: 'Idli', served_with_bases: ['Dosa'] }, ctx());
     expect(base.ok).toBe(false);
