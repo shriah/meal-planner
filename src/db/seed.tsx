@@ -7,49 +7,37 @@ import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 
-async function ensureSeedCategories(): Promise<{
+type SeedData = typeof import('@/db/seed-data');
+
+// One read and one bulk add: a per-name async loop here lost the seed transaction (Dexie's zone).
+async function ensureSeedCategories({ BUILT_IN_BASE_SEED_NAMES, BUILT_IN_EXTRA_SEED_NAMES }: SeedData): Promise<{
   base: Record<string, number>;
   extra: Record<string, number>;
 }> {
-  const {
-    BUILT_IN_BASE_SEED_NAMES,
-    BUILT_IN_EXTRA_SEED_NAMES,
-  } = await import('@/db/seed-data');
-
-  const categories = await db.categories.toArray();
-  const byKey = new Map(
-    categories
-      .map((category) => [`${category.kind}:${category.name}`, category.id]),
-  );
+  const wanted: [CategoryKind, readonly string[]][] = [['base', BUILT_IN_BASE_SEED_NAMES], ['extra', BUILT_IN_EXTRA_SEED_NAMES]];
+  const byKey = new Map((await db.categories.toArray()).map((category) => [`${category.kind}:${category.name}`, category.id]));
 
   const now = new Date().toISOString();
+  const missing = wanted.flatMap(([kind, names]) => names.filter((name) => !byKey.has(`${kind}:${name}`)).map((name) => ({ kind, name, created_at: now })));
+  const ids = await db.categories.bulkAdd(missing, { allKeys: true });
+  missing.forEach((c, i) => byKey.set(`${c.kind}:${c.name}`, Number(ids[i])));
 
-  async function ensureKind(
-    kind: CategoryKind,
-    names: readonly string[],
-  ): Promise<Record<string, number>> {
-    const result: Record<string, number> = {};
-
-    for (const name of names) {
-      const key = `${kind}:${name}`;
-      let id = byKey.get(key);
-      if (id === undefined) {
-        id = Number(await db.categories.add({ kind, name, created_at: now }));
-        byKey.set(key, id);
-      }
-      result[name] = id;
-    }
-
-    return result;
-  }
-
-  return {
-    base: await ensureKind('base', BUILT_IN_BASE_SEED_NAMES),
-    extra: await ensureKind('extra', BUILT_IN_EXTRA_SEED_NAMES),
-  };
+  const lookup = (kind: CategoryKind, names: readonly string[]) => Object.fromEntries(names.map((name) => [name, byKey.get(`${kind}:${name}`)!]));
+  return { base: lookup('base', BUILT_IN_BASE_SEED_NAMES), extra: lookup('extra', BUILT_IN_EXTRA_SEED_NAMES) };
 }
 
-export async function runSeed(): Promise<void> {
+let seeding: Promise<void> | undefined;
+
+/** Seeds an empty library. React runs effects twice in development, so overlapping calls share one run. */
+export function runSeed(): Promise<void> {
+  seeding ??= (async () => {
+    const data = await import('@/db/seed-data');
+    await db.transaction('rw', db.categories, db.components, db.rules, () => seed(data));
+  })().finally(() => { seeding = undefined; });
+  return seeding;
+}
+
+async function seed(data: SeedData): Promise<void> {
   const count = await db.components.count();
   if (count > 0) return; // Already seeded
 
@@ -58,8 +46,8 @@ export async function runSeed(): Promise<void> {
     materializeSeedComponents,
     resolveSeededCurryCompatibilityIds,
     seededDays,
-  } = await import('@/db/seed-data');
-  const categoryLookup = await ensureSeedCategories();
+  } = data;
+  const categoryLookup = await ensureSeedCategories(data);
   const pooriRecord = materializePooriSeed(categoryLookup);
   const seededComponents = materializeSeedComponents(categoryLookup);
 

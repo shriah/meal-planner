@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, RULE_MIGRATION_NOTICE_ID } from '@/db/client';
 import { all, is, oneOf } from '@/planner';
-import { defaultRules, RuleSpecSchema } from '@/rules';
+import { defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
 
 const V13_STORES = {
   categories: '++id, kind, name',
@@ -184,9 +184,13 @@ describe('v14 rule migration', () => {
 
     await db.open();
 
-    const keys = Object.fromEntries((await db.rules.toArray()).map((r) => [r.name, r.default_key]));
+    const rules = await db.rules.toArray();
+    const keys = Object.fromEntries(rules.map((r) => [r.name, r.default_key]));
+    // v17 keyed it, so v18 switched it off; v19 then keeps it as an ordinary rule, as it is not the original.
+    expect(rules.find((r) => r.name === 'A curry in every meal')?.enabled).toBe(false);
+    expect(rules.find((r) => r.name === 'My own curry wish')?.enabled).toBe(true);
     expect(keys).toEqual({
-      'A curry in every meal': 'want-curry',
+      'A curry in every meal': undefined,
       'Extras at lunch: at most 4': 'extras-limit-lunch',
       'My own curry wish': undefined,
       'Vary dishes across the week': 'variety',
@@ -221,5 +225,97 @@ describe('v14 rule migration', () => {
     const sides = byName['Curries, subzis and extras only when a rule asks for them'];
     expect(sides).toMatchObject({ default_key: 'sides-only-when-asked', enabled: true, spec: { template: 'prefer' } });
     expect(byName['Extras only when a rule asks for them']).toBeUndefined();
+  });
+
+  it('v19 removes duplicate and retired rules and turns hand-written pairings into served-with links', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+
+    const v18 = new Dexie('FoodPlannerDB');
+    v18.version(18).stores({
+      categories: '++id, kind, name',
+      components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+      meals: '++id, base_id, curry_id, subzi_id',
+      meal_extras: '[meal_id+component_id], meal_id, component_id',
+      rules: '++id, owner_component_id',
+      saved_plans: '++id, week_start',
+      preferences: 'id',
+      active_plan: 'id',
+      notices: 'id',
+    });
+    await v18.open();
+    const [idli, dosa, sambar, chutney, aloo, papad, rasam, pickle] = [1, 2, 3, 4, 5, 6, 7, 8];
+    const breakfastCat = 1;
+    await v18.table('categories').add({ id: breakfastCat, kind: 'base', name: 'other', created_at: '' });
+    await v18.table('components').bulkAdd([
+      { id: idli, name: 'Idli', componentType: 'base', base_category_id: breakfastCat },
+      { id: dosa, name: 'Dosa', componentType: 'base', base_category_id: breakfastCat },
+      { id: sambar, name: 'Sambar', componentType: 'curry' },
+      { id: chutney, name: 'Chutney', componentType: 'extra' },
+      { id: aloo, name: 'Aloo', componentType: 'subzi' },
+      { id: papad, name: 'Papad', componentType: 'extra' },
+      { id: rasam, name: 'Rasam', componentType: 'curry' },
+      { id: pickle, name: 'Pickle', componentType: 'extra' },
+    ]);
+    const want = (type: 'curry' | 'subzi') => ({ template: 'require', params: { match: is('componentType', type), strength: 'prefer', cost: 5 } });
+    const pairing = (when: unknown, components: number[], extra: object = {}) =>
+      ({ template: 'require_with', params: { when, components, extraCategories: [], strength: 'prefer', cost: 6, ...extra } });
+    const rule = (id: number, name: string, spec: object, extra: object = {}) => ({ id, name, enabled: true, created_at: '', spec, ...extra });
+    const handRule = { template: 'exclude', params: { match: is('id', papad), strength: 'must' } };
+    const misfits = [
+      rule(10, 'When sambar', pairing(is('id', sambar), [chutney])),
+      rule(11, 'With extras', pairing(is('id', idli), [chutney], { extraCategories: [1] })),
+      rule(12, 'Compound', pairing(all(is('componentType', 'base'), is('id', idli)), [chutney])),
+    ];
+    await v18.table('rules').bulkAdd([
+      rule(1, 'Hand rule', handRule),
+      rule(2, 'Hand rule', handRule),
+      rule(3, 'A curry in every meal', want('curry'), { enabled: false, default_key: 'want-curry' }),
+      rule(4, 'A subzi in every meal', want('subzi'), { enabled: false, default_key: 'want-subzi' }),
+      rule(5, 'My curry wish', want('curry'), { enabled: false, default_key: 'want-curry' }),
+      rule(6, 'A subzi in every meal', want('subzi'), { default_key: 'want-subzi' }),
+      rule(7, 'Idli and dosa sides', pairing(oneOf('id', [idli, dosa]), [sambar, chutney], { scope: { meals: ['breakfast'] } })),
+      rule(8, 'Papad with dosa', pairing(is('id', dosa), [papad]), { enabled: false }),
+      rule(9, 'Rasam with other', pairing(is('base_category_id', breakfastCat), [rasam])),
+      ...misfits,
+      { id: 13, ...linkRule({ id: aloo, name: 'Aloo' }, { mode: 'serve', target: 'base_dish', values: [dosa] }), enabled: true, created_at: '' },
+      rule(14, 'Aloo with idli', pairing(is('id', idli), [aloo], { cost: 3 })),
+      { id: 15, ...linkRule({ id: pickle, name: 'Pickle' }, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, created_at: '' },
+      // Switched off, so merging it into Pickle's live link would switch it on: it stays as it is.
+      rule(16, 'Pickle with dosa, off', pairing(is('id', dosa), [pickle]), { enabled: false }),
+      // Sambar's new link holds at breakfast only, so this one keeps Sambar; Pickle merges.
+      rule(17, 'Pickle and sambar with dosa', pairing(is('id', dosa), [pickle, sambar])),
+    ]);
+    v18.close();
+
+    await db.open();
+
+    const rules = await db.rules.toArray();
+    const byId = new Map(rules.map((r) => [r.id, r]));
+    expect(rules.filter((r) => r.name === 'Hand rule').map((r) => r.id)).toEqual([1]);
+    expect([3, 4, 7, 8, 9, 14].filter((id) => byId.has(id))).toEqual([]);
+    expect(rules.some((r) => r.default_key === 'want-curry' || r.default_key === 'want-subzi')).toBe(false);
+    expect(byId.get(5)).toMatchObject({ name: 'My curry wish', enabled: false });
+    expect(byId.get(6)).toMatchObject({ name: 'A subzi in every meal', enabled: true });
+    for (const misfit of misfits) expect(byId.get(misfit.id)).toEqual(misfit);
+
+    const owned = (id: number) => rules.filter((r) => r.owner_component_id === id);
+    for (const dish of [sambar, chutney]) {
+      expect(owned(dish)).toHaveLength(1);
+      expect(owned(dish)[0].enabled).toBe(true);
+      expect(readLink(owned(dish)[0])).toEqual({ mode: 'serve', target: 'base_dish', values: [idli, dosa], strength: 'moderately', scope: { meals: ['breakfast'] } });
+    }
+    expect(owned(papad)).toHaveLength(1);
+    expect(owned(papad)[0].enabled).toBe(false);
+    expect(readLink(owned(papad)[0])).toMatchObject({ target: 'base_dish', values: [dosa] });
+    expect(owned(rasam)).toHaveLength(1);
+    expect(readLink(owned(rasam)[0])).toMatchObject({ mode: 'serve', target: 'base_category', values: [breakfastCat] });
+    expect(owned(aloo).map((r) => r.id)).toEqual([13]);
+    expect(readLink(owned(aloo)[0])).toEqual({ mode: 'serve', target: 'base_dish', values: [dosa, idli], strength: 'always' });
+    expect(byId.get(16)).toMatchObject({ enabled: false, spec: pairing(is('id', dosa), [pickle]) });
+    expect(byId.get(17)?.spec).toEqual(pairing(is('id', dosa), [sambar]));
+    expect(owned(pickle).map((r) => r.id)).toEqual([15]);
+    expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'always' });
+    for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
   });
 });

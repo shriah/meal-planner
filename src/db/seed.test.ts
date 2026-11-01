@@ -16,6 +16,18 @@ describe('runSeed', () => {
     await db.rules.clear();
   });
 
+  it('seeds once when two calls overlap', async () => {
+    await runSeed();
+    const once = { components: await db.components.count(), rules: await db.rules.count(), categories: await db.categories.count() };
+    await db.categories.clear();
+    await db.components.clear();
+    await db.rules.clear();
+
+    await Promise.all([runSeed(), runSeed()]);
+
+    expect({ components: await db.components.count(), rules: await db.rules.count(), categories: await db.categories.count() }).toEqual(once);
+  });
+
   it('creates built-in base and extra category rows before seed-dependent records', async () => {
     await runSeed();
 

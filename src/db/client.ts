@@ -5,9 +5,10 @@ import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCatego
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { LegacyPreferencesRecord } from '@/types/preferences';
 import type { WeeklyPlan } from '@/types/plan';
+import { is, isLeaf, type Matcher } from '@/planner';
 import {
-  convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, pairingCategories, pairingRule,
-  DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
+  convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
+  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 
 export type { RuleRecord };
 
@@ -932,6 +933,116 @@ db.version(18).stores({
       rule.spec = sides.spec;
     }
   });
+});
+
+// v19: a one-off cleanup. Duplicate hand-written rules (a seed that ran twice) go. The curry and subzi
+// defaults v18 switched off go too, unless the user changed them, in which case they stay as ordinary rules.
+// A hand-written "also include" rule that is just "serve these dishes with these bases" becomes a served-with
+// link each dish owns, so it is edited from the dish's form.
+const RETIRED_WANTS: Record<string, { name: string; spec: unknown }> = {
+  'want-curry': { name: 'A curry in every meal', spec: { template: 'require', params: { match: is('componentType', 'curry'), strength: 'prefer', cost: 5 } } },
+  'want-subzi': { name: 'A subzi in every meal', spec: { template: 'require', params: { match: is('componentType', 'subzi'), strength: 'prefer', cost: 5 } } },
+};
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null || Array.isArray(a) !== Array.isArray(b)) return false;
+  const ka = Object.keys(a);
+  return ka.length === Object.keys(b).length && ka.every((k) => sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+}
+
+db.version(19).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade(async (tx) => {
+  const rulesTable = tx.table('rules');
+  const rules = (await rulesTable.toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const components = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c]));
+  const baseCategories = new Set(
+    (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
+  );
+  const removed = new Set<number>();
+  const changed = new Map<number, RuleRecord>();
+  const added: Omit<RuleRecord, 'id'>[] = [];
+  const now = new Date().toISOString();
+  const unowned = () => rules.filter((r) => r.owner_component_id === undefined && !removed.has(r.id));
+
+  const seen = new Set<string>();
+  for (const rule of unowned()) {
+    const key = JSON.stringify([rule.name, rule.spec, rule.enabled]);
+    if (seen.has(key)) removed.add(rule.id);
+    else seen.add(key);
+  }
+
+  for (const rule of unowned()) {
+    const retired = rule.default_key === undefined ? undefined : RETIRED_WANTS[rule.default_key];
+    if (!retired) continue;
+    if (!rule.enabled && rule.name === retired.name && sameValue(rule.spec, retired.spec)) {
+      removed.add(rule.id);
+    } else {
+      delete rule.default_key;
+      changed.set(rule.id, rule);
+    }
+  }
+
+  // Served-with links by owner and slot; a dish owns at most one per slot, so new values merge into it.
+  const links = new Map<string, RuleRecord | Omit<RuleRecord, 'id'>>();
+  for (const rule of rules) {
+    const slot = rule.owner_component_id === undefined ? undefined : ownedSlot(rule);
+    if (slot?.startsWith('serve:')) links.set(`${rule.owner_component_id}:${slot}`, rule);
+  }
+  const isSide = (id: number) => ['curry', 'subzi', 'extra'].includes(components.get(id)?.componentType ?? '');
+  for (const rule of unowned()) {
+    if (rule.spec.template !== 'require_with') continue;
+    const p = rule.spec.params;
+    const dishes = [...new Set(p.components ?? [])];
+    if ((p.extraCategories ?? []).length > 0 || dishes.length === 0 || !dishes.every(isSide)) continue;
+    const when = p.when as Matcher;
+    if (!isLeaf(when) || (when.op !== 'eq' && when.op !== 'in')) continue;
+    const values = [when.value].flat() as number[];
+    const target = when.field === 'id' && values.every((id) => components.get(id)?.componentType === 'base') ? 'base_dish'
+      : when.field === 'base_category_id' && values.every((id) => baseCategories.has(id)) ? 'base_category'
+        : undefined;
+    if (!target || values.length === 0) continue;
+
+    const left: number[] = [];
+    for (const id of dishes) {
+      const dish = { id, name: components.get(id)!.name };
+      const key = `${id}:serve:${target}`;
+      const own = { ...linkRule(dish, { mode: 'serve', target, values, strength: strengthOf(p), scope: p.scope }), enabled: rule.enabled, created_at: now };
+      const existing = links.get(key);
+      if (!existing) {
+        links.set(key, own);
+        added.push(own);
+        continue;
+      }
+      // Merging keeps the link's strength, but never switches a pairing on or widens its days and meals.
+      const link = readLink(existing)!;
+      if (existing.enabled !== rule.enabled || !sameValue(link.scope, readLink(own)!.scope)) {
+        left.push(id);
+        continue;
+      }
+      existing.spec = linkRule(dish, { ...link, values: [...new Set([...link.values, ...values])] }).spec;
+      if ('id' in existing) changed.set(existing.id, existing);
+    }
+    if (left.length === 0) {
+      removed.add(rule.id);
+    } else if (left.length < dishes.length) {
+      rule.spec = { ...rule.spec, params: { ...p, components: left } };
+      changed.set(rule.id, rule);
+    }
+  }
+
+  await rulesTable.bulkDelete([...removed]);
+  await rulesTable.bulkPut([...changed.values()].filter((r) => !removed.has(r.id)));
+  await rulesTable.bulkAdd(added);
 });
 
 export { db, normalizeComponentCategoryRefs };
