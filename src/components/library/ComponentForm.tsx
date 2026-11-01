@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, pairedCategories, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, readLink, readOwned, STRENGTH_WORD, type DayMode, type DishLink, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
@@ -196,18 +196,22 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
   // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
   const owned = component ? lookup.rules.filter((r) => r.owner_component_id === component.id) : []
-  // A base's category decides which curries and subzis it is "base to"; those pairings are owned by the dishes.
-  const allDishes = lookup.loaded ? lookup.dishes : undefined
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
-  const baseGoesWith =
-    componentType === 'base' && allDishes && baseCategories && component?.base_category_id != null
-      ? allDishes.filter((d) => {
-          if (d.componentType !== 'curry' && d.componentType !== 'subzi') return false
-          const rule = lookup.rules.find((r) => r.owner_component_id === d.id && r.spec.template === 'pairs_with')
-          return pairedCategories(rule, baseCategories.map((c) => c.id)).includes(component.base_category_id as number)
-        })
-      : []
+  // Read only: the pairing is edited on the side dish. Enabled serve links that name this base or its category.
+  const servedWith = componentType === 'base' && component && lookup.loaded
+    ? lookup.dishes.flatMap((d) => {
+        // A dish can hold a link to the base and another to its category; list it once.
+        const hit = lookup.rules.flatMap((r) => {
+          const link = r.owner_component_id === d.id && r.enabled ? readLink(r) : undefined
+          if (link?.mode !== 'serve') return []
+          const names = link.target === 'base_dish' ? link.values.includes(component.id)
+            : link.target === 'base_category' && component.base_category_id != null && link.values.includes(component.base_category_id)
+          return names ? [link] : []
+        })[0]
+        return hit ? [{ id: d.id, name: d.name, word: hit.strength === 'always' ? '' : STRENGTH_WORD[hit.strength] }] : []
+      })
+    : []
   // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.
   const names = linkNames(lookup)
   const mentioning = component
@@ -517,15 +521,16 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         </div>
       )}
 
-      {/* Base to: the curries and subzis that go with this base's category */}
-      {componentType === 'base' && baseGoesWith.length > 0 && (
+      {/* Served with this base: the dishes whose served-with link names it or its category */}
+      {servedWith.length > 0 && (
         <div className="space-y-1">
-          <Label className="text-xs font-semibold">Base to</Label>
+          <Label className="text-xs font-semibold">Served with this base</Label>
           <p className="text-xs text-muted-foreground">
-            {baseGoesWith.map((d, i) => (
+            {servedWith.map((d, i) => (
               <span key={d.id}>
                 {i > 0 && ', '}
                 <a className="underline" href={`/library#dish-${d.id}`}>{d.name}</a>
+                {d.word && ` (${d.word})`}
               </span>
             ))}
           </p>

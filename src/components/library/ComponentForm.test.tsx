@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
+import { linkRule, readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals } from '@/rules';
 import * as foodDb from '@/services/food-db';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
@@ -398,21 +398,36 @@ describe('ComponentForm dynamic category wiring', () => {
     await waitFor(async () => expect(await pairedBases(curryId)).toEqual([riceId]));
   });
 
-  it("lists on a base's form the curries and subzis that go with its category", async () => {
+  it('lists the dishes served with a base', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
     const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
-    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
-    await saveComponent(undefined, { name: 'Chole', componentType: 'curry', ...tags }, { 'with:base_category': (c) => pairingRule(c, [breadId]) });
-    await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags });
     const baseId = await saveComponent(undefined, { name: 'Steamed Rice', componentType: 'base', base_category_id: riceId, ...tags });
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, { 'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [baseId], strength: 'usually' }) });
+    await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags }, { 'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [riceId] }) });
+    await saveComponent(undefined, { name: 'Chole', componentType: 'curry', ...tags }, { 'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [breadId] }) });
+    await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, { 'with:base_dish': (c) => linkRule(c, { mode: 'with', target: 'base_dish', values: [baseId] }) });
+    await saveComponent(undefined, { name: 'Dal', componentType: 'curry', ...tags });
 
     render(<LiveEditForm componentId={baseId} />);
 
-    expect(await screen.findByText('Base to')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Sambar' })).toBeInTheDocument();
+    expect(await screen.findByText('Served with this base')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: 'Sambar' })).toHaveAttribute('href', expect.stringMatching(/^\/library#dish-\d+$/));
+    expect(screen.getByText(/\(usually\)/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Beans' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Chole' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Rasam' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Dal' })).not.toBeInTheDocument();
+  });
+
+  it('hides the served-with list when no dish is served with the base', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const baseId = await saveComponent(undefined, { name: 'Steamed Rice', componentType: 'base', base_category_id: riceId, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() });
+
+    render(<LiveEditForm componentId={baseId} />);
+
+    await screen.findByDisplayValue('Steamed Rice');
+    expect(screen.queryByText('Served with this base')).not.toBeInTheDocument();
   });
 
   it('sets how often a dish is planned, and shows it when editing', async () => {

@@ -6,12 +6,12 @@ export {
 } from './templates';
 export { groupRules, type RuleGroups } from './groups';
 export { LEVELS, nearestLevel, type Level } from './levels';
-export { describeLink, shortLink } from './link-text';
+export { describeLink, shortLink, STRENGTH_WORD } from './link-text';
 export { linkWarnings, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, type Names } from './describe';
 export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
-  pairingRule, pairingCategories, pairedCategories, curryClashRule, clashCurryCategories, linkRule, readLink, offersServe, isServeTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, LINK_TARGETS, LINK_SLOTS, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
+  pairingRule, pairingCategories, curryClashRule, clashCurryCategories, linkRule, readLink, offersServe, isServeTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, LINK_TARGETS, LINK_SLOTS, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
   readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays, describeMeals,
   type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type ServeTarget, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
 } from './owned';

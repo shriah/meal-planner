@@ -22,7 +22,6 @@ import {
   getRules,
   restoreDefaultRules,
   saveComponent,
-  setCategoryPairings,
   updateComponent,
   updateRule,
 } from '@/services/food-db';
@@ -312,71 +311,5 @@ describe('Phase 14 category services', () => {
 
     expect(await restoreDefaultRules()).toBe(0);
     expect(await getRules()).toHaveLength(before + 2);
-  });
-});
-
-describe('setCategoryPairings', () => {
-  const dish = (name: string, componentType: 'curry' | 'subzi' = 'curry') =>
-    saveComponent(undefined, { name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() });
-  const bases = async (id: number) => {
-    const rule = await getOwnedRule(id, 'with:base_category');
-    return rule && pairingCategories(rule);
-  };
-
-  it('starts a dish that goes with any base as going with every other base, so ticking is exclusive', async () => {
-    const rice = await addCategory({ kind: 'base', name: 'Rice' });
-    const bread = await addCategory({ kind: 'base', name: 'Bread' });
-    const sambar = await dish('Sambar');
-    const dal = await dish('Dal');
-
-    // Only Sambar goes with Rice: Dal stops going with it.
-    await setCategoryPairings(rice, [sambar]);
-    expect(await bases(sambar)).toBeUndefined();
-    expect(await bases(dal)).toEqual([bread]);
-  });
-
-  it('adds and removes one base, and drops the rule when the dish goes with every base again', async () => {
-    const rice = await addCategory({ kind: 'base', name: 'Rice' });
-    const bread = await addCategory({ kind: 'base', name: 'Bread' });
-    const sambar = await dish('Sambar');
-    await setCategoryPairings(rice, []);
-    expect(await bases(sambar)).toEqual([bread]);
-    await setCategoryPairings(rice, [sambar]);
-    expect(await getOwnedRule(sambar, 'with:base_category')).toBeUndefined();
-  });
-
-  it('keeps the strength of a dish\'s pairing when the base side changes it', async () => {
-    const rice = await addCategory({ kind: 'base', name: 'Rice' });
-    await addCategory({ kind: 'base', name: 'Bread' });
-    await addCategory({ kind: 'base', name: 'Other' });
-    const sambar = await dish('Sambar');
-    await saveComponent(sambar, { name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
-      'with:base_category': (c) => pairingRule(c, [rice], 'usually'),
-    });
-    const bread = (await getCategoriesByKind('base')).find((c) => c.name === 'Bread')!.id;
-    await setCategoryPairings(bread, [sambar]);
-    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toMatchObject({ values: expect.arrayContaining([rice, bread]), strength: 'usually' });
-  });
-
-  it('keeps a pairing\'s scope and strength when the base side changes it', async () => {
-    const rice = await addCategory({ kind: 'base', name: 'Rice' });
-    const bread = await addCategory({ kind: 'base', name: 'Bread' });
-    const sambar = await dish('Sambar');
-    const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    await saveComponent(sambar, { name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
-      'with:base_category': (c) => linkRule(c, { mode: 'with', target: 'base_category', values: [rice], strength: 'moderately', scope }),
-    });
-    // Every base ticked: a scoped pairing still means something, so it stays.
-    await setCategoryPairings(bread, [sambar]);
-    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toEqual({ mode: 'with', target: 'base_category', values: [rice, bread], strength: 'moderately', scope });
-    await setCategoryPairings(rice, []);
-    expect(readLink((await getOwnedRule(sambar, 'with:base_category'))!)).toEqual({ mode: 'with', target: 'base_category', values: [bread], strength: 'moderately', scope });
-  });
-
-  it('refuses to leave a dish with no base, and ignores bases and extras', async () => {
-    const rice = await addCategory({ kind: 'base', name: 'Rice' });
-    const sambar = await dish('Sambar');
-    await expect(setCategoryPairings(rice, [])).rejects.toThrow(/at least one base/);
-    expect(await getOwnedRule(sambar, 'with:base_category')).toBeUndefined();
   });
 });

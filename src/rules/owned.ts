@@ -114,15 +114,6 @@ export function pairingCategories(rule: Pick<RuleRecord, 'spec'>): number[] | un
   return rule.spec.template === 'pairs_with' ? [...(rule.spec.params.baseCategories ?? [])] : undefined;
 }
 
-/**
- * The base categories a curry or subzi goes with, given its pairing rule (if any) and every base category id.
- * No rule means any base. The result is what the base-category side ticks.
- */
-export function pairedCategories(rule: Pick<RuleRecord, 'spec'> | undefined, allCategoryIds: readonly number[]): number[] {
-  const own = rule ? pairingCategories(rule) : undefined;
-  return own && own.length > 0 ? own.filter((id) => allCategoryIds.includes(id)) : [...allCategoryIds];
-}
-
 /** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
 export function linkRule(component: { id: number; name: string }, link: LinkInput): OwnedRule {
   const { mode, target, values, strength = 'always', scope } = link;

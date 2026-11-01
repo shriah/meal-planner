@@ -3,7 +3,7 @@ import { MEALS } from '@/planner';
 import type { Names } from './describe';
 import { describeDays, isDishTarget, type DishLink } from './owned';
 
-const STRENGTH_WORD = { always: 'always', usually: 'usually', moderately: 'often', sometimes: 'sometimes' } as const;
+export const STRENGTH_WORD = { always: 'always', usually: 'usually', moderately: 'often', sometimes: 'sometimes' } as const;
 const SHORT_WORD = { always: '', usually: 'Usually', moderately: 'Often', sometimes: 'Sometimes' } as const;
 const LONG_LIST = 4;
 

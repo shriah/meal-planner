@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
-  mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairedCategories, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
   type DishLink,
 } from './owned';
 
@@ -191,14 +191,6 @@ describe('links', () => {
     const odd = { spec: { template: 'avoid_with' as const, params: { match: { field: 'id' as const, op: 'eq' as const, value: 7 }, with: { field: 'role' as const, op: 'eq' as const, value: 'curry' as const }, strength: 'must' as const } } };
     expect(readLink(odd as never)).toBeUndefined();
     expect(ownedSlot(odd as never)).toBeUndefined();
-  });
-});
-
-describe('pairedCategories', () => {
-  it('is every base when the dish has no pairing rule, otherwise the rule\'s bases that still exist', () => {
-    expect(pairedCategories(undefined, [1, 2, 3])).toEqual([1, 2, 3]);
-    expect(pairedCategories(pairingRule(dish, [2]), [1, 2, 3])).toEqual([2]);
-    expect(pairedCategories(pairingRule(dish, [2, 9]), [1, 2, 3])).toEqual([2]);
   });
 });
 
