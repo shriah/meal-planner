@@ -476,6 +476,36 @@ describe('ComponentForm dynamic category wiring', () => {
     });
   });
 
+  it('writes days, meals and never-auto only when they were changed', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
+      allowed_meals: (c) => mealRule(c, ['breakfast']),
+      allowed_days: (c) => dayRule(c, ['saturday', 'sunday']),
+    });
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    render(<LiveEditForm componentId={pongal} />);
+
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked());
+    await userEvent.type(screen.getByLabelText('Name'), ' Special');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    for (const key of ['allowed_meals', 'allowed_days', 'exclude']) expect(save.mock.calls[0][2]).not.toHaveProperty(key);
+    save.mockRestore();
+
+    // Changing one of them writes just that one.
+    cleanup();
+    const again = vi.spyOn(foodDb, 'saveComponent');
+    render(<LiveEditForm componentId={pongal} />);
+    await waitFor(() => expect(screen.getByRole('checkbox', { name: 'breakfast' })).toBeChecked());
+    await userEvent.click(screen.getByRole('checkbox', { name: 'dinner' }));
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(again).toHaveBeenCalled());
+    expect(again.mock.calls[0][2]).toHaveProperty('allowed_meals');
+    expect(again.mock.calls[0][2]).not.toHaveProperty('allowed_days');
+    again.mockRestore();
+    await waitFor(async () => expect(ruleMeals((await getOwnedRule(pongal, 'allowed_meals'))!)).toEqual(['breakfast', 'dinner']));
+  });
+
   it('sets how often a dish is planned, and shows it when editing', async () => {
     render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
 

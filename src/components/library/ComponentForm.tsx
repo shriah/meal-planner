@@ -115,6 +115,8 @@ interface FormState {
   meals: Meal[]
   /** Never planned automatically; can still be picked by hand. */
   never_auto: boolean
+  /** Days, meals and never-auto as the form showed them when it opened (null for a new dish); only changes are written. */
+  settingsBase: { days: Day[]; meals: Meal[]; neverAuto: boolean } | null
 }
 
 function initialFormState(
@@ -144,6 +146,7 @@ function initialFormState(
       days: owned.days,
       meals: owned.meals,
       never_auto: owned.neverAuto,
+      settingsBase: { days: owned.days, meals: owned.meals, neverAuto: owned.neverAuto },
     }
   }
   return {
@@ -165,6 +168,7 @@ function initialFormState(
     days: [],
     meals: [],
     never_auto: false,
+    settingsBase: null,
   }
 }
 
@@ -291,6 +295,14 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       meals: form.meals,
       neverAuto: form.never_auto,
     })
+    // Days, meals and never-auto the user left as shown are not written, so a form that opened with the wrong values
+    // cannot clear what is stored.
+    const base = form.settingsBase
+    if (base) {
+      if (sameSet(daysOfMode(form.day_mode, form.days), base.days)) delete changes.allowed_days
+      if (sameSet(form.meals, base.meals)) delete changes.allowed_meals
+      if (form.never_auto === base.neverAuto) delete changes.exclude
+    }
     // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
     // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
     if (form.links) {
