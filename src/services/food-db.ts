@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, isDishTarget, isLinkSlot, linkRule, ownedRuleName, readLink, ownedSlot, type LinkStrength, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, isDishTarget, isLinkSlot, linkRule, ownedRuleName, readLink, ownedSlot, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -62,36 +62,6 @@ export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]>
 /** The rule of one type a component owns; each component owns at most one per type. */
 export async function getOwnedRule(componentId: number, template: OwnedTemplate): Promise<RuleRecord | undefined> {
   return (await getOwnedRules(componentId)).find((r) => ownedSlot(r) === template);
-}
-
-/**
- * Set which side dishes are served with a base, from the base's side: each added dish gets the base in its own
- * served-with link (created with `strength` if it had none, switched on if it was off), each removed dish loses it
- * (the link goes when no base is left). Other bases in those links, and dishes not listed, are left alone.
- */
-export async function setServedWithBase(
-  baseId: number,
-  changes: { add: readonly number[]; remove: readonly number[]; strength: LinkStrength },
-): Promise<void> {
-  await db.transaction('rw', db.components, db.rules, async () => {
-    for (const dishId of [...changes.add, ...changes.remove]) {
-      const adding = changes.add.includes(dishId);
-      const dish = await db.components.get(dishId);
-      if (!dish || dish.componentType === 'base') continue;
-      const current = (await getOwnedRules(dishId)).find((r) => ownedSlot(r) === 'serve:base_dish');
-      const link = current && readLink(current);
-      const values = link?.values ?? [];
-      const next = adding ? [...new Set([...values, baseId])] : values.filter((v) => v !== baseId);
-      if (current && next.length === values.length && (!adding || current.enabled)) continue;
-      if (next.length === 0) {
-        if (current) await db.rules.delete(current.id);
-        continue;
-      }
-      const rule = linkRule(dish, link ? { ...link, values: next } : { mode: 'serve', target: 'base_dish', values: next, strength: changes.strength });
-      if (current) await db.rules.update(current.id, { ...rule, ...(adding ? { enabled: true } : {}) });
-      else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
-    }
-  });
 }
 
 /** Add or update a component together with the rules it owns. Rule types left out are not touched. */

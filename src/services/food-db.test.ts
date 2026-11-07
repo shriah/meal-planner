@@ -22,7 +22,6 @@ import {
   getRules,
   restoreDefaultRules,
   saveComponent,
-  setServedWithBase,
   updateComponent,
   updateRule,
 } from '@/services/food-db';
@@ -312,44 +311,5 @@ describe('Phase 14 category services', () => {
 
     expect(await restoreDefaultRules()).toBe(0);
     expect(await getRules()).toHaveLength(before + 2);
-  });
-});
-
-describe('setServedWithBase', () => {
-  const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
-  const serve = async (id: number) => {
-    const rule = await getOwnedRule(id, 'serve:base_dish');
-    return rule && { ...readLink(rule), enabled: rule.enabled };
-  };
-
-  it('adds the base to a side\'s served-with link, creating it at the given strength, and removes it again', async () => {
-    const pongal = await saveComponent(undefined, { ...tags, name: 'Pongal', componentType: 'base' });
-    const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' });
-    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }),
-    });
-    const chutney = await saveComponent(undefined, { ...tags, name: 'Chutney', componentType: 'extra' });
-
-    await setServedWithBase(pongal, { add: [sambar, chutney, idli], remove: [], strength: 'usually' });
-    expect(await serve(sambar)).toMatchObject({ values: [idli, pongal], strength: 'always', enabled: true });
-    expect(await serve(chutney)).toMatchObject({ values: [pongal], strength: 'usually', enabled: true });
-    // A base is never served with a base.
-    expect(await getOwnedRule(idli, 'serve:base_dish')).toBeUndefined();
-
-    await setServedWithBase(pongal, { add: [], remove: [sambar, chutney], strength: 'usually' });
-    expect(await serve(sambar)).toMatchObject({ values: [idli] });
-    expect(await getOwnedRule(chutney, 'serve:base_dish')).toBeUndefined();
-  });
-
-  it('switches on a switched-off link when the base is added to it', async () => {
-    const pongal = await saveComponent(undefined, { ...tags, name: 'Pongal', componentType: 'base' });
-    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [pongal] }),
-    });
-    const rule = (await getOwnedRule(sambar, 'serve:base_dish'))!;
-    await updateRule(rule.id, { enabled: false });
-
-    await setServedWithBase(pongal, { add: [sambar], remove: [], strength: 'usually' });
-    expect(await serve(sambar)).toMatchObject({ values: [pongal], enabled: true });
   });
 });

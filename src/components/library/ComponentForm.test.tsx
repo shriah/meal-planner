@@ -401,44 +401,7 @@ describe('ComponentForm dynamic category wiring', () => {
     await waitFor(async () => expect(await pairedBases(curryId)).toEqual([riceId]));
   });
 
-  it('picks the curries, subzis and extras served with a base, and saves them on those dishes', async () => {
-    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
-    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, ...tags });
-    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags });
-    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli, pongal], strength: 'always' }),
-    });
-    const beans = await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags }, {
-      'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [riceId] }),
-    });
-    await saveComponent(undefined, { name: 'Kootu', componentType: 'subzi', ...tags });
-    const chutney = await saveComponent(undefined, { name: 'Coconut Chutney', componentType: 'extra', ...tags });
-
-    render(<LiveEditForm componentId={pongal} />);
-
-    const curries = await screen.findByRole('group', { name: 'Curries' });
-    expect(within(curries).getByRole('checkbox', { name: 'Sambar' })).toBeChecked();
-    expect(screen.getByText(/Also served with its whole category/)).toHaveTextContent('Beans');
-    // Untick Sambar, tick Kootu and the chutney, sometimes.
-    await userEvent.click(within(curries).getByRole('checkbox', { name: 'Sambar' }));
-    await userEvent.click(within(screen.getByRole('group', { name: 'Subzis' })).getByRole('checkbox', { name: 'Kootu' }));
-    await userEvent.click(within(screen.getByRole('group', { name: 'Extras' })).getByRole('checkbox', { name: 'Coconut Chutney' }));
-    await userEvent.click(within(screen.getByRole('group', { name: 'How firmly, new picks' })).getByRole('button', { name: 'Sometimes' }));
-    await userEvent.click(await readyButton('Save Base'));
-
-    await waitFor(async () => {
-      const kootu = (await getComponentsByType('subzi')).find((c) => c.name === 'Kootu')!;
-      expect(readLink((await getOwnedRule(kootu.id, 'serve:base_dish'))!)).toEqual({ mode: 'serve', target: 'base_dish', values: [pongal], strength: 'sometimes' });
-      expect(readLink((await getOwnedRule(chutney, 'serve:base_dish'))!)?.values).toEqual([pongal]);
-      // Sambar keeps Idli and its strength; only Pongal is taken out.
-      expect(readLink((await getOwnedRule(sambar, 'serve:base_dish'))!)).toEqual({ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' });
-      // A category link is left alone.
-      expect(await getOwnedRule(beans, 'serve:base_category')).toBeDefined();
-    });
-  });
-
-  it('writes no served-with change when the list is left alone', async () => {
+  it('shows no served-with section on a base, and saving it leaves the sides\' links alone', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
     const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, ...tags });
@@ -448,8 +411,8 @@ describe('ComponentForm dynamic category wiring', () => {
     const before = await getOwnedRule(sambar, 'serve:base_dish');
 
     render(<LiveEditForm componentId={pongal} />);
-    await screen.findByRole('group', { name: 'Curries' });
     await userEvent.click(await readyButton('Save Base'));
+    expect(screen.queryByText('Served with')).not.toBeInTheDocument();
 
     await waitFor(async () => expect(await getOwnedRule(sambar, 'serve:base_dish')).toEqual(before));
   });
