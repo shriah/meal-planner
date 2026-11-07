@@ -323,4 +323,54 @@ describe('v14 rule migration', () => {
     expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'moderately' });
     for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
   });
+
+  it('v20 merges a library seeded twice into one copy of each category and dish', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+
+    const v19 = new Dexie('FoodPlannerDB');
+    v19.version(19).stores({ ...V13_STORES, rules: '++id, owner_component_id', notices: 'id' });
+    await v19.open();
+    const now = '';
+    // Two copies of everything, as a double seed leaves it: categories 1-2 and 3-4, dishes 1-3 and 4-6.
+    await v19.table('categories').bulkAdd([
+      { id: 1, kind: 'base', name: 'rice-based', created_at: now }, { id: 2, kind: 'extra', name: 'condiment', created_at: now },
+      { id: 3, kind: 'base', name: 'Rice-based', created_at: now }, { id: 4, kind: 'extra', name: 'condiment', created_at: now },
+    ]);
+    const dish = (id: number, name: string, componentType: string, extra: object = {}) =>
+      ({ id, name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now, ...extra });
+    await v19.table('components').bulkAdd([
+      dish(1, 'Rice', 'base', { base_category_id: 1 }), dish(2, 'Sambar', 'curry'), dish(3, 'Pickle', 'extra', { extra_category_id: 2 }),
+      dish(4, 'Rice', 'base', { base_category_id: 3 }), dish(5, 'Sambar', 'curry'), dish(6, 'Pickle', 'extra', { extra_category_id: 4 }),
+    ]);
+    const owned = (rule: ReturnType<typeof linkRule>, id: number) => ({ ...rule, id, enabled: true, created_at: now });
+    await v19.table('rules').bulkAdd([
+      owned(linkRule({ id: 2, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [1] }), 1),
+      owned(linkRule({ id: 5, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [4] }), 2),
+      owned(linkRule({ id: 6, name: 'Pickle' }, { mode: 'never', target: 'base_category', values: [3] }), 3),
+      { id: 4, name: 'Rice at lunch', enabled: true, created_at: now, spec: { template: 'allowed_meals', params: { match: is('base_category_id', 1), meals: ['lunch'], strength: 'must' } } },
+      { id: 5, name: 'Rice at lunch', enabled: true, created_at: now, spec: { template: 'allowed_meals', params: { match: is('base_category_id', 3), meals: ['lunch'], strength: 'must' } } },
+      { id: 6, name: 'Condiment with rice', enabled: true, created_at: now, spec: { template: 'require_with', params: { when: oneOf('id', [1, 4]), components: [], extraCategories: [4], strength: 'must' } } },
+    ]);
+    await v19.table('active_plan').put({ id: 'current', updated_at: now, locks: {}, plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 4, curry_id: 5, extra_ids: [3, 6] }] } });
+    v19.close();
+
+    await db.open();
+
+    expect((await db.categories.toArray()).map((c) => c.id)).toEqual([1, 2]);
+    expect((await db.components.toArray()).map((c) => [c.id, c.base_category_id ?? c.extra_category_id ?? null])).toEqual([[1, 1], [2, null], [3, 2]]);
+    const rules = await db.rules.toArray();
+    // The kept Sambar keeps its own served-with link; the copy's identical one is dropped.
+    expect(rules.filter((r) => r.owner_component_id === 2).map((r) => readLink(r))).toEqual([{ mode: 'serve', target: 'base_dish', values: [1], strength: 'always' }]);
+    // The copy of Pickle had a link the kept one lacked: it moves over, pointing at the kept category.
+    const pickle = rules.filter((r) => r.owner_component_id === 3);
+    expect(pickle.map((r) => readLink(r))).toEqual([{ mode: 'never', target: 'base_category', values: [1], strength: 'always' }]);
+    expect(pickle[0].spec).toMatchObject({ params: { match: is('id', 3) } });
+    expect(rules.filter((r) => r.owner_component_id === 5 || r.owner_component_id === 6)).toEqual([]);
+    // Hand-written rules point at the kept ids, and the two that became identical are one.
+    expect(rules.filter((r) => r.name === 'Rice at lunch')).toHaveLength(1);
+    expect(rules.find((r) => r.name === 'Condiment with rice')?.spec).toMatchObject({ params: { when: oneOf('id', [1]), extraCategories: [2] } });
+    expect((await db.active_plan.get('current'))?.plan.slots[0]).toMatchObject({ base_id: 1, curry_id: 2, extra_ids: [3] });
+    expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+  });
 });

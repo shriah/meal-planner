@@ -234,32 +234,27 @@ describe('meals', () => {
 });
 
 describe('addableSlots', () => {
-  it('offers a curry served with bases, never with every broad target, only with the broad ones', () => {
+  it('offers a curry served with bases, then only with / never with every target it may link to, specific dishes included', () => {
     expect(addableSlots('curry', []).sort()).toEqual([
-      'never:base_category', 'never:base_dish', 'never:curry_category', 'never:extra_category',
-      'serve:base_category', 'serve:base_dish', 'with:base_category', 'with:base_dish', 'with:extra_category',
+      'serve:base_category', 'serve:base_dish',
+      'with:base_category', 'never:base_category', 'with:extra_category', 'never:extra_category',
+      'with:curry_category', 'never:curry_category', 'with:base_dish', 'never:base_dish',
+      'with:subzi_dish', 'never:subzi_dish', 'with:extra_dish', 'never:extra_dish',
     ].sort());
+    expect(addableSlots('curry', [])[0]).toBe('serve:base_category');
   });
 
-  it('offers an extra the same, plus never with curry types', () => {
+  it('offers an extra specific curries, subzis and extras too', () => {
     const slots = addableSlots('extra', []);
-    expect(slots).toContain('serve:base_category');
-    expect(slots).toContain('never:curry_category');
-    expect(slots).not.toContain('with:curry_category');
-    expect(slots).not.toContain('never:curry_dish');
-    expect(slots).not.toContain('with:extra_dish');
+    for (const slot of ['serve:base_dish', 'with:curry_dish', 'never:curry_dish', 'with:subzi_dish', 'with:extra_dish', 'never:extra_dish'] as const) {
+      expect(slots).toContain(slot);
+    }
   });
 
   it('offers a base no served-with and no base targets', () => {
     const slots = addableSlots('base', []);
     expect(slots.some((s) => s.startsWith('serve:') || s.endsWith('base_category') || s.endsWith('base_dish'))).toBe(false);
     expect(slots).toContain('never:curry_category');
-  });
-
-  it('offers a specific-dish target only where the dish already links to it', () => {
-    const slots = addableSlots('extra', [link('with', 'curry_dish', [3])]);
-    expect(slots).toContain('never:curry_dish');
-    expect(slots).not.toContain('with:curry_dish');
   });
 
   it('leaves out slots already taken', () => {

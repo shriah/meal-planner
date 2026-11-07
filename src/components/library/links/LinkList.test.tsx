@@ -148,31 +148,31 @@ describe('LinkList', () => {
     ]);
   });
 
-  it('offers a new curry link served with first, and only the allowed targets', async () => {
+  it('offers a new curry link served with first, and every target it may link to', async () => {
     await addCategory({ kind: 'base', name: 'Rice Plates' });
     render(<Harness initial={[]} />);
 
     await userEvent.click(await readyButton('Add link'));
     const linkTo = screen.getByRole('combobox', { name: 'Link to' });
     expect(within(linkTo).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Base categories', 'Extra categories', 'Curry types', 'Specific bases',
+      'Base categories', 'Extra categories', 'Curry types', 'Specific bases', 'Specific subzis', 'Specific extras',
     ]);
     expect(linkTo).toHaveValue('base_category');
     expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Only with' })).toBeInTheDocument();
-    await userEvent.selectOptions(linkTo, 'Curry types');
-    expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
+    await userEvent.selectOptions(linkTo, 'Specific extras');
     expect(screen.queryByRole('button', { name: 'Served with' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Never with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Only with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Never with' })).toBeInTheDocument();
   });
 
-  it('offers an extra the same, with no specific dishes', async () => {
+  it('offers an extra specific curries, subzis and extras', async () => {
     render(<Harness initial={[]} componentType="extra" />);
 
     await userEvent.click(await readyButton('Add link'));
     const linkTo = screen.getByRole('combobox', { name: 'Link to' });
     expect(within(linkTo).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Base categories', 'Extra categories', 'Curry types', 'Specific bases',
+      'Base categories', 'Extra categories', 'Curry types', 'Specific bases', 'Specific curries', 'Specific subzis', 'Specific extras',
     ]);
     expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
   });

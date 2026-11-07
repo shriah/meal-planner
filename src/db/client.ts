@@ -5,6 +5,7 @@ import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCatego
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { LegacyPreferencesRecord } from '@/types/preferences';
 import type { WeeklyPlan } from '@/types/plan';
+import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
 import {
   convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
@@ -1044,6 +1045,80 @@ db.version(19).stores({
   await rulesTable.bulkDelete([...removed]);
   await rulesTable.bulkPut([...changed.values()].filter((r) => !removed.has(r.id)));
   await rulesTable.bulkAdd(added);
+});
+
+// v20: a library seeded twice holds two of every category and dish. Each duplicate (same kind and name for a
+// category, same type and name for a dish) is merged into the copy with the lowest id: dishes, rules and plans
+// that pointed at a removed copy point at the kept one. A removed dish's own rules are dropped where the kept
+// dish already has one for the same slot, and moved to it otherwise.
+db.version(20).stores({
+  categories: '++id, kind, name',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+}).upgrade(async (tx) => {
+  const norm = (s: string) => s.trim().toLowerCase();
+  const categories = await tx.table('categories').toArray() as CategoryRecord[];
+  const categoryMap = duplicateIds(categories, (c) => `${c.kind}|${norm(c.name)}`);
+  const kindOf = new Map(categories.map((c) => [c.id, c.kind]));
+  const byKind = (kind: CategoryKind) => new Map([...categoryMap].filter(([id]) => kindOf.get(id) === kind));
+  const maps: IdMaps = { component: new Map(), baseCategory: byKind('base'), extraCategory: byKind('extra') };
+
+  const components = (await tx.table('components').toArray() as ComponentRecord[]).map((c) => ({
+    ...c,
+    ...(c.base_category_id != null ? { base_category_id: maps.baseCategory.get(c.base_category_id) ?? c.base_category_id } : {}),
+    ...(c.extra_category_id != null ? { extra_category_id: maps.extraCategory.get(c.extra_category_id) ?? c.extra_category_id } : {}),
+  }));
+  maps.component = duplicateIds(components, (c) => `${c.componentType}|${norm(c.name)}`);
+  if (categoryMap.size === 0 && maps.component.size === 0) return;
+
+  await tx.table('components').bulkPut(components.filter((c) => !maps.component.has(c.id)));
+  await tx.table('components').bulkDelete([...maps.component.keys()]);
+  await tx.table('categories').bulkDelete([...categoryMap.keys()]);
+
+  const rules = (await tx.table('rules').toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const removed = new Set<number>();
+  const slotsOf = new Map<number, Set<string>>();
+  for (const rule of rules) {
+    rule.spec = remapSpec(rule.spec, maps);
+    const owner = rule.owner_component_id;
+    if (owner === undefined) continue;
+    const keeper = maps.component.get(owner) ?? owner;
+    const slot = ownedSlot(rule) ?? rule.spec.template;
+    const taken = slotsOf.get(keeper) ?? new Set<string>();
+    // Rules come in id order, so the kept dish's own rule (older) claims its slot first.
+    if (taken.has(slot)) { removed.add(rule.id); continue; }
+    taken.add(slot);
+    slotsOf.set(keeper, taken);
+    rule.owner_component_id = keeper;
+  }
+  const seen = new Set<string>();
+  for (const rule of rules) {
+    if (removed.has(rule.id) || rule.owner_component_id !== undefined) continue;
+    const key = JSON.stringify([rule.name, rule.spec, rule.enabled]);
+    if (seen.has(key)) removed.add(rule.id);
+    else seen.add(key);
+  }
+  await tx.table('rules').bulkPut(rules.filter((r) => !removed.has(r.id)));
+  await tx.table('rules').bulkDelete([...removed]);
+
+  if (maps.component.size === 0) return;
+  const plan = await tx.table('active_plan').get('current') as ActivePlanRecord | undefined;
+  if (plan) await tx.table('active_plan').put({ ...plan, plan: { slots: remapSlots(plan.plan.slots, maps.component) } });
+  const saved = await tx.table('saved_plans').toArray() as SavedPlanRecord[];
+  await tx.table('saved_plans').bulkPut(saved.map((p) => ({ ...p, slots: { slots: remapSlots(p.slots.slots, maps.component) } })));
+  const one = (id: number | undefined) => (id === undefined ? id : maps.component.get(id) ?? id);
+  const meals = await tx.table('meals').toArray() as MealRecord[];
+  await tx.table('meals').bulkPut(meals.map((m) => ({ ...m, base_id: one(m.base_id)!, curry_id: one(m.curry_id), subzi_id: one(m.subzi_id) })));
+  const extras = await tx.table('meal_extras').toArray() as MealExtraRecord[];
+  const moved = extras.filter((e) => maps.component.has(e.component_id));
+  await tx.table('meal_extras').bulkDelete(moved.map((e) => [e.meal_id, e.component_id]));
+  await tx.table('meal_extras').bulkPut(moved.map((e) => ({ ...e, component_id: maps.component.get(e.component_id)! })));
 });
 
 export { db, normalizeComponentCategoryRefs };

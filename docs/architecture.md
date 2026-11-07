@@ -86,6 +86,10 @@ were deleted without touching the ones that remain. The seed runs once (`runSeed
 transaction), so React running effects twice cannot duplicate rules. Prefer and avoid weights are shown as Slightly,
 Moderately or Strongly (`LEVELS`, weight only); the stored numbers are unchanged.
 
+The v20 upgrade merges a library that was seeded twice: categories with the same kind and name, and dishes with the same type
+and name, are merged into the copy with the lowest id (`src/db/dedupe.ts`). Dishes, rules and plans that named a removed copy
+name the kept one; a removed dish's own rules are dropped where the kept dish has one for the same slot and moved to it otherwise.
+
 The v19 upgrade also removes duplicate unowned rules (same name, spec and enabled flag; the lowest id stays) and converts
 exact-shape hand-written `require_with` pairings (unowned, no extra categories, `when` a single base `id` or `base_category_id`
 leaf, components all existing curries, subzis or extras) into dish-owned served-with links, keeping strength, scope and enabled.
@@ -116,9 +120,8 @@ side is the dish type plus the (negated) categories.
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
 option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
-flow offers: Served with first; "Only with" only for base categories, base dishes and extra categories; "Never with" for every
-offered target, but for specific curries, subzis and extras only when the dish already links to that target. Existing links
-always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+flow offers: Served with first, then "Only with" and "Never with" for every target the dish may link to, specific dishes
+included. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links left untouched are never rewritten on save. `link-warnings.ts` shows
 non-blocking warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
