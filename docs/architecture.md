@@ -130,8 +130,10 @@ a "Preview on this week" button that compares the current plan with and without 
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
 own queries).
 
-Manage Categories has no pairing editor. A base's form shows a read-only "Served with this base" list of the curries, subzis
-and extras that link to it; the links are edited on those dishes. A dish's specific days
+Manage Categories has no pairing editor. A base's form has a "Served with" picker (Curries, Subzis, Extras, each searchable):
+ticking a dish adds this base to that dish's own `serve:base_dish` link, created at the "new picks" strength when the dish has
+none, and unticking takes the base out (`setServedWithBase` in `src/services/food-db.ts`); nothing is written when the list is
+left alone. Dishes served with the base's whole category are shown there for context and edited on those dishes. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
 `festive`). Owned rules are renamed and deleted with their component and lose a deleted value

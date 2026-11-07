@@ -399,36 +399,57 @@ describe('ComponentForm dynamic category wiring', () => {
     await waitFor(async () => expect(await pairedBases(curryId)).toEqual([riceId]));
   });
 
-  it('lists the dishes served with a base', async () => {
+  it('picks the curries, subzis and extras served with a base, and saves them on those dishes', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const breadId = await addCategory({ kind: 'base', name: 'Flatbreads' });
     const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
-    const baseId = await saveComponent(undefined, { name: 'Steamed Rice', componentType: 'base', base_category_id: riceId, ...tags });
-    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, { 'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [baseId], strength: 'usually' }) });
-    await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags }, { 'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [riceId] }) });
-    await saveComponent(undefined, { name: 'Chole', componentType: 'curry', ...tags }, { 'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [breadId] }) });
-    await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, { 'with:base_dish': (c) => linkRule(c, { mode: 'with', target: 'base_dish', values: [baseId] }) });
-    await saveComponent(undefined, { name: 'Dal', componentType: 'curry', ...tags });
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, ...tags });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
+      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli, pongal], strength: 'always' }),
+    });
+    const beans = await saveComponent(undefined, { name: 'Beans', componentType: 'subzi', ...tags }, {
+      'serve:base_category': (c) => linkRule(c, { mode: 'serve', target: 'base_category', values: [riceId] }),
+    });
+    await saveComponent(undefined, { name: 'Kootu', componentType: 'subzi', ...tags });
+    const chutney = await saveComponent(undefined, { name: 'Coconut Chutney', componentType: 'extra', ...tags });
 
-    render(<LiveEditForm componentId={baseId} />);
+    render(<LiveEditForm componentId={pongal} />);
 
-    expect(await screen.findByText('Served with this base')).toBeInTheDocument();
-    expect(await screen.findByRole('link', { name: 'Sambar' })).toHaveAttribute('href', expect.stringMatching(/^\/library#dish-\d+$/));
-    expect(screen.getByText(/\(usually\)/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Beans' })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Chole' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Rasam' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Dal' })).not.toBeInTheDocument();
+    const curries = await screen.findByRole('group', { name: 'Curries' });
+    expect(within(curries).getByRole('checkbox', { name: 'Sambar' })).toBeChecked();
+    expect(screen.getByText(/Also served with its whole category/)).toHaveTextContent('Beans');
+    // Untick Sambar, tick Kootu and the chutney, sometimes.
+    await userEvent.click(within(curries).getByRole('checkbox', { name: 'Sambar' }));
+    await userEvent.click(within(screen.getByRole('group', { name: 'Subzis' })).getByRole('checkbox', { name: 'Kootu' }));
+    await userEvent.click(within(screen.getByRole('group', { name: 'Extras' })).getByRole('checkbox', { name: 'Coconut Chutney' }));
+    await userEvent.click(within(screen.getByRole('group', { name: 'How firmly, new picks' })).getByRole('button', { name: 'Sometimes' }));
+    await userEvent.click(await readyButton('Save Base'));
+
+    await waitFor(async () => {
+      const kootu = (await getComponentsByType('subzi')).find((c) => c.name === 'Kootu')!;
+      expect(readLink((await getOwnedRule(kootu.id, 'serve:base_dish'))!)).toEqual({ mode: 'serve', target: 'base_dish', values: [pongal], strength: 'sometimes' });
+      expect(readLink((await getOwnedRule(chutney, 'serve:base_dish'))!)?.values).toEqual([pongal]);
+      // Sambar keeps Idli and its strength; only Pongal is taken out.
+      expect(readLink((await getOwnedRule(sambar, 'serve:base_dish'))!)).toEqual({ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' });
+      // A category link is left alone.
+      expect(await getOwnedRule(beans, 'serve:base_category')).toBeDefined();
+    });
   });
 
-  it('hides the served-with list when no dish is served with the base', async () => {
+  it('writes no served-with change when the list is left alone', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const baseId = await saveComponent(undefined, { name: 'Steamed Rice', componentType: 'base', base_category_id: riceId, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() });
+    const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
+      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [pongal], strength: 'moderately' }),
+    });
+    const before = await getOwnedRule(sambar, 'serve:base_dish');
 
-    render(<LiveEditForm componentId={baseId} />);
+    render(<LiveEditForm componentId={pongal} />);
+    await screen.findByRole('group', { name: 'Curries' });
+    await userEvent.click(await readyButton('Save Base'));
 
-    await screen.findByDisplayValue('Steamed Rice');
-    expect(screen.queryByText('Served with this base')).not.toBeInTheDocument();
+    await waitFor(async () => expect(await getOwnedRule(sambar, 'serve:base_dish')).toEqual(before));
   });
 
   it('sets how often a dish is planned, and shows it when editing', async () => {

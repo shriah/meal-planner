@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, readLink, readOwned, STRENGTH_WORDS, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { saveComponent, setServedWithBase } from '@/services/food-db'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, readLink, readOwned, type DayMode, type DishLink, type LinkStrength, type RuleRecord } from '@/rules'
 import { LinkList } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
+import { ServedWithPicker } from './links/ServedWithPicker'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import { linkNames, ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
@@ -98,6 +99,10 @@ interface FormState {
   links: DishLink[] | null
   /** The stored links at the first edit; only slots that differ from them are written. */
   linksBase: DishLink[] | null
+  /** Side dishes served with this base, once the user changes the list (null: as stored). */
+  served: number[] | null
+  /** How firmly a newly ticked side is served. */
+  servedStrength: LinkStrength
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
   regional_tags: RegionalTag[]
@@ -128,6 +133,8 @@ function initialFormState(
       curry_category: component.curry_category ?? 'none',
       links: null,
       linksBase: null,
+      served: null,
+      servedStrength: 'usually',
       dietary_tags: component.dietary_tags,
       protein_tag: component.protein_tag ?? 'none',
       regional_tags: component.regional_tags,
@@ -147,6 +154,8 @@ function initialFormState(
     // Drafted links count as edits against nothing stored, so saving writes them all.
     links: draftLinks?.length ? draftLinks : null,
     linksBase: draftLinks?.length ? [] : null,
+    served: null,
+    servedStrength: 'usually',
     dietary_tags: draft?.dietary_tags ?? [],
     protein_tag: draft?.protein_tag ?? 'none',
     regional_tags: draft?.regional_tags ?? [],
@@ -206,20 +215,21 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   // off and is marked so; a changed one is switched on when saved.
   const offSlots = LINK_SLOTS.filter((slot) => owned.find((r) => ownedSlot(r) === slot)?.enabled === false)
   const shownOff = offSlots.filter((slot) => slotOf(links, slot) && sameLink(slotOf(links, slot), slotOf(form.linksBase ?? storedLinks, slot)))
-  // Read only: the pairing is edited on the side dish. Enabled serve links that name this base or its category.
-  const servedWith = componentType === 'base' && component && lookup.loaded
-    ? lookup.dishes.flatMap((d) => {
-        // A dish can hold a link to the base and another to its category; list it once.
-        const hit = lookup.rules.flatMap((r) => {
-          const link = r.owner_component_id === d.id && r.enabled ? readLink(r) : undefined
-          if (link?.mode !== 'serve') return []
-          const names = link.target === 'base_dish' ? link.values.includes(component.id)
-            : link.target === 'base_category' && component.base_category_id != null && link.values.includes(component.base_category_id)
-          return names ? [link] : []
-        })[0]
-        return hit ? [{ id: d.id, name: d.name, word: hit.strength === 'always' ? '' : STRENGTH_WORDS[hit.strength].word }] : []
-      })
+  // A base's served-with sides: enabled links on side dishes that name this base (editable here) or its whole
+  // category (shown for context, edited on the dish).
+  const serveLinksOf = (d: ComponentRecord) => lookup.rules.flatMap((r) => {
+    const link = r.owner_component_id === d.id && r.enabled ? readLink(r) : undefined
+    return link?.mode === 'serve' ? [link] : []
+  })
+  const storedServed = componentType === 'base' && component && lookup.loaded
+    ? lookup.dishes.filter((d) => serveLinksOf(d).some((l) => l.target === 'base_dish' && l.values.includes(component.id))).map((d) => d.id)
     : []
+  const servedViaCategory = componentType === 'base' && component?.base_category_id != null && lookup.loaded
+    ? lookup.dishes
+        .filter((d) => serveLinksOf(d).some((l) => l.target === 'base_category' && l.values.includes(component.base_category_id as number)))
+        .map((d) => ({ id: d.id, name: d.name }))
+    : []
+  const served = form.served ?? storedServed
   // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.
   const names = linkNames(lookup)
   const mentioning = component
@@ -320,7 +330,14 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       const changes = pendingChanges()
       const id = mode === 'edit' ? component?.id : undefined
-      await saveComponent(id, record, changes)
+      const savedId = await saveComponent(id, record, changes)
+      if (componentType === 'base' && form.served) {
+        await setServedWithBase(savedId, {
+          add: form.served.filter((d) => !storedServed.includes(d)),
+          remove: storedServed.filter((d) => !form.served!.includes(d)),
+          strength: form.servedStrength,
+        })
+      }
       toast.success(id === undefined ? `${record.name} added to the library` : `${record.name} saved`)
       onSave()
     } finally {
@@ -543,20 +560,17 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         </div>
       )}
 
-      {/* Served with this base: the dishes whose served-with link names it or its category */}
-      {servedWith.length > 0 && (
-        <div className="space-y-1">
-          <Label className="text-xs font-semibold">Served with this base</Label>
-          <p className="text-xs text-muted-foreground">
-            {servedWith.map((d, i) => (
-              <span key={d.id}>
-                {i > 0 && ', '}
-                <a className="underline" href={`/library#dish-${d.id}`}>{d.name}</a>
-                {d.word && ` (${d.word})`}
-              </span>
-            ))}
-          </p>
-        </div>
+      {/* Served with: the sides added whenever this base is planned, stored on each side dish */}
+      {componentType === 'base' && lookup.loaded && (
+        <ServedWithPicker
+          baseName={form.name}
+          dishes={lookup.dishes}
+          selected={served}
+          onChange={(next) => setForm(s => ({ ...s, served: next }))}
+          strength={form.servedStrength}
+          onStrengthChange={(next) => setForm(s => ({ ...s, servedStrength: next }))}
+          viaCategory={servedViaCategory}
+        />
       )}
 
       {/* Days and automatic planning, stored as rules the dish owns */}
