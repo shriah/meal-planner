@@ -14,6 +14,8 @@ import * as foodDb from '@/services/food-db';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
 import { ComponentRow } from './ComponentRow';
+import { LibraryLookupProvider, useLibraryLookup } from './LibraryLookup';
+import { dayRule, mealRule } from '@/rules';
 
 const pairedBases = async (id: number) => {
   const rule = await getOwnedRule(id, 'with:base_category');
@@ -450,6 +452,28 @@ describe('ComponentForm dynamic category wiring', () => {
     await userEvent.click(await readyButton('Save Base'));
 
     await waitFor(async () => expect(await getOwnedRule(sambar, 'serve:base_dish')).toEqual(before));
+  });
+
+  it('opens with its stored meals and days when the library is already loaded, and saving keeps them', async () => {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' }, {
+      allowed_meals: (c) => mealRule(c, ['breakfast']),
+      allowed_days: (c) => dayRule(c, ['saturday', 'sunday']),
+    });
+    // As on the library page: the shared lookup has loaded before the form opens.
+    function OpenWhenLoaded() {
+      return useLibraryLookup().loaded ? <LiveEditForm componentId={pongal} /> : null;
+    }
+    render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+
+    expect(await screen.findByRole('checkbox', { name: 'breakfast' })).toBeChecked();
+    expect(screen.getByRole('combobox', { name: 'Days' })).toHaveTextContent('Weekends');
+    await userEvent.click(await readyButton('Save Base'));
+
+    await waitFor(async () => {
+      expect(ruleMeals((await getOwnedRule(pongal, 'allowed_meals'))!)).toEqual(['breakfast']);
+      expect(ruleDays((await getOwnedRule(pongal, 'allowed_days'))!)).toEqual(['saturday', 'sunday']);
+    });
   });
 
   it('sets how often a dish is planned, and shows it when editing', async () => {

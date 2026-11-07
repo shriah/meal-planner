@@ -197,17 +197,19 @@ function findCategory(categories: CategoryRecord[] | undefined, id: string) {
 }
 
 export function ComponentForm({ component, componentType, onSave, onDiscard, mode, draft, draftLinks }: ComponentFormProps) {
+  const lookup = useLibraryLookup()
+  // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
+  const owned = component ? lookup.rules.filter((r) => r.owner_component_id === component.id) : []
+  // Start from the stored settings when they are already loaded (inside the library they are), so the form never
+  // opens empty and a save cannot clear them.
   const [form, setForm] = useState<FormState>(() =>
-    initialFormState(component, componentType, [], mode === 'add' ? draft : undefined, mode === 'add' ? draftLinks : undefined),
+    initialFormState(component, componentType, owned, mode === 'add' ? draft : undefined, mode === 'add' ? draftLinks : undefined),
   )
   const [saving, setSaving] = useState(false)
   // An open link editor holds a link that Save would silently drop.
   const [editingLink, setEditingLink] = useState(false)
-  const lookup = useLibraryLookup()
   const baseCategories = lookup.loaded ? lookup.baseCategories : undefined
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
-  // Clashing curry types (extra), specific days and meals are stored as rules the component owns.
-  const owned = component ? lookup.rules.filter((r) => r.owner_component_id === component.id) : []
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
   const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
@@ -508,7 +510,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
         <div>
           <h3 className="text-sm font-semibold">Planning</h3>
           <p className="text-xs text-muted-foreground">
-            Pairings, days, meals and “never plan automatically” are saved as rules you can also see on the Rules page.
+            Pairings, days, meals and “never plan automatically” are saved as rules this dish owns, and the planner follows them.
           </p>
         </div>
 
