@@ -94,8 +94,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     return false;
   };
   /**
-   * After a change to slot `i`'s base, curry or subzi, bring the sides its dishes are paired with into
-   * roles that are not pinned and are empty, or that hold a side the replaced dish brought (`prev`).
+   * After a change to slot `i`'s base, curry or subzi, first remove the sides the replaced dish brought
+   * (`prev`) that no dish in the meal still brings, then bring the sides its dishes are paired with into
+   * roles that are not pinned and are empty, or that hold a side the replaced dish brought.
    * Unit members may take such a role; asked-for sides only fill an empty one. Extras are appended.
    * Repeats while anything changes, since a brought side can bring its own. Uses no randomness.
    */
@@ -123,6 +124,19 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       const b = bringsWith(m, id, role, i);
       for (const c of b.asked) place(c, b.unit.includes(c));
     };
+    // The replaced dish's sides leave with it, unless a dish still in the meal brings them too.
+    const stillBrought = (c: number) => {
+      const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && broughtBy(d, role, i).includes(c);
+      return by(s.base, 'base') || by(s.curry, 'curry') || by(s.subzi, 'subzi') || s.extras.some((e) => by(e, 'extra'));
+    };
+    for (const c of prev) {
+      const type = m.byId.get(c)?.componentType;
+      if (type === 'extra') {
+        if (isFree(i, 'extras') && s.extras.includes(c) && !stillBrought(c)) s.extras = s.extras.filter((e) => e !== c);
+      } else if ((type === 'curry' || type === 'subzi') && s[type] === c && isFree(i, type) && !stillBrought(c)) {
+        s[type] = undefined;
+      }
+    }
     for (let round = 0; round < BRING_ROUNDS; round++) {
       changed = false;
       visit(s.base, 'base');

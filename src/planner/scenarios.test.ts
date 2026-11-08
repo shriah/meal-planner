@@ -1,6 +1,6 @@
 // Regression suite on the real seed library: rule shapes the planner must satisfy.
 // Iteration budgets (not wall-clock) keep results deterministic regardless of machine load.
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import type { Constraint, CountConstraint, PairConstraint } from './constraints';
 import { all, is, not, oneOf, type Matcher } from './matcher';
@@ -163,6 +163,21 @@ describe('planner scenarios (seed library)', () => {
       planWeek({ library, constraints: [...CURRENT_DEFAULTS, sambarLunchOnly, ...constraints] }, { ...opts, seed });
     const always = [pair('pongal-sambar', is('id', pongal), sambar), pair('pongal-chutney', is('id', pongal), chutney)];
     const pongalSlots = (r: PlanResult) => r.slots.filter((s) => s.base_id === pongal);
+    const isOther = (s: PlanSlotLike) => library.find((c) => c.id === s.base_id)?.base_category_id === CAT.base.other;
+    // The same weeks with no pairings: a pairing should not make its base much more (or less) common.
+    const baseline = { pongal: 0, other: 0 };
+    beforeAll(() => {
+      for (const seed of WEEKS) {
+        const r = plan([], seed);
+        baseline.pongal += pongalSlots(r).length;
+        baseline.other += r.slots.filter(isOther).length;
+      }
+    }, 30_000);
+    const noPairing = () => baseline;
+    const expectNearBaseline = (total: number) => {
+      expect(total).toBeGreaterThanOrEqual(4);
+      expect(total).toBeLessThanOrEqual(1.5 * noPairing().pongal);
+    };
 
     it('Always: Pongal is planned, every Pongal meal holds both, no hard rule breaks', () => {
       let total = 0;
@@ -175,20 +190,24 @@ describe('planner scenarios (seed library)', () => {
         }
         total += pongalSlots(r).length;
       }
-      expect(total).toBeGreaterThanOrEqual(4);
+      expectNearBaseline(total);
     });
 
     it('Usually: Pongal is planned', () => {
       const usually = always.map((p) => ({ ...p, strength: 'prefer' as const, cost: 10 }));
       const total = WEEKS.reduce((n, seed) => n + pongalSlots(plan(usually, seed)).length, 0);
-      expect(total).toBeGreaterThanOrEqual(4);
+      expectNearBaseline(total);
     });
 
     it('a pairing scoped to breakfast makes a unit only at breakfast', () => {
       let breakfasts = 0;
       for (const seed of WEEKS) {
-        const r = plan([pair('pongal-sambar', is('id', pongal), sambar, { scope: { meals: ['breakfast'] } })], seed);
+        // A lunch Pongal with another curry is not a broken pairing.
+        const r = plan([pair('pongal-sambar', is('id', pongal), sambar, { scope: { meals: ['breakfast'] } })], seed, {
+          ...BUDGET, pins: { 'monday-lunch': { base_id: pongal, curry_id: rasam } },
+        });
         expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        expect(r.slots.find((s) => s.day === 'monday' && s.meal_slot === 'lunch'), `seed ${seed}`).toMatchObject({ base_id: pongal, curry_id: rasam });
         for (const s of pongalSlots(r).filter((x) => x.meal_slot === 'breakfast')) {
           expect(s.curry_id, `seed ${seed} ${s.day}`).toBe(sambar);
           breakfasts++;
@@ -199,13 +218,17 @@ describe('planner scenarios (seed library)', () => {
 
     it('a pairing to a base category makes a unit for every base in it', () => {
       const other = all(is('role', 'base'), is('base_category_id', CAT.base.other));
+      let total = 0;
       for (const seed of WEEKS) {
         const r = plan([pair('other-sambar', other, sambar)], seed);
         expect(hardOf(r), `seed ${seed}`).toEqual([]);
-        for (const s of r.slots.filter((x) => library.find((c) => c.id === x.base_id)?.base_category_id === CAT.base.other)) {
+        for (const s of r.slots.filter(isOther)) {
           expect(s.curry_id, `seed ${seed} ${nameOf(s.base_id)} ${s.day} ${s.meal_slot}`).toBe(sambar);
         }
+        total += r.slots.filter(isOther).length;
       }
+      // The category's bases are still planned about as often as with no pairing.
+      expect(total).toBeGreaterThanOrEqual(0.5 * noPairing().other);
     });
 
     it('a stored conflict (a second Always curry) still plans Pongal with Sambar', () => {
@@ -216,7 +239,7 @@ describe('planner scenarios (seed library)', () => {
         for (const s of pongalSlots(r)) expect(s.curry_id, `seed ${seed} ${s.day} ${s.meal_slot}`).toBe(sambar);
         total += pongalSlots(r).length;
       }
-      expect(total).toBeGreaterThanOrEqual(4);
+      expectNearBaseline(total);
     });
 
     it('the default planning time still reaches a plateau', () => {
