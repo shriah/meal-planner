@@ -16,9 +16,9 @@ latest run.
 - the cases themselves.
 
 One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it writes the report in
-`afterAll`. Saving-dish cases render the real `ComponentForm` on fake-indexeddb.
+`afterAll`.
 
-**Tech Stack:** TypeScript, Vitest (happy-dom for the cases file), Testing Library, fake-indexeddb, Dexie.
+**Tech Stack:** TypeScript, Vitest (node environment).
 
 **Spec:** `docs/superpowers/specs/2026-11-08-rule-cases-design.md`
 
@@ -26,7 +26,8 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
 
 - **Each case's fields:** `id` (a stable slug), `group`, `name`, `why`, optional extra `dishes`, `rules`,
   optional `defaults: false`, optional `pins`, `expect`, and optional `known: '<what is wrong>'`.
-- **Groups:** Pairings, Days and meals, Variety, Locks and picks, Extras, Saving dishes.
+- **Groups:** Pairings, Days and meals, Variety, Locks and picks, Extras.
+- **Scope:** the rule engine and planner only. No UI is rendered or imported.
 - **Weeks:** 8 per case, on seeds 1–8. Every case has a fixed iteration budget (`timeLimitMs: Infinity`) and
   never depends on wall-clock time.
 - **Rules are built the way the app stores them:**
@@ -54,14 +55,14 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   - written to `rule-cases-report.html` at the repo root, and git-ignored;
   - one self-contained file: inline CSS and inline plain JavaScript, no external requests;
   - `npm run rule-cases` sets `RULE_CASES_REPORT=1` and still exits non-zero when a case fails.
-- **Separation:** the report renderer and the case library import nothing from app UI code. Only the
-  saving-dish cases render `ComponentForm`. File-system code lives only in the Vitest file.
+- **Separation:** the report renderer and the case library import nothing from app UI code. File-system
+  code lives only in the Vitest file.
 - Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Verification for every task: `npx tsc --noEmit -p .`, `npx eslint src`, `npx vitest run`. All clean.
 
 ## Review Focus
 
-1. **Flakiness.** A case that passes on one run and fails on the next. Run the cases file 3 times in Task 4
+1. **Flakiness.** A case that passes on one run and fails on the next. Run the cases file 3 times in Task 3
    and compare the observed values.
 2. **A case that passes for the wrong reason.** For example, Pongal is never planned, so "every Pongal meal
    has Sambar" holds vacuously. Every-meal expectations must report the number of meals checked, and fail
@@ -69,7 +70,7 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
 3. **The report renderer and dish or rule text.** Names with `<`, `&` or quotes must be escaped. Tested in
    Task 3.
 4. **A known failure that silently passes.** Tested in Task 1.
-5. **The whole case set's run time.** It must stay a few seconds inside `npm test`. Measured in Task 4.
+5. **The whole case set's run time.** It must stay a few seconds inside `npm test`. Measured in Task 3.
 
 ---
 
@@ -83,12 +84,12 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   - `src/rule-cases/run.ts`
   - `src/rule-cases/cases/index.ts`
   - `src/rule-cases/cases/pairings.ts` (case 1 only)
-  - `src/rule-cases/rule-cases.test.tsx`
+  - `src/rule-cases/rule-cases.test.ts`
 - Test: `src/rule-cases/run.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `type CaseGroup = 'Pairings' | 'Days and meals' | 'Variety' | 'Locks and picks' | 'Extras' | 'Saving dishes'`.
+  - `type CaseGroup = 'Pairings' | 'Days and meals' | 'Variety' | 'Locks and picks' | 'Extras'`.
   - `interface CaseLibrary { dishes: ComponentRecord[]; categories: CategoryRecord[]; dish(name: string): ComponentRecord; category(name: string): CategoryRecord }`.
   - `const TEST_LIBRARY: CaseLibrary`.
   - `type CaseRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>`. `OwnedRule` is assignable to it.
@@ -96,10 +97,9 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   - `interface Outcome { pass: boolean; got: string }`.
   - `interface PlanExpectation { says: string; check(w: CaseWeeks, ctx: { baseline(): CaseWeeks }): Outcome; highlights?(slot: PlanSlotLike): boolean }`.
   - `interface PlanCase { kind: 'plan'; id: string; group: CaseGroup; name: string; why: string; dishes?: ComponentRecord[]; rules(lib: CaseLibrary): CaseRule[]; defaults?: false; pins?: Pins; expect: PlanExpectation[]; known?: string }`.
-  - `type RuleCase = PlanCase | SavingCase`. `SavingCase` is added in Task 2. Until then the union has one
-    member.
+  - `type RuleCase = PlanCase`.
   - `type CaseStatus = 'pass' | 'fail' | 'known' | 'known-now-passes'`.
-  - `interface CaseResult { id; group; name; why; kind: 'plan' | 'saving'; status: CaseStatus; known?: string; dishes: { name: string; type: ComponentType }[]; rules: string[]; expectations: { says: string; pass: boolean; got: string }[]; sampleWeek?: { slot: PlanSlotLike; text: string; highlight: boolean }[]; before?: string[]; after?: string[] }`.
+  - `interface CaseResult { id; group; name; why; kind: 'plan'; status: CaseStatus; known?: string; dishes: { name: string; type: ComponentType }[]; rules: string[]; expectations: { says: string; pass: boolean; got: string }[]; sampleWeek?: { slot: PlanSlotLike; text: string; highlight: boolean }[] }`.
   - `runPlanCase(c: PlanCase): CaseResult`. It plans seeds 1–8 with
     `{ timeLimitMs: Infinity, maxIterations: 20_000, plateauIterations: 3000 }`.
     - `rules` holds the case's own rules as sentences, using `describeSpec` with names from the library.
@@ -141,64 +141,22 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   - The baseline runs once per case, lazily and memoised.
   - Write case 1, "Always pairing beats the side's own meals" (spec seed list), in `cases/pairings.ts`. It is
     exported through `cases/index.ts` as `ALL_CASES: RuleCase[]`.
-  - `rule-cases.test.tsx` starts with `/** @vitest-environment happy-dom */`. It runs
-    `it(c.name, ...)` for each case. A test fails when the status is `'fail'` or `'known-now-passes'`, with a
+  - `rule-cases.test.ts` runs `it(c.name, ...)` for each case. A test fails when the status is `'fail'` or `'known-now-passes'`, with a
     message listing the failed expectations, or the "Known issue now passes" message.
 
 - [ ] **Step 4: Run** `npx vitest run src/rule-cases`. Expected: PASS.
 
 - [ ] **Step 5: Commit:** `feat(rule-cases): case model, test library, expectations and runner`
 
-### Task 2: Saving-dish cases
-
-**Files:**
-- Create: `src/rule-cases/saving.tsx`, `src/rule-cases/cases/saving.tsx`
-- Modify:
-  - `src/rule-cases/types.ts` (add `SavingCase`)
-  - `src/rule-cases/cases/index.ts`
-  - `src/rule-cases/rule-cases.test.tsx` (dispatch by `kind`)
-
-**Interfaces:**
-- Consumes: Task 1's `CaseLibrary`, `CaseResult`, `statusOf`.
-- Produces:
-  - `interface SavingCase { kind: 'saving'; id; group: 'Saving dishes'; name; why; dish: string; rules(lib: CaseLibrary): CaseRule[]; edit?(user: UserEvent): Promise<void>; expect: { says: string; check(before: RuleRecord[], after: RuleRecord[]): Outcome }[]; known?: string }`.
-  - `async runSavingCase(c: SavingCase): Promise<CaseResult>`. It:
-    1. clears and seeds fake-indexeddb with `TEST_LIBRARY` (categories and components) and the case's rules;
-    2. renders `ComponentForm` in edit mode for `c.dish`, under `LibraryLookupProvider`, and only once
-       `useLibraryLookup().loaded` is true (as the library page does);
-    3. runs `edit`;
-    4. clicks `Save {Type}` once it is enabled;
-    5. waits for the save, then reads the rules and evaluates the expectations;
-    6. cleans up the render.
-
-    `before` and `after` are the dish's owned rules as sentences.
-
-- [ ] **Step 1: Write the failing case** in `cases/saving.tsx`: case 11 from the spec, "Meals and days
-  survive a save with no edits".
-  - Pongal has `mealRule(['breakfast'])` and `dayRule(['saturday', 'sunday'])`. There is no edit.
-  - Expectations: "Pongal is still breakfast only" and "Pongal is still weekends only". Both compare the
-    stored values after the save.
-- [ ] **Step 2: Run** `npx vitest run src/rule-cases`. Expected: FAIL (`runSavingCase` missing).
-- [ ] **Step 3: Implement** `SavingCase`, `runSavingCase` and the test dispatch. Add case 12, "A stored
-  conflict does not block saving an unrelated edit":
-  - Sambar and Rasam are both always served with Idli.
-  - Rasam's form renames Rasam to "Rasam (tomato)".
-  - Expectations:
-    - Save is enabled. This is checked inside `edit`, and the outcome is recorded through the `check`.
-    - The stored name changed.
-    - Both serve links are unchanged.
-- [ ] **Step 4: Run** `npx vitest run src/rule-cases`. Expected: PASS.
-- [ ] **Step 5: Commit:** `feat(rule-cases): saving-dish cases drive the real dish form`
-
-### Task 3: The report
+### Task 2: The report
 
 **Files:**
 - Create: `src/rule-cases/report.ts`
 - Test: `src/rule-cases/report.test.ts`
 - Modify:
-  - `src/rule-cases/rule-cases.test.tsx` (collect results; write the report in `afterAll` when
+  - `src/rule-cases/rule-cases.test.ts` (collect results; write the report in `afterAll` when
     `process.env.RULE_CASES_REPORT === '1'`)
-  - `package.json` (`"rule-cases": "RULE_CASES_REPORT=1 vitest run src/rule-cases/rule-cases.test.tsx"`)
+  - `package.json` (`"rule-cases": "RULE_CASES_REPORT=1 vitest run src/rule-cases/rule-cases.test.ts"`)
   - `.gitignore` (`/rule-cases-report.html`)
 
 **Interfaces:**
@@ -218,7 +176,7 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
     - the dishes;
     - the rules, plus "+ default rules" unless `defaults: false`;
     - the expectations, as a table of mark, says and got;
-    - either a 7×3 sample week with highlighted meals, or before/after rule lists.
+    - a 7×3 sample week with highlighted meals.
 
 - [ ] **Step 1: Write the failing tests** in `report.test.ts`:
   - the HTML contains each case name, the pass/fail/known counts and `Dishes library`;
@@ -233,7 +191,7 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   `npx vitest run`. Expected: PASS, and no report written without the flag.
 - [ ] **Step 5: Commit:** `feat(rule-cases): standalone HTML report of the last run`
 
-### Task 4: The seed cases
+### Task 3: The seed cases
 
 **Files:**
 - Modify/Create:
@@ -245,9 +203,9 @@ One Vitest file runs every case as its own test. When `RULE_CASES_REPORT=1`, it 
   - `src/rule-cases/cases/index.ts`
 
 **Interfaces:**
-- Consumes: the helpers from Task 1 and `SavingCase` from Task 2.
+- Consumes: the helpers from Task 1.
 - Produces: the spec's seed cases 2–10. Each has a `why` naming what it guards. Where it applies, the `why`
-  names the fixed bug: the Pongal pairing fix of 8 Nov 2026, or "meals lost after saving".
+  names the fixed bug, such as the Pongal pairing fix of 8 Nov 2026.
 
 - [ ] **Step 1: Write the cases**, each with the expectations below:
   - **2. Usually pairing gives way to never-auto:** Sambar and Coconut Chutney usually served with Pongal;

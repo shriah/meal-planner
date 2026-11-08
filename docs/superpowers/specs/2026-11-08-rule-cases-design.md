@@ -6,7 +6,6 @@
 
 Changes to the rules or the planner keep breaking behaviour that worked before. For example:
 - a base with an Always pairing stopped being planned;
-- meals were lost after saving;
 - a Usually pairing kept its base out of the plan.
 
 Each fix added tests, but they are spread across many files and written as planner internals. There is no
@@ -35,6 +34,7 @@ place:
   app UI code.
 - The report runs nothing. It shows what the last run found.
 - No editing of cases from the report, and no running cases against the user's own library.
+- No UI testing: the cases cover the rule engine and the planner only. The dish form and other screens keep their own component tests.
 - Not a replacement for the existing unit tests. Those keep testing internals; cases test outcomes.
 
 ## Anti-goals (a failure even if it works)
@@ -53,7 +53,7 @@ A case is a TypeScript object:
 | Field | Meaning |
 |---|---|
 | `id` | A stable slug, e.g. `pairing-always-beats-own-meals`. |
-| `group` | One of: Pairings, Days and meals, Variety, Locks and picks, Extras, Saving dishes. Builders may add groups. |
+| `group` | One of: Pairings, Days and meals, Variety, Locks and picks, Extras. Builders may add groups. |
 | `name` | A short title in plain words. |
 | `why` | One or two sentences on what the case protects, naming the bug it guards against if there is one. |
 | `dishes` | Optional extra dishes for this case only, on top of the shared test library. |
@@ -86,16 +86,6 @@ Settled after the builder check (my calls):
   - When the baseline is under 4, the case passes at 4 or more instead, so a tiny baseline can't make the
     check vacuous or flaky.
 - **Pins** use the planner's own `Pins` type (`src/planner/types.ts`). No app UI code is imported.
-
-**Saving-dish cases.** Some fixed bugs, such as "meals lost after saving", are about the dish form, not the
-planner. They live in the form's starting state, so calling `saveComponent` directly would not exercise them.
-These cases:
-1. seed a fresh fake-indexeddb;
-2. render the real `ComponentForm` under `LibraryLookupProvider`, in the existing happy-dom test environment;
-3. make the case's edits (possibly none) and save;
-4. compare the stored rules before and after.
-
-The report shows their before/after rules instead of a week. (My call.)
 
 ## The shared test library
 
@@ -144,7 +134,6 @@ The report shows their before/after rules instead of a week. (My call.)
     noted;
   - each expectation with a pass/fail mark and the observed value;
   - a sample week (seed 1) as a 7×3 grid, with the meals the expectations look at highlighted;
-  - for saving-dish cases, before/after rules instead of a week.
 - A failing case is open by default.
 
 ## Seed cases (the first set)
@@ -161,8 +150,6 @@ The report shows their before/after rules instead of a week. (My call.)
 8. Never-auto dish is never planned unless locked.
 9. No dish on the same or next day (variety default), soft: it holds when the library allows.
 10. Extras cap per meal.
-11. Meals and days survive a save with no edits (the "lost after saving" bug).
-12. A stored conflict does not block saving an unrelated edit.
 
 ## A case that fails on today's code (decided: known failure)
 
