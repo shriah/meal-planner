@@ -188,6 +188,45 @@ describe('pairings', () => {
     expect(bringsWith(m, 1, 'base', slot).unit).toEqual([2, 4]);
   });
 
+  it('a prefer curry that cannot fit beside a must curry is suppressed, in either order', () => {
+    const rasamPrefer = pair(5, { strength: 'prefer' });
+    const meal = at('lunch', { base: 1, curry: 2 });
+    const slot = slotIndex('monday', 'lunch');
+    for (const constraints of [[sambarPair, rasamPrefer], [rasamPrefer, sambarPair]]) {
+      const m = compileModel(lib, constraints);
+      const r = score(m, meal, true);
+      expect(r).toMatchObject({ hard: 0, soft: 0 });
+      expect(r.justifications).toEqual([expect.objectContaining({ cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
+      expect(bringsWith(m, 1, 'base', slot)).toEqual({ unit: [2], asked: [2] });
+      expect(slotPairs(m, meal, slot)).toContainEqual({ component: 5, by: 1, unit: false, suppressed: true });
+    }
+  });
+
+  it('of two prefer curries for one base, the first claims the role', () => {
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), pair(5, { strength: 'prefer' })]);
+    expect(score(m, at('lunch', { base: 1, curry: 2 }))).toMatchObject({ hard: 0, soft: 0 });
+  });
+
+  it("a prefer pair from another dish gives way when a unit member holds its role", () => {
+    const chutneyAsksRasam = pair(5, { id: 'chutney-rasam', when: is('id', 4), strength: 'prefer' });
+    const r = runLib([...units, chutneyAsksRasam], at('lunch', { base: 1, curry: 2, extras: [4] }));
+    expect(r).toMatchObject({ hard: 0, soft: 0 });
+  });
+
+  it("a must pair from another dish is suppressed when a unit member holds its role", () => {
+    const chutneyNeedsRasam = pair(5, { id: 'chutney-rasam', when: is('id', 4) });
+    const r = runLib([...units, chutneyNeedsRasam], at('lunch', { base: 1, curry: 2, extras: [4] }));
+    expect(r).toMatchObject({ hard: 0, soft: 0 });
+    expect(r.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
+  });
+
+  it('a pair is still enforced when only a free pick holds its role', () => {
+    const chutneyNeedsRasam = pair(5, { id: 'chutney-rasam', when: is('id', 4) });
+    expect(runLib([chutneyNeedsRasam], at('lunch', { base: 6, curry: 2, extras: [4] })).hard).toBe(1);
+    const chutneyAsksRasam = pair(5, { id: 'chutney-rasam', when: is('id', 4), strength: 'prefer', cost: 3 });
+    expect(runLib([chutneyAsksRasam], at('lunch', { base: 6, curry: 2, extras: [4] })).soft).toBe(3);
+  });
+
   it('a scoped pair is triggered only in its scope', () => {
     const m = compileModel(lib, [pair(2, { scope: { meals: ['breakfast'] } })]);
     const lunch = at('lunch', { base: 1 });

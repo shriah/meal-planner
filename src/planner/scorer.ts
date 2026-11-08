@@ -76,8 +76,8 @@ interface CompiledPair {
   when: number;
   /** Library index of the paired component, or -1 when it is not in the library. */
   ci: number;
-  /** Role the paired component fills, for conflict resolution. */
-  role: Role | undefined;
+  /** ROLE_CURRY or ROLE_SUBZI when the paired component fills one of those roles, else 0. A meal holds one of each. */
+  roleBit: number;
   must: boolean;
   cost: number;
   inScope: Uint8Array;
@@ -104,6 +104,9 @@ const ASKED = 1;
 const UNIT = 2;
 const YIELD_UNIT = 1;
 const YIELD_ASK = 2;
+const ROLE_CURRY = 1;
+const ROLE_SUBZI = 2;
+const roleBitOf = (r: Role): number => (r === 'curry' ? ROLE_CURRY : r === 'subzi' ? ROLE_SUBZI : 0);
 const yieldCode = (y: 'unit' | 'ask' | undefined): number => (y === 'unit' ? YIELD_UNIT : y === 'ask' ? YIELD_ASK : 0);
 
 export interface CompiledModel {
@@ -157,7 +160,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
         inScope[t] = +((!c.scope?.days || c.scope.days.includes(slotDay(t))) && (!c.scope?.meals || c.scope.meals.includes(slotMeal(t))));
       }
       pairs.push({
-        def: c, when: addMatcher(compileMatcher(c.when)), ci, role: ci >= 0 ? library[ci].componentType : undefined,
+        def: c, when: addMatcher(compileMatcher(c.when)), ci, roleBit: ci >= 0 ? roleBitOf(library[ci].componentType) : 0,
         must: c.strength === 'must', cost: c.cost ?? 10, inScope,
       });
       continue;
@@ -224,20 +227,25 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
       const v = (bits[cc.sel] ? 1 : 0) | (cc.when >= 0 && bits[cc.when] ? 2 : 0);
       if (v) hits.push((ck << 2) | v);
     });
-    // Pairs this dish triggers. Among its `must` pairs, the first to fill the curry (or subzi) role wins;
-    // later ones for the same role are suppressed. Extras never conflict.
-    const pairs: number[] = [];
-    const filled: Partial<Record<Role, number>> = {};
+    // Pairs this dish triggers. A meal holds one curry and one subzi, so the first pair to claim either
+    // role wins, `must` pairs before `prefer` ones, each in constraint order; later pairs for the same
+    // role are suppressed. Extras never conflict.
+    const triggered: number[] = [];
     st.pairs.forEach((p, pk) => {
-      if (!p.inScope[slot] || !bits[p.when] || p.def.component === a.c.id) return;
-      let suppressed = 0;
-      if (p.must && (p.role === 'curry' || p.role === 'subzi')) {
-        const first = filled[p.role];
-        if (first === undefined) filled[p.role] = p.def.component;
-        else if (first !== p.def.component) suppressed = 1;
-      }
-      pairs.push((pk << 1) | suppressed);
+      if (p.inScope[slot] && bits[p.when] && p.def.component !== a.c.id) triggered.push(pk);
     });
+    const claimedBy = new Map<number, number>();
+    const suppressed = new Set<number>();
+    for (const must of [true, false]) {
+      for (const pk of triggered) {
+        const p = st.pairs[pk];
+        if (p.must !== must || !p.roleBit) continue;
+        const first = claimedBy.get(p.roleBit);
+        if (first === undefined) claimedBy.set(p.roleBit, p.def.component);
+        else if (first !== p.def.component) suppressed.add(pk);
+      }
+    }
+    const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
     e = st.memo[key] = {
       prefer: prefer[0], preferUnit: prefer[YIELD_UNIT], preferAsk: prefer[YIELD_ASK],
       hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS,
@@ -274,7 +282,7 @@ export interface SlotPair {
   by: number;
   /** Brought by a `must` pair that is enforced. */
   unit: boolean;
-  /** A `must` pair not enforced because an earlier one fills the same role. */
+  /** Not enforced because another pair from the same dish claims the same role (curry or subzi). */
   suppressed?: boolean;
 }
 
@@ -347,17 +355,32 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
         if (v > pairState[pk]) pairState[pk] = v;
       }
     }
+    // Unit members first: the curry or subzi role a unit member holds is taken, so a missing pair
+    // (of any strength, from any dish in the meal) for that role is suppressed rather than charged.
+    let unitRoles = 0;
     for (let q = 0; q < np; q++) {
       const pk = bufPairs[q];
       const p = pairs[pk];
-      const enforced = pairState[pk] === 2;
+      if (!p.must || pairState[pk] !== 2) continue;
+      let k = start;
+      while (k < end && bufCi[k] !== p.ci) k++;
+      if (k < end) {
+        bufFlag[k] |= ASKED | UNIT;
+        unitRoles |= p.roleBit;
+      }
+    }
+    for (let q = 0; q < np; q++) {
+      const pk = bufPairs[q];
+      const p = pairs[pk];
+      let enforced = pairState[pk] === 2;
       pairState[pk] = 0;
       let k = start;
       while (k < end && bufCi[k] !== p.ci) k++;
       if (k < end) {
-        if (enforced) bufFlag[k] |= p.must ? ASKED | UNIT : ASKED;
+        if (enforced) bufFlag[k] |= ASKED;
         continue;
       }
+      if (p.roleBit & unitRoles) enforced = false;
       if (enforced && p.must) hard += 1;
       else if (enforced) soft += p.cost;
       if (justify) {
