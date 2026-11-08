@@ -556,13 +556,15 @@ const HANDLERS: Record<string, Handler> = {
         changed.push(link);
         return link;
       }
+      const values = [...new Set([...before.values, ...link.values])];
+      // A new strength applies to every base in the link, the stored ones too, so all of them are checked.
       const firmer = (requested ?? before.strength) !== before.strength;
-      const added = firmer ? link.values : link.values.filter((v) => !before.values.includes(v));
+      const added = firmer ? values : link.values.filter((v) => !before.values.includes(v));
       if (added.length) changed.push({ ...link, values: added, strength: requested ?? before.strength });
       if (link.target === 'base_dish') already.push(...before.values.filter((id) => typeof id === 'number'));
       return {
         ...link,
-        values: [...new Set([...before.values, ...link.values])],
+        values,
         strength: requested ?? before.strength,
         ...(before.scope ? { scope: before.scope } : {}),
       };

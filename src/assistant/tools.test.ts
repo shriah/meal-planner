@@ -630,6 +630,18 @@ describe('propose_pairing', () => {
     expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
   });
 
+  it('checks every base a firmer strength applies to, not only the bases asked for', async () => {
+    const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Pongal', { componentType: 'base' })];
+    const link = (id: number, owner: number, name: string, values: number[], strength: 'always' | 'usually') =>
+      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: 'base_dish', values, strength }) });
+    const c = () => ctxOf({ library: lib, categories, rules: [link(9, 1, 'Sambar', [3], 'always'), link(10, 5, 'Rasam', [3, 4], 'usually')] });
+    // Rasam always with Pongal would also make Rasam always served with Idli, beside Sambar.
+    const r = await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Pongal'], served_with_strength: 'always' }, c());
+    expect(r).toMatchObject({ ok: false, error: expect.stringContaining('Idli') });
+    // Asking for nothing firmer keeps the stored strength, which is fine.
+    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Pongal'] }, c())).ok).toBe(true);
+  });
+
   it('does not refuse a conflict that is already stored, only what the proposal adds', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Dosa', { componentType: 'base' })];
     const rule = (id: number, owner: number, name: string, values: number[]) =>
