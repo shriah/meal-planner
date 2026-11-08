@@ -2,7 +2,7 @@
 import { DAYS, MEALS, planWeek } from '@/planner';
 import {
   compileRules, defaultRules, describeSpec, parseSpec, specReferences,
-  type KnownIds, type Names, type RuleRecord,
+  type KnownIds, type Names, type RuleIssue, type RuleRecord,
 } from '@/rules';
 import { libraryOf, TEST_LIBRARY } from './library';
 import type { CaseLibrary, CaseResult, CaseStatus, CaseWeeks, PlanCase } from './types';
@@ -17,23 +17,24 @@ export function statusOf(allPass: boolean, known?: string): CaseStatus {
 }
 
 /** The stored form of a case's rules: ids 1..n in case order, the defaults after. */
-function recordsOf(c: PlanCase, own: ReturnType<PlanCase['rules']>): RuleRecord[] {
+export function recordsOf(c: PlanCase, own: ReturnType<PlanCase['rules']>): RuleRecord[] {
   const all = [...own, ...(c.defaults === false ? [] : defaultRules())];
   return all.map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
 }
 
-function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[]): CaseWeeks {
+function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[]): CaseWeeks & { issues: RuleIssue[] } {
   const known: KnownIds = {
     components: new Set(lib.dishes.map((d) => d.id)),
     baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
     extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
   };
-  const { constraints } = compileRules(rules, known);
+  const { constraints, issues } = compileRules(rules, known);
   const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...BUDGET, seed, pins: c.pins }));
   return {
     weeks: results.map((r) => r.slots),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
     lib,
+    issues,
   };
 }
 
@@ -44,7 +45,9 @@ export function runPlanCase(c: PlanCase): CaseResult {
   let base: CaseWeeks | undefined;
   const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, []))) };
 
-  const expectations = c.expect.map((e) => ({ says: e.says, ...e.check(weeks, ctx) }));
+  // A rule that was left out of the plan would let a case pass for the wrong reason.
+  const unapplied = weeks.issues.map((i) => ({ says: `Rule could not be applied: ${i.name}`, pass: false, got: i.message }));
+  const expectations = [...unapplied, ...c.expect.map((e) => ({ says: e.says, ...e.check(weeks, ctx) }))];
   const allPass = expectations.every((e) => e.pass);
 
   const dishName = new Map(lib.dishes.map((d) => [d.id, d.name]));
@@ -70,7 +73,7 @@ export function runPlanCase(c: PlanCase): CaseResult {
       .filter((x): x is number => x !== undefined)
       .map((id) => dishName.get(id) ?? `dish ${id}`)
       .join(', ');
-    return { slot, text, highlight: c.expect.some((e) => e.highlights?.(slot) === true) };
+    return { slot, text, highlight: c.expect.some((e) => e.highlights?.(slot, lib) === true) };
   });
   // Day and meal order, as the grid reads.
   sampleWeek.sort((a, b) => DAYS.indexOf(a.slot.day) - DAYS.indexOf(b.slot.day) || MEALS.indexOf(a.slot.meal_slot) - MEALS.indexOf(b.slot.meal_slot));

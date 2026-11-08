@@ -1,6 +1,6 @@
 // Expectation helpers: each is a sentence with a check over the planned weeks.
 import type { Day, Meal, PlanSlotLike } from '@/planner';
-import type { CaseLibrary, CaseWeeks, PlanExpectation } from './types';
+import type { CaseWeeks, PlanExpectation } from './types';
 
 const idsOf = (s: PlanSlotLike): number[] =>
   [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((x): x is number => x !== undefined);
@@ -25,24 +25,20 @@ export const plannedBetween = (dish: string, min: number, max: number): PlanExpe
   },
 });
 
-export const everyMealWith = (dish: string, alsoHas: string[]): PlanExpectation => {
-  // The runner checks before it highlights, so the library of the run is known by then.
-  let lib: CaseLibrary | undefined;
-  return {
-    says: `Every ${dish} meal has ${list(alsoHas)}`,
-    check: (w) => {
-      lib = w.lib;
-      const id = w.lib.dish(dish).id;
-      const need = alsoHas.map((n) => w.lib.dish(n).id);
-      const meals = slotsOf(w).filter((s) => idsOf(s).includes(id));
-      const k = meals.filter((s) => need.every((n) => idsOf(s).includes(n))).length;
-      return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
-    },
-    highlights: (slot) => lib !== undefined && idsOf(slot).includes(lib.dish(dish).id),
-  };
-};
+export const everyMealWith = (dish: string, alsoHas: string[]): PlanExpectation => ({
+  says: `Every ${dish} meal has ${list(alsoHas)}`,
+  check: (w) => {
+    const id = w.lib.dish(dish).id;
+    const need = alsoHas.map((n) => w.lib.dish(n).id);
+    const meals = slotsOf(w).filter((s) => idsOf(s).includes(id));
+    const k = meals.filter((s) => need.every((n) => idsOf(s).includes(n))).length;
+    return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
+  },
+  highlights: (slot, lib) => idsOf(slot).includes(lib.dish(dish).id),
+});
 
 export const neverAt = (dish: string, where: { meals?: Meal[]; days?: Day[] }): PlanExpectation => {
+  if (!where.meals?.length && !where.days?.length) throw new Error('neverAt needs meals or days');
   const at = [where.meals && `at ${list(where.meals)}`, where.days && `on ${list(where.days)}`].filter(Boolean).join(' ');
   const hit = (s: PlanSlotLike, id: number) =>
     idsOf(s).includes(id) && (!where.meals || where.meals.includes(s.meal_slot)) && (!where.days || where.days.includes(s.day));

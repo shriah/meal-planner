@@ -32,7 +32,7 @@ export interface PlanExpectation {
   says: string;
   check(w: CaseWeeks, ctx: { baseline(): CaseWeeks }): Outcome;
   /** Meals the expectation looks at, marked in the sample week. */
-  highlights?(slot: PlanSlotLike): boolean;
+  highlights?(slot: PlanSlotLike, lib: CaseLibrary): boolean;
 }
 
 export interface PlanCase {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { everyMealWith, nearNoRulesCount, noHardProblems } from './expect';
+import { everyMealWith, neverAt, nearNoRulesCount, noHardProblems } from './expect';
+import { mealRule } from '@/rules';
 import { TEST_LIBRARY } from './library';
-import { runPlanCase, statusOf } from './run';
+import { recordsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks } from './types';
 
 const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], lib });
@@ -52,5 +53,27 @@ describe('runPlanCase', () => {
     const r = runPlanCase({ kind: 'plan', id: 'empty', group: 'Extras', name: 'Empty', why: 'x', rules: () => [], expect: [noHardProblems()] });
     expect(r.status).toBe('pass');
     expect(r.sampleWeek).toHaveLength(21);
+  });
+  it('fails a case whose rule could not be applied', () => {
+    const r = runPlanCase({
+      kind: 'plan', id: 'ghost', group: 'Extras', name: 'Ghost', why: 'x',
+      rules: () => [mealRule({ id: 999, name: 'Ghost' }, ['lunch'])], expect: [noHardProblems()],
+    });
+    expect(r.status).toBe('fail');
+    expect(r.expectations[0]).toMatchObject({ says: expect.stringContaining('Rule could not be applied'), pass: false });
+  });
+});
+
+describe('recordsOf', () => {
+  const base = { kind: 'plan' as const, id: 'c', group: 'Extras' as const, name: 'C', why: 'x', rules: () => [], expect: [] };
+  it('leaves the defaults out for a defaults: false case, baseline included', () => {
+    expect(recordsOf({ ...base, defaults: false }, [])).toEqual([]);
+    expect(recordsOf(base, []).length).toBeGreaterThan(0);
+  });
+});
+
+describe('neverAt', () => {
+  it('needs meals or days', () => {
+    expect(() => neverAt('Pongal', {})).toThrow();
   });
 });
