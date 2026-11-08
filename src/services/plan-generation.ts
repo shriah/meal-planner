@@ -104,10 +104,11 @@ function modelFromData(input: PlanningInput) {
         out.push(each(j));
         continue;
       }
-      const key = `${j.constraintId}|${s.by}|${s.heldBy ?? ''}`;
+      const key = `${j.constraintId}|${s.by}|${s.heldBy ?? ''}|${s.heldWith ?? ''}`;
       let p = collapsed.get(key);
       if (!p) {
-        const holder = s.heldBy !== undefined && s.heldMust ? ` and ${name(s.heldBy)} is always served with it` : '';
+        const servedWith = s.heldWith === undefined || s.heldWith === s.by ? 'it' : name(s.heldWith);
+        const holder = s.heldBy !== undefined && s.heldMust ? ` and ${name(s.heldBy)} is always served with ${servedWith}` : '';
         const reason = `${name(j.group.componentId!)} is not served with ${name(s.by)}: a meal holds one ${s.role}${holder}.`;
         p = { level: 'soft', reason, message: reason, ...(j.ruleId !== undefined && { ruleId: j.ruleId }), slots: [] };
         collapsed.set(key, p);

@@ -179,7 +179,7 @@ describe('pairings', () => {
     expect(r.hard).toBe(0);
     const soft = r.justifications.filter((j) => j.level === 'soft');
     expect(soft).toHaveLength(1);
-    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, role: 'curry', heldBy: 2, heldMust: true } });
+    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 } });
     expect(slotPairs(m, plan, slot)).toEqual([
       { component: 2, by: 1, unit: true },
       { component: 5, by: 1, unit: false, suppressed: true },
@@ -218,7 +218,7 @@ describe('pairings', () => {
     const r = runLib([...units, chutneyNeedsRasam], at('lunch', { base: 1, curry: 2, extras: [4] }));
     expect(r).toMatchObject({ hard: 0, soft: 0 });
     expect(r.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
-    expect(r.justifications[0].suppressed).toEqual({ by: 4, role: 'curry', heldBy: 2, heldMust: true });
+    expect(r.justifications[0].suppressed).toEqual({ by: 4, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 });
   });
 
   it('a missing pair that is enforced carries no suppressed mark', () => {

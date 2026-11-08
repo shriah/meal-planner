@@ -106,6 +106,19 @@ describe('pairings', () => {
       expect(rasamProblems[0].slots).toHaveLength(pongalMeals.length);
     });
 
+    it('names the dish the holding curry is served with when that is not the dish that asked', () => {
+      const chutney = dish(14, 'Chutney', 'extra');
+      const withChutney: RuleRecord = {
+        id: 9, name: 'Chutney with Rasam', enabled: true, created_at: '',
+        spec: { template: 'require_with', params: { when: is('id', 14), components: [12], strength: 'must' } },
+      } as RuleRecord;
+      const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11, extra_ids: [14] });
+      const problems = explainPlan({ library: [pongal, sambar, rasam, chutney], categories: [], rules: [rule, withChutney] }, plan);
+      expect(problems.filter((p) => p.ruleId === 9).map((p) => p.reason)).toEqual([
+        'Rasam is not served with Chutney: a meal holds one curry and Sambar is always served with Pongal.',
+      ]);
+    });
+
     it('explainPlan reports it once as well', () => {
       const plan = planOf(
         { day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11 },

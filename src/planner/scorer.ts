@@ -34,9 +34,10 @@ export interface Justification {
   cost: number;
   /**
    * Set on a pairing that is not enforced in this meal because another pairing holds the role
-   * (a meal holds one curry and one subzi): `by` triggered it, `heldBy` holds the role, if known.
+   * (a meal holds one curry and one subzi): `by` triggered it; `heldBy`, if known, holds the role by a
+   * pairing on `heldWith`.
    */
-  suppressed?: { by: number; role: 'curry' | 'subzi'; heldBy?: number; heldMust?: boolean };
+  suppressed?: { by: number; role: 'curry' | 'subzi'; heldBy?: number; heldMust?: boolean; heldWith?: number };
 }
 
 export interface Score {
@@ -448,7 +449,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
           const held = holder >= 0 && pairs[holder].def.component !== p.def.component ? pairs[holder] : undefined;
           suppressed = {
             by: m.library[pairBy[pk]].id, role: p.roleBit === ROLE_CURRY ? 'curry' : 'subzi',
-            ...(held && { heldBy: held.def.component, heldMust: held.must }),
+            ...(held && { heldBy: held.def.component, heldMust: held.must, heldWith: m.library[pairBy[holder]].id }),
           };
         }
         just.push({
