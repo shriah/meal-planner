@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { everyMealWith, neverAt, nearNoRulesCount, noHardProblems } from './expect';
+import { everyMealWith, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
 import { mealRule } from '@/rules';
 import { TEST_LIBRARY } from './library';
 import { recordsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks } from './types';
 
-const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], lib });
+const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], suppressed: [[]], lib });
 /** Weeks where Pongal is planned `n` times in total. */
 const withPongal = (n: number): CaseWeeks => {
   const id = TEST_LIBRARY.dish('Pongal').id;
   const slots = Array.from({ length: n }, () => ({ day: 'monday' as const, meal_slot: 'breakfast' as const, base_id: id, extra_ids: [] }));
-  return { weeks: [slots], hard: [[]], lib: TEST_LIBRARY };
+  return { weeks: [slots], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY };
 };
 
 describe('TEST_LIBRARY', () => {
@@ -69,6 +69,56 @@ describe('recordsOf', () => {
   it('leaves the defaults out for a defaults: false case, baseline included', () => {
     expect(recordsOf({ ...base, defaults: false }, [])).toEqual([]);
     expect(recordsOf(base, []).length).toBeGreaterThan(0);
+  });
+});
+
+describe('wording', () => {
+  it('uses "or" for neverAt and singular meals', () => {
+    expect(neverAt('Dal', { meals: ['breakfast', 'dinner'] }).says).toBe('Dal is never planned at breakfast or dinner');
+    const slot = { day: 'monday' as const, meal_slot: 'breakfast' as const, base_id: TEST_LIBRARY.dish('Dal').id, extra_ids: [] };
+    const one: CaseWeeks = { weeks: [[slot]], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY };
+    expect(neverAt('Dal', { meals: ['breakfast'] }).check(one, { baseline: () => one }).got).toBe('1 meal');
+    expect(neverAt('Dal', { meals: ['lunch'] }).check(one, { baseline: () => one }).got).toBe('0 meals');
+  });
+  it('capitalises the locked meal', () => {
+    expect(lockedMealKept('monday-breakfast', 'curry', 'Dal').says).toBe('The locked Monday breakfast keeps Dal as its curry');
+  });
+});
+
+describe('failing seed and highlights', () => {
+  it('points at the first week that breaks the expectation', () => {
+    const dal = TEST_LIBRARY.dish('Dal').id;
+    const ok = { day: 'monday' as const, meal_slot: 'lunch' as const, base_id: dal, extra_ids: [] };
+    const bad = { ...ok, meal_slot: 'dinner' as const };
+    const w: CaseWeeks = { weeks: [[ok], [ok], [bad]], hard: [[], [], []], suppressed: [[], [], []], lib: TEST_LIBRARY };
+    expect(neverAt('Dal', { meals: ['dinner'] }).failingSeed?.(w, { baseline: () => w })).toBe(2);
+    expect(neverAt('Dal', { meals: ['breakfast'] }).failingSeed?.(w, { baseline: () => w })).toBeUndefined();
+  });
+  it('neverAt highlights the dish wherever it is planned', () => {
+    const e = neverAt('Dal', { meals: ['breakfast', 'dinner'] });
+    const slot = { day: 'monday' as const, meal_slot: 'lunch' as const, base_id: TEST_LIBRARY.dish('Dal').id, extra_ids: [] };
+    expect(e.highlights?.(slot, TEST_LIBRARY)).toBe(true);
+    expect(e.highlights?.({ ...slot, base_id: TEST_LIBRARY.dish('Idli').id }, TEST_LIBRARY)).toBe(false);
+  });
+  it('someMealWith needs a meal at those times to have the pairing', () => {
+    const p = TEST_LIBRARY.dish('Pongal').id;
+    const s = TEST_LIBRARY.dish('Sambar').id;
+    const at = (meal_slot: 'breakfast' | 'lunch', curry?: number) => ({ day: 'monday' as const, meal_slot, base_id: p, curry_id: curry, extra_ids: [] });
+    const e = someMealWith('Pongal', ['Sambar'], ['breakfast', 'dinner']);
+    const run = (slots: ReturnType<typeof at>[]) => e.check({ weeks: [slots], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY }, { baseline: weeks }).pass;
+    expect(run([at('lunch', s)])).toBe(false);
+    expect(run([at('breakfast', s)])).toBe(true);
+  });
+  it('a failing case shows the first failing seed, a passing one seed 1', () => {
+    const fails = runPlanCase({
+      kind: 'plan', id: 'f', group: 'Extras', name: 'F', why: 'x', rules: () => [],
+      expect: [neverAt('Pongal', { meals: ['breakfast', 'lunch', 'dinner'] })],
+    });
+    expect(fails.status).toBe('fail');
+    expect(fails.sampleSeed).toBeGreaterThanOrEqual(1);
+    expect(fails.sampleWeek?.some((x) => x.highlight)).toBe(true);
+    const passes = runPlanCase({ kind: 'plan', id: 'p', group: 'Extras', name: 'P', why: 'x', rules: () => [], expect: [noHardProblems()] });
+    expect(passes.sampleSeed).toBe(1);
   });
 });
 

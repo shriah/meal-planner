@@ -15,6 +15,7 @@ const result = (over: Partial<CaseResult> = {}): CaseResult => ({
   id: 'a', group: 'Pairings', name: 'Case A', why: 'because', kind: 'plan', status: 'pass', defaults: true,
   dishes: [{ name: 'Pongal', type: 'base' }], rules: ['Sambar is always served with Pongal'],
   expectations: [{ says: 'Pongal planned', pass: true, got: '8' }],
+  sampleSeed: 1,
   sampleWeek: week() as CaseResult['sampleWeek'],
   ...over,
 });
@@ -22,12 +23,12 @@ const result = (over: Partial<CaseResult> = {}): CaseResult => ({
 const RUN_AT = new Date('2026-11-08T10:42:00Z');
 
 describe('renderReport', () => {
-  it('shows names, counts and the dishes library', () => {
+  it('shows names, counts and the test library', () => {
     const html = renderReport(
       [result(), result({ id: 'b', name: 'Case B', status: 'fail' }), result({ id: 'c', name: 'Case C', status: 'known', known: 'x' })],
       TEST_LIBRARY, RUN_AT,
     );
-    for (const n of ['Case A', 'Case B', 'Case C', 'Dishes library']) expect(html).toContain(n);
+    for (const n of ['Case A', 'Case B', 'Case C', 'Test library']) expect(html).toContain(n);
     expect(html).toContain('1 passed');
     expect(html).toContain('1 failed');
     expect(html).toContain('1 known');
@@ -58,8 +59,8 @@ describe('renderReport', () => {
     const html = renderReport([result({ status: 'known', known: 'Pairing is dropped' })], TEST_LIBRARY, RUN_AT);
     expect(html).toContain('Known issue');
     expect(html).toContain('Pairing is dropped');
-    expect(html).toContain('+ default rules');
-    expect(renderReport([result({ defaults: false })], TEST_LIBRARY, RUN_AT)).not.toContain('+ default rules');
+    expect(html).toContain('+ the default rules');
+    expect(renderReport([result({ defaults: false })], TEST_LIBRARY, RUN_AT)).not.toContain('+ the default rules');
   });
 
   it('gives a known case its own colour and a keyboard reachable link', () => {
@@ -67,6 +68,30 @@ describe('renderReport', () => {
     expect(html).toContain('.status.known');
     expect(html).toMatch(/<a data-p="p-a"[^>]*href="#p-a" class="[^"]*known"/);
     expect(html).toContain('e.preventDefault()');
+  });
+
+  it('lists the default rules in the test library panel', () => {
+    const html = renderReport([result()], TEST_LIBRARY, RUN_AT);
+    const panel = html.slice(html.indexOf('id="p-library"'));
+    expect(panel).toContain('Default rules');
+    expect(panel).toMatch(/<li>[^<]*(extras|Extras)[^<]*<\/li>/);
+    expect(panel).not.toContain('<li></li>');
+  });
+
+  it('words a case with no dishes of its own, and labels the sample seed', () => {
+    const html = renderReport([result({ dishes: [], sampleSeed: 4 })], TEST_LIBRARY, RUN_AT);
+    expect(html).toContain('No dishes of its own; uses the test library');
+    expect(html).not.toContain('none of its own');
+    expect(html).toContain('Sample week (seed 4, the first seed that fails)');
+    expect(renderReport([result()], TEST_LIBRARY, RUN_AT)).toContain('Sample week (seed 1)');
+  });
+
+  it('offers Problems only, counting a known case as a problem', () => {
+    const html = renderReport([result(), result({ id: 'k', name: 'Case K', status: 'known', known: 'x' })], TEST_LIBRARY, RUN_AT);
+    expect(html).toContain('Problems only');
+    expect(html).not.toContain('Failing only');
+    expect(html).toMatch(/data-p="p-k"[^>]*data-bad="1"/);
+    expect(html).toMatch(/data-p="p-a"[^>]*data-bad="0"/);
   });
 
   it('refuses two cases with the same id', () => {

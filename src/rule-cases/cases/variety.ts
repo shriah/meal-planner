@@ -21,7 +21,7 @@ export const VARIETY_CASES: RuleCase[] = [
               repeats += week.filter((s) => s.day === DAYS[d + 1] && s.base_id !== undefined && today.has(s.base_id)).length;
             }
           }
-          return { pass: repeats === 0, got: `${repeats} meals repeat the previous day's base` };
+          return { pass: repeats === 0, got: `${repeats === 1 ? '1 meal repeats' : `${repeats} meals repeat`} the previous day's base` };
         },
       },
     ],

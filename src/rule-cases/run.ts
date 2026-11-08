@@ -33,6 +33,7 @@ function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[]): CaseWeek
   return {
     weeks: results.map((r) => r.slots),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
+    suppressed: results.map((r) => r.justifications.filter((j) => j.suppressed !== undefined)),
     lib,
     issues,
   };
@@ -68,7 +69,14 @@ export function runPlanCase(c: PlanCase): CaseResult {
   for (const d of c.dishes ?? []) referenced.add(d.id);
   const dishes = lib.dishes.filter((d) => referenced.has(d.id)).map((d) => ({ name: d.name, type: d.componentType }));
 
-  const sampleWeek = weeks.weeks[0].map((slot) => {
+  // The first week an expectation fails in, so the sample shows the problem; seed 1 when none can tell.
+  const failIdx = c.expect.flatMap((e, i) => {
+    const at = expectations[unapplied.length + i];
+    return !at.pass && e.failingSeed ? [e.failingSeed(weeks, ctx)] : [];
+  }).find((x): x is number => x !== undefined);
+  const sampleIdx = failIdx ?? 0;
+
+  const sampleWeek = weeks.weeks[sampleIdx].map((slot) => {
     const text = [slot.base_id, slot.curry_id, slot.subzi_id, ...slot.extra_ids]
       .filter((x): x is number => x !== undefined)
       .map((id) => dishName.get(id) ?? `dish ${id}`)
@@ -83,6 +91,6 @@ export function runPlanCase(c: PlanCase): CaseResult {
     status: statusOf(allPass, c.known),
     ...(c.known && { known: c.known }),
     defaults: c.defaults !== false,
-    dishes, rules: sentences, expectations, sampleWeek,
+    dishes, rules: sentences, expectations, sampleSeed: SEEDS[sampleIdx], sampleWeek,
   };
 }

@@ -22,6 +22,8 @@ export interface CaseWeeks {
   weeks: PlanSlotLike[][];
   /** The hard problems each week was left with. */
   hard: Justification[][];
+  /** The pairings each week left out of a meal because another pairing already held the curry or subzi. */
+  suppressed: Justification[][];
   lib: CaseLibrary;
 }
 
@@ -31,6 +33,8 @@ export interface PlanExpectation {
   /** The expectation as a plain sentence. */
   says: string;
   check(w: CaseWeeks, ctx: { baseline(): CaseWeeks }): Outcome;
+  /** The index (0 for seed 1) of the first week this expectation fails in, when it can tell. */
+  failingSeed?(w: CaseWeeks, ctx: { baseline(): CaseWeeks }): number | undefined;
   /** Meals the expectation looks at, marked in the sample week. */
   highlights?(slot: PlanSlotLike, lib: CaseLibrary): boolean;
 }
@@ -70,5 +74,7 @@ export interface CaseResult {
   dishes: { name: string; type: ComponentType }[];
   rules: string[];
   expectations: { says: string; pass: boolean; got: string }[];
+  /** The seed the sample week was planned with: the first failing seed, else 1. */
+  sampleSeed: number;
   sampleWeek?: { slot: PlanSlotLike; text: string; highlight: boolean }[];
 }

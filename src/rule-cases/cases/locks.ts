@@ -1,5 +1,5 @@
 import { exclusionRule, linkRule } from '@/rules';
-import { lockedMealKept } from '../expect';
+import { everyOtherMealWith, lockedMealKept } from '../expect';
 import { TEST_LIBRARY } from '../library';
 import type { RuleCase } from '../types';
 
@@ -12,7 +12,7 @@ export const LOCK_CASES: RuleCase[] = [
     why: 'A meal the user locked keeps its own curry even when an Always pairing would put a different one there.',
     rules: (lib) => [linkRule(lib.dish('Sambar'), { mode: 'serve', target: 'base_dish', values: [lib.dish('Pongal').id] })],
     pins: { 'monday-breakfast': { base_id: TEST_LIBRARY.dish('Pongal').id, curry_id: TEST_LIBRARY.dish('Dal').id } },
-    expect: [lockedMealKept('monday-breakfast', 'curry', 'Dal')],
+    expect: [lockedMealKept('monday-breakfast', 'curry', 'Dal'), everyOtherMealWith('Pongal', ['Sambar'], 'monday-breakfast')],
   },
   {
     kind: 'plan',

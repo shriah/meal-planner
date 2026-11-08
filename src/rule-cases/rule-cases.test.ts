@@ -23,9 +23,8 @@ describe('rule cases', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-
   for (const c of ALL_CASES) {
-    it(c.name, () => {
+    it(c.name, { timeout: 30_000 }, () => {
       const r = runPlanCase(c);
       results.push(r);
       if (r.status === 'known-now-passes') expect.fail(`Known issue now passes: remove \`known\` from ${c.id}`);

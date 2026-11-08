@@ -1,10 +1,6 @@
 import { exclusionRule, linkRule, mealRule } from '@/rules';
-import { everyMealWith, nearNoRulesCount, noHardProblems, plannedAtLeast } from '../expect';
+import { everyMealWith, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, someMealWith, yieldsTo } from '../expect';
 import type { PlanExpectation, RuleCase } from '../types';
-
-
-const idsOf = (s: { base_id?: number; curry_id?: number; subzi_id?: number; extra_ids: number[] }): number[] =>
-  [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((x): x is number => x !== undefined);
 
 /** Idli planned outside breakfast without Coconut Chutney: the breakfast scope must not leak. */
 const idliElsewhereHasNoChutney = (): PlanExpectation => ({
@@ -38,8 +34,9 @@ export const PAIRING_CASES: RuleCase[] = [
       ];
     },
     expect: [
-      plannedAtLeast('Pongal', 1),
+      nearNoRulesCount('Pongal'),
       everyMealWith('Pongal', ['Sambar', 'Coconut Chutney']),
+      someMealWith('Pongal', ['Sambar'], ['breakfast', 'dinner']),
       noHardProblems(),
     ],
   },
@@ -75,7 +72,7 @@ export const PAIRING_CASES: RuleCase[] = [
         linkRule(lib.dish('Rasam'), { mode: 'serve', target: 'base_dish', values: [pongal.id] }),
       ];
     },
-    expect: [plannedAtLeast('Pongal', 4), everyMealWith('Pongal', ['Sambar']), noHardProblems()],
+    expect: [plannedAtLeast('Pongal', 4), everyMealWith('Pongal', ['Sambar']), neverWith('Rasam', 'Pongal'), yieldsTo('Rasam', 'Sambar'), noHardProblems()],
   },
   {
     kind: 'plan',
