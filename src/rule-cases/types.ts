@@ -65,6 +65,8 @@ export interface CaseResult {
   kind: 'plan';
   status: CaseStatus;
   known?: string;
+  /** Whether the default rules were planned with the case's own. */
+  defaults: boolean;
   dishes: { name: string; type: ComponentType }[];
   rules: string[];
   expectations: { says: string; pass: boolean; got: string }[];

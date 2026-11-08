@@ -82,6 +82,7 @@ export function runPlanCase(c: PlanCase): CaseResult {
     id: c.id, group: c.group, name: c.name, why: c.why, kind: 'plan',
     status: statusOf(allPass, c.known),
     ...(c.known && { known: c.known }),
+    defaults: c.defaults !== false,
     dishes, rules: sentences, expectations, sampleWeek,
   };
 }
