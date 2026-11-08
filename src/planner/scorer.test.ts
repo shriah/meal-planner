@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { Constraint, CountConstraint } from './constraints';
+import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
 import { all, is } from './matcher';
-import { compareScore, compileModel, explain, score, UNKNOWN_COMPONENT } from './scorer';
+import { bringsWith, compareScore, compileModel, explain, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
 import { component } from './test-utils';
 import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
 
@@ -95,5 +95,121 @@ describe('scorer', () => {
     expect(score(m, repeated).hard).toBe(1);
     expect(score(m, once).hard).toBe(0);
     expect(score(m, repeated).hard).toBe(1);
+  });
+});
+
+describe('pairings', () => {
+  const pongal = component('base', { id: 1, name: 'Pongal' });
+  const sambar = component('curry', { id: 2, name: 'Sambar' });
+  const rasam = component('curry', { id: 5, name: 'Rasam' });
+  const chutney = component('extra', { id: 4, name: 'Chutney' });
+  const idli = component('base', { id: 6, name: 'Idli' });
+  const lib = [pongal, sambar, rasam, chutney, idli];
+
+  const pair = (component: number, p: Partial<PairConstraint> = {}): PairConstraint => ({
+    kind: 'pair', id: `pair-${component}`, label: 'Served with', origin: 'rule', when: is('id', 1), component, strength: 'must', ...p,
+  });
+  const prefer = (p: Partial<PreferConstraint>): PreferConstraint => ({
+    kind: 'prefer', id: 'p', label: 'Sides cost', origin: 'rule', select: is('role', 'curry'), weight: 2, ...p,
+  });
+  const sambarPair = pair(2);
+  const chutneyPair = pair(4);
+  const units = [sambarPair, chutneyPair];
+  const at = (meal: Meal, s: Partial<SlotState>, day: Day = 'monday') => planWith([[day, meal, s]]);
+  const runLib = (constraints: Constraint[], plan: PlanState) => score(compileModel(lib, constraints), plan, true);
+  const breakfastOnlySambar = (p: Partial<CountConstraint> = {}) =>
+    count({ id: 'sambar-meals', select: is('id', 2), scope: { meals: ['lunch', 'dinner'] }, bounds: { hardMax: 0 }, ...p });
+
+  it('a base alone breaks each of its must pairings', () => {
+    const r = runLib(units, at('breakfast', { base: 1 }));
+    expect(r.hard).toBe(2);
+    const mins = r.justifications.filter((j) => j.bound.kind === 'hardMin');
+    expect(mins.map((j) => j.group.componentId).sort()).toEqual([2, 4]);
+    expect(mins[0].group).toMatchObject({ day: 'monday', meal: 'breakfast' });
+  });
+
+  it('a base with its sides holds', () => {
+    expect(runLib(units, at('breakfast', { base: 1, curry: 2, extras: [4] })).hard).toBe(0);
+  });
+
+  it("a unit member skips the side's own rules that give way", () => {
+    const meal = at('lunch', { base: 1, curry: 2, extras: [4] });
+    expect(runLib([...units, breakfastOnlySambar({ yieldsTo: 'unit', owner: 2 })], meal).hard).toBe(0);
+    expect(runLib([...units, breakfastOnlySambar()], meal).hard).toBe(1);
+  });
+
+  it("a free pick still follows the side's own rules", () => {
+    expect(runLib([...units, breakfastOnlySambar({ yieldsTo: 'unit', owner: 2 })], at('lunch', { base: 6, curry: 2 })).hard).toBe(1);
+  });
+
+  it("a prefer that gives way to asked sides skips a side a prefer pair asks for", () => {
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), prefer({ yieldsTo: 'ask' })]);
+    expect(score(m, at('lunch', { base: 1, curry: 2 })).soft).toBe(0);
+    expect(score(m, at('lunch', { base: 6, curry: 5 })).soft).toBe(2);
+  });
+
+  it('a prefer that gives way to units still charges a side only asked for', () => {
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), prefer({ yieldsTo: 'unit' })]);
+    expect(score(m, at('lunch', { base: 1, curry: 2 })).soft).toBe(2);
+  });
+
+  it('a missing prefer pair costs its cost, 10 by default', () => {
+    expect(runLib([pair(2, { strength: 'prefer' })], at('lunch', { base: 1 })).soft).toBe(10);
+    const r = runLib([pair(2, { strength: 'prefer', cost: 3 })], at('lunch', { base: 1 }));
+    expect(r).toMatchObject({ hard: 0, soft: 3 });
+    expect(r.justifications[0]).toMatchObject({ level: 'soft', cost: 3, group: { day: 'monday', meal: 'lunch', componentId: 2 } });
+  });
+
+  it("a unit member does not trigger its base's own rules", () => {
+    const neverWithSambar = count({ select: is('id', 1), when: { exists: is('id', 2) }, bounds: { hardMax: 0 }, owner: 1, yieldsTo: 'unit' });
+    expect(runLib([...units, neverWithSambar], at('lunch', { base: 1, curry: 2, extras: [4] })).hard).toBe(0);
+  });
+
+  it("a unit member still triggers another dish's rules, and that dish gives way", () => {
+    const chutneyNeverWithSambar = count({ select: is('id', 4), when: { exists: is('id', 2) }, bounds: { hardMax: 0 }, owner: 4, yieldsTo: 'unit' });
+    expect(runLib([sambarPair, chutneyNeverWithSambar], at('lunch', { base: 1, curry: 2, extras: [4] })).hard).toBe(1);
+  });
+
+  it('a second must curry for the same base is suppressed, not enforced', () => {
+    const rasamPair = pair(5);
+    const m = compileModel(lib, [sambarPair, rasamPair, chutneyPair]);
+    const plan = at('lunch', { base: 1, curry: 2, extras: [4] });
+    const slot = slotIndex('monday', 'lunch');
+    const r = score(m, plan, true);
+    expect(r.hard).toBe(0);
+    const soft = r.justifications.filter((j) => j.level === 'soft');
+    expect(soft).toHaveLength(1);
+    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 } });
+    expect(slotPairs(m, plan, slot)).toEqual([
+      { component: 2, by: 1, unit: true },
+      { component: 5, by: 1, unit: false, suppressed: true },
+      { component: 4, by: 1, unit: true },
+    ]);
+    expect(bringsWith(m, 1, 'base', slot).unit).toEqual([2, 4]);
+  });
+
+  it('a scoped pair is triggered only in its scope', () => {
+    const m = compileModel(lib, [pair(2, { scope: { meals: ['breakfast'] } })]);
+    const lunch = at('lunch', { base: 1 });
+    expect(score(m, lunch).hard).toBe(0);
+    expect(slotPairs(m, lunch, slotIndex('monday', 'lunch'))).toEqual([]);
+    expect(score(m, at('breakfast', { base: 1 })).hard).toBe(1);
+  });
+
+  it('a pair does not trigger itself', () => {
+    const m = compileModel(lib, [pair(2, { when: is('role', 'curry') })]);
+    const plan = at('lunch', { base: 6, curry: 2 });
+    expect(score(m, plan).hard).toBe(0);
+    expect(slotPairs(m, plan, slotIndex('monday', 'lunch'))).toEqual([]);
+    expect(bringsWith(m, 2, 'curry', slotIndex('monday', 'lunch'))).toEqual({ unit: [], asked: [] });
+  });
+
+  it('scoring again gives the same result (no stale unit state)', () => {
+    const m = compileModel(lib, [...units, breakfastOnlySambar({ yieldsTo: 'unit', owner: 2 })]);
+    const unit = at('lunch', { base: 1, curry: 2, extras: [4] });
+    const free = at('lunch', { base: 6, curry: 2 });
+    expect(score(m, unit).hard).toBe(0);
+    expect(score(m, free).hard).toBe(1);
+    expect(score(m, unit).hard).toBe(0);
   });
 });

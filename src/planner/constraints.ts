@@ -1,5 +1,6 @@
-// The two primitives. COUNT bounds how many matching assignments a group may hold;
-// PREFER adds a soft cost (or reward) per matching assignment. Plain, serialisable data.
+// The primitives. COUNT bounds how many matching assignments a group may hold; PREFER adds a soft
+// cost (or reward) per matching assignment; PAIR asks a meal to hold a dish when another dish is in it.
+// Plain, serialisable data.
 import { z } from 'zod';
 import { MatcherSchema, type Matcher } from './matcher';
 import { DAYS, MEALS, type Day, type Meal } from './types';
@@ -16,6 +17,12 @@ export type GroupBy = TimeGroup | 'component' | ['component', TimeGroup];
 export interface Bounds { hardMin?: number; softMin?: number; softMax?: number; hardMax?: number }
 
 export type Origin = 'builtin' | 'rule';
+
+/**
+ * Whom a rule gives way to. `'unit'`: sides brought by a `must` pair in that meal (unit members) are not
+ * counted as selected. `'ask'`: sides brought by any pair (asked for) are not counted either.
+ */
+export type Yield = 'unit' | 'ask';
 
 interface Common {
   id: string;
@@ -41,6 +48,9 @@ export interface CountConstraint extends Common {
   /** Hard penalty per unit outside a hard bound, for choosing which rule to break when rules conflict. Default 1. */
   severity?: number;
   costs?: { min?: number; max?: number };
+  yieldsTo?: Yield;
+  /** Dish that owns the rule. A unit member does not trigger `when` when its meal's base is the owner. */
+  owner?: number;
 }
 
 export interface PreferConstraint extends Common {
@@ -48,9 +58,25 @@ export interface PreferConstraint extends Common {
   select: Matcher;
   /** Soft cost per matching assignment; negative is a reward. */
   weight: number;
+  yieldsTo?: Yield;
+  owner?: number;
 }
 
-export type Constraint = CountConstraint | PreferConstraint;
+/**
+ * When an assignment in a meal matches `when` (other than `component` itself), the meal should hold
+ * `component`. A missing `must` component is a hard violation; a missing `prefer` component costs `cost`
+ * (default 10).
+ */
+export interface PairConstraint extends Common {
+  kind: 'pair';
+  when: Matcher;
+  component: number;
+  scope?: { days?: Day[]; meals?: Meal[] };
+  strength: 'must' | 'prefer';
+  cost?: number;
+}
+
+export type Constraint = CountConstraint | PreferConstraint | PairConstraint;
 
 export const timeOf = (g: GroupBy): TimeGroup => (g === 'component' ? 'plan' : Array.isArray(g) ? g[1] : g);
 export const byComponent = (g: GroupBy): boolean => g === 'component' || Array.isArray(g);
@@ -69,6 +95,15 @@ const CommonShape = {
   ruleId: z.number().int().optional(),
 };
 
+const YieldShape = {
+  yieldsTo: z.enum(['unit', 'ask']).optional(),
+  owner: z.number().int().optional(),
+};
+
+const ScopeSchema = z
+  .object({ days: z.array(z.enum(DAYS)).min(1).optional(), meals: z.array(z.enum(MEALS)).min(1).optional() })
+  .strict();
+
 const CountSchema = z
   .object({
     kind: z.literal('count'),
@@ -76,15 +111,13 @@ const CountSchema = z
     select: MatcherSchema,
     groupBy: z.union([TimeGroupSchema, z.literal('component'), z.tuple([z.literal('component'), TimeGroupSchema])]),
     when: z.object({ exists: MatcherSchema }).strict().optional(),
-    scope: z
-      .object({ days: z.array(z.enum(DAYS)).min(1).optional(), meals: z.array(z.enum(MEALS)).min(1).optional() })
-      .strict()
-      .optional(),
+    scope: ScopeSchema.optional(),
     bounds: z
       .object({ hardMin: count.optional(), softMin: count.optional(), softMax: count.optional(), hardMax: count.optional() })
       .strict(),
     severity: z.number().positive().optional(),
     costs: z.object({ min: z.number().min(0).optional(), max: z.number().min(0).optional() }).strict().optional(),
+    ...YieldShape,
   })
   .strict()
   .superRefine((c, ctx) => {
@@ -111,7 +144,19 @@ const CountSchema = z
   });
 
 const PreferSchema = z
-  .object({ kind: z.literal('prefer'), ...CommonShape, select: MatcherSchema, weight: z.number().finite() })
+  .object({ kind: z.literal('prefer'), ...CommonShape, select: MatcherSchema, weight: z.number().finite(), ...YieldShape })
   .strict();
 
-export const ConstraintSchema = z.discriminatedUnion('kind', [CountSchema, PreferSchema]) as unknown as z.ZodType<Constraint>;
+const PairSchema = z
+  .object({
+    kind: z.literal('pair'),
+    ...CommonShape,
+    when: MatcherSchema,
+    component: z.number().int(),
+    scope: ScopeSchema.optional(),
+    strength: z.enum(['must', 'prefer']),
+    cost: z.number().min(1).max(10).optional(),
+  })
+  .strict();
+
+export const ConstraintSchema = z.discriminatedUnion('kind', [CountSchema, PreferSchema, PairSchema]) as unknown as z.ZodType<Constraint>;

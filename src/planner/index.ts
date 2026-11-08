@@ -10,11 +10,11 @@ export {
 } from './matcher';
 export {
   ConstraintSchema, timeOf, byComponent,
-  type Constraint, type CountConstraint, type PreferConstraint, type GroupBy, type TimeGroup, type Bounds, type Origin,
+  type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type Yield, type GroupBy, type TimeGroup, type Bounds, type Origin,
 } from './constraints';
 export {
-  compileModel, score, compareScore, explain, groupText, UNKNOWN_COMPONENT,
-  type CompiledModel, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
+  compileModel, score, compareScore, explain, groupText, bringsWith, slotPairs, UNKNOWN_COMPONENT,
+  type CompiledModel, type SlotPair, type Brings, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';
 export { solve, clonePlan, type SolveOptions, type SolveResult, type StopReason } from './solver';

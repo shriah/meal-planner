@@ -1,6 +1,8 @@
-// Scores a whole plan against COUNT and PREFER constraints. The score is lexicographic:
+// Scores a whole plan against COUNT, PREFER and PAIR constraints. The score is lexicographic:
 // any hard violation outweighs every soft cost. Each violated group can be justified.
-import { byComponent, timeOf, type Constraint, type CountConstraint, type Origin } from './constraints';
+// Sides a meal's dishes bring by PAIR constraints (unit members and asked-for sides) are worked out
+// per meal first; rules flagged `yieldsTo` give way to them.
+import { byComponent, timeOf, type Constraint, type CountConstraint, type Origin, type PairConstraint } from './constraints';
 import { compileMatcher, type MatchFn } from './matcher';
 import {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
@@ -63,14 +65,46 @@ interface CompiledCount {
   touched: number[];
   hardMin: number; softMin: number; softMax: number; hardMax: number;
   severity: number; minCost: number; maxCost: number;
+  /** 0 = never gives way, else YIELD_UNIT or YIELD_ASK. */
+  yields: number;
+  /** Owning component id, or NaN. */
+  owner: number;
 }
+
+interface CompiledPair {
+  def: PairConstraint;
+  when: number;
+  /** Library index of the paired component, or -1 when it is not in the library. */
+  ci: number;
+  /** Role the paired component fills, for conflict resolution. */
+  role: Role | undefined;
+  must: boolean;
+  cost: number;
+  inScope: Uint8Array;
+}
+
+/** What placing one dish brings, after conflict resolution. */
+export interface Brings { unit: number[]; asked: number[] }
 
 /** Cached matcher results for one (component, role, slot). */
 interface Memo {
+  /** Prefer weights split by whom they give way to. */
   prefer: number;
+  preferUnit: number;
+  preferAsk: number;
   /** Count constraints this assignment touches: (index << 2) | 1 if selected | 2 if it triggers `when`. */
   hits: Int32Array;
+  /** Pairs this assignment triggers, in constraint order: (index << 1) | 1 if suppressed by a conflict. */
+  pairs: Int32Array;
+  brings?: Brings;
 }
+
+/** Flags of an assignment in its meal. Every unit member is also asked for. */
+const ASKED = 1;
+const UNIT = 2;
+const YIELD_UNIT = 1;
+const YIELD_ASK = 2;
+const yieldCode = (y: 'unit' | 'ask' | undefined): number => (y === 'unit' ? YIELD_UNIT : y === 'ask' ? YIELD_ASK : 0);
 
 export interface CompiledModel {
   readonly library: readonly ComponentLike[];
@@ -84,12 +118,19 @@ interface ScoringState {
   idIndex: Map<number, number>;
   counts: CompiledCount[];
   matchers: MatchFn[];
-  prefers: { idx: number; weight: number }[];
+  prefers: { idx: number; weight: number; yields: number }[];
+  pairs: CompiledPair[];
   memo: (Memo | undefined)[];
   bufCi: Int32Array;
   bufSlot: Int32Array;
   bufMemo: Memo[];
+  bufFlag: Uint8Array;
+  /** Per pair, while one slot is scored: 0 untouched, 1 only suppressed, 2 enforced. */
+  pairState: Uint8Array;
+  bufPairs: Int32Array;
 }
+
+const NO_PAIRS = new Int32Array(0);
 
 /** Built-in id reported for plan entries that reference a component missing from the library. */
 export const UNKNOWN_COMPONENT = 'builtin:unknown-component';
@@ -99,12 +140,26 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
   const matchers: MatchFn[] = [];
   const addMatcher = (fn: MatchFn) => matchers.push(fn) - 1;
   const counts: CompiledCount[] = [];
-  const prefers: { idx: number; weight: number }[] = [];
+  const prefers: { idx: number; weight: number; yields: number }[] = [];
+  const pairs: CompiledPair[] = [];
   const N = library.length;
+  const idIndex = new Map(library.map((c, i) => [c.id, i]));
 
   for (const c of constraints) {
     if (c.kind === 'prefer') {
-      prefers.push({ idx: addMatcher(compileMatcher(c.select)), weight: c.weight });
+      prefers.push({ idx: addMatcher(compileMatcher(c.select)), weight: c.weight, yields: yieldCode(c.yieldsTo) });
+      continue;
+    }
+    if (c.kind === 'pair') {
+      const ci = idIndex.get(c.component) ?? -1;
+      const inScope = new Uint8Array(SLOT_COUNT);
+      for (let t = 0; t < SLOT_COUNT; t++) {
+        inScope[t] = +((!c.scope?.days || c.scope.days.includes(slotDay(t))) && (!c.scope?.meals || c.scope.meals.includes(slotMeal(t))));
+      }
+      pairs.push({
+        def: c, when: addMatcher(compileMatcher(c.when)), ci, role: ci >= 0 ? library[ci].componentType : undefined,
+        must: c.strength === 'must', cost: c.cost ?? 10, inScope,
+      });
       continue;
     }
     const time = timeOf(c.groupBy);
@@ -133,6 +188,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       hardMin: b.hardMin ?? -Infinity, softMin: b.softMin ?? -Infinity,
       softMax: b.softMax ?? Infinity, hardMax: b.hardMax ?? Infinity,
       severity: c.severity ?? 1, minCost: c.costs?.min ?? 1, maxCost: c.costs?.max ?? 1,
+      yields: yieldCode(c.yieldsTo), owner: c.owner ?? NaN,
     });
   }
 
@@ -141,12 +197,15 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     byId: new Map(library.map((c) => [c.id, c])),
     constraints,
     state: {
-      idIndex: new Map(library.map((c, i) => [c.id, i])),
-      counts, matchers, prefers,
+      idIndex,
+      counts, matchers, prefers, pairs,
       memo: new Array(N * ROLES.length * SLOT_COUNT),
       bufCi: new Int32Array(MAX_ASSIGNMENTS),
       bufSlot: new Int32Array(MAX_ASSIGNMENTS),
       bufMemo: new Array(MAX_ASSIGNMENTS),
+      bufFlag: new Uint8Array(MAX_ASSIGNMENTS),
+      pairState: new Uint8Array(pairs.length),
+      bufPairs: new Int32Array(pairs.length),
     },
   };
 }
@@ -158,16 +217,87 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
   if (!e) {
     const a: Assignment = { c: m.library[ci], role: ROLES[role], day: slotDay(slot), meal: slotMeal(slot) };
     const bits = st.matchers.map((f) => f(a));
-    let prefer = 0;
-    for (const p of st.prefers) if (bits[p.idx]) prefer += p.weight;
+    const prefer = [0, 0, 0];
+    for (const p of st.prefers) if (bits[p.idx]) prefer[p.yields] += p.weight;
     const hits: number[] = [];
     st.counts.forEach((cc, ck) => {
       const v = (bits[cc.sel] ? 1 : 0) | (cc.when >= 0 && bits[cc.when] ? 2 : 0);
       if (v) hits.push((ck << 2) | v);
     });
-    e = st.memo[key] = { prefer, hits: Int32Array.from(hits) };
+    // Pairs this dish triggers. Among its `must` pairs, the first to fill the curry (or subzi) role wins;
+    // later ones for the same role are suppressed. Extras never conflict.
+    const pairs: number[] = [];
+    const filled: Partial<Record<Role, number>> = {};
+    st.pairs.forEach((p, pk) => {
+      if (!p.inScope[slot] || !bits[p.when] || p.def.component === a.c.id) return;
+      let suppressed = 0;
+      if (p.must && (p.role === 'curry' || p.role === 'subzi')) {
+        const first = filled[p.role];
+        if (first === undefined) filled[p.role] = p.def.component;
+        else if (first !== p.def.component) suppressed = 1;
+      }
+      pairs.push((pk << 1) | suppressed);
+    });
+    e = st.memo[key] = {
+      prefer: prefer[0], preferUnit: prefer[YIELD_UNIT], preferAsk: prefer[YIELD_ASK],
+      hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS,
+    };
   }
   return e;
+}
+
+/**
+ * The dishes that placing `id` in `role` at `slot` brings, after conflict resolution: `unit` from its
+ * `must` pairs, `asked` from all of them (so it includes `unit`). Memoised.
+ */
+export function bringsWith(m: CompiledModel, id: number, role: Role, slot: number): Brings {
+  const ci = m.state.idIndex.get(id);
+  if (ci === undefined) return { unit: [], asked: [] };
+  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  if (!memo.brings) {
+    const unit: number[] = [];
+    const asked: number[] = [];
+    for (const code of memo.pairs) {
+      if (code & 1) continue;
+      const p = m.state.pairs[code >> 1];
+      if (p.must) unit.push(p.def.component);
+      asked.push(p.def.component);
+    }
+    memo.brings = { unit, asked };
+  }
+  return memo.brings;
+}
+
+export interface SlotPair {
+  component: number;
+  /** Id of the dish whose pairing brings it. */
+  by: number;
+  /** Brought by a `must` pair that is enforced. */
+  unit: boolean;
+  /** A `must` pair not enforced because an earlier one fills the same role. */
+  suppressed?: boolean;
+}
+
+/** The pairings triggered in one meal, whether or not the side is there. */
+export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): SlotPair[] {
+  const out: SlotPair[] = [];
+  const s = plan[slot];
+  const visit = (id: number | undefined, role: Role) => {
+    if (id === undefined) return;
+    const ci = m.state.idIndex.get(id);
+    if (ci === undefined) return;
+    for (const code of memoFor(m, ci, ROLE_INDEX[role], slot).pairs) {
+      const p = m.state.pairs[code >> 1];
+      out.push(code & 1
+        ? { component: p.def.component, by: id, unit: false, suppressed: true }
+        : { component: p.def.component, by: id, unit: p.must });
+    }
+  };
+  visit(s.base, 'base');
+  visit(s.curry, 'curry');
+  visit(s.subzi, 'subzi');
+  for (const id of s.extras) visit(id, 'extra');
+  return out;
 }
 
 const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => [r, i])) as Record<Role, number>;
@@ -178,7 +308,7 @@ const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => 
  */
 export function score(m: CompiledModel, plan: PlanState, justify = false): ScoreResult {
   const st = m.state;
-  const { bufCi, bufSlot, bufMemo, counts } = st;
+  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs } = st;
   const just: Justification[] = [];
   let hard = 0;
   let soft = 0;
@@ -201,15 +331,55 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
     bufCi[n] = ci;
     bufSlot[n] = slot;
     bufMemo[n] = memoFor(m, ci, role, slot);
+    bufFlag[n] = 0;
     n++;
+  };
+
+  // Pairs triggered in one meal (assignments [start, end)): flag the sides they bring and score the
+  // missing ones. A pair triggered by several dishes is enforced if any of them enforces it.
+  const pairSlot = (slot: number, start: number, end: number) => {
+    let np = 0;
+    for (let i = start; i < end; i++) {
+      for (const code of bufMemo[i].pairs) {
+        const pk = code >> 1;
+        if (!pairState[pk]) bufPairs[np++] = pk;
+        const v = code & 1 ? 1 : 2;
+        if (v > pairState[pk]) pairState[pk] = v;
+      }
+    }
+    for (let q = 0; q < np; q++) {
+      const pk = bufPairs[q];
+      const p = pairs[pk];
+      const enforced = pairState[pk] === 2;
+      pairState[pk] = 0;
+      let k = start;
+      while (k < end && bufCi[k] !== p.ci) k++;
+      if (k < end) {
+        if (enforced) bufFlag[k] |= p.must ? ASKED | UNIT : ASKED;
+        continue;
+      }
+      if (enforced && p.must) hard += 1;
+      else if (enforced) soft += p.cost;
+      if (justify) {
+        const level = enforced && p.must ? 'hard' : 'soft';
+        const cost = enforced ? (p.must ? 1 : p.cost) : 0;
+        just.push({
+          constraintId: p.def.id, label: p.def.label, level, origin: p.def.origin, ruleId: p.def.ruleId,
+          group: { day: slotDay(slot), meal: slotMeal(slot), componentId: p.def.component },
+          actual: 0, bound: { kind: level === 'hard' ? 'hardMin' : 'softMin', value: 1 }, units: 1, cost,
+        });
+      }
+    }
   };
 
   for (let slot = 0; slot < plan.length; slot++) {
     const s = plan[slot];
+    const start = n;
     if (s.base !== undefined) place(s.base, ROLE_INDEX.base, slot);
     if (s.curry !== undefined) place(s.curry, ROLE_INDEX.curry, slot);
     if (s.subzi !== undefined) place(s.subzi, ROLE_INDEX.subzi, slot);
     for (const id of s.extras) place(id, ROLE_INDEX.extra, slot);
+    if (pairs.length && n > start) pairSlot(slot, start, n);
   }
 
   for (const cc of counts) {
@@ -226,13 +396,22 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
   const N = m.library.length;
   for (let i = 0; i < n; i++) {
     const memo = bufMemo[i];
-    soft += memo.prefer;
+    const flag = bufFlag[i];
+    soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
+    const base = flag & UNIT ? plan[slot].base : undefined;
     for (const code of memo.hits) {
       const cc = counts[code >> 2];
-      const selected = (code & 1) !== 0;
-      const triggers = (code & 2) !== 0;
+      let selected = (code & 1) !== 0;
+      let triggers = (code & 2) !== 0;
+      if (flag) {
+        // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
+        // not trigger its own base's rules.
+        if (selected && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
+        if (triggers && cc.owner === base) triggers = false;
+        if (!selected && !triggers) continue;
+      }
       let lo: number;
       let hi: number;
       switch (cc.time) {
