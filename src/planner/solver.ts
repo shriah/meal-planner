@@ -330,13 +330,13 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   // Final descent: the random moves can stop on a plateau one change away from a better week. Try every
   // single change of a free base, curry or subzi (meals in order, roles base, curry, subzi, candidates in
   // library order, no side first) and keep each one that strictly improves the score, until a full pass
-  // finds none. Unit members stay while their dish does; a changed dish brings its sides, as in the moves.
+  // finds none or DESCENT_PASSES are done (the time limit does not apply here). Unit members stay while their
+  // dish does; a changed dish brings its sides, as in the moves.
   for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
   let descended = false;
   for (let pass = 0; pass < DESCENT_PASSES; pass++) {
     let improved = false;
     for (let i = 0; i < SLOT_COUNT; i++) {
-      if (now() >= deadline) break;
       const s = plan[i];
       for (const r of PICK_ROLES) {
         if (!isFree(i, r) || !pool[r].length) continue;
@@ -358,7 +358,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
       }
     }
-    if (!improved || now() >= deadline) break;
+    if (!improved) break;
   }
   if (descended) bestPlan = clonePlan(plan);
 

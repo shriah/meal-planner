@@ -185,13 +185,11 @@ describe('final descent', () => {
     }
   });
 
-  it('skips the final descent once the time limit has passed', () => {
+  it('runs the final descent in full even once the time limit has passed; only the pass count bounds it', () => {
     const run = (o: { timeLimitMs: number; maxIterations?: number }) => SEEDS.map((seed) => solve(buildModel({ library: lib, constraints: defaults }), { seed, ...o }));
     const late = run({ timeLimitMs: 0 });
-    const descended = run({ timeLimitMs: Infinity, maxIterations: 0 });
-    late.forEach((l, k) => expect(compareScore(descended[k].score, l.score)).toBeLessThanOrEqual(0));
-    // The descent improves at least one seed (2 of 8 today), so skipping it leaves a visibly worse week.
-    expect(late.filter((l, k) => compareScore(descended[k].score, l.score) < 0).length).toBeGreaterThan(0);
-    expect(late.some((l, k) => JSON.stringify(l.plan) !== JSON.stringify(descended[k].plan))).toBe(true);
+    const unhurried = run({ timeLimitMs: Infinity, maxIterations: 0 });
+    // Both skip the search; the descent then runs the same either way.
+    late.forEach((l, k) => expect(l.plan).toEqual(unhurried[k].plan));
   });
 });
