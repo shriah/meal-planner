@@ -196,14 +196,21 @@ describe('problemsForSlot', () => {
   const otherSlot = p({ message: 'other slot', day: 'monday', meal: 'dinner' });
   const otherDay = p({ message: 'other day', day: 'tuesday' });
   const otherMeal = p({ message: 'other meal', meal: 'dinner' });
-  const all = [week, exact, dayOnly, mealOnly, otherSlot, otherDay, otherMeal];
+  const inSlots = p({ message: 'in slots', level: 'soft', slots: [{ day: 'monday', meal: 'lunch' }] });
+  const elsewhere = p({ message: 'elsewhere', level: 'soft', slots: [{ day: 'monday', meal: 'dinner' }] });
+  const all = [week, exact, dayOnly, mealOnly, otherSlot, otherDay, otherMeal, inSlots, elsewhere];
   const kept = problemsForSlot(all, 'monday', 'lunch').map((x) => x.message);
+
+  it('keeps a problem that lists its meals only for those meals', () => {
+    expect(kept).toContain('in slots');
+    expect(kept).not.toContain('elsewhere');
+  });
 
   it('keeps week-level problems (no day, no meal), which includes window groups', () => expect(kept).toContain('week'));
   it('keeps problems at exactly that day and meal', () => expect(kept).toContain('exact'));
   it('keeps day-level problems for that day', () => expect(kept).toContain('day'));
   it('keeps meal-level problems for that meal', () => expect(kept).toContain('meal'));
-  it('drops problems located elsewhere', () => expect(kept).toEqual(['week', 'exact', 'day', 'meal']));
+  it('drops problems located elsewhere', () => expect(kept).toEqual(['week', 'exact', 'day', 'meal', 'in slots']));
 });
 
 describe('explain_plan_slot: dishes and why not', () => {

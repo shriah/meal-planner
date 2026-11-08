@@ -30,6 +30,8 @@ export interface PlanProblem {
   ruleId?: number;
   day?: DayOfWeek;
   meal?: Meal;
+  /** For a problem reported once for several meals: the meals it bears on. */
+  slots?: { day: DayOfWeek; meal: Meal }[];
 }
 
 /** A side present in its meal because a pairing on `by` brings it. */
@@ -88,12 +90,40 @@ function modelFromData(input: PlanningInput) {
     };
   };
 
+  /**
+   * Every problem, with the pairings a stored conflict leaves unenforced (two Always curries for one
+   * base) collapsed into one soft problem per pairing and base, worded as the conflict and listing its meals.
+   */
+  const problemsOf = (justifications: readonly Justification[], each: (j: Justification) => PlanProblem = problemOf): PlanProblem[] => {
+    const out: PlanProblem[] = [];
+    const collapsed = new Map<string, PlanProblem & { slots: { day: DayOfWeek; meal: Meal }[] }>();
+    const name = (id: number) => componentName.get(id) ?? `dish ${id}`;
+    for (const j of justifications) {
+      const s = j.suppressed;
+      if (!s) {
+        out.push(each(j));
+        continue;
+      }
+      const key = `${j.constraintId}|${s.by}|${s.heldBy ?? ''}`;
+      let p = collapsed.get(key);
+      if (!p) {
+        const holder = s.heldBy !== undefined && s.heldMust ? ` and ${name(s.heldBy)} is always served with it` : '';
+        const reason = `${name(j.group.componentId!)} is not served with ${name(s.by)}: a meal holds one ${s.role}${holder}.`;
+        p = { level: 'soft', reason, message: reason, ...(j.ruleId !== undefined && { ruleId: j.ruleId }), slots: [] };
+        collapsed.set(key, p);
+        out.push(p);
+      }
+      if (j.group.day && j.group.meal) p.slots.push({ day: j.group.day, meal: j.group.meal });
+    }
+    return out;
+  };
+
   const model: ModelInput = { library, constraints };
-  return { model, issues, problemOf, ruleById };
+  return { model, issues, problemOf, problemsOf, ruleById };
 }
 
 export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): PlanningOutcome {
-  const { model, issues, problemOf, ruleById } = modelFromData(input);
+  const { model, issues, problemOf, problemsOf, ruleById } = modelFromData(input);
   const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31) });
   const typeOf = new Map(input.library.map((c) => [c.id, c.componentType]));
   /** Whether the caller fixed (or held empty) the role the paired dish would fill in this meal. */
@@ -109,7 +139,7 @@ export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): 
       default: return false;
     }
   };
-  const problems = result.justifications.map((j) => {
+  const problems = problemsOf(result.justifications, (j) => {
     const p = problemOf(j);
     return j.level === 'hard' && pinnedRole(j) ? { ...p, message: `${p.message} — replaced by your pick` } : p;
   });
@@ -230,7 +260,7 @@ export function missingDishIds(input: PlanningInput, plan: WeeklyPlan): number[]
  * Dishes that have since been deleted are left out of the check rather than failing it.
  */
 export function explainPlan(input: PlanningInput, plan: WeeklyPlan): PlanProblem[] {
-  const { model, problemOf } = modelFromData(input);
+  const { model, problemsOf } = modelFromData(input);
   const known = new Set(input.library.map((c) => c.id));
   const state = fromPlanSlots(plan.slots);
   for (const slot of state) {
@@ -239,7 +269,7 @@ export function explainPlan(input: PlanningInput, plan: WeeklyPlan): PlanProblem
     if (slot.subzi !== undefined && !known.has(slot.subzi)) slot.subzi = undefined;
     slot.extras = slot.extras.filter((id) => known.has(id));
   }
-  return score(buildModel(model), state, true).justifications.map(problemOf);
+  return problemsOf(score(buildModel(model), state, true).justifications);
 }
 
 const slotIds = (s: PlanSlot | undefined): number[] =>

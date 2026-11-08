@@ -32,6 +32,11 @@ export interface Justification {
   units: number;
   /** Units multiplied by severity (hard) or cost (soft). */
   cost: number;
+  /**
+   * Set on a pairing that is not enforced in this meal because another pairing holds the role
+   * (a meal holds one curry and one subzi): `by` triggered it, `heldBy` holds the role, if known.
+   */
+  suppressed?: { by: number; role: 'curry' | 'subzi'; heldBy?: number; heldMust?: boolean };
 }
 
 export interface Score {
@@ -131,6 +136,8 @@ interface ScoringState {
   /** Per pair, while one slot is scored: 0 untouched, 1 only suppressed, 2 enforced. */
   pairState: Uint8Array;
   bufPairs: Int32Array;
+  /** Per pair, while one slot is scored: library index of the first dish that triggered it. */
+  pairBy: Int32Array;
 }
 
 const NO_PAIRS = new Int32Array(0);
@@ -224,6 +231,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       bufFlag: new Uint8Array(MAX_ASSIGNMENTS),
       pairState: new Uint8Array(pairs.length),
       bufPairs: new Int32Array(pairs.length),
+      pairBy: new Int32Array(pairs.length),
     },
   };
 }
@@ -341,7 +349,7 @@ const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => 
  */
 export function score(m: CompiledModel, plan: PlanState, justify = false): ScoreResult {
   const st = m.state;
-  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs } = st;
+  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy } = st;
   const just: Justification[] = [];
   let hard = 0;
   let soft = 0;
@@ -368,6 +376,11 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
     n++;
   };
 
+  const present = (ci: number, start: number, end: number): boolean => {
+    for (let k = start; k < end; k++) if (bufCi[k] === ci) return true;
+    return false;
+  };
+
   // Pairs triggered in one meal (assignments [start, end)): flag the sides they bring and score the
   // missing ones. A pair triggered by several dishes is enforced if any of them enforces it.
   const pairSlot = (slot: number, start: number, end: number) => {
@@ -375,7 +388,10 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
     for (let i = start; i < end; i++) {
       for (const code of bufMemo[i].pairs) {
         const pk = code >> 1;
-        if (!pairState[pk]) bufPairs[np++] = pk;
+        if (!pairState[pk]) {
+          bufPairs[np++] = pk;
+          pairBy[pk] = bufCi[i];
+        }
         const v = code & 1 ? 1 : 2;
         if (v > pairState[pk]) pairState[pk] = v;
       }
@@ -392,6 +408,21 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       if (k < end) {
         bufFlag[k] |= ASKED | UNIT;
         unitRoles |= p.roleBit;
+      }
+    }
+    // For explanations: which enforced pair holds each role, a unit member present first, then any
+    // `must`, then any other. Worked out before the loop below clears the pair states.
+    let holders: [number, number] | undefined;
+    if (justify) {
+      holders = [-1, -1];
+      const rank = [0, 0];
+      for (let q = 0; q < np; q++) {
+        const pk = bufPairs[q];
+        const p = pairs[pk];
+        if (!p.roleBit || pairState[pk] !== 2) continue;
+        const r = p.must ? (p.roleBit & unitRoles && present(p.ci, start, end) ? 3 : 2) : 1;
+        const h = p.roleBit === ROLE_CURRY ? 0 : 1;
+        if (r > rank[h]) { rank[h] = r; holders[h] = pk; }
       }
     }
     for (let q = 0; q < np; q++) {
@@ -411,10 +442,20 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       if (justify) {
         const level = enforced && p.must ? 'hard' : 'soft';
         const cost = enforced ? (p.must ? 1 : p.cost) : 0;
+        let suppressed: Justification['suppressed'];
+        if (!enforced && p.roleBit) {
+          const holder = holders![p.roleBit === ROLE_CURRY ? 0 : 1];
+          const held = holder >= 0 && pairs[holder].def.component !== p.def.component ? pairs[holder] : undefined;
+          suppressed = {
+            by: m.library[pairBy[pk]].id, role: p.roleBit === ROLE_CURRY ? 'curry' : 'subzi',
+            ...(held && { heldBy: held.def.component, heldMust: held.must }),
+          };
+        }
         just.push({
           constraintId: p.def.id, label: p.def.label, level, origin: p.def.origin, ruleId: p.def.ruleId,
           group: { day: slotDay(slot), meal: slotMeal(slot), componentId: p.def.component },
           actual: 0, bound: { kind: level === 'hard' ? 'hardMin' : 'softMin', value: 1 }, units: 1, cost,
+          ...(suppressed && { suppressed }),
         });
       }
     }

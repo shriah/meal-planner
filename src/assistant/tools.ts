@@ -211,10 +211,13 @@ function badValues(label: string, values: string[] | undefined, valid: readonly 
 
 /**
  * The problems that bear on one slot: week-level ones (no day or meal, which includes window
- * groups), that exact slot, that whole day, and that meal across the week.
+ * groups), that exact slot, that whole day, and that meal across the week. A problem that lists its
+ * meals bears on those meals only.
  */
 export function problemsForSlot(problems: PlanProblem[], day: DayOfWeek, meal: Meal): PlanProblem[] {
-  return problems.filter((p) => (p.day === undefined || p.day === day) && (p.meal === undefined || p.meal === meal));
+  return problems.filter((p) => p.slots
+    ? p.slots.some((s) => s.day === day && s.meal === meal)
+    : (p.day === undefined || p.day === day) && (p.meal === undefined || p.meal === meal));
 }
 
 type DishRef = { id: number; name: string } | { id: number; deleted: true };

@@ -86,6 +86,37 @@ describe('pairings', () => {
     });
   });
 
+  describe('a stored conflict (a second Always curry for Pongal)', () => {
+    const rasamLink = linkRule(rasam, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const rasamRule: RuleRecord = { id: 8, name: rasamLink.name, spec: rasamLink.spec, enabled: true, created_at: '', owner_component_id: 12 } as RuleRecord;
+    const conflicted: PlanningInput = { library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule] };
+    const reason = 'Rasam is not served with Pongal: a meal holds one curry and Sambar is always served with it.';
+
+    it('is reported once, as one soft problem worded as the conflict, not per meal', () => {
+      const out = planFromData(conflicted, { seed: 3 });
+      expect(out.plan.slots.filter((s) => s.base_id === 10).length).toBeGreaterThan(1);
+      const rasamProblems = out.problems.filter((p) => p.ruleId === 8);
+      expect(rasamProblems).toHaveLength(1);
+      expect(rasamProblems[0]).toMatchObject({ level: 'soft', reason, message: reason });
+      expect(rasamProblems[0].day).toBeUndefined();
+      expect(rasamProblems[0].meal).toBeUndefined();
+      // It belongs to the Pongal meals only.
+      const pongalMeals = out.plan.slots.filter((s) => s.base_id === 10).map((s) => ({ day: s.day, meal: s.meal_slot }));
+      expect(rasamProblems[0].slots).toEqual(expect.arrayContaining(pongalMeals));
+      expect(rasamProblems[0].slots).toHaveLength(pongalMeals.length);
+    });
+
+    it('explainPlan reports it once as well', () => {
+      const plan = planOf(
+        { day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11 },
+        { day: 'tuesday', meal_slot: 'breakfast', base_id: 10, curry_id: 11 },
+      );
+      expect(explainPlan(conflicted, plan).filter((p) => p.ruleId === 8)).toEqual([
+        { level: 'soft', reason, message: reason, ruleId: 8, slots: [{ day: 'monday', meal: 'breakfast' }, { day: 'tuesday', meal: 'breakfast' }] },
+      ]);
+    });
+  });
+
   it('lists the paired sides present in each meal that holds the base', () => {
     const out = planFromData(data, { seed: 3 });
     const withPongal = out.plan.slots.filter((s) => s.base_id === 10);
