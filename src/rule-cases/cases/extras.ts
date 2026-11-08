@@ -24,9 +24,9 @@ export const EXTRAS_CASES: RuleCase[] = [
         highlights: (slot) => slot.meal_slot === 'breakfast' && slot.extra_ids.length > 2,
       },
       {
-        says: 'The clash is reported as a hard problem in every week',
+        says: 'The extras clash is reported as a hard problem in every week',
         check: (w) => {
-          const k = w.hard.filter((h) => h.length > 0).length;
+          const k = w.hard.filter((h) => h.some((j) => j.label.toLowerCase().includes('extra'))).length;
           return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
         },
       },
