@@ -336,6 +336,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   for (let pass = 0; pass < DESCENT_PASSES; pass++) {
     let improved = false;
     for (let i = 0; i < SLOT_COUNT; i++) {
+      if (now() >= deadline) break;
       const s = plan[i];
       for (const r of PICK_ROLES) {
         if (!isFree(i, r) || !pool[r].length) continue;
@@ -357,7 +358,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
       }
     }
-    if (!improved) break;
+    if (!improved || now() >= deadline) break;
   }
   if (descended) bestPlan = clonePlan(plan);
 

@@ -184,4 +184,16 @@ describe('final descent', () => {
       else expect(s.curry).not.toBe(11);
     }
   });
+
+  it('stops the final pass at the time limit on a large library', () => {
+    const big: ComponentLike[] = [
+      ...Array.from({ length: 30 }, (_, i) => component('base', { id: 1000 + i, base_category_id: 10 + (i % 3) })),
+      ...Array.from({ length: 40 }, (_, i) => component('curry', { id: 2000 + i, protein_tag: i % 2 ? 'dal' : 'paneer' })),
+      ...Array.from({ length: 40 }, (_, i) => component('subzi', { id: 3000 + i })),
+      ...Array.from({ length: 10 }, (_, i) => component('extra', { id: 4000 + i })),
+    ];
+    const r = solve(buildModel({ library: big }), { seed: 1, timeLimitMs: 30 });
+    expect(r.stats.totalMs).toBeLessThan(200);
+    expect(r.score.hard).toBe(0);
+  });
 });
