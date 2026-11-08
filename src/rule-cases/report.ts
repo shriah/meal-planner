@@ -62,20 +62,21 @@ function libraryPanel(lib: CaseLibrary): string {
 }
 
 const CSS = `
-:root{--bg:#fff;--fg:#1c1c1e;--muted:#6b6b70;--line:#ddd;--hl:#dde4ff;--known:#fff4d6;--bad:#b3261e}
-@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#e8e8ea;--muted:#9a9aa0;--line:#38383c;--hl:#2c3560;--known:#3d3416;--bad:#ff8a80}}
+:root{--bg:#fff;--fg:#1c1c1e;--muted:#6b6b70;--line:#ddd;--hl:#dde4ff;--known:#fff4d6;--knownfg:#8a5a00;--bad:#b3261e}
+@media (prefers-color-scheme:dark){:root{--bg:#161618;--fg:#e8e8ea;--muted:#9a9aa0;--line:#38383c;--hl:#2c3560;--known:#3d3416;--knownfg:#f2c35b;--bad:#ff8a80}}
 body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}
 header{padding:10px 16px;border-bottom:1px solid var(--line)}
 main{display:flex;gap:16px;padding:12px 16px}
 nav{width:30%;min-width:220px;border-right:1px solid var(--line);padding-right:10px}
 nav input[type=text]{width:100%;box-sizing:border-box;padding:4px;background:var(--bg);color:var(--fg);border:1px solid var(--line)}
-nav a{display:block;cursor:pointer;padding:1px 0}nav a.sel{font-weight:600;text-decoration:underline}
+nav a{display:block;cursor:pointer;padding:1px 0;color:inherit}nav a.sel{font-weight:600;text-decoration:underline}
 nav h3{margin:10px 0 2px;font-size:14px}
 article{flex:1;min-width:0}
 .hidden{display:none}.muted{color:var(--muted)}
 .label{margin-top:12px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
 .known{margin:6px 0;padding:6px 8px;background:var(--known)}
 .status.fail,.status.known-now-passes{color:var(--bad)}
+.status.known,nav a.known{color:var(--knownfg)}
 table{border-collapse:collapse;width:100%}td,th{padding:2px 6px;text-align:left;vertical-align:top}
 .exp{font-size:12px}.grid{font-size:11px}.grid td,.grid th{border:1px solid var(--line)}
 .grid td.hl{background:var(--hl)}
@@ -89,7 +90,7 @@ const JS = `
     [].forEach.call(document.querySelectorAll('.panel'),function(p){p.classList.toggle('hidden',p.id!==id)});
     links.forEach(function(a){a.classList.toggle('sel',a.getAttribute('data-p')===id)});
   }
-  links.forEach(function(a){a.addEventListener('click',function(){show(a.getAttribute('data-p'))})});
+  links.forEach(function(a){a.addEventListener('click',function(e){e.preventDefault();show(a.getAttribute('data-p'))})});
   var q=document.getElementById('q'),f=document.getElementById('failing');
   function filter(){
     var t=q.value.toLowerCase();
@@ -108,6 +109,8 @@ const JS = `
 `;
 
 export function renderReport(results: CaseResult[], lib: CaseLibrary, runAt: Date): string {
+  const ids = new Set(results.map((r) => slug(r.id)));
+  if (ids.size !== results.length) throw new Error('Rule case ids must be unique');
   const count = (pred: (s: CaseStatus) => boolean): number => results.filter((r) => pred(r.status)).length;
   const passed = count((s) => s === 'pass');
   const failed = count((s) => s === 'fail' || s === 'known-now-passes');
@@ -119,7 +122,7 @@ export function renderReport(results: CaseResult[], lib: CaseLibrary, runAt: Dat
     const rs = results.filter((r) => r.group === g);
     if (!rs.length) return '';
     return `<h3 data-g="${esc(g)}">${esc(g)}</h3>` + rs
-      .map((r) => `<a data-p="p-${slug(r.id)}" data-g="${esc(g)}" data-bad="${r.status === 'pass' || r.status === 'known' ? 0 : 1}" class="${r.id === selected ? 'sel' : ''}">${markOf(r.status)} ${esc(r.name)}</a>`)
+      .map((r) => `<a data-p="p-${slug(r.id)}" data-g="${esc(g)}" data-bad="${r.status === 'pass' || r.status === 'known' ? 0 : 1}" href="#p-${slug(r.id)}" class="${[r.id === selected ? 'sel' : '', r.status === 'known' ? 'known' : ''].filter(Boolean).join(' ')}">${markOf(r.status)} ${esc(r.name)}</a>`)
       .join('');
   }).join('');
 
@@ -130,7 +133,7 @@ export function renderReport(results: CaseResult[], lib: CaseLibrary, runAt: Dat
 <header><strong>Rule case report</strong> · run ${esc(when)} · ${passed} passed · ${failed} failed · ${known} known</header>
 <main><nav><input type="text" id="q" placeholder="Filter cases"><br><label><input type="checkbox" id="failing"> Failing only</label>
 ${nav}
-<h3>Dishes library</h3><a data-p="p-library">Dishes library (shared, ${lib.dishes.length} dishes)</a></nav>
+<h3>Dishes library</h3><a data-p="p-library" href="#p-library">Dishes library (shared, ${lib.dishes.length} dishes)</a></nav>
 <article>${results.map((r) => panel(r, r.id === selected)).join('\n')}
 ${libraryPanel(lib)}</article></main>
 <script>${JS}</script></body></html>`;

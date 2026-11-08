@@ -61,4 +61,15 @@ describe('renderReport', () => {
     expect(html).toContain('+ default rules');
     expect(renderReport([result({ defaults: false })], TEST_LIBRARY, RUN_AT)).not.toContain('+ default rules');
   });
+
+  it('gives a known case its own colour and a keyboard reachable link', () => {
+    const html = renderReport([result({ status: 'known', known: 'x' })], TEST_LIBRARY, RUN_AT);
+    expect(html).toContain('.status.known');
+    expect(html).toMatch(/<a data-p="p-a"[^>]*href="#p-a" class="[^"]*known"/);
+    expect(html).toContain('e.preventDefault()');
+  });
+
+  it('refuses two cases with the same id', () => {
+    expect(() => renderReport([result(), result()], TEST_LIBRARY, RUN_AT)).toThrow('unique');
+  });
 });

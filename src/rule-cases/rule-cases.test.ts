@@ -18,6 +18,12 @@ afterAll(() => {
 });
 
 describe('rule cases', () => {
+  it('gives every case its own id', () => {
+    const ids = ALL_CASES.map((c) => c.id.replace(/[^A-Za-z0-9_-]/g, '-'));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+
   for (const c of ALL_CASES) {
     it(c.name, () => {
       const r = runPlanCase(c);
