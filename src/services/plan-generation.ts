@@ -121,6 +121,12 @@ export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): 
   };
 }
 
+/** Ids of the dishes that placing this base in a meal would bring with it (unit or asked). */
+export function broughtByBase(input: PlanningInput, id: number, day: DayOfWeek, meal: Meal): number[] {
+  const m = buildModel(modelFromData(input).model);
+  return bringsWith(m, id, 'base', slotIndex(day, meal)).asked;
+}
+
 /** The sides in each meal that a pairing brought, whether a unit member or only asked for. */
 export function pairedSides(input: PlanningInput, plan: WeeklyPlan): PairedSide[] {
   const m = buildModel(modelFromData(input).model);

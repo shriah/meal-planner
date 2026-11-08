@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
 import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
-import { explainPlan, missingDishIds, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
+import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
   type ComponentRecord, type ComponentType,
@@ -334,7 +334,11 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
     blockedBy: added.slice(0, MAX_LIST_ITEMS),
     ...(added.length > MAX_LIST_ITEMS ? { more: added.length - MAX_LIST_ITEMS } : {}),
     ...(added.length === 0
-      ? { note: `No rule blocks ${dish.name} here; its paired dishes come with it.` }
+      ? {
+          note: part === 'base' && broughtByBase(data, dish.id, day, meal).length > 0
+            ? `No rule blocks ${dish.name} here; its paired dishes come with it.`
+            : `No rule blocks ${dish.name} here; the planner chose other dishes this time.`,
+        }
       : { note: `Putting ${dish.name} here would break these rules.` }),
   };
 }

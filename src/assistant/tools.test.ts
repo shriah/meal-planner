@@ -263,7 +263,7 @@ describe('explain_plan_slot: dishes and why not', () => {
     const why = (r as { data: Data }).data.whyNot!;
     expect(why.blockedBy).toEqual([]);
     expect(why.note).toMatch(/No rule blocks/);
-    expect(why.note).toMatch(/paired dishes/);
+    expect(why.note).toBe('No rule blocks Chole here; the planner chose other dishes this time.');
   });
 
   it('lists the dishes a pairing brought into the slot', async () => {
@@ -281,6 +281,11 @@ describe('explain_plan_slot: dishes and why not', () => {
     const why = (w as { data: Data }).data.whyNot!;
     expect(why.blockedBy).toEqual([]);
     expect(why.note).toBe('No rule blocks Pongal here; its paired dishes come with it.');
+  });
+
+  it('uses the neutral note for a base that brings nothing', async () => {
+    const why = ((await explain({ dish: 'Jeera Rice' })) as { data: Data }).data.whyNot!;
+    expect(why.note).toBe('No rule blocks Jeera Rice here; the planner chose other dishes this time.');
   });
 
   it('accepts a dish id as a number or numeric text', async () => {
