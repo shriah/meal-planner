@@ -5,8 +5,8 @@ import type { MealSlot } from '@/types/preferences'
 import { getActivePlan } from '@/services/plan-db'
 import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
 import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
-import { generatePlan } from '@/services/planning'
-import type { PlanningOutcome, PlanProblem, PairedSide } from '@/services/plan-generation'
+import { generatePlan, loadPlanningInput } from '@/services/planning'
+import { pairedSides, type PlanningOutcome, type PlanProblem, type PairedSide } from '@/services/plan-generation'
 import { pinsForMeal, pinsFromLocks } from '@/services/pins'
 import type { RuleIssue } from '@/rules'
 import type { ExportPlanPayload } from '@/services/export-template'
@@ -21,7 +21,7 @@ interface PlanStore {
   problems: PlanProblem[]
   /** Rules that were skipped during the last generation. */
   ruleIssues: RuleIssue[]
-  /** Sides in the last generated plan that a pairing brought, with the base that brought them. */
+  /** Sides in the current plan that a pairing brought, with the base that brought them. */
   paired: PairedSide[]
   isGenerating: boolean
   hydrated: boolean
@@ -50,6 +50,21 @@ export const usePlanStore = create<PlanStore>((set, get) => {
   function applyOutcome(outcome: PlanningOutcome, weekStart: string) {
     set({ plan: outcome.plan, problems: outcome.problems, ruleIssues: outcome.ruleIssues, paired: outcome.paired, isGenerating: false })
     saveWeekPlan(weekStart, outcome.plan, get().locks)
+  }
+
+  // A stored plan carries no pairings, so they are worked out from the rules as they are now (as the
+  // assistant does). A plan or week loaded meanwhile makes this stale.
+  async function loadPaired(plan: WeeklyPlan | null, weekStart: string) {
+    if (!plan) return
+    let paired: PairedSide[]
+    try {
+      paired = pairedSides(await loadPlanningInput(), plan)
+    } catch {
+      return
+    }
+    const now = get()
+    if (now.plan !== plan || now.currentWeekStart !== weekStart) return
+    set({ paired })
   }
 
   // A base picked by hand re-plans its meal, so the sides follow every rule. Other meals and locked parts stay.
@@ -97,13 +112,15 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     initFromDB: async () => {
       const record = await getActivePlan()
       const currentWeekStart = getISOWeekStart(new Date())
+      const plan = record?.plan ?? null
       set({
-        plan: record?.plan ?? null,
+        plan,
         locks: record?.locks ?? {},
         hydrated: true,
         currentWeekStart,
         isReadOnly: false,
       })
+      await loadPaired(plan, currentWeekStart)
     },
 
     setLock: (key, locked) => {
@@ -189,8 +206,9 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       if (weekStart === thisWeek) {
         // Load from active_plan for fast current-week hydration (D-09)
         const record = await getActivePlan()
+        const plan = record?.plan ?? null
         set({
-          plan: record?.plan ?? null,
+          plan,
           locks: record?.locks ?? {},
           currentWeekStart: weekStart,
           isReadOnly: false,
@@ -199,11 +217,13 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           paired: [],
           problemsDismissed: false,
         })
+        await loadPaired(plan, weekStart)
       } else {
         // Load from saved_plans for past/future weeks
         const saved = await getWeekPlan(weekStart)
+        const plan = saved?.slots ?? null
         set({
-          plan: saved?.slots ?? null,
+          plan,
           locks: saved?.locks ?? {},
           currentWeekStart: weekStart,
           isReadOnly,
@@ -212,6 +232,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           paired: [],
           problemsDismissed: false,
         })
+        await loadPaired(plan, weekStart)
       }
     },
     exportPlan: async (componentNames) => {

@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, type RuleRecord } from '@/db/client';
 import { linkRule } from '@/rules';
 import { usePlanStore } from './plan-store';
-import { saveActivePlan } from '@/services/plan-db';
+import { saveActivePlan, saveWeekPlan } from '@/services/plan-db';
 import { getISOWeekStart, addWeeks } from '@/services/week-utils';
 import type { WeeklyPlan } from '@/types/plan';
 import * as planningService from '@/services/planning';
@@ -333,6 +333,60 @@ describe('week navigation', () => {
     expect(state.isReadOnly).toBe(false);
     expect(state.plan).toEqual(plan);
     expect(state.locks).toEqual(locks);
+  });
+
+  describe('the pairings of a stored plan', () => {
+    // Pongal with Sambar (always served with it) on Monday breakfast; every other meal is Rice alone.
+    async function storedPairing() {
+      await db.components.clear();
+      await db.rules.clear();
+      const add = async (name: string, componentType: 'base' | 'curry') =>
+        await db.components.add({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' }) as number;
+      const rice = await add('Rice', 'base');
+      const pongal = await add('Pongal', 'base');
+      const sambar = await add('Sambar', 'curry');
+      await db.rules.add({ ...linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [pongal] }), enabled: true, created_at: '' } as RuleRecord);
+      const plan = makePlan();
+      plan.slots = plan.slots.map((s) => ({ ...s, base_id: rice }));
+      plan.slots[0] = { ...plan.slots[0], base_id: pongal, curry_id: sambar };
+      return { plan, expected: [{ day: 'monday', meal: 'breakfast', component: sambar, by: pongal }] };
+    }
+
+    it('are worked out when the app loads the current plan', async () => {
+      const { plan, expected } = await storedPairing();
+      await saveActivePlan({ plan, locks: {} });
+      await usePlanStore.getState().initFromDB();
+      expect(usePlanStore.getState().paired).toEqual(expected);
+    });
+
+    it('are worked out when navigating to the current week', async () => {
+      const { plan, expected } = await storedPairing();
+      await saveActivePlan({ plan, locks: {} });
+      await usePlanStore.getState().navigateToWeek(getISOWeekStart(new Date()));
+      expect(usePlanStore.getState().paired).toEqual(expected);
+    });
+
+    it('are worked out when navigating to another saved week', async () => {
+      const { plan, expected } = await storedPairing();
+      const nextWeek = addWeeks(getISOWeekStart(new Date()), 1);
+      await saveWeekPlan(nextWeek, plan, {});
+      await usePlanStore.getState().navigateToWeek(nextWeek);
+      expect(usePlanStore.getState().paired).toEqual(expected);
+    });
+
+    it('are not applied once another plan has been loaded meanwhile', async () => {
+      const { plan } = await storedPairing();
+      await saveActivePlan({ plan, locks: {} });
+      const input = await planningService.loadPlanningInput();
+      let release!: () => void;
+      vi.spyOn(planningService, 'loadPlanningInput').mockImplementation(() => new Promise((resolve) => { release = () => resolve(input); }));
+      const loading = usePlanStore.getState().navigateToWeek(getISOWeekStart(new Date()));
+      await vi.waitFor(() => expect(release).toBeDefined());
+      usePlanStore.setState({ plan: makePlan(), paired: [] });
+      release();
+      await loading;
+      expect(usePlanStore.getState().paired).toEqual([]);
+    });
   });
 
   it('navigateToWeek to future week with no saved plan sets plan to null', async () => {
