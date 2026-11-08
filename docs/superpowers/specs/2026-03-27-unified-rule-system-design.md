@@ -237,6 +237,12 @@ Fixed order regardless of array position in the rule:
 | `applySchedulingFilterPool()`, `applySchedulingExclude()`, `applyRequireOneByTag()`, `applyRequireOneByComponent()`, `getApplicableMealTemplates()` | Switch on `effect.kind` in two loops |
 | ~12 helpers | ~7 helpers |
 
+### Pairings as units (2026-11-08)
+
+The generator described above has since been replaced by the constraint planner (`src/planner`). One rule from
+it holds there too and is now explicit: a base and the dishes always served with it are chosen together, and
+a pairing is never overridden by the side dish's own rules. See `2026-11-08-pairing-units-design.md`.
+
 ---
 
 ## Migration
