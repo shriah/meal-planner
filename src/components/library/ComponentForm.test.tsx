@@ -924,3 +924,48 @@ describe('ComponentForm draft prefill', () => {
     expect(screen.getByLabelText('Name')).toHaveValue('Dal');
   });
 });
+
+describe('ComponentForm links: one always curry per base', () => {
+  async function setup() {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {});
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
+      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }),
+    });
+    return saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, {});
+  }
+
+  async function addAlwaysServe() {
+    await userEvent.click(await readyButton('Add link'));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific bases');
+    await userEvent.click(screen.getByRole('button', { name: 'Served with' }));
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Idli' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+  }
+
+  async function expectGuard() {
+    expect(await screen.findByText('Sambar is already always served with Idli, and a meal holds one curry.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeDisabled();
+    await userEvent.click(await readyButton('Edit'));
+    await userEvent.click(screen.getByRole('button', { name: 'Usually' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Curry' })).toBeEnabled());
+  }
+
+  it('blocks Save for a second always curry, opened before the library loads', async () => {
+    const rasam = await setup();
+    render(<LiveEditForm componentId={rasam} />);
+    await addAlwaysServe();
+    await expectGuard();
+  });
+
+  it('blocks Save for a second always curry, opened once the library has loaded', async () => {
+    const rasam = await setup();
+    function OpenWhenLoaded() {
+      return useLibraryLookup().loaded ? <LiveEditForm componentId={rasam} /> : null;
+    }
+    render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    await addAlwaysServe();
+    await expectGuard();
+  });
+});

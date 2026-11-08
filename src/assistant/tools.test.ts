@@ -618,6 +618,18 @@ describe('propose_pairing', () => {
     expect(data.replacesSwitchedOffLink).toBe(true);
   });
 
+  it('refuses a second curry always served with the same base, but accepts a softer one', async () => {
+    const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
+    const sambarIdli = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }) };
+    const message = 'Sambar is already always served with Idli, and a meal holds one curry.';
+    const c = () => ctxOf({ library: lib, categories, rules: [sambarIdli] });
+    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toEqual({ ok: false, error: message });
+    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'], served_with_strength: 'always' }, c())).toEqual({ ok: false, error: message });
+    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
+    expect(await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('is already always served with Idli') });
+    expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
+  });
+
   it('takes an exact base name as that base, not a side that contains it', async () => {
     const r = await runTool('propose_pairing', { dish: 'idli', served_with_bases: ['Dosa'] }, ctx({ library: [...library, dish(5, 'Idli podi', { componentType: 'extra' })] }));
     expect(r.ok).toBe(false);

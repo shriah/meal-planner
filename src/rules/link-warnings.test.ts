@@ -86,7 +86,7 @@ describe('served-with warnings', () => {
     const theirs = (strength: 'always' | 'usually') => rec(linkRule({ id: 11, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [1], strength }), 50);
     const links = [link({ mode: 'serve', values: [1] })];
     expect(linkWarnings(self, links, { dishes: [...dishes, rasam], rules: [theirs('always')] }, names)).toEqual([
-      { link: 0, message: 'Rasam is also always served with one of these, and a meal holds one curry.' },
+      { link: 0, blocking: true, message: 'Rasam is already always served with Idli, and a meal holds one curry.' },
     ]);
     expect(linkWarnings(self, links, { dishes: [...dishes, rasam], rules: [theirs('usually')] }, names)).toEqual([]);
   });

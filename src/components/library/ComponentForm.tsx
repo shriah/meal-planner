@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
 import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
-import { LinkList } from './links/LinkList'
+import { LinkList, useLinkWarnings } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
@@ -207,6 +207,8 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
+  // A link that cannot be kept (a second curry always served with the same base) holds Save back.
+  const linkBlocked = useLinkWarnings({ id: component?.id, name: form.name, componentType }, links).some((w) => w.blocking)
   const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
   // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
   // off and is marked so; a changed one is switched on when saved.
@@ -606,7 +608,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       {/* Action buttons */}
       <div className="flex gap-2 pt-2">
-        <Button onClick={handleSave} disabled={saving || editingLink || !form.name.trim() || !canSaveBase || !canSaveExtra}>
+        <Button onClick={handleSave} disabled={saving || editingLink || linkBlocked || !form.name.trim() || !canSaveBase || !canSaveExtra}>
           Save {singularLabel}
         </Button>
         <Button variant="ghost" onClick={onDiscard} disabled={saving}>

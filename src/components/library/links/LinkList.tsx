@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { addableSlots, describeLink, linkWarnings, linkSlotOf, type DishLink } from '@/rules'
+import { addableSlots, describeLink, linkWarnings, linkSlotOf, type DishLink, type LinkWarning } from '@/rules'
 import type { ComponentType } from '@/types/component'
 import { linkNames, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
@@ -19,6 +19,12 @@ interface LinkListProps {
   onEditingChange?: (open: boolean) => void
 }
 
+/** The problems with a dish's links; empty until the library has loaded, as nothing is known about it before. */
+export function useLinkWarnings(self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[]): LinkWarning[] {
+  const lookup = useLibraryLookup()
+  return lookup.loaded ? linkWarnings(self, links, lookup, linkNames(lookup)) : []
+}
+
 /** A dish's links as sentences, each editable in place, plus an "Add link" flow. */
 export function LinkList({ dishName, componentType, selfId, links, offSlots = [], onChange, onEditingChange }: LinkListProps) {
   const lookup = useLibraryLookup()
@@ -30,11 +36,11 @@ export function LinkList({ dishName, componentType, selfId, links, offSlots = []
     return () => onEditingChange?.(false)
   }, [open, onEditingChange])
   const names = linkNames(lookup)
+  // Nothing is known about the library until it has loaded, so every link would look unpairable.
+  const warnings = useLinkWarnings({ id: selfId, name: dishName, componentType }, links)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
   const ready = lookup.loaded
   const name = dishName.trim() || 'This dish'
-  // Nothing is known about the library until it has loaded, so every link would look unpairable.
-  const warnings = ready ? linkWarnings({ id: selfId, name: dishName, componentType }, links, lookup, names) : []
   const slotsLeft = addableSlots(componentType, links).length > 0
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
@@ -74,7 +80,8 @@ export function LinkList({ dishName, componentType, selfId, links, offSlots = []
                 </div>
               )}
               {editing !== linkSlotOf(link) && warnings.filter((w) => w.link === i).map((w) => (
-                <p key={w.message} className="text-amber-700 dark:text-amber-400">{w.message}</p>
+                <p key={w.message} role={w.blocking ? 'alert' : undefined}
+                  className={w.blocking ? 'font-medium text-destructive' : 'text-amber-700 dark:text-amber-400'}>{w.message}</p>
               ))}
             </li>
           ))}

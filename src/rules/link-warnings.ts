@@ -1,11 +1,12 @@
-// Problems with a dish's links that the planner would only show as a dish that never appears. They warn; they never block saving.
+// Problems with a dish's links that the planner would only show as a dish that never appears. They warn; only a
+// `blocking` one (two curries always served with the same base) also stops saving.
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { Names } from './describe';
 import { listValues, scopeText } from './link-text';
 import { isDishTarget, readLink, ruleDays, ruleMeals, type DishLink } from './owned';
 import type { RuleRecord } from './record';
 
-export interface LinkWarning { link: number; message: string }
+export interface LinkWarning { link: number; message: string; blocking?: boolean }
 
 type Lookup = { dishes: readonly ComponentRecord[]; rules: readonly RuleRecord[] };
 
@@ -50,12 +51,17 @@ export function linkWarnings(
 
     // A meal holds one curry and one subzi, so two of them always served with the same base cannot both be.
     if (link.mode === 'serve' && link.strength === 'always' && (self.componentType === 'curry' || self.componentType === 'subzi')) {
-      const rival = lookup.dishes.find((d) => d.id !== self.id && d.componentType === self.componentType && ownedBy(d.id).some((r) => {
-        const theirs = readLink(r);
-        return theirs?.mode === 'serve' && theirs.strength === 'always' && theirs.target === link.target
-          && theirs.values.some((v) => link.values.includes(v));
-      }));
-      if (rival) out.push({ link: i, message: `${rival.name} is also always served with one of these, and a meal holds one ${self.componentType}.` });
+      for (const d of lookup.dishes) {
+        if (d.id === self.id || d.componentType !== self.componentType) continue;
+        const shared = ownedBy(d.id).flatMap((r) => {
+          const theirs = readLink(r);
+          return theirs?.mode === 'serve' && theirs.strength === 'always' && theirs.target === link.target
+            ? theirs.values.filter((v) => link.values.includes(v)) : [];
+        });
+        if (shared.length === 0) continue;
+        out.push({ link: i, blocking: true, message: `${d.name} is already always served with ${listValues({ ...link, values: [...new Set(shared)] }, names)}, and a meal holds one ${self.componentType}.` });
+        break;
+      }
     }
 
     if (link.mode !== 'with' || link.strength !== 'always') return;

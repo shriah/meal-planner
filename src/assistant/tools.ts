@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -304,6 +304,11 @@ function servedWithLinks(
   };
 }
 
+/** The error for links that would put two curries (or two subzis) in one base's always-served unit. */
+function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[]): string | undefined {
+  return linkWarnings(self, links, { dishes: data.library, rules: data.rules }, namesFor(data)).find((w) => w.blocking)?.message;
+}
+
 const PART_OF: Record<ComponentType, SlotPart> = { base: 'base', curry: 'curry', subzi: 'subzi', extra: 'extras' };
 
 /** The plan without dishes that are no longer in the library, so scoring never meets an unknown id. */
@@ -489,6 +494,8 @@ const HANDLERS: Record<string, Handler> = {
     const served = servedWithLinks(data, servedBases, servedCategories, SERVE_STRENGTH[v.served_with_strength ?? 'always']);
     if (!served.ok) return served;
     const { links } = served;
+    const conflict = pairingConflict(data, { name: v.name, componentType }, links);
+    if (conflict) return { ok: false, error: conflict };
 
     const draft: Partial<ComponentRecord> & { componentType: ComponentType } = {
       name: v.name,
@@ -554,6 +561,8 @@ const HANDLERS: Record<string, Handler> = {
         ...(before.scope ? { scope: before.scope } : {}),
       };
     });
+    const conflict = pairingConflict(data, dish, links);
+    if (conflict) return { ok: false, error: conflict };
     return {
       ok: true,
       data: {
