@@ -2,7 +2,7 @@
 // Iteration budgets (not wall-clock) keep results deterministic regardless of machine load.
 import { describe, expect, it } from 'vitest';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
-import type { Constraint, CountConstraint } from './constraints';
+import type { Constraint, CountConstraint, PairConstraint } from './constraints';
 import { all, is, not, oneOf, type Matcher } from './matcher';
 import { planWeek, type PlanResult, type PlanSlotLike } from './plan';
 import { explain } from './scorer';
@@ -49,6 +49,20 @@ const run = (constraints: CountConstraint[], seed: number, pins?: Pins) =>
   planWeek({ library, constraints: [...DEFAULTS, ...constraints] }, { ...BUDGET, seed, pins });
 const hardOf = (r: PlanResult) => r.justifications.filter((j) => j.level === 'hard').map((j) => explain(j, { component: nameOf }));
 const ids = (r: PlanResult, pick: (s: PlanSlotLike) => (number | undefined)[]) => r.slots.flatMap(pick).filter((x): x is number => x !== undefined);
+
+// The current defaults, marked as compileRules marks them: default rules give way to unit members,
+// "sides only when asked" also to asked-for sides.
+const CURRENT_DEFAULTS: Constraint[] = [
+  ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
+    id: `default:extras-${meal}`, label: `extras-${meal}`, select: all(is('componentType', 'extra')), groupBy: 'slot',
+    scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, yieldsTo: 'unit',
+  })),
+  rule({ id: 'default:variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, yieldsTo: 'unit' }),
+  rule({ id: 'default:spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, yieldsTo: 'unit' }),
+  { ...prefer('default:sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2), yieldsTo: 'ask' } as Constraint,
+  { ...prefer('default:prefer-frequent', is('frequency', 'frequent'), -1), yieldsTo: 'unit' } as Constraint,
+  { ...prefer('default:avoid-rare', is('frequency', 'rare'), 1), yieldsTo: 'unit' } as Constraint,
+];
 
 describe('planner scenarios (seed library)', () => {
   it.each(SEEDS)('default rules alone: every meal is filled and no hard rule breaks (seed %i)', (seed) => {
@@ -130,5 +144,84 @@ describe('planner scenarios (seed library)', () => {
   it('produces different plans for different seeds', () => {
     const plans = SEEDS.map((seed) => JSON.stringify(run([], seed).slots));
     expect(new Set(plans).size).toBe(SEEDS.length);
+  });
+
+  describe('a base and the dishes paired with it (Pongal with Sambar and Coconut Chutney)', () => {
+    const WEEKS = [1, 2, 3, 4, 5, 6, 7, 8];
+    const pongal = byName('Pongal').id;
+    const sambar = byName('Sambar').id;
+    const chutney = byName('Coconut Chutney').id;
+    const rasam = byName('Rasam').id;
+    const pair = (id: string, when: Matcher, component: number, extra: Partial<PairConstraint> = {}): PairConstraint =>
+      ({ kind: 'pair', id, label: id, origin: 'rule', when, component, strength: 'must', ...extra });
+    // Sambar's own rule: lunch only. It gives way when Sambar comes with Pongal.
+    const sambarLunchOnly = rule({
+      id: 'owned:sambar-meals', label: 'Sambar only at lunch', select: all(is('id', sambar), not(oneOf('meal', ['lunch']))),
+      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, yieldsTo: 'unit',
+    });
+    const plan = (constraints: Constraint[], seed: number, opts: object = BUDGET) =>
+      planWeek({ library, constraints: [...CURRENT_DEFAULTS, sambarLunchOnly, ...constraints] }, { ...opts, seed });
+    const always = [pair('pongal-sambar', is('id', pongal), sambar), pair('pongal-chutney', is('id', pongal), chutney)];
+    const pongalSlots = (r: PlanResult) => r.slots.filter((s) => s.base_id === pongal);
+
+    it('Always: Pongal is planned, every Pongal meal holds both, no hard rule breaks', () => {
+      let total = 0;
+      for (const seed of WEEKS) {
+        const r = plan(always, seed);
+        expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        for (const s of pongalSlots(r)) {
+          expect(s.curry_id, `seed ${seed} ${s.day} ${s.meal_slot}`).toBe(sambar);
+          expect(s.extra_ids, `seed ${seed} ${s.day} ${s.meal_slot}`).toContain(chutney);
+        }
+        total += pongalSlots(r).length;
+      }
+      expect(total).toBeGreaterThanOrEqual(4);
+    });
+
+    it('Usually: Pongal is planned', () => {
+      const usually = always.map((p) => ({ ...p, strength: 'prefer' as const, cost: 10 }));
+      const total = WEEKS.reduce((n, seed) => n + pongalSlots(plan(usually, seed)).length, 0);
+      expect(total).toBeGreaterThanOrEqual(4);
+    });
+
+    it('a pairing scoped to breakfast makes a unit only at breakfast', () => {
+      let breakfasts = 0;
+      for (const seed of WEEKS) {
+        const r = plan([pair('pongal-sambar', is('id', pongal), sambar, { scope: { meals: ['breakfast'] } })], seed);
+        expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        for (const s of pongalSlots(r).filter((x) => x.meal_slot === 'breakfast')) {
+          expect(s.curry_id, `seed ${seed} ${s.day}`).toBe(sambar);
+          breakfasts++;
+        }
+      }
+      expect(breakfasts).toBeGreaterThan(0);
+    });
+
+    it('a pairing to a base category makes a unit for every base in it', () => {
+      const other = all(is('role', 'base'), is('base_category_id', CAT.base.other));
+      for (const seed of WEEKS) {
+        const r = plan([pair('other-sambar', other, sambar)], seed);
+        expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        for (const s of r.slots.filter((x) => library.find((c) => c.id === x.base_id)?.base_category_id === CAT.base.other)) {
+          expect(s.curry_id, `seed ${seed} ${nameOf(s.base_id)} ${s.day} ${s.meal_slot}`).toBe(sambar);
+        }
+      }
+    });
+
+    it('a stored conflict (a second Always curry) still plans Pongal with Sambar', () => {
+      let total = 0;
+      for (const seed of WEEKS) {
+        const r = plan([...always, pair('pongal-rasam', is('id', pongal), rasam)], seed);
+        expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        for (const s of pongalSlots(r)) expect(s.curry_id, `seed ${seed} ${s.day} ${s.meal_slot}`).toBe(sambar);
+        total += pongalSlots(r).length;
+      }
+      expect(total).toBeGreaterThanOrEqual(4);
+    });
+
+    it('the default planning time still reaches a plateau', () => {
+      const r = plan(always, 1, {});
+      expect(r.stats.stopReason).toBe('plateau');
+    });
   });
 });

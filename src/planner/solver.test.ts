@@ -69,6 +69,31 @@ describe('solver', () => {
     expect(r.stats.iterations).toBeLessThan(1_000_000);
   });
 
+  describe('a base with a must pairing', () => {
+    // Base 1 is always served with curry 11; curry 11's own rule keeps it out of every meal, but it
+    // gives way when 11 comes with its base.
+    const constraints = [
+      { kind: 'pair' as const, id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule' as const, when: is('id', 1), component: 11, strength: 'must' as const },
+      { kind: 'count' as const, id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule' as const, select: is('id', 11), groupBy: 'slot' as const, bounds: { hardMax: 0 }, yieldsTo: 'unit' as const, owner: 11 },
+    ];
+
+    it.each([1, 2, 3, 4, 5])('plans the base, always with its curry (seed %i)', (seed) => {
+      const r = solve(buildModel({ library, constraints }), { ...quick, seed });
+      expect(r.score.hard).toBe(0);
+      const withBase = r.plan.filter((s) => s.base === 1);
+      expect(withBase.length).toBeGreaterThanOrEqual(1);
+      for (const s of withBase) expect(s.curry).toBe(11);
+    });
+
+    it('keeps a pinned curry over the pairing and reports the pairing once', () => {
+      const r = solve(buildModel({ library, constraints }), { ...quick, seed: 1, pins: { 'monday-lunch': { base_id: 1, curry_id: 12 } } });
+      expect(r.plan[slotIndex('monday', 'lunch')]).toMatchObject({ base: 1, curry: 12 });
+      const hard = r.score.justifications.filter((j) => j.level === 'hard');
+      expect(hard).toHaveLength(1);
+      expect(hard[0]).toMatchObject({ constraintId: 'pair-1-11', group: { componentId: 11 } });
+    });
+  });
+
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);

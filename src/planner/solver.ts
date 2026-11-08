@@ -1,9 +1,11 @@
 // Construct (randomised greedy) then improve (late-acceptance hill climbing).
 // Pinned values are placed first and never moved. Moves only ever produce structurally valid
 // slots: one base, at most one curry and subzi, each from its own component type, no duplicate extras.
+// Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
+// together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { compareScore, score, type CompiledModel, type Score, type ScoreResult } from './scorer';
-import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type SlotPins, type SlotState } from './types';
+import { bringsWith, compareScore, score, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
   seed?: number;
@@ -34,6 +36,19 @@ type PickRole = 'base' | 'curry' | 'subzi';
 const PICK_ROLES: readonly PickRole[] = ['base', 'curry', 'subzi'];
 const PIN_KEY = { base: 'base_id', curry: 'curry_id', subzi: 'subzi_id', extras: 'extra_ids' } as const;
 const now = (): number => globalThis.performance?.now() ?? Date.now();
+const NOTHING: readonly number[] = [];
+/** Rounds of `bring`: a brought side may bring its own sides. */
+const BRING_ROUNDS = 3;
+
+type Snapshot = Readonly<SlotState>;
+const snapshot = (s: SlotState): Snapshot => ({ base: s.base, curry: s.curry, subzi: s.subzi, extras: s.extras });
+// Extras arrays are never mutated in place (every change assigns a new array), so a snapshot may share one.
+const restore = (s: SlotState, snap: Snapshot) => {
+  s.base = snap.base;
+  s.curry = snap.curry;
+  s.subzi = snap.subzi;
+  s.extras = snap.extras;
+};
 
 export const clonePlan = (p: PlanState): PlanState => p.map((s) => ({ ...s, extras: [...s.extras] }));
 
@@ -61,6 +76,64 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     return { base: p.base_id, curry: p.curry_id ?? undefined, subzi: p.subzi_id ?? undefined, extras: p.extra_ids ? [...p.extra_ids] : s.extras };
   });
   const isFree = (i: number, r: PickRole | 'extras') => pins[i][PIN_KEY[r]] === undefined;
+
+  // ── Pairings ──
+  const hasPairs = m.constraints.some((c) => c.kind === 'pair');
+  /** What the dish in `role` brings to slot `i`: all of it (asked for), or only its unit members. */
+  const broughtBy = (id: number | undefined, role: Role, i: number, unitOnly = false): readonly number[] => {
+    if (!hasPairs || id === undefined) return NOTHING;
+    const b = bringsWith(m, id, role, i);
+    return unitOnly ? b.unit : b.asked;
+  };
+  /** Whether `id` is in slot `i` as a unit member: another dish there must be served with it. */
+  const isUnit = (s: SlotState, i: number, id: number | undefined): boolean => {
+    if (!hasPairs || id === undefined) return false;
+    const by = (d: number | undefined, role: Role) => d !== undefined && d !== id && broughtBy(d, role, i, true).includes(id);
+    if (by(s.base, 'base') || by(s.curry, 'curry') || by(s.subzi, 'subzi')) return true;
+    for (const e of s.extras) if (by(e, 'extra')) return true;
+    return false;
+  };
+  /**
+   * After a change to slot `i`'s base, curry or subzi, bring the sides its dishes are paired with into
+   * roles that are not pinned and are empty, or that hold a side the replaced dish brought (`prev`).
+   * Unit members may take such a role; asked-for sides only fill an empty one. Extras are appended.
+   * Repeats while anything changes, since a brought side can bring its own. Uses no randomness.
+   */
+  const bring = (i: number, prev: readonly number[]) => {
+    if (!hasPairs) return;
+    const s = plan[i];
+    let changed = false;
+    const place = (c: number, unit: boolean) => {
+      const type = m.byId.get(c)?.componentType;
+      if (type === 'extra') {
+        if (!isFree(i, 'extras') || s.extras.includes(c)) return;
+        s.extras = [...s.extras, c];
+        changed = true;
+      } else if (type === 'curry' || type === 'subzi') {
+        const cur = s[type];
+        if (cur === c || !isFree(i, type)) return;
+        if (cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur))) {
+          s[type] = c;
+          changed = true;
+        }
+      }
+    };
+    const visit = (id: number | undefined, role: Role) => {
+      if (id === undefined) return;
+      const b = bringsWith(m, id, role, i);
+      for (const c of b.asked) place(c, b.unit.includes(c));
+    };
+    for (let round = 0; round < BRING_ROUNDS; round++) {
+      changed = false;
+      visit(s.base, 'base');
+      visit(s.curry, 'curry');
+      visit(s.subzi, 'subzi');
+      for (const e of s.extras) visit(e, 'extra');
+      if (!changed) break;
+    }
+  };
+  /** Sides brought by the dishes in two roles, for `bring`'s `prev`. */
+  const both = (a: readonly number[], b: readonly number[]): readonly number[] => (!a.length ? b : !b.length ? a : [...a, ...b]);
 
   const sample = (ids: readonly number[]): number[] => {
     if (!sampleSize || ids.length <= sampleSize) return [...ids];
@@ -96,9 +169,22 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   // ── Construction ──
   for (let i = 0; i < SLOT_COUNT; i++) {
     const s = plan[i];
-    if (isFree(i, 'base') && pool.base.length) chooseBest(sample(pool.base), (id) => { s.base = id; });
+    if (isFree(i, 'base') && pool.base.length) {
+      // Each base is judged with the sides it brings.
+      const before = snapshot(s);
+      const prev = broughtBy(s.base, 'base', i);
+      chooseBest(sample(pool.base), (id) => { restore(s, before); s.base = id; bring(i, prev); });
+    } else {
+      bring(i, NOTHING);
+    }
     for (const r of ['curry', 'subzi'] as const) {
-      if (isFree(i, r)) chooseBest<number | undefined>([undefined, ...sample(pool[r])], (id) => { s[r] = id; });
+      if (!isFree(i, r) || isUnit(s, i, s[r])) continue;
+      const before = snapshot(s);
+      const prev = broughtBy(s[r], r, i);
+      const options: (number | undefined)[] = [undefined, ...sample(pool[r])];
+      // A side already brought (asked for) stays an option.
+      if (s[r] !== undefined && !options.includes(s[r])) options.push(s[r]);
+      chooseBest(options, (id) => { restore(s, before); s[r] = id; bring(i, prev); });
     }
     if (isFree(i, 'extras')) {
       // Extras are optional: add one only while it strictly improves the score.
@@ -137,52 +223,76 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     iterations++;
     sinceImprovement++;
 
-    const undo: (() => void)[] = [];
-    const set = (s: SlotState, r: PickRole, v: number | undefined) => {
-      const old = s[r];
-      undo.push(() => { s[r] = old; });
-      s[r] = v;
-    };
+    // Slots this move changed, as they were before it.
+    const undo: { s: SlotState; snap: Snapshot }[] = [];
+    const touch = (s: SlotState) => { undo.push({ s, snap: snapshot(s) }); };
     const move = rng();
     if (move < 0.45) {
-      // Change (or drop, for optional roles) one role's component.
+      // Change (or drop, for optional roles) one role's component. A unit member stays while its dish does.
       const r = pick(PICK_ROLES);
       if (!free[r].length || !pool[r].length) continue;
-      const s = plan[pick(free[r])];
-      set(s, r, r !== 'base' && rng() < 0.15 ? undefined : pick(pool[r]));
+      const i = pick(free[r]);
+      const s = plan[i];
+      if (isUnit(s, i, s[r])) continue;
+      const v = r !== 'base' && rng() < 0.15 ? undefined : pick(pool[r]);
+      const prev = broughtBy(s[r], r, i);
+      touch(s);
+      s[r] = v;
+      bring(i, prev);
     } else if (move < 0.6) {
-      // Change base and curry together, so pairings that depend on the base stay reachable.
+      // Change base and curry together, so pairings that depend on the base stay reachable. The base's
+      // sides come first; the new curry takes the role only if they leave it empty.
       const slots = free.base.filter((i) => isFree(i, 'curry'));
       if (!slots.length || !pool.base.length) continue;
-      const s = plan[pick(slots)];
-      set(s, 'base', pick(pool.base));
-      set(s, 'curry', pool.curry.length ? pick(pool.curry) : undefined);
+      const i = pick(slots);
+      const s = plan[i];
+      const base = pick(pool.base);
+      const curry = pool.curry.length ? pick(pool.curry) : undefined;
+      const prev = both(broughtBy(s.base, 'base', i), broughtBy(s.curry, 'curry', i));
+      touch(s);
+      s.curry = undefined;
+      s.base = base;
+      bring(i, prev);
+      if (s.curry === undefined && curry !== undefined) {
+        s.curry = curry;
+        bring(i, NOTHING);
+      }
     } else if (move < 0.8) {
-      // Swap the same role between two slots.
+      // Swap the same role between two slots. Unit members stay with their dish.
       const r = pick(PICK_ROLES);
       if (free[r].length < 2) continue;
-      const a = plan[pick(free[r])];
-      const b = plan[pick(free[r])];
-      if (a === b || a[r] === b[r]) continue;
+      const ia = pick(free[r]);
+      const ib = pick(free[r]);
+      const a = plan[ia];
+      const b = plan[ib];
+      if (a === b || a[r] === b[r] || isUnit(a, ia, a[r]) || isUnit(b, ib, b[r])) continue;
       const va = a[r];
-      set(a, r, b[r]);
-      set(b, r, va);
+      const prevA = broughtBy(va, r, ia);
+      const prevB = broughtBy(b[r], r, ib);
+      touch(a);
+      touch(b);
+      a[r] = b[r];
+      b[r] = va;
+      bring(ia, prevA);
+      bring(ib, prevB);
     } else {
-      // Add or remove one extra.
+      // Add or remove one extra. A unit member stays while its dish does.
       if (!free.extras.length || !pool.extra.length) continue;
       const withExtras = free.extras.filter((i) => plan[i].extras.length > 0);
       const remove = withExtras.length > 0 && rng() < 0.5;
-      const s = plan[pick(remove ? withExtras : free.extras)];
+      const i = pick(remove ? withExtras : free.extras);
+      const s = plan[i];
       const old = s.extras;
       if (remove) {
         const k = Math.floor(rng() * old.length);
+        if (isUnit(s, i, old[k])) continue;
         s.extras = old.filter((_, j) => j !== k);
       } else {
         const e = pick(pool.extra);
         if (old.includes(e)) continue;
         s.extras = [...old, e];
       }
-      undo.push(() => { s.extras = old; });
+      undo.push({ s, snap: { ...snapshot(s), extras: old } });
     }
 
     const candidate = evaluate(plan);
@@ -196,17 +306,18 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         sinceImprovement = 0;
       }
     } else {
-      for (let k = undo.length - 1; k >= 0; k--) undo[k]();
+      for (let k = undo.length - 1; k >= 0; k--) restore(undo[k].s, undo[k].snap);
     }
     history[h] = current;
   }
 
   // Polish: drop any free curry, subzi or extra whose removal strictly improves the best plan. Sides
   // cost something unless a rule asks for them, and random search does not always find every removal.
+  // Unit members stay; asked-for sides may go.
   for (const r of ['curry', 'subzi'] as const) {
     for (const i of free[r]) {
       const old = bestPlan[i][r];
-      if (old === undefined) continue;
+      if (old === undefined || isUnit(bestPlan[i], i, old)) continue;
       bestPlan[i][r] = undefined;
       const s = evaluate(bestPlan);
       if (compareScore(s, best) < 0) best = s;
@@ -216,6 +327,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   for (const i of free.extras) {
     for (let k = bestPlan[i].extras.length - 1; k >= 0; k--) {
       const old = bestPlan[i].extras;
+      if (isUnit(bestPlan[i], i, old[k])) continue;
       bestPlan[i].extras = old.filter((_, j) => j !== k);
       const s = evaluate(bestPlan);
       if (compareScore(s, best) < 0) best = s;
