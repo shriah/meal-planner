@@ -2,10 +2,11 @@
 
 import { useState } from 'react'
 import { AlertTriangle } from 'lucide-react'
-import { PlanComponentRow } from './PlanComponentRow'
+import { Fragment } from 'react'
+import { PlanComponentRow, PairedNote } from './PlanComponentRow'
 import { cn } from '@/lib/utils'
 import type { PlanSlot, DayOfWeek } from '@/types/plan'
-import type { PlanProblem } from '@/services/plan-generation'
+import type { PlanProblem, PairedSide } from '@/services/plan-generation'
 import type { MealSlot } from '@/types/preferences'
 import type { ComponentRecord } from '@/types/component'
 
@@ -16,10 +17,12 @@ interface MealCellProps {
   componentsMap: Map<number, ComponentRecord>
   /** Hard problems located in this meal. */
   problems: PlanProblem[]
+  /** Sides in this meal that a pairing brought. */
+  paired?: PairedSide[]
   onPickerOpen: (componentType: 'base' | 'curry' | 'subzi' | 'extras') => void
 }
 
-export function MealCell({ day, slot, planSlot, componentsMap, problems, onPickerOpen }: MealCellProps) {
+export function MealCell({ day, slot, planSlot, componentsMap, problems, paired = [], onPickerOpen }: MealCellProps) {
   const hasProblem = problems.length > 0
   const [showProblems, setShowProblems] = useState(false)
 
@@ -34,8 +37,22 @@ export function MealCell({ day, slot, planSlot, componentsMap, problems, onPicke
   const baseName = componentsMap.get(planSlot.base_id)?.name ?? null
   const curryName = planSlot.curry_id ? componentsMap.get(planSlot.curry_id)?.name ?? null : null
   const subziName = planSlot.subzi_id ? componentsMap.get(planSlot.subzi_id)?.name ?? null : null
-  const extrasNames = planSlot.extra_ids.length > 0
-    ? planSlot.extra_ids.map(id => componentsMap.get(id)?.name).filter(Boolean).join(', ') || null
+  const baseOf = (id: number | undefined) => {
+    const by = paired.find(p => p.component === id)?.by
+    return by === undefined ? undefined : componentsMap.get(by)?.name
+  }
+  const extras = planSlot.extra_ids.filter(id => componentsMap.get(id)?.name)
+  const extrasNames = extras.length > 0
+    ? extras.map((id, i) => {
+        const base = baseOf(id)
+        return (
+          <Fragment key={id}>
+            {i > 0 && ', '}
+            {componentsMap.get(id)?.name}
+            {base && <PairedNote base={base} />}
+          </Fragment>
+        )
+      })
     : null
 
   return (
@@ -62,8 +79,8 @@ export function MealCell({ day, slot, planSlot, componentsMap, problems, onPicke
         </div>
       )}
       <PlanComponentRow day={day} slot={slot} componentType="base" displayName={baseName} onPickerOpen={() => onPickerOpen('base')} />
-      <PlanComponentRow day={day} slot={slot} componentType="curry" displayName={curryName} onPickerOpen={() => onPickerOpen('curry')} />
-      <PlanComponentRow day={day} slot={slot} componentType="subzi" displayName={subziName} onPickerOpen={() => onPickerOpen('subzi')} />
+      <PlanComponentRow day={day} slot={slot} componentType="curry" displayName={curryName} pairedWith={baseOf(planSlot.curry_id)} onPickerOpen={() => onPickerOpen('curry')} />
+      <PlanComponentRow day={day} slot={slot} componentType="subzi" displayName={subziName} pairedWith={baseOf(planSlot.subzi_id)} onPickerOpen={() => onPickerOpen('subzi')} />
       <PlanComponentRow day={day} slot={slot} componentType="extras" displayName={extrasNames} onPickerOpen={() => onPickerOpen('extras')} />
     </div>
   )

@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import { Lock, Unlock } from 'lucide-react'
 import { usePlanStore, type LockKey } from '@/stores/plan-store'
 import { cn } from '@/lib/utils'
@@ -16,11 +17,13 @@ interface PlanComponentRowProps {
   day: DayOfWeek
   slot: MealSlot
   componentType: LockableComponent
-  displayName: string | null  // null means empty/unassigned
+  displayName: ReactNode | null  // null means empty/unassigned
+  /** Name of the base this dish is served with, when a pairing brought it. */
+  pairedWith?: string
   onPickerOpen: () => void
 }
 
-export function PlanComponentRow({ day, slot, componentType, displayName, onPickerOpen }: PlanComponentRowProps) {
+export function PlanComponentRow({ day, slot, componentType, displayName, pairedWith, onPickerOpen }: PlanComponentRowProps) {
   const lockKey: LockKey = `${day}-${slot}-${componentType}`
   const isLocked = usePlanStore(s => !!s.locks[lockKey])
   const setLock = usePlanStore(s => s.setLock)
@@ -53,7 +56,12 @@ export function PlanComponentRow({ day, slot, componentType, displayName, onPick
         onKeyDown={isLocked ? undefined : (e) => { if (e.key === 'Enter' || e.key === ' ') onPickerOpen() }}
       >
         {displayName ?? '\u2014'}
+        {pairedWith && <PairedNote base={pairedWith} />}
       </span>
     </div>
   )
+}
+
+export function PairedNote({ base }: { base: string }) {
+  return <span className="ml-1 text-xs font-normal text-muted-foreground">with {base}</span>
 }

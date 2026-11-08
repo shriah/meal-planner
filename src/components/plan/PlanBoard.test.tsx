@@ -4,7 +4,7 @@ import { render, screen, cleanup, fireEvent } from '@testing-library/react'
 import { PlanBoard } from './PlanBoard'
 import type { ComponentRecord } from '@/types/component'
 import type { WeeklyPlan } from '@/types/plan'
-import type { PlanProblem } from '@/services/plan-generation'
+import type { PlanProblem, PairedSide } from '@/services/plan-generation'
 import type { RuleIssue } from '@/rules'
 
 // Mock next/link
@@ -37,6 +37,7 @@ let mockPlan: WeeklyPlan | null = null
 let mockAllComponents: ComponentRecord[] = []
 let mockProblems: PlanProblem[] = []
 let mockRuleIssues: RuleIssue[] = []
+let mockPaired: PairedSide[] = []
 const mockInitFromDB = vi.fn()
 const mockGenerateFresh = vi.fn()
 const mockRegenerate = vi.fn()
@@ -48,6 +49,7 @@ vi.mock('@/stores/plan-store', () => ({
       plan: mockPlan,
       problems: mockProblems,
       ruleIssues: mockRuleIssues,
+      paired: mockPaired,
       hydrated: true,
       isGenerating: false,
       isReadOnly: false,
@@ -83,6 +85,7 @@ describe('PlanBoard', () => {
     mockAllComponents = []
     mockProblems = []
     mockRuleIssues = []
+    mockPaired = []
     mockInitFromDB.mockClear()
     mockGenerateFresh.mockClear()
     mockMealPickerSheet.mockClear()
@@ -436,5 +439,33 @@ describe('PlanBoard', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
     expect(screen.getByText('Always include dishes with fish')).toBeTruthy()
     expect(screen.getByText('Plain Rice')).toBeTruthy()
+  })
+
+  it('labels a paired side with its base in that cell only', () => {
+    const rec = (id: number, name: string, componentType: 'base' | 'curry') =>
+      ({ id, name, componentType }) as unknown as ComponentRecord
+    mockAllComponents = [rec(1, 'Pongal', 'base'), rec(2, 'Sambar', 'curry'), rec(3, 'Rice', 'base')]
+    mockPlan = {
+      slots: [
+        { day: 'monday', meal_slot: 'breakfast', base_id: 1, curry_id: 2, extra_ids: [] },
+        { day: 'tuesday', meal_slot: 'breakfast', base_id: 3, curry_id: 2, extra_ids: [] },
+      ],
+    }
+    mockPaired = [{ day: 'monday', meal: 'breakfast', component: 2, by: 1 }]
+    render(<PlanBoard />)
+    expect(screen.getAllByText('with Pongal').length).toBe(1)
+    expect(screen.getAllByText('Sambar').length).toBe(2)
+  })
+
+  it('labels a paired extra inside the extras list', () => {
+    const rec = (id: number, name: string) => ({ id, name }) as unknown as ComponentRecord
+    mockAllComponents = [rec(1, 'Pongal'), rec(4, 'Vada'), rec(5, 'Chutney')]
+    mockPlan = {
+      slots: [{ day: 'monday', meal_slot: 'breakfast', base_id: 1, extra_ids: [4, 5] }],
+    }
+    mockPaired = [{ day: 'monday', meal: 'breakfast', component: 4, by: 1 }]
+    render(<PlanBoard />)
+    expect(screen.getAllByText('with Pongal').length).toBe(1)
+    expect(screen.getByText('with Pongal').parentElement?.textContent).toBe('Vadawith Pongal, Chutney')
   })
 })

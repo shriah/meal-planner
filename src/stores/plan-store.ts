@@ -6,7 +6,7 @@ import { getActivePlan } from '@/services/plan-db'
 import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
 import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
 import { generatePlan } from '@/services/planning'
-import type { PlanningOutcome, PlanProblem } from '@/services/plan-generation'
+import type { PlanningOutcome, PlanProblem, PairedSide } from '@/services/plan-generation'
 import { pinsForMeal, pinsFromLocks } from '@/services/pins'
 import type { RuleIssue } from '@/rules'
 import type { ExportPlanPayload } from '@/services/export-template'
@@ -21,6 +21,8 @@ interface PlanStore {
   problems: PlanProblem[]
   /** Rules that were skipped during the last generation. */
   ruleIssues: RuleIssue[]
+  /** Sides in the last generated plan that a pairing brought, with the base that brought them. */
+  paired: PairedSide[]
   isGenerating: boolean
   hydrated: boolean
   problemsDismissed: boolean
@@ -46,7 +48,7 @@ const ALL_LOCKABLE: LockableComponent[] = ['base', 'curry', 'subzi', 'extras']
 
 export const usePlanStore = create<PlanStore>((set, get) => {
   function applyOutcome(outcome: PlanningOutcome, weekStart: string) {
-    set({ plan: outcome.plan, problems: outcome.problems, ruleIssues: outcome.ruleIssues, isGenerating: false })
+    set({ plan: outcome.plan, problems: outcome.problems, ruleIssues: outcome.ruleIssues, paired: outcome.paired, isGenerating: false })
     saveWeekPlan(weekStart, outcome.plan, get().locks)
   }
 
@@ -69,7 +71,12 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     if (!planned || !now.plan || now.isGenerating || now.plan.slots[i] !== picked || now.currentWeekStart !== currentWeekStart) return
     const slots = [...now.plan.slots]
     slots[i] = planned
-    set({ plan: { slots }, problems: outcome.problems, ruleIssues: outcome.ruleIssues })
+    set({
+      plan: { slots },
+      problems: outcome.problems,
+      ruleIssues: outcome.ruleIssues,
+      paired: [...now.paired.filter(p => !(p.day === day && p.meal === slot)), ...outcome.paired.filter(p => p.day === day && p.meal === slot)],
+    })
     saveWeekPlan(currentWeekStart, { slots }, now.locks)
   }
 
@@ -78,6 +85,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     locks: {},
     problems: [],
     ruleIssues: [],
+    paired: [],
     isGenerating: false,
     hydrated: false,
     problemsDismissed: false,
@@ -145,7 +153,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       }
       updatedSlots[slotIndex] = updatedSlot
       const newPlan = { slots: updatedSlots }
-      set({ plan: newPlan })
+      set({ plan: newPlan, paired: get().paired.filter(p => !(p.day === day && p.meal === slot)) })
       saveWeekPlan(currentWeekStart, newPlan, locks)
       if (componentType === 'base') void replanMeal(day, slot)
     },
@@ -188,6 +196,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           isReadOnly: false,
           problems: [],
           ruleIssues: [],
+          paired: [],
           problemsDismissed: false,
         })
       } else {
@@ -200,6 +209,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           isReadOnly,
           problems: [],
           ruleIssues: [],
+          paired: [],
           problemsDismissed: false,
         })
       }

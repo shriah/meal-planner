@@ -90,4 +90,18 @@ describe('PlanComponentRow', () => {
     fireEvent.click(nameEl)
     expect(onPickerOpen).not.toHaveBeenCalled()
   })
+
+  it('shows who a paired dish is served with', () => {
+    render(
+      <PlanComponentRow day="monday" slot="lunch" componentType="curry" displayName="Sambar" pairedWith="Pongal" onPickerOpen={vi.fn()} />
+    )
+    expect(screen.getByText('with Pongal')).toBeTruthy()
+  })
+
+  it('shows no pairing note without pairedWith', () => {
+    render(
+      <PlanComponentRow day="monday" slot="lunch" componentType="curry" displayName="Sambar" onPickerOpen={vi.fn()} />
+    )
+    expect(screen.queryByText(/^with /)).toBeNull()
+  })
 })

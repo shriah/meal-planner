@@ -24,6 +24,7 @@ const ALL_SLOTS: MealSlot[] = ['breakfast', 'lunch', 'dinner']
 export function PlanBoard() {
   const plan = usePlanStore(s => s.plan)
   const problems = usePlanStore(s => s.problems)
+  const paired = usePlanStore(s => s.paired)
   const hydrated = usePlanStore(s => s.hydrated)
   const isGenerating = usePlanStore(s => s.isGenerating)
   const initFromDB = usePlanStore(s => s.initFromDB)
@@ -134,6 +135,7 @@ export function PlanBoard() {
                       planSlot={planSlot}
                       componentsMap={componentsMap}
                       problems={problems.filter(p => p.level === 'hard' && p.day === day && p.meal === slot)}
+                      paired={paired.filter(p => p.day === day && p.meal === slot)}
                       onPickerOpen={isReadOnly ? () => {} : (componentType) => setPickerState({ day, slot, componentType })}
                     />
                   )

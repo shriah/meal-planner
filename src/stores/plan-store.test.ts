@@ -35,6 +35,7 @@ beforeEach(async () => {
     locks: {},
     problems: [],
     ruleIssues: [],
+    paired: [],
     isGenerating: false,
     hydrated: false,
     problemsDismissed: false,
@@ -190,6 +191,26 @@ describe('plan-store', () => {
     usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
 
     await vi.waitFor(() => expect(usePlanStore.getState().plan!.slots[0]).toMatchObject({ base_id: 2, curry_id: 30 }));
+  });
+
+  it('keeps the pairings of a generated plan', async () => {
+    const paired = [{ day: 'monday', meal: 'breakfast', component: 30, by: 2 }];
+    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: makePlan(), problems: [], ruleIssues: [], paired } as never);
+    usePlanStore.setState({ plan: makePlan() });
+    await usePlanStore.getState().regenerate();
+    expect(usePlanStore.getState().paired).toEqual(paired);
+  });
+
+  it('drops the pairings of a meal swapped by hand and keeps the others', () => {
+    usePlanStore.setState({
+      plan: makePlan(),
+      paired: [
+        { day: 'monday', meal: 'breakfast', component: 30, by: 2 },
+        { day: 'tuesday', meal: 'breakfast', component: 31, by: 2 },
+      ],
+    });
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', 40);
+    expect(usePlanStore.getState().paired).toEqual([{ day: 'tuesday', meal: 'breakfast', component: 31, by: 2 }]);
   });
 
   it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {
