@@ -263,7 +263,24 @@ describe('explain_plan_slot: dishes and why not', () => {
     const why = (r as { data: Data }).data.whyNot!;
     expect(why.blockedBy).toEqual([]);
     expect(why.note).toMatch(/No rule blocks/);
-    expect(why.note).toMatch(/variety|preference/);
+    expect(why.note).toMatch(/paired dishes/);
+  });
+
+  it('lists the dishes a pairing brought into the slot', async () => {
+    const pongal = dish(10, 'Pongal', { componentType: 'base' });
+    const sambar = dish(11, 'Sambar');
+    const owned = linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
+    const lib = [pongal, sambar, ...library];
+    const r = await runTool('explain_plan_slot', { day: 'wednesday', meal: 'breakfast' }, ctxOf({
+      library: lib, rules: [link],
+      plan: { slots: [{ day: 'wednesday', meal_slot: 'breakfast', base_id: 10, curry_id: 11, extra_ids: [] }] },
+    }));
+    expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([{ dish: 'Sambar', by: 'Pongal' }]);
+    const w = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch', dish: 'Pongal' }, ctxOf({ library: lib, rules: [link], plan }));
+    const why = (w as { data: Data }).data.whyNot!;
+    expect(why.blockedBy).toEqual([]);
+    expect(why.note).toBe('No rule blocks Pongal here; its paired dishes come with it.');
   });
 
   it('accepts a dish id as a number or numeric text', async () => {

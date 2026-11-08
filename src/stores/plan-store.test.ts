@@ -170,7 +170,7 @@ describe('plan-store', () => {
     const planned = makePlan();
     planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
     vi.spyOn(planningService, 'generatePlan').mockImplementation(() =>
-      new Promise((resolve) => { finish = () => resolve({ plan: planned, problems: [], ruleIssues: [] } as never); }));
+      new Promise((resolve) => { finish = () => resolve({ plan: planned, problems: [], ruleIssues: [], paired: [] } as never); }));
     usePlanStore.setState({ plan: makePlan() });
 
     usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
@@ -184,7 +184,7 @@ describe('plan-store', () => {
   it('applies the re-plan of a meal left as it was picked', async () => {
     const planned = makePlan();
     planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
-    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [] } as never);
+    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [], paired: [] } as never);
     usePlanStore.setState({ plan: makePlan() });
 
     usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
@@ -222,6 +222,7 @@ describe('plan-store', () => {
       plan,
       problems: [],
       ruleIssues: [],
+      paired: [],
     });
 
     usePlanStore.setState({
@@ -256,6 +257,7 @@ describe('plan-store', () => {
       plan,
       problems: [],
       ruleIssues: [],
+      paired: [],
     });
 
     usePlanStore.setState({

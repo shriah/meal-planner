@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
 import { describeSpec, linkSlotOf, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
-import { explainPlan, missingDishIds, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
+import { explainPlan, missingDishIds, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
   type ComponentRecord, type ComponentType,
@@ -56,7 +56,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   },
   {
     name: 'explain_plan_slot',
-    description: "Explain one meal slot of the current weekly plan: its dishes (id and name) and the rule problems there. With dish, also checks which rules that dish would break if it were put in the slot; when none would, no rule blocks it and the planner left it out for variety or preferences.",
+    description: "Explain one meal slot of the current weekly plan: its dishes (id and name) and the rule problems there. With dish, also checks which rules that dish would break if it were put in the slot; when none would, no rule blocks it and the planner chose other dishes this time. Also lists the dishes in the slot that a pairing brought (pairedWith).",
     parameters: obj({
       day: { type: 'string', description: `Day of the week, lowercase: ${ALL_DAYS.join('|')}` },
       meal: { type: 'string', description: `Meal, lowercase: ${MEALS.join('|')}` },
@@ -334,9 +334,17 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
     blockedBy: added.slice(0, MAX_LIST_ITEMS),
     ...(added.length > MAX_LIST_ITEMS ? { more: added.length - MAX_LIST_ITEMS } : {}),
     ...(added.length === 0
-      ? { note: `No rule blocks ${dish.name} here; the planner left it out for variety or preferences.` }
+      ? { note: `No rule blocks ${dish.name} here; its paired dishes come with it.` }
       : { note: `Putting ${dish.name} here would break these rules.` }),
   };
+}
+
+/** The dishes in one slot that a pairing brought, named with the dish that brought each. */
+function pairedWith(data: AssistantData, plan: WeeklyPlan, day: DayOfWeek, meal: Meal): { dish: string; by: string }[] {
+  const name = (id: number) => data.library.find((c) => c.id === id)?.name ?? `dish ${id}`;
+  return pairedSides(data, knownOnly(plan, data))
+    .filter((p) => p.day === day && p.meal === meal)
+    .map((p) => ({ dish: name(p.component), by: name(p.by) }));
 }
 
 const HANDLERS: Record<string, Handler> = {
@@ -417,6 +425,7 @@ const HANDLERS: Record<string, Handler> = {
         meal,
         dishes: slotDishes(plan.slots.find((s) => s.day === day && s.meal_slot === meal), data),
         ...(why ? { whyNot: why } : {}),
+        pairedWith: pairedWith(data, plan, day, meal),
         problems: problems.slice(0, MAX_LIST_ITEMS),
         ...(problems.length > MAX_LIST_ITEMS ? { more: problems.length - MAX_LIST_ITEMS } : {}),
         ...(missing.length

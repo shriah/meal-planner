@@ -24,7 +24,7 @@ function stubRun() {
   const run = async (input: PlanningInput, opts: PlanningOptions): Promise<PlanningOutcome> => {
     calls.push({ input, opts });
     const excluded = input.rules.some((r) => r.owner_component_id === 2 && r.spec.template === 'exclude');
-    return { plan: week(excluded ? 3 : 2), problems: [], ruleIssues: [] } as PlanningOutcome;
+    return { plan: week(excluded ? 3 : 2), problems: [], ruleIssues: [], paired: [] } as PlanningOutcome;
   };
   return { run, calls };
 }

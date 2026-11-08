@@ -1,6 +1,6 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
-  buildModel, explain, fromPlanSlots, planWeek, score, slotIndex,
+  bringsWith, buildModel, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
   MEALS, type Justification, type Meal, type ModelInput, type Pins,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
@@ -32,12 +32,17 @@ export interface PlanProblem {
   meal?: Meal;
 }
 
+/** A side present in its meal because a pairing on `by` brings it. */
+export interface PairedSide { day: DayOfWeek; meal: Meal; component: number; by: number }
+
 export interface PlanningOutcome {
   plan: WeeklyPlan;
   /** Hard problems mean a rule is broken in the returned plan; soft ones are unmet preferences. */
   problems: PlanProblem[];
   /** Rules that were not applied at all (invalid, or referring to deleted items). */
   ruleIssues: RuleIssue[];
+  /** Sides in the plan that a pairing brought, unit or asked. */
+  paired: PairedSide[];
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -84,17 +89,58 @@ function modelFromData(input: PlanningInput) {
   };
 
   const model: ModelInput = { library, constraints };
-  return { model, issues, problemOf };
+  return { model, issues, problemOf, ruleById };
 }
 
 export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): PlanningOutcome {
-  const { model, issues, problemOf } = modelFromData(input);
+  const { model, issues, problemOf, ruleById } = modelFromData(input);
   const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31) });
+  const typeOf = new Map(input.library.map((c) => [c.id, c.componentType]));
+  /** Whether the caller fixed (or held empty) the role the paired dish would fill in this meal. */
+  const pinnedRole = (j: Justification): boolean => {
+    const { day, meal, componentId } = j.group;
+    if (!day || !meal || componentId === undefined || j.ruleId === undefined) return false;
+    if (ruleById.get(j.ruleId)?.spec.template !== 'require_with') return false;
+    const pin = opts.pins?.[`${day}-${meal}`];
+    switch (typeOf.get(componentId)) {
+      case 'curry': return pin?.curry_id !== undefined;
+      case 'subzi': return pin?.subzi_id !== undefined;
+      case 'extra': return pin?.extra_ids !== undefined;
+      default: return false;
+    }
+  };
+  const problems = result.justifications.map((j) => {
+    const p = problemOf(j);
+    return j.level === 'hard' && pinnedRole(j) ? { ...p, message: `${p.message} — replaced by your pick` } : p;
+  });
   return {
     plan: { slots: result.slots },
-    problems: result.justifications.map(problemOf),
+    problems,
     ruleIssues: issues,
+    paired: pairedSides(input, { slots: result.slots }),
   };
+}
+
+/** The sides in each meal that a pairing brought, whether a unit member or only asked for. */
+export function pairedSides(input: PlanningInput, plan: WeeklyPlan): PairedSide[] {
+  const m = buildModel(modelFromData(input).model);
+  const state = fromPlanSlots(plan.slots);
+  const out: PairedSide[] = [];
+  for (const day of ALL_DAYS) {
+    for (const meal of MEALS) {
+      const i = slotIndex(day, meal);
+      const s = state[i];
+      const present = new Set([s.base, s.curry, s.subzi, ...s.extras].filter((id): id is number => id !== undefined));
+      const seen = new Set<string>();
+      for (const p of slotPairs(m, state, i)) {
+        const k = `${p.component}|${p.by}`;
+        if (p.suppressed || !present.has(p.component) || seen.has(k)) continue;
+        seen.add(k);
+        out.push({ day, meal, component: p.component, by: p.by });
+      }
+    }
+  }
+  return out;
 }
 
 export type SlotPart = 'base' | 'curry' | 'subzi' | 'extras';
@@ -116,9 +162,21 @@ export function slotConflicts(
   const m = buildModel(model);
   const state = fromPlanSlots(plan.slots);
   const slot = state[slotIndex(day, meal)];
+  const typeOf = new Map(input.library.map((c) => [c.id, c.componentType]));
+  const original = { base: slot.base, curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
   const put = (id: number | undefined) => {
     if (part === 'extras') slot.extras = id === undefined ? [] : [id];
     else slot[part] = id;
+  };
+  // A base is planned with the sides it brings; there are no pins here, so every role is free.
+  const putBase = (id: number) => {
+    slot.base = id;
+    for (const side of bringsWith(m, id, 'base', slotIndex(day, meal)).unit) {
+      const type = typeOf.get(side);
+      if (type === 'curry') slot.curry = side;
+      else if (type === 'subzi') slot.subzi = side;
+      else if (type === 'extra') slot.extras = [...new Set([...slot.extras, side])];
+    }
   };
   const key = (j: Justification) => `${j.constraintId}|${JSON.stringify(j.group)}`;
   const hard = () => score(m, state, true).justifications.filter((j) => j.level === 'hard');
@@ -127,10 +185,13 @@ export function slotConflicts(
   const baseline = new Map(hard().map((j) => [key(j), j.units]));
   const out = new Map<number, PlanProblem[]>();
   for (const id of candidates) {
-    put(id);
+    Object.assign(slot, original);
+    if (part === 'base') putBase(id);
+    else put(id);
     const added = hard().filter((j) => j.units > (baseline.get(key(j)) ?? 0));
     if (added.length) out.set(id, added.map(problemOf));
   }
+  if (part === 'base') Object.assign(slot, original);
   return out;
 }
 
