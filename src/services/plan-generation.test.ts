@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { dayRule, linkRule, type RuleRecord } from '@/rules';
+import { is } from '@/planner';
+import { dayRule, exclusionRule, linkRule, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
@@ -61,6 +62,28 @@ describe('pairings', () => {
   it('does not count the paired side against a base that brings it', () => {
     const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 });
     expect(slotConflicts(data, plan, 'monday', 'breakfast', 'base', [10]).get(10)).toBeUndefined();
+  });
+
+  describe('the meal picker replacing a base that brought its sides', () => {
+    const idli = dish(13, 'Idli', 'base');
+    const never = exclusionRule(sambar);
+    const neverAuto: RuleRecord = { id: 6, name: never.name, spec: never.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
+    const idliNeverWith = (curry: number, id: number): RuleRecord =>
+      ({ id, name: `Idli never with ${curry}`, spec: { template: 'avoid_with', params: { match: is('id', 13), with: is('id', curry), strength: 'must' } }, enabled: true, created_at: '' });
+    const picker = (rules: RuleRecord[], curry: number) => slotConflicts(
+      { library: [pongal, sambar, rasam, idli], categories: [], rules: [rule, neverAuto, ...rules] },
+      planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: curry }),
+      'monday', 'breakfast', 'base', [13],
+    );
+
+    it("judges a candidate base without the sides the replaced base brought (Sambar's own rules are not its problem)", () => {
+      expect(picker([], 11).get(13)).toBeUndefined();
+      expect(picker([idliNeverWith(11, 7)], 11).get(13)).toBeUndefined();
+    });
+
+    it('keeps a side the replaced base did not bring', () => {
+      expect(picker([idliNeverWith(12, 7)], 12).get(13)?.map((p) => p.ruleId)).toEqual([7]);
+    });
   });
 
   it('lists the paired sides present in each meal that holds the base', () => {

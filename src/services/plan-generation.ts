@@ -1,7 +1,7 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
   bringsWith, buildModel, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
-  MEALS, type Justification, type Meal, type ModelInput, type Pins,
+  MEALS, type Justification, type Meal, type ModelInput, type Pins, type Role,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
@@ -174,10 +174,27 @@ export function slotConflicts(
     if (part === 'extras') slot.extras = id === undefined ? [] : [id];
     else slot[part] = id;
   };
-  // A base is planned with the sides it brings; there are no pins here, so every role is free.
+  const i = slotIndex(day, meal);
+  // A base is planned with the sides it brings; there are no pins here, so every role is free. The sides
+  // the replaced base brought leave with it, unless a dish still in the meal brings them too (as the
+  // solver's `bring` does).
   const putBase = (id: number) => {
     slot.base = id;
-    for (const side of bringsWith(m, id, 'base', slotIndex(day, meal)).unit) {
+    if (original.base !== undefined) {
+      const stillBrought = (c: number) => {
+        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && bringsWith(m, d, role, i).asked.includes(c);
+        return by(slot.base, 'base') || by(slot.curry, 'curry') || by(slot.subzi, 'subzi') || slot.extras.some((e) => by(e, 'extra'));
+      };
+      for (const side of bringsWith(m, original.base, 'base', i).asked) {
+        const type = typeOf.get(side);
+        if (type === 'extra') {
+          if (slot.extras.includes(side) && !stillBrought(side)) slot.extras = slot.extras.filter((e) => e !== side);
+        } else if ((type === 'curry' || type === 'subzi') && slot[type] === side && !stillBrought(side)) {
+          slot[type] = undefined;
+        }
+      }
+    }
+    for (const side of bringsWith(m, id, 'base', i).unit) {
       const type = typeOf.get(side);
       if (type === 'curry') slot.curry = side;
       else if (type === 'subzi') slot.subzi = side;
