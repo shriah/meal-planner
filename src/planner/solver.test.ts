@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { is } from './matcher';
+import type { Constraint, CountConstraint } from './constraints';
+import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
-import { solve } from './solver';
+import { compareScore, score, type CompiledModel, type Score } from './scorer';
+import { clonePlan, solve } from './solver';
 import { component } from './test-utils';
-import { SLOT_COUNT, slotIndex, type ComponentLike } from './types';
+import { DAYS, MEALS, SLOT_COUNT, slotIndex, type ComponentLike, type PlanState } from './types';
 
 const library: ComponentLike[] = [
   ...[1, 2, 3, 4].map((id) => component('base', { id, base_category_id: 10 })),
@@ -97,5 +99,89 @@ describe('solver', () => {
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);
+  });
+});
+
+describe('final descent', () => {
+  // Mirrors TEST_LIBRARY in src/rule-cases/library.ts (ids, roles, order).
+  // The rule-case test library and the default rules as compileRules
+  // compiles them, written out here because planner files may not import the rules module. On seed 4
+  // the search used to stop on a plateau with Pongal (1) on Wednesday and Thursday, one change from
+  // the best week.
+  const lib: ComponentLike[] = [
+    ...[1, 2, 3, 4, 5, 6, 7].map((id) => component('base', { id, frequency: 'normal' })),
+    ...[8, 9, 10, 11].map((id) => component('curry', { id, frequency: 'normal' })),
+    ...[12, 13].map((id) => component('subzi', { id, frequency: 'normal' })),
+    ...[14, 15, 16, 17, 18].map((id) => component('extra', { id, frequency: 'normal' })),
+  ];
+  const BASES = lib.filter((c) => c.componentType === 'base').map((c) => c.id);
+  const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('role', ['base', 'curry', 'subzi']));
+  const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
+  const prefer = (id: string, select: Matcher, weight: number, yieldsTo: 'unit' | 'ask'): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, yieldsTo });
+  const defaults: Constraint[] = [
+    ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
+      id: `extras-${meal}`, label: `extras-${meal}`, select: is('componentType', 'extra'), groupBy: 'slot',
+      scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, yieldsTo: 'unit',
+    })),
+    rule({ id: 'variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, yieldsTo: 'unit' }),
+    rule({ id: 'spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, yieldsTo: 'unit' }),
+    prefer('sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2, 'ask'),
+    prefer('prefer-frequent', is('frequency', 'frequent'), -1, 'unit'),
+    prefer('avoid-rare', is('frequency', 'rare'), 1, 'unit'),
+  ];
+  const budget = { timeLimitMs: Infinity, maxIterations: 20_000, plateauIterations: 3000 };
+  const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
+  const mealName = (i: number) => `${DAYS[Math.floor(i / MEALS.length)]}-${MEALS[i % MEALS.length]}`;
+
+  /** The first single change of a base that gives a hard-0 score strictly below `current`, if any. */
+  const improvingBaseChange = (m: CompiledModel, plan: PlanState, current: Score, skip: readonly number[] = []): string | undefined => {
+    const p = clonePlan(plan);
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      if (skip.includes(i)) continue;
+      const old = p[i].base;
+      for (const b of BASES) {
+        if (b === old) continue;
+        p[i].base = b;
+        const s = score(m, p);
+        p[i].base = old;
+        if (s.hard === 0 && compareScore(s, current) < 0) {
+          return `${mealName(i)}: base ${old} -> ${b} gives soft ${s.soft} (plan has hard ${current.hard}, soft ${current.soft})`;
+        }
+      }
+    }
+    return undefined;
+  };
+
+  it.each(SEEDS)('returns a plan no single base change improves (seed %i)', (seed) => {
+    const m = buildModel({ library: lib, constraints: defaults });
+    const r = solve(m, { ...budget, seed });
+    expect(improvingBaseChange(m, r.plan, r.score)).toBeUndefined();
+  });
+
+  it('keeps pinned bases even when changing one would help', () => {
+    // The same base twice on Monday costs spacing; changing either would help, but both are pinned.
+    const m = buildModel({ library: lib, constraints: defaults });
+    const pins = { 'monday-breakfast': { base_id: 1 }, 'monday-lunch': { base_id: 1 } };
+    const r = solve(m, { ...budget, seed: 4, pins });
+    const pinned = [slotIndex('monday', 'breakfast'), slotIndex('monday', 'lunch')];
+    for (const i of pinned) expect(r.plan[i].base).toBe(1);
+    expect(improvingBaseChange(m, r.plan, r.score)).toMatch(/^monday-(breakfast|lunch)/);
+    expect(improvingBaseChange(m, r.plan, r.score, pinned)).toBeUndefined();
+  });
+
+  it.each(SEEDS)('keeps a base with its unit curry and leaves the curry nowhere else (seed %i)', (seed) => {
+    // Base 1 must come with curry 11, and curry 11 is never planned on its own, so a curry 11 left
+    // behind when a base 1 was changed would break a hard rule.
+    const pairing: Constraint[] = [
+      { kind: 'pair', id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule', when: is('id', 1), component: 11, strength: 'must' },
+      rule({ id: 'exclude-11', label: 'Never plan curry 11', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 11 }),
+    ];
+    const r = solve(buildModel({ library: lib, constraints: [...defaults, ...pairing] }), { ...budget, seed });
+    expect(r.score.hard).toBe(0);
+    expect(r.plan.some((s) => s.base === 1)).toBe(true);
+    for (const s of r.plan) {
+      if (s.base === 1) expect(s.curry).toBe(11);
+      else expect(s.curry).not.toBe(11);
+    }
   });
 });

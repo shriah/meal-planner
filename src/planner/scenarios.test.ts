@@ -207,11 +207,13 @@ describe('planner scenarios (seed library)', () => {
     it('a pairing scoped to breakfast makes a unit only at breakfast', () => {
       let breakfasts = 0;
       for (const seed of WEEKS) {
-        // A lunch Pongal with another curry is not a broken pairing.
+        // A lunch Pongal with another curry is not a broken pairing. The breakfast Pongal is pinned (curry
+        // left free): a best week has no second Pongal, so without the pin no breakfast would test the unit.
         const r = plan([pair('pongal-sambar', is('id', pongal), sambar, { scope: { meals: ['breakfast'] } })], seed, {
-          ...BUDGET, pins: { 'monday-lunch': { base_id: pongal, curry_id: rasam } },
+          ...BUDGET, pins: { 'monday-breakfast': { base_id: pongal }, 'monday-lunch': { base_id: pongal, curry_id: rasam } },
         });
         expect(hardOf(r), `seed ${seed}`).toEqual([]);
+        expect(r.slots.find((s) => s.day === 'monday' && s.meal_slot === 'breakfast'), `seed ${seed}`).toMatchObject({ base_id: pongal, curry_id: sambar });
         expect(r.slots.find((s) => s.day === 'monday' && s.meal_slot === 'lunch'), `seed ${seed}`).toMatchObject({ base_id: pongal, curry_id: rasam });
         for (const s of pongalSlots(r).filter((x) => x.meal_slot === 'breakfast')) {
           expect(s.curry_id, `seed ${seed} ${s.day}`).toBe(sambar);

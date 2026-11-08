@@ -39,6 +39,8 @@ const now = (): number => globalThis.performance?.now() ?? Date.now();
 const NOTHING: readonly number[] = [];
 /** Rounds of `bring`: a brought side may bring its own sides. */
 const BRING_ROUNDS = 3;
+/** Most passes of the final descent; it stops sooner once a pass changes nothing. */
+const DESCENT_PASSES = 10;
 
 type Snapshot = Readonly<SlotState>;
 const snapshot = (s: SlotState): Snapshot => ({ base: s.base, curry: s.curry, subzi: s.subzi, extras: s.extras });
@@ -324,6 +326,40 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     history[h] = current;
   }
+
+  // Final descent: the random moves can stop on a plateau one change away from a better week. Try every
+  // single change of a free base, curry or subzi (meals in order, roles base, curry, subzi, candidates in
+  // library order, no side first) and keep each one that strictly improves the score, until a full pass
+  // finds none. Unit members stay while their dish does; a changed dish brings its sides, as in the moves.
+  for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
+  let descended = false;
+  for (let pass = 0; pass < DESCENT_PASSES; pass++) {
+    let improved = false;
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const s = plan[i];
+      for (const r of PICK_ROLES) {
+        if (!isFree(i, r) || !pool[r].length) continue;
+        const options: readonly (number | undefined)[] = r === 'base' ? pool.base : [undefined, ...pool[r]];
+        for (const v of options) {
+          if (isUnit(s, i, s[r])) break;
+          if (v === s[r]) continue;
+          const before = snapshot(s);
+          const prev = broughtBy(s[r], r, i);
+          s[r] = v;
+          bring(i, prev);
+          const next = evaluate(plan);
+          if (compareScore(next, best) < 0) {
+            best = next;
+            improved = descended = true;
+          } else {
+            restore(s, before);
+          }
+        }
+      }
+    }
+    if (!improved) break;
+  }
+  if (descended) bestPlan = clonePlan(plan);
 
   // Polish: drop any free curry, subzi or extra whose removal strictly improves the best plan. Sides
   // cost something unless a rule asks for them, and random search does not always find every removal.
