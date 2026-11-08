@@ -227,6 +227,37 @@ describe('pairings', () => {
     expect(runLib([chutneyAsksRasam], at('lunch', { base: 6, curry: 2, extras: [4] })).soft).toBe(3);
   });
 
+  it("a prefer pair gives way where the side's own rules forbid it, and is not brought there", () => {
+    const sambarNever = count({ id: 'sambar-never', select: is('id', 2), bounds: { hardMax: 0 }, owner: 2, yieldsTo: 'unit' });
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarNever, breakfastOnlySambar({ owner: 2, yieldsTo: 'unit' })]);
+    const slot = slotIndex('monday', 'lunch');
+    expect(score(m, at('lunch', { base: 1 }))).toMatchObject({ hard: 0, soft: 0 });
+    expect(bringsWith(m, 1, 'base', slot)).toEqual({ unit: [], asked: [] });
+    expect(slotPairs(m, at('lunch', { base: 1 }), slot)).toEqual([]);
+  });
+
+  it("a prefer pair gives way only in the slots where the side's own rule forbids it", () => {
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), breakfastOnlySambar({ owner: 2, yieldsTo: 'unit' })]);
+    expect(score(m, at('lunch', { base: 1 })).soft).toBe(0);
+    expect(score(m, at('breakfast', { base: 1 })).soft).toBe(10);
+    expect(bringsWith(m, 1, 'base', slotIndex('monday', 'breakfast')).asked).toEqual([2]);
+  });
+
+  it('a prefer pair still asks for a side forbidden only by a rule it does not own, or one with a trigger', () => {
+    const notOwned = count({ id: 'no-sambar', select: is('id', 2), bounds: { hardMax: 0 } });
+    const withTrigger = count({ id: 'sambar-not-with-raita', select: is('id', 2), when: { exists: is('id', 4) }, bounds: { hardMax: 0 }, owner: 2, yieldsTo: 'unit' });
+    for (const c of [notOwned, withTrigger]) {
+      expect(score(compileModel(lib, [pair(2, { strength: 'prefer' }), c]), at('lunch', { base: 1 })).soft).toBe(10);
+    }
+  });
+
+  it("a must pair is enforced even where the side's own rules forbid it", () => {
+    const sambarNever = count({ id: 'sambar-never', select: is('id', 2), bounds: { hardMax: 0 }, owner: 2, yieldsTo: 'unit' });
+    const m = compileModel(lib, [sambarPair, sambarNever]);
+    expect(score(m, at('lunch', { base: 1 })).hard).toBe(1);
+    expect(score(m, at('lunch', { base: 1, curry: 2 })).hard).toBe(0);
+  });
+
   it('a scoped pair is triggered only in its scope', () => {
     const m = compileModel(lib, [pair(2, { scope: { meals: ['breakfast'] } })]);
     const lunch = at('lunch', { base: 1 });

@@ -195,6 +195,21 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     });
   }
 
+  // A softer pairing gives way where the side's own rules forbid it (its "never planned automatically",
+  // days or meals): there it is not enforced, so the side is neither brought nor missed. Only `must`
+  // pairs make the side's own rules give way.
+  for (const p of pairs) {
+    if (p.must || p.ci < 0) continue;
+    const side = library[p.ci];
+    const own = counts.filter((cc) => cc.owner === side.id && cc.hardMax === 0 && cc.when < 0 && cc.yields !== YIELD_ASK);
+    if (!own.length) continue;
+    for (let t = 0; t < SLOT_COUNT; t++) {
+      if (!p.inScope[t]) continue;
+      const a: Assignment = { c: side, role: side.componentType, day: slotDay(t), meal: slotMeal(t) };
+      if (own.some((cc) => groupInScope(cc, t) && matchers[cc.sel](a))) p.inScope[t] = 0;
+    }
+  }
+
   return {
     library,
     byId: new Map(library.map((c) => [c.id, c])),
@@ -211,6 +226,16 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       bufPairs: new Int32Array(pairs.length),
     },
   };
+}
+
+/** Whether the count's time group holding slot `t` is in its scope. */
+function groupInScope(cc: CompiledCount, t: number): boolean {
+  switch (cc.time) {
+    case 'slot': return !!cc.inScope[t];
+    case 'day': return !!cc.inScope[(t / MEALS.length) | 0];
+    case 'meal': return !!cc.inScope[t % MEALS.length];
+    default: return true;
+  }
 }
 
 function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo {

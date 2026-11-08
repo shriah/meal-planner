@@ -159,6 +159,11 @@ describe('planner scenarios (seed library)', () => {
       id: 'owned:sambar-meals', label: 'Sambar only at lunch', select: all(is('id', sambar), not(oneOf('meal', ['lunch']))),
       groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, yieldsTo: 'unit',
     });
+    // Sambar's "never planned automatically" (exclusionRule, as compileRules compiles it).
+    const sambarNeverAuto = rule({
+      id: 'owned:sambar-exclude', label: 'Sambar never planned automatically', select: is('id', sambar),
+      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, yieldsTo: 'unit',
+    });
     const plan = (constraints: Constraint[], seed: number, opts: object = BUDGET) =>
       planWeek({ library, constraints: [...CURRENT_DEFAULTS, sambarLunchOnly, ...constraints] }, { ...opts, seed });
     const always = [pair('pongal-sambar', is('id', pongal), sambar), pair('pongal-chutney', is('id', pongal), chutney)];
@@ -182,7 +187,7 @@ describe('planner scenarios (seed library)', () => {
     it('Always: Pongal is planned, every Pongal meal holds both, no hard rule breaks', () => {
       let total = 0;
       for (const seed of WEEKS) {
-        const r = plan(always, seed);
+        const r = plan([sambarNeverAuto, ...always], seed);
         expect(hardOf(r), `seed ${seed}`).toEqual([]);
         for (const s of pongalSlots(r)) {
           expect(s.curry_id, `seed ${seed} ${s.day} ${s.meal_slot}`).toBe(sambar);
@@ -193,9 +198,9 @@ describe('planner scenarios (seed library)', () => {
       expectNearBaseline(total);
     });
 
-    it('Usually: Pongal is planned', () => {
+    it('Usually: Pongal is planned, though Sambar is never planned automatically', () => {
       const usually = always.map((p) => ({ ...p, strength: 'prefer' as const, cost: 10 }));
-      const total = WEEKS.reduce((n, seed) => n + pongalSlots(plan(usually, seed)).length, 0);
+      const total = WEEKS.reduce((n, seed) => n + pongalSlots(plan([sambarNeverAuto, ...usually], seed)).length, 0);
       expectNearBaseline(total);
     });
 
