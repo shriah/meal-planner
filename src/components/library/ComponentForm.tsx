@@ -207,8 +207,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
   const storedLinks = readOwned(owned).links
   const links = form.links ?? storedLinks
-  // A link that cannot be kept (a second curry always served with the same base) holds Save back.
-  const linkBlocked = useLinkWarnings({ id: component?.id, name: form.name, componentType }, links).some((w) => w.blocking)
+  // Save is held back only by a conflict the edits introduced; one already stored still shows as a warning but
+  // does not stop unrelated edits from being saved.
+  const self = { id: component?.id, name: form.name, componentType }
+  const blockingOf = (list: DishLink[], warnings: { link: number; message: string; blocking?: boolean }[]) =>
+    warnings.filter((w) => w.blocking).map((w) => `${linkSlotOf(list[w.link])}|${w.message}`)
+  const storedBlocking = blockingOf(form.linksBase ?? storedLinks, useLinkWarnings(self, form.linksBase ?? storedLinks))
+  const linkBlocked = blockingOf(links, useLinkWarnings(self, links)).some((k) => !storedBlocking.includes(k))
   const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
   // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
   // off and is marked so; a changed one is switched on when saved.

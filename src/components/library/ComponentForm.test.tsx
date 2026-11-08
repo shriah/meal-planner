@@ -968,4 +968,34 @@ describe('ComponentForm links: one always curry per base', () => {
     await addAlwaysServe();
     await expectGuard();
   });
+
+  async function setupStoredConflict() {
+    const rasam = await setup();
+    const idli = (await db.components.toArray()).find((c) => c.name === 'Idli')!.id!;
+    await saveComponent(rasam, { name: 'Rasam', componentType: 'curry', ...tags }, {
+      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }),
+    });
+    return rasam;
+  }
+
+  async function renameAndExpectEnabled() {
+    expect(await screen.findByText(/Sambar is already always served with Idli/)).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: /name/i }), 'x');
+    expect(screen.getByRole('button', { name: 'Save Curry' })).toBeEnabled();
+  }
+
+  it('keeps Save enabled for an unrelated edit when the conflict is already stored, opened before the library loads', async () => {
+    const rasam = await setupStoredConflict();
+    render(<LiveEditForm componentId={rasam} />);
+    await renameAndExpectEnabled();
+  });
+
+  it('keeps Save enabled for an unrelated edit when the conflict is already stored, opened once loaded', async () => {
+    const rasam = await setupStoredConflict();
+    function OpenWhenLoaded() {
+      return useLibraryLookup().loaded ? <LiveEditForm componentId={rasam} /> : null;
+    }
+    render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    await renameAndExpectEnabled();
+  });
 });

@@ -630,6 +630,18 @@ describe('propose_pairing', () => {
     expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
   });
 
+  it('does not refuse a conflict that is already stored, only what the proposal adds', async () => {
+    const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Dosa', { componentType: 'base' })];
+    const rule = (id: number, owner: number, name: string, values: number[]) =>
+      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: 'base_dish', values, strength: 'always' }) });
+    const rules = [rule(9, 1, 'Sambar', [3]), rule(10, 5, 'Rasam', [3])];
+    const c = () => ctxOf({ library: lib, categories, rules });
+    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Dosa'] }, c())).ok).toBe(true);
+    const sambarDosa = ctxOf({ library: lib, categories, rules: [...rules, rule(11, 1, 'Sambar', [4])] });
+    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Dosa'] }, sambarDosa)).ok).toBe(false);
+  });
+
   it('takes an exact base name as that base, not a side that contains it', async () => {
     const r = await runTool('propose_pairing', { dish: 'idli', served_with_bases: ['Dosa'] }, ctx({ library: [...library, dish(5, 'Idli podi', { componentType: 'extra' })] }));
     expect(r.ok).toBe(false);

@@ -547,12 +547,18 @@ const HANDLERS: Record<string, Handler> = {
     const off = readOwned(owned.filter((r) => !r.enabled)).links.map(linkSlotOf);
     const already: number[] = [];
     let replacesOff = false;
+    // Only what this proposal adds or firms up is checked; a conflict already stored is not made worse by being kept.
+    const changed: DishLink[] = [];
     const links = served.links.map((link) => {
       const before = stored.find((l) => linkSlotOf(l) === linkSlotOf(link));
       if (!before) {
         if (off.includes(linkSlotOf(link))) replacesOff = true;
+        changed.push(link);
         return link;
       }
+      const firmer = (requested ?? before.strength) !== before.strength;
+      const added = firmer ? link.values : link.values.filter((v) => !before.values.includes(v));
+      if (added.length) changed.push({ ...link, values: added, strength: requested ?? before.strength });
       if (link.target === 'base_dish') already.push(...before.values.filter((id) => typeof id === 'number'));
       return {
         ...link,
@@ -561,7 +567,7 @@ const HANDLERS: Record<string, Handler> = {
         ...(before.scope ? { scope: before.scope } : {}),
       };
     });
-    const conflict = pairingConflict(data, dish, links);
+    const conflict = pairingConflict(data, dish, changed);
     if (conflict) return { ok: false, error: conflict };
     return {
       ok: true,
