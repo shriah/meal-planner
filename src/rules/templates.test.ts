@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
-import { describeSpec, RuleSpecSchema, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
+import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
 
 // ─── Library: two base categories, several curries/subzis, extras in two categories ──────────
 const RICE = 10;
@@ -174,6 +174,23 @@ describe('rule templates in the planner', () => {
     const count = (direction: 'prefer' | 'avoid') => SEEDS.reduce((n, seed) =>
       n + plan([{ template: 'prefer', params: { match: is('id', 15), direction, weight: 5 } }], seed).slots.filter((s) => s.curry_id === 15).length, 0);
     expect(count('prefer')).toBeGreaterThan(count('avoid'));
+  });
+});
+
+describe('require_with compilation', () => {
+  it('compiles each component to a pair keeping its cost, and each extra category to a slot count', () => {
+    const bodies = compileSpec({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer', cost: 6 } });
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0]).toMatchObject({ kind: 'pair', component: 31, strength: 'prefer', cost: 6 });
+    expect(bodies[1]).toMatchObject({ kind: 'count', groupBy: 'slot', costs: { min: 6, max: 6 } });
+  });
+
+  it('gives a prefer pairing without a cost the default cost, and a must pairing none', () => {
+    const [soft] = compileSpec(RuleSpecSchema.parse({ template: 'require_with', params: { when: is('id', 12), components: [31], strength: 'prefer' } }));
+    expect(soft).toMatchObject({ kind: 'pair', cost: PREFER_COST });
+    const [hardPair] = compileSpec(RuleSpecSchema.parse({ template: 'require_with', params: { when: is('id', 12), components: [31], scope: { meals: ['lunch'] } } }));
+    expect(hardPair).toMatchObject({ kind: 'pair', strength: 'must', scope: { meals: ['lunch'] } });
+    expect(hardPair).not.toHaveProperty('cost');
   });
 });
 

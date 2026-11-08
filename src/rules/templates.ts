@@ -257,7 +257,11 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Also include when',
     summary: 'When a meal contains a matching component, it must also include the chosen components or extras.',
     compile: (p) => [
-      ...p.components.map((id) => slotCount(is('id', id), p.scope, p.strength, 1, undefined, p.when)),
+      // A pairing is a pair constraint, which carries its own cost; `compileSpec` leaves it alone.
+      ...p.components.map((component): ConstraintBody => ({
+        kind: 'pair', when: p.when, component, ...(p.scope && { scope: p.scope }), strength: p.strength,
+        ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
+      })),
       ...p.extraCategories.map((cat) => slotCount(all(is('role', 'extra'), is('extra_category_id', cat)), p.scope, p.strength, 1, undefined, p.when)),
     ],
     describe: (p, n) => {

@@ -32,4 +32,42 @@ describe('compileRules', () => {
     expect(constraints).toEqual([]);
     expect(issues[0].message).toBe('refers to component #3, base category #99, which no longer exists');
   });
+
+  describe('what gives way to a unit', () => {
+    const skip = { template: 'skip_when', params: { when: is('id', 1), skip: ['curry', 'subzi'] } };
+    const withKey = (r: RuleRecord, extra: Partial<RuleRecord>): RuleRecord => ({ ...r, ...extra });
+    const compile = (r: RuleRecord) => compileRules([r], { ...known, components: new Set([1, 2, 3, 7]) }).constraints;
+
+    it('marks every constraint of an owned rule with its owner and yieldsTo unit', () => {
+      const cs = compile(withKey(rule(1, skip), { owner_component_id: 7 }));
+      expect(cs).toHaveLength(2);
+      for (const c of cs) expect(c).toMatchObject({ owner: 7, yieldsTo: 'unit' });
+    });
+
+    it('marks default rules as yielding to a unit, except sides-only which yields to an ask', () => {
+      const [variety] = compile(withKey(rule(1, skip), { default_key: 'variety' }));
+      expect(variety).toMatchObject({ yieldsTo: 'unit' });
+      expect(variety).not.toHaveProperty('owner');
+      expect(compile(withKey(rule(2, skip), { default_key: 'sides-only-when-asked' }))[0]).toMatchObject({ yieldsTo: 'ask' });
+    });
+
+    it('leaves hand-written rules unmarked', () => {
+      const [c] = compile(rule(1, skip));
+      expect(c).not.toHaveProperty('yieldsTo');
+      expect(c).not.toHaveProperty('owner');
+    });
+
+    it('compiles an owned serve rule to a pair with neither field', () => {
+      const [pair] = compile(withKey(rule(1, { template: 'require_with', params: { when: is('id', 1), components: [7] } }), { owner_component_id: 7 }));
+      expect(pair.kind).toBe('pair');
+      expect(pair).not.toHaveProperty('yieldsTo');
+      expect(pair).not.toHaveProperty('owner');
+    });
+
+    it('emits constraints in ascending rule id order even when rules arrive out of order', () => {
+      const pairSpec = { template: 'require_with', params: { when: is('id', 1), components: [2] } };
+      const { constraints } = compileRules([rule(9, pairSpec), rule(3, pairSpec), rule(5, pairSpec)], known);
+      expect(constraints.map((c) => c.ruleId)).toEqual([3, 5, 9]);
+    });
+  });
 });

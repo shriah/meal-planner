@@ -45,6 +45,14 @@ export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
   ];
 }
 
+/** What a rule's count and prefer constraints give way to inside a unit (a base with its pairings), if anything. */
+function givesWayTo(rule: RuleRecord): { owner?: number; yieldsTo?: 'unit' | 'ask' } {
+  if (rule.owner_component_id !== undefined) return { owner: rule.owner_component_id, yieldsTo: 'unit' };
+  if (rule.default_key === 'sides-only-when-asked') return { yieldsTo: 'ask' };
+  if (rule.default_key !== undefined) return { yieldsTo: 'unit' };
+  return {};
+}
+
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
  * are skipped and reported, so the planner never runs a rule whose meaning has changed.
@@ -52,7 +60,8 @@ export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
 export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { constraints: Constraint[]; issues: RuleIssue[] } {
   const constraints: Constraint[] = [];
   const issues: RuleIssue[] = [];
-  for (const rule of rules) {
+  // The scorer settles conflicts between pairs by constraint order, so compile in rule-id order.
+  for (const rule of [...rules].sort((a, b) => a.id - b.id)) {
     if (!rule.enabled) continue;
     const parsed = parseSpec(rule.spec);
     if (!parsed.ok) {
@@ -64,8 +73,11 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { c
       issues.push({ ruleId: rule.id, name: rule.name, message: `refers to ${missing.join(', ')}, which no longer exists` });
       continue;
     }
+    const gives = givesWayTo(rule);
     compileSpec(parsed.spec).forEach((body, i) => {
-      constraints.push({ ...body, id: `rule:${rule.id}:${i}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
+      // Pairs are what the others give way to, so they carry neither mark.
+      const marks = body.kind === 'pair' ? {} : gives;
+      constraints.push({ ...body, ...marks, id: `rule:${rule.id}:${i}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
     });
   }
   return { constraints, issues };
