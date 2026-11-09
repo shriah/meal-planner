@@ -1,6 +1,6 @@
 // Plans the week with two rule sets (same seed and pins) and reports which meals change.
 import type { Pins } from '@/planner';
-import { isLinkSlot, OWNED_SLOTS, ownedSlot, type OwnedRuleChanges, type RuleRecord } from '@/rules';
+import { linkRule, ownedSlot, PLAIN_OWNED_SLOTS, type LinkChange, type OwnedRule, type OwnedRuleChanges, type RuleRecord } from '@/rules';
 import type { Comparison } from '@/assistant/types';
 import { diffPlans, type PlanningInput, type PlanProblem } from './plan-generation';
 import { runPlanning } from './planning';
@@ -35,10 +35,18 @@ export async function compareRuleSets(
 }
 
 /** The rules as they would be once the dish form is saved, applied the way saveComponent applies them. */
-export function pendingRules(rules: RuleRecord[], dishId: number, changes: OwnedRuleChanges, dishName: string): RuleRecord[] {
+export function pendingRules(
+  rules: RuleRecord[],
+  dishId: number,
+  changes: OwnedRuleChanges,
+  dishName: string,
+  links: readonly LinkChange[] = [],
+): RuleRecord[] {
   let out = [...rules];
   let nextId = -1;
-  for (const slot of OWNED_SLOTS) {
+  const self = { id: dishId, name: dishName };
+  const add = (rule: OwnedRule) => out.push({ ...rule, id: nextId--, enabled: true, created_at: '' });
+  for (const slot of PLAIN_OWNED_SLOTS) {
     const build = changes[slot];
     if (build === undefined) continue;
     const current = out.find((r) => r.owner_component_id === dishId && ownedSlot(r) === slot);
@@ -46,10 +54,21 @@ export function pendingRules(rules: RuleRecord[], dishId: number, changes: Owned
       if (current) out = out.filter((r) => r !== current);
       continue;
     }
-    const rule = build({ id: dishId, name: dishName });
-    // An update keeps the stored rule's id and date, as the database update does, and switches a written link on.
-    if (current) out = out.map((r) => (r === current ? { ...current, ...rule, ...(isLinkSlot(slot) ? { enabled: true } : {}) } : r));
-    else out.push({ ...rule, id: nextId--, enabled: true, created_at: '' });
+    const rule = build(self);
+    // An update keeps the stored rule's id, state and date, as the database update does.
+    if (current) out = out.map((r) => (r === current ? { ...current, ...rule } : r));
+    else add(rule);
+  }
+  for (const change of links) {
+    if (change.kind === 'add') {
+      add(linkRule(self, change.link));
+      continue;
+    }
+    const current = out.find((r) => r.id === change.ruleId && r.owner_component_id === dishId);
+    if (!current) continue;
+    if (change.kind === 'remove') out = out.filter((r) => r !== current);
+    // A written link keeps its id and date and is switched on.
+    else out = out.map((r) => (r === current ? { ...current, ...linkRule(self, change.link), enabled: true } : r));
   }
   return out;
 }

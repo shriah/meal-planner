@@ -49,7 +49,7 @@ export function ComponentRow({
   const names = useMemo(() => linkNames(lookup), [lookup])
   const linkBadges = owned.links
     .filter((link) => link.values.length > 0)
-    .map((link) => ({ key: linkSlotOf(link), text: shortLink(link, names) }))
+    .map((link) => ({ key: String(link.ruleId ?? linkSlotOf(link)), text: shortLink(link, names) }))
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)
   const showsNeverAutoWarning = owned.neverAuto

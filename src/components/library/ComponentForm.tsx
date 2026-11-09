@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
-import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, LINK_SLOTS, linkSlotOf, ownedChanges, ownedSlot, readOwned, type DayMode, type DishLink, type RuleRecord } from '@/rules'
+import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, linkChanges, linkSlotOf, ownedChanges, readOwned, sameLink, type DayMode, type DishLink, type LinkChange, type RuleRecord } from '@/rules'
 import { LinkList, useLinkWarnings } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
@@ -75,18 +75,12 @@ interface ComponentFormProps {
   draft?: Partial<ComponentRecord>
   /**
    * Drafted links (e.g. the bases the assistant would serve the dish with). A new dish saves them all; an
-   * existing dish gets each one in place of its stored link in that slot, and saving writes only those slots.
+   * existing dish gets each one in place of its first stored link of that kind (or added), and saving writes only those.
    */
   draftLinks?: DishLink[]
 }
 
 const sameSet = <T,>(a: readonly T[] = [], b: readonly T[] = []) => a.length === b.length && a.every((v) => b.includes(v))
-
-/** Same link in meaning: order of values, days and meals does not matter, and an empty scope is no scope. */
-const sameLink = (a: DishLink | undefined, b: DishLink | undefined) =>
-  a === undefined || b === undefined ? a === b
-    : a.mode === b.mode && a.target === b.target && a.strength === b.strength && sameSet(a.values, b.values) &&
-      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals)
 
 interface FormState {
   name: string
@@ -96,7 +90,7 @@ interface FormState {
   curry_category: CurryCategory | 'none'
   /** The dish's links once the user has changed one; null keeps what the dish's rules say and writes no link rule. */
   links: DishLink[] | null
-  /** The stored links at the first edit; only slots that differ from them are written. */
+  /** The stored links at the first edit; only links that differ from them (matched by rule id) are written. */
   linksBase: DishLink[] | null
   dietary_tags: DietaryTag[]
   protein_tag: ProteinTag
@@ -214,11 +208,13 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     warnings.filter((w) => w.blocking).map((w) => `${linkSlotOf(list[w.link])}|${w.message}`)
   const storedBlocking = blockingOf(form.linksBase ?? storedLinks, useLinkWarnings(self, form.linksBase ?? storedLinks))
   const linkBlocked = blockingOf(links, useLinkWarnings(self, links)).some((k) => !storedBlocking.includes(k))
-  const slotOf = (list: DishLink[] | null, slot: string) => list?.find((l) => linkSlotOf(l) === slot)
   // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
   // off and is marked so; a changed one is switched on when saved.
-  const offSlots = LINK_SLOTS.filter((slot) => owned.find((r) => ownedSlot(r) === slot)?.enabled === false)
-  const shownOff = offSlots.filter((slot) => slotOf(links, slot) && sameLink(slotOf(links, slot), slotOf(form.linksBase ?? storedLinks, slot)))
+  const offRuleIds = owned.filter((r) => !r.enabled).map((r) => r.id)
+  const isOff = (l: DishLink) => l.ruleId !== undefined && offRuleIds.includes(l.ruleId)
+  const shownOff = links
+    .filter((l) => isOff(l) && sameLink(l, (form.linksBase ?? storedLinks).find((b) => b.ruleId === l.ruleId)))
+    .map(linkSlotOf)
   // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.
   const names = linkNames(lookup)
   const mentioning = component
@@ -243,14 +239,22 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const [draftMerged, setDraftMerged] = useState(false)
   if (mode === 'edit' && draftLinks?.length && lookup.loaded && !draftMerged) {
     setDraftMerged(true)
-    const drafted = (slot: string) => draftLinks.find((l) => linkSlotOf(l) === slot)
-    const merged = [
-      ...storedLinks.map((l) => drafted(linkSlotOf(l)) ?? l),
-      ...draftLinks.filter((l) => !storedLinks.some((s) => linkSlotOf(s) === linkSlotOf(l))),
-    ]
+    // Each drafted link takes the place of the first stored link of its kind (keeping its rule id), or is added.
+    const merged = [...storedLinks]
+    const added: DishLink[] = []
+    const replaced: number[] = []
+    for (const link of draftLinks) {
+      const i = merged.findIndex((l) => l.ruleId !== undefined && !replaced.includes(l.ruleId) && linkSlotOf(l) === linkSlotOf(link))
+      if (i < 0) {
+        added.push(link)
+        continue
+      }
+      replaced.push(merged[i].ruleId as number)
+      merged[i] = { ...link, ruleId: merged[i].ruleId }
+    }
     // A drafted link replaces a switched-off one even when it says the same, so saving switches it on.
-    const base = storedLinks.filter((l) => !(offSlots.includes(linkSlotOf(l)) && drafted(linkSlotOf(l))))
-    setForm((s) => ({ ...s, links: merged, linksBase: base }))
+    const base = storedLinks.filter((l) => !(isOff(l) && replaced.includes(l.ruleId as number)))
+    setForm((s) => ({ ...s, links: [...merged, ...added], linksBase: base }))
   }
 
   // Until the user picks one, default to the first category of the matching kind.
@@ -264,7 +268,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const canSaveBase = componentType !== 'base' || Boolean(baseCategoryId)
   const canSaveExtra = componentType !== 'extra' || Boolean(extraCategoryId)
 
-  /** The owned-rule changes saving would write; the preview plans with exactly these. */
+  /** The owned-rule and link changes saving would write; the preview plans with exactly these. */
   function pendingChanges() {
     // With nothing chosen, a dish goes with any base, any curry and any day.
     // "Only with" every option and no day or meal limit is the same as no rule.
@@ -273,7 +277,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       return l.mode === 'with' && !cleanScope(l.scope) && options.length > 0 && options.every((o) => l.values.includes(o.value))
     }
     const changes = ownedChanges(componentType, {
-      links: form.links?.filter((l) => !coversAll(l)),
       days: daysOfMode(form.day_mode, form.days),
       meals: form.meals,
       neverAuto: form.never_auto,
@@ -286,14 +289,16 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
       if (sameSet(form.meals, base.meals)) delete changes.allowed_meals
       if (form.never_auto === base.neverAuto) delete changes.exclude
     }
-    // Only the slots the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
-    // cost stays), and a rule stored elsewhere since the first edit is not overwritten.
-    if (form.links) {
-      for (const slot of LINK_SLOTS) {
-        if (sameLink(slotOf(form.links, slot), slotOf(form.linksBase, slot))) delete changes[slot]
-      }
-    }
-    return changes
+    // Only the links the user changed are written: an unchanged link keeps its stored rule as it is (a hand-edited
+    // cost stays), and a rule stored elsewhere since the first edit is not overwritten. A changed link that covers
+    // every option means no limit, so its rule is removed (or never added).
+    const links: LinkChange[] = form.links
+      ? linkChanges(form.linksBase ?? [], form.links).flatMap((c): LinkChange[] => {
+          if (c.kind === 'remove' || !coversAll(c.link)) return [c]
+          return c.kind === 'update' ? [{ kind: 'remove', ruleId: c.ruleId }] : []
+        })
+      : []
+    return { owned: changes, links }
   }
 
   async function handleSave() {
@@ -327,7 +332,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
 
       const changes = pendingChanges()
       const id = mode === 'edit' ? component?.id : undefined
-      await saveComponent(id, record, changes)
+      await saveComponent(id, record, changes.owned, changes.links)
       toast.success(id === undefined ? `${record.name} added to the library` : `${record.name} saved`)
       onSave()
     } finally {
@@ -336,6 +341,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   }
 
   const singularLabel = SINGULAR_LABEL[componentType]
+  const pending = pendingChanges()
 
   return (
     <div className="space-y-4 py-2">
@@ -533,7 +539,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
           />
         </ShareLibraryLookup>
-        <LinkPreview dishId={mode === 'edit' ? component?.id : undefined} dishName={form.name} changes={pendingChanges()} />
+        <LinkPreview dishId={mode === 'edit' ? component?.id : undefined} dishName={form.name} changes={pending.owned} links={pending.links} />
       </div>
 
       {mentioning.length > 0 && (

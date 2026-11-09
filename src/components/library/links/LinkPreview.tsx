@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { Comparison } from '@/assistant/types'
-import type { OwnedRuleChanges } from '@/rules'
+import type { LinkChange, OwnedRuleChanges } from '@/rules'
 import { COMPARE_SEED, compareRuleSets, pendingRules } from '@/services/compare-rules'
 import { loadPlanningInput, runPlanning } from '@/services/planning'
 import { pinsFromLocks } from '@/services/pins'
@@ -14,19 +14,21 @@ interface LinkPreviewProps {
   /** The dish being edited; undefined while adding one, which has nothing to compare yet. */
   dishId: number | undefined
   dishName: string
-  /** The owned-rule changes saving the form would write. */
+  /** The days, meals and never-auto changes saving the form would write. */
   changes: OwnedRuleChanges
+  /** The link changes saving the form would write. */
+  links?: readonly LinkChange[]
   /** Injectable so tests never plan for real. */
   run?: typeof runPlanning
 }
 
 /** What the changes would build, so a result shown for older form values is not mistaken for the current ones. */
-function changesKey(dishId: number, dishName: string, changes: OwnedRuleChanges) {
-  return JSON.stringify(Object.entries(changes).map(([slot, build]) => [slot, build ? build({ id: dishId, name: dishName }) : build]))
+function changesKey(dishId: number, dishName: string, changes: OwnedRuleChanges, links: readonly LinkChange[]) {
+  return JSON.stringify([Object.entries(changes).map(([slot, build]) => [slot, build ? build({ id: dishId, name: dishName }) : build]), dishName, links])
 }
 
 /** Plans this week with and without the form's unsaved rule changes, on request: planning twice is slow. */
-export function LinkPreview({ dishId, dishName, changes, run = runPlanning }: LinkPreviewProps) {
+export function LinkPreview({ dishId, dishName, changes, links = [], run = runPlanning }: LinkPreviewProps) {
   const plan = usePlanStore((s) => s.plan)
   const hydrated = usePlanStore((s) => s.hydrated)
   const [running, setRunning] = useState(false)
@@ -39,7 +41,7 @@ export function LinkPreview({ dishId, dishName, changes, run = runPlanning }: Li
   }, [hydrated])
 
   if (dishId === undefined || !plan) return null
-  const key = changesKey(dishId, dishName, changes)
+  const key = changesKey(dishId, dishName, changes, links)
   const shown = result?.key === key ? result : null
 
   async function preview(id: number) {
@@ -49,7 +51,7 @@ export function LinkPreview({ dishId, dishName, changes, run = runPlanning }: Li
       const input = await loadPlanningInput()
       const { plan: current, locks } = usePlanStore.getState()
       const pins = current ? pinsFromLocks(current, locks) : undefined
-      const after = pendingRules(input.rules, id, changes, dishName)
+      const after = pendingRules(input.rules, id, changes, dishName, links)
       const comparison = await compareRuleSets(input, after, { seed: COMPARE_SEED, pins, touches: (c) => c === id }, run)
       setResult({ key, comparison, names: new Map(input.library.map((c) => [c.id, c.name])) })
     } catch {

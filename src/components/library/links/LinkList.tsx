@@ -54,7 +54,9 @@ export function LinkList({ dishName, componentType, selfId, links, offSlots = []
         links={links}
         onCancel={() => setEditing(null)}
         onDone={(link) => {
-          onChange(initial === undefined ? [...links, link] : links.map((l) => (linkSlotOf(l) === linkSlotOf(initial) ? link : l)))
+          // An edited link keeps the rule id of the one it replaces, so saving rewrites that rule.
+          const edited = initial?.ruleId === undefined ? link : { ...link, ruleId: initial.ruleId }
+          onChange(initial === undefined ? [...links, link] : links.map((l) => (l === initial ? edited : l)))
           setEditing(null)
         }}
       />
@@ -68,7 +70,7 @@ export function LinkList({ dishName, componentType, selfId, links, offSlots = []
       {links.length > 0 && (
         <ul className="space-y-1">
           {links.map((link, i) => (
-            <li key={linkSlotOf(link)} className="text-xs">
+            <li key={link.ruleId ?? `${linkSlotOf(link)}:${i}`} className="text-xs">
               {editing === linkSlotOf(link) ? editor(link) : (
                 <div className="flex items-center gap-2">
                   <span className="flex-1">{describeLink(name, link, names)}{offSlots.includes(linkSlotOf(link)) && ' (off)'}</span>

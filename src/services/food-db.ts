@@ -1,6 +1,6 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, isDishTarget, isLinkSlot, linkRule, ownedRuleName, readLink, ownedSlot, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { defaultRules, isDishTarget, linkRule, ownedRuleName, PLAIN_OWNED_SLOTS, readLink, ownedSlot, type LinkChange, type OwnedRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -50,41 +50,57 @@ export async function deleteComponent(id: number): Promise<void> {
   });
 }
 
-// ─── Owned rules (base pairing, curry clash, specific days) ───────────────────
+// ─── Owned rules (links, days, meals, never-auto) ─────────────────────────────
 
-export type { OwnedRuleChanges };
+export type { LinkChange, OwnedRuleChanges };
 
 export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]> {
   const owned = db.rules.where('owner_component_id');
   return (componentId === undefined ? owned.above(0) : owned.equals(componentId)).toArray();
 }
 
-/** The rule of one type a component owns; each component owns at most one per type. */
+/** The rule a component owns in one slot; with several links in a slot, the oldest (lowest id). */
 export async function getOwnedRule(componentId: number, template: OwnedTemplate): Promise<RuleRecord | undefined> {
-  return (await getOwnedRules(componentId)).find((r) => ownedSlot(r) === template);
+  return (await getOwnedRules(componentId)).filter((r) => ownedSlot(r) === template).sort((a, b) => a.id - b.id)[0];
 }
 
-/** Add or update a component together with the rules it owns. Rule types left out are not touched. */
+/**
+ * Add or update a component together with the rules it owns. Days, meals and never-auto left out of `owned` are not
+ * touched; links change only as `links` says, each by its rule id.
+ */
 export async function saveComponent(
   id: number | undefined,
   component: Omit<ComponentRecord, 'id'>,
   owned: OwnedRuleChanges = {},
+  links: readonly LinkChange[] = [],
 ): Promise<number> {
   return db.transaction('rw', db.components, db.rules, async () => {
     const componentId = id ?? ((await db.components.add(component as ComponentRecord)) as number);
     if (id !== undefined) await db.components.update(id, component);
     const existing = await getOwnedRules(componentId);
-    for (const [template, build] of Object.entries(owned) as [OwnedTemplate, OwnedRuleChanges[OwnedTemplate]][]) {
-      if (build === undefined) continue;
+    const self = { id: componentId, name: component.name };
+    const add = (rule: OwnedRule) => db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
+    for (const [template, build] of Object.entries(owned) as [keyof OwnedRuleChanges, OwnedRuleChanges[keyof OwnedRuleChanges]][]) {
+      if (build === undefined || !PLAIN_OWNED_SLOTS.includes(template)) continue;
       const current = existing.find((r) => ownedSlot(r) === template);
       if (build === null) {
         if (current) await db.rules.delete(current.id);
         continue;
       }
-      const rule = build({ id: componentId, name: component.name });
+      const rule = build(self);
+      if (current) await db.rules.update(current.id, rule);
+      else await add(rule);
+    }
+    for (const change of links) {
+      if (change.kind === 'add') {
+        await add(linkRule(self, change.link));
+        continue;
+      }
+      // Only this dish's own rules are changed by id.
+      if (!existing.some((r) => r.id === change.ruleId)) continue;
+      if (change.kind === 'remove') await db.rules.delete(change.ruleId);
       // A link that is written is meant to be in force, so one that was switched off is switched on again.
-      if (current) await db.rules.update(current.id, isLinkSlot(template) ? { ...rule, enabled: true } : rule);
-      else await db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
+      else await db.rules.update(change.ruleId, { ...linkRule(self, change.link), enabled: true });
     }
     return componentId;
   });
