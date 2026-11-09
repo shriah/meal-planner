@@ -101,7 +101,7 @@ describe('comes-with warnings', () => {
     dish(903, 'curry', { name: 'Egg Curry' }), dish(904, 'curry', { name: 'Sambar' }),
   ];
   const idiyappam = { id: 900, name: 'Idiyappam', componentType: 'base' as ComponentType };
-  const comes = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'curry_dish', values, strength: 'always', ...over });
+  const comes = (values: (number | string)[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'curry_dish', values, strength: 'always', ...over });
   const servedWith = (id: number, name: string) =>
     rec(linkRule({ id, name }, { mode: 'serve', target: 'base_dish', values: [900], strength: 'always' }), 70 + id);
 
@@ -133,6 +133,24 @@ describe('comes-with warnings', () => {
     const w = linkWarnings(idiyappam, [comes([901, 902])], { dishes: lib, rules: [servedWith(901, 'Kerala Stew (Veg)')] }, nm);
     expect(w).toEqual([{ link: 0, message: 'Kerala Stew (Veg) is always served with Idiyappam, so Kerala Stew (Non-Veg) will never be picked. Remove that link on Kerala Stew (Veg) to let either come.' }]);
     expect(linkWarnings(idiyappam, [comes([901])], { dishes: lib, rules: [servedWith(901, 'Kerala Stew (Veg)')] }, nm)).toEqual([]);
+  });
+
+  it('a comes link whose dishes were all deleted does not block a dish served with the base', () => {
+    expect(linkWarnings(idiyappam, [comes([999])], { dishes: lib, rules: [servedWith(904, 'Sambar')] }, nm).filter((w) => w.blocking)).toEqual([]);
+  });
+
+  it('two disjoint Always comes links to subzis block Save', () => {
+    const subzis = [...lib, dish(905, 'subzi', { name: 'Beans' }), dish(906, 'subzi', { name: 'Cabbage' })];
+    const sub = (values: number[]): DishLink => comes(values, { target: 'subzi_dish' });
+    expect(linkWarnings(idiyappam, [sub([905]), sub([906])], { dishes: subzis, rules: [] }, nm)).toMatchObject([{ link: 1, blocking: true }]);
+    expect(linkWarnings(idiyappam, [sub([905]), comes([901])], { dishes: subzis, rules: [] }, nm)).toEqual([]);
+  });
+
+  it('resolves a curry type link to its curries when judging disjoint', () => {
+    const typed = [...lib, dish(907, 'curry', { name: 'Stew B', curry_category: 'stew' } as Partial<ComponentRecord>), dish(908, 'curry', { name: 'Dal', curry_category: 'lentil' } as Partial<ComponentRecord>)];
+    const byType: DishLink = comes(['stew'], { target: 'curry_category' });
+    expect(linkWarnings(idiyappam, [byType, comes([907])], { dishes: typed, rules: [] }, nm)).toEqual([]);
+    expect(linkWarnings(idiyappam, [byType, comes([908])], { dishes: typed, rules: [] }, nm)).toMatchObject([{ link: 1, blocking: true }]);
   });
 
   it('a comes-with link to nothing plannable warns', () => {

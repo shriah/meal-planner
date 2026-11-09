@@ -62,7 +62,7 @@ export function linkWarnings(
         });
         if (earlier) out.push({ link: i, blocking: true, message: `${mine} already always comes with ${listValues(earlier, names)}, and a meal holds one ${role}.` });
         // Another dish always served with this base leaves no room for the ones this link names.
-        const other = servedOnMe.find((d) => d.componentType === role && !mineIds.has(d.id));
+        const other = mineIds.size === 0 ? undefined : servedOnMe.find((d) => d.componentType === role && !mineIds.has(d.id));
         if (other) out.push({ link: i, blocking: true, message: `${other.name} is always served with ${mine}, which leaves no room for ${listValues(link, names)}, and a meal holds one ${role}.` });
         // A dish among the chosen ones that is always served with it makes the others unreachable.
         const narrowing = servedOnMe.find((d) => d.componentType === role && mineIds.has(d.id));
