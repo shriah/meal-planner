@@ -144,13 +144,14 @@ export const PAIRING_CASES: RuleCase[] = [
     id: 'served-with-ignores-its-limit',
     group: 'Pairings',
     name: "A served side's limit does not make its base rarer",
-    why: "Papad always served with Rice, limited to twice a week: a brought dish's own limit made its base, Rice, rarer. A served dish's limits only rank the pick among a link's dishes. This passes on today's code (a served dish's limit is not yet felt by Rice), so it is a guard for the change.",
+    why: "A served dish's own limit made its base rarer: Papad is always served with Rice and limited to once a week, and Rice was planned far less often than without the link. A served dish's limits only rank the pick among a link's dishes.",
+    known: "a served dish's own limit makes its base rarer — fixed in Task 2",
     rules: (lib) => {
       const papad = lib.dish('Papad');
       const rice = lib.dish('Rice');
       return [linkRule(papad, { mode: 'serve', target: 'base_dish', values: [rice.id] })];
     },
-    given: (lib) => [limitRule(lib.dish('Papad'), 2, 'week')],
+    given: (lib) => [limitRule(lib.dish('Papad'), 1, 'week')],
     expect: [nearNoRulesCount('Rice'), everyMealWith('Rice', ['Papad']), noHardProblems()],
   },
 ];

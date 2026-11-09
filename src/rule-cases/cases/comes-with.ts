@@ -270,21 +270,18 @@ export const COMES_WITH_CASES: RuleCase[] = [
     id: 'limit-ranks-a-links-dishes',
     group: 'Pairings',
     name: "A limit ranks the dishes of a link",
-    why: `${REPORT}Idiyappam comes with either stew and Kerala Stew (Veg) is limited to once a week: the limit only ranks the pick, so the Veg stew is in at most one Idiyappam meal a week and the other meals take the Non-Veg stew. This passes on today's code, so it is a guard for Task 3, which makes the limit rank the pick.`,
-    dishes: DISHES,
-    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: STEWS.map((n) => lib.dish(n).id) })],
-    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
+    why: `${REPORT}Idiyappam comes with a frequent Kerala Stew (Veg) or a rare Kerala Stew (Non-Veg), and the frequent one is limited to once a week. Frequency alone would pick the frequent stew for most meals; the limit ranks it down, so it is in at most one Idiyappam meal a week and the others take the other stew. Today the hard cap alone holds this, so it passes; it guards the ranking once a brought dish's limit stops counting against its base (Task 2 marks it known until Task 3).`,
+    dishes: DISHES_BY_FREQUENCY,
+    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [lib.dish('Kerala Stew (Veg)').id, lib.dish('Kerala Stew (Non-Veg)').id] })],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(FREQUENT_STEW_VEG, 1, 'week')],
     expect: [
       everyMealWithOneOf('Idiyappam', STEWS),
       {
-        says: 'Kerala Stew (Veg) is in at most one Idiyappam meal in any week with two or more Idiyappam meals',
+        says: 'Kerala Stew (Veg) is in at most one Idiyappam meal in any week',
         check: (w) => {
           const idi = w.lib.dish('Idiyappam').id;
           const stew = w.lib.dish('Kerala Stew (Veg)').id;
-          const bad = w.weeks.filter((wk) => {
-            const meals = wk.filter((s) => idsOf(s).includes(idi));
-            return meals.length >= 2 && meals.filter((s) => idsOf(s).includes(stew)).length > 1;
-          }).length;
+          const bad = w.weeks.filter((wk) => wk.filter((s) => idsOf(s).includes(idi) && idsOf(s).includes(stew)).length > 1).length;
           return { pass: bad === 0, got: `${bad} of ${w.weeks.length} weeks have more` };
         },
         highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
