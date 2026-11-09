@@ -266,7 +266,6 @@ export const COMES_WITH_CASES: RuleCase[] = [
   {
     kind: 'plan',
     id: 'limit-ranks-a-links-dishes',
-    known: "a brought dish's limit does not yet rank a link's dishes — fixed in Task 3",
     group: 'Pairings',
     name: "A limit ranks the dishes of a link",
     why: `${REPORT}Idiyappam comes with a frequent Kerala Stew (Veg) or a rare Kerala Stew (Non-Veg), and the frequent one is limited to once a week. Frequency alone would pick the frequent stew for most meals; the limit ranks it down, so it is in at most one Idiyappam meal a week and the others take the other stew. A brought dish's limit no longer counts against its base, so only the limit ranking the link's dishes can hold this.`,

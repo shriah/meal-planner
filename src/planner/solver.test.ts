@@ -3,7 +3,7 @@ import type { Constraint, CountConstraint } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, score, type CompiledModel, type Score } from './scorer';
-import { chooseCandidate, clonePlan, solve } from './solver';
+import { broughtScore, chooseCandidate, clonePlan, solve } from './solver';
 import { component } from './test-utils';
 import { DAYS, MEALS, SLOT_COUNT, slotIndex, type ComponentLike, type PlanState } from './types';
 
@@ -121,6 +121,24 @@ describe('solver', () => {
       const r = solve(buildModel({ library: lib, constraints: [want, never11] }), { ...quick, seed: 1 });
       expect(r.score.hard).toBe(0);
       for (const s of r.plan) expect(s.curry).toBe(12);
+    });
+
+    it('broughtScore ranks a candidate under its limit ahead of one over it', () => {
+      // Curry 11 is limited to once a week and already planned with base 2; the limit gives way to a
+      // brought dish, so the hard score is the same for both candidates and only the limit's rank tells
+      // them apart.
+      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, yieldsTo: 'ask' };
+      const m = buildModel({ library, constraints: [want, once11] });
+      const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
+      plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
+      const slot = slotIndex('tuesday', 'lunch');
+      const withCurry = (curry: number) => {
+        const p = clonePlan(plan);
+        p[slot] = { base: 1, curry, extras: [] };
+        return broughtScore(m, p, slot, curry);
+      };
+      expect(withCurry(11).hard).toBe(withCurry(12).hard);
+      expect(compareScore(withCurry(12), withCurry(11))).toBeLessThan(0);
     });
 
     it('a candidate with its own Always pairing is chosen too, and brings its side', () => {

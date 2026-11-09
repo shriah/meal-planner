@@ -412,11 +412,25 @@ export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): Slot
 
 const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => [r, i])) as Record<Role, number>;
 
+export interface ScoreOptions {
+  /**
+   * Score the assignment of `id` at `slot` as a free pick: no count rule gives way to it, so the limits
+   * that give way to a brought dish are charged to it. Its prefer rules still give way (they rank a link's
+   * candidates through the solver's `candidateWeight`). Used to rank a link's candidates.
+   */
+  freePick?: { slot: number; id: number };
+  /** Declared for the conditional links of Task 7; it has no effect yet. */
+  ignoreConditional?: boolean;
+}
+
 /**
  * Score a plan. With `justify`, also explain every hard and soft violation (slower; used for
  * reporting, not inside the search loop).
  */
-export function score(m: CompiledModel, plan: PlanState, justify = false): ScoreResult {
+export function score(m: CompiledModel, plan: PlanState, justify = false, opts: ScoreOptions = {}): ScoreResult {
+  const { freePick } = opts;
+  /** The free pick's assignment, or -1. */
+  let freeIdx = -1;
   const st = m.state;
   const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
   const just: Justification[] = [];
@@ -554,6 +568,9 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
     if (s.subzi !== undefined) place(s.subzi, ROLE_INDEX.subzi, slot);
     for (const id of s.extras) place(id, ROLE_INDEX.extra, slot);
     if (pairs.length && n > start) pairSlot(slot, start, n);
+    if (freePick?.slot === slot) {
+      for (let k = start; k < n; k++) if (m.library[bufCi[k]].id === freePick.id) freeIdx = k;
+    }
   }
 
   for (const cc of counts) {
@@ -570,8 +587,11 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
   const N = m.library.length;
   for (let i = 0; i < n; i++) {
     const memo = bufMemo[i];
-    const flag = bufFlag[i];
-    soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
+    // A free pick's prefer rules still give way: they rank a link's candidates through `candidateWeight`,
+    // which charging them here would count twice. Only its count rules are charged.
+    const preferFlag = bufFlag[i];
+    soft += memo.prefer + (preferFlag & UNIT ? 0 : memo.preferUnit) + (preferFlag & ASKED ? 0 : memo.preferAsk);
+    const flag = i === freeIdx ? 0 : preferFlag;
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
     const base = flag & UNIT ? plan[slot].base : undefined;

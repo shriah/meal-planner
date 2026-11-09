@@ -148,6 +148,14 @@ describe('pairings', () => {
     expect(score(m, at('lunch', { base: 6, curry: 5 })).soft).toBe(2);
   });
 
+  it('a free pick is charged the limits that give way to asked sides', () => {
+    const sambarNever = count({ id: 'sambar-never', select: is('id', 2), bounds: { hardMax: 0 }, yieldsTo: 'ask' });
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarNever]);
+    const plan = at('lunch', { base: 1, curry: 2 });
+    expect(score(m, plan).hard).toBe(0);
+    expect(score(m, plan, false, { freePick: { slot: slotIndex('monday', 'lunch'), id: 2 } }).hard).toBe(1);
+  });
+
   it('a prefer that gives way to units still charges a side only asked for', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), prefer({ yieldsTo: 'unit' })]);
     expect(score(m, at('lunch', { base: 1, curry: 2 })).soft).toBe(2);
