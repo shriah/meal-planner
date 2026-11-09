@@ -35,7 +35,7 @@ export interface PlanProblem {
 }
 
 /** A side present in its meal because a pairing on `by` brings it. */
-export interface PairedSide { day: DayOfWeek; meal: Meal; component: number; by: number }
+export interface PairedSide { day: DayOfWeek; meal: Meal; component: number; by: number; ruleId?: number }
 
 export interface PlanningOutcome {
   plan: WeeklyPlan;
@@ -174,10 +174,10 @@ export function pairedSides(input: PlanningInput, plan: WeeklyPlan): PairedSide[
       const seen = new Set<string>();
       for (const p of slotPairs(m, state, i)) {
         if (p.suppressed || p.component === undefined) continue;
-        const k = `${p.component}|${p.by}`;
+        const k = `${p.component}|${p.by}|${p.ruleId ?? ''}`;
         if (seen.has(k)) continue;
         seen.add(k);
-        out.push({ day, meal, component: p.component, by: p.by });
+        out.push({ day, meal, component: p.component, by: p.by, ...(p.ruleId !== undefined && { ruleId: p.ruleId }) });
       }
     }
   }

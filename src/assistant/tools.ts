@@ -347,8 +347,9 @@ function comesLinks(
     const strength = SERVE_STRENGTH[entry.strength ?? 'always'];
     const add = (target: Parameters<typeof offersComes>[1], values: (number | string)[]): string | undefined => {
       if (!offersComes(componentType, target)) {
-        const own = componentType === 'curry' || componentType === 'subzi' ? `a ${componentType} does not come with ${componentType === 'curry' ? 'curries' : 'subzis'}; ` : '';
-        return `${own}a ${componentType} cannot come with ${target.replace('_', ' ')}`;
+        return componentType === 'curry' || componentType === 'subzi'
+          ? `a ${componentType} does not come with ${componentType === 'curry' ? 'curries' : 'subzis'}`
+          : `a ${componentType} cannot come with ${target.replace('_', ' ')}`;
       }
       links.push({ mode: 'comes', target, values: [...new Set(values)], strength });
       return undefined;
@@ -434,14 +435,14 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
 /** The dishes in one slot that a pairing brought, named with the dish that brought each. */
 function pairedWith(data: AssistantData, plan: WeeklyPlan, day: DayOfWeek, meal: Meal): { dish: string; by: string; how: string }[] {
   const name = (id: number) => data.library.find((c) => c.id === id)?.name ?? `dish ${id}`;
-  // A side that has its own served-with link was brought by the base; otherwise the dish named in `by` brings it along.
-  const servedWithBase = (id: number) => readOwned(data.rules.filter((r) => r.owner_component_id === id && r.enabled)).links.some((l) => l.mode === 'serve');
+  // The rule that brought the side says how: a served-with rule belongs to the side, a comes-with rule to the dish named in `by`.
+  const templateOf = (ruleId: number | undefined) => data.rules.find((r) => r.id === ruleId)?.spec.template;
   return pairedSides(data, knownOnly(plan, data))
     .filter((p) => p.day === day && p.meal === meal)
     .map((p) => ({
       dish: name(p.component),
       by: name(p.by),
-      how: servedWithBase(p.component) ? `${name(p.component)} is served with ${name(p.by)}` : `${name(p.by)} comes with ${name(p.component)}`,
+      how: templateOf(p.ruleId) === 'comes_with' ? `${name(p.by)} comes with ${name(p.component)}` : `${name(p.component)} is served with ${name(p.by)}`,
     }));
 }
 

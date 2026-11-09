@@ -783,4 +783,31 @@ describe('comes-with drafts', () => {
       expect(JSON.stringify(d.parameters)).toContain('comes_with');
     }
   });
+
+  it('says in each meal which link brought a side that has both a comes link and a serve link', async () => {
+    const lib = [dish(10, 'Rice', { componentType: 'base' }), dish(11, 'Mutton Curry'), dish(12, 'Rasam', { componentType: 'extra' }), dish(13, 'Appam', { componentType: 'base' })];
+    const comes = linkRule({ id: 11, name: 'Mutton Curry' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always' });
+    const serve = linkRule({ id: 12, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const rules = [
+      { id: 5, name: comes.name, spec: comes.spec, enabled: true, created_at: '', owner_component_id: 11 },
+      { id: 6, name: serve.name, spec: serve.spec, enabled: true, created_at: '', owner_component_id: 12 },
+    ] as RuleRecord[];
+    const plan: WeeklyPlan = { slots: [
+      { day: 'monday', meal_slot: 'lunch', base_id: 13, curry_id: 11, extra_ids: [12] },
+      { day: 'tuesday', meal_slot: 'lunch', base_id: 10, extra_ids: [12] },
+    ] };
+    const how = async (day: string) => ((await runTool('explain_plan_slot', { day, meal: 'lunch' }, ctxOf({ library: lib, rules, plan }))) as { data: { pairedWith: { how: string }[] } }).data.pairedWith.map((p) => p.how);
+    expect(await how('monday')).toEqual(['Mutton Curry comes with Rasam']);
+    expect(await how('tuesday')).toEqual(['Rasam is served with Rice']);
+  });
+
+  it('propose_pairing appends a comes link beside a stored one instead of merging into it', async () => {
+    const lib = [dish(1, 'Idli', { componentType: 'base' }), dish(2, 'Sambar'), dish(3, 'Rasam', { componentType: 'extra' })];
+    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }) } as RuleRecord;
+    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Rasam'] }] }, ctxOf({ library: lib, categories, rules: [stored] }));
+    expect(effectOf(r)).toEqual({
+      kind: 'dish-links', dishId: 1, dishName: 'Idli',
+      links: [{ mode: 'comes', target: 'extra_dish', values: [3], strength: 'always' }],
+    });
+  });
 });

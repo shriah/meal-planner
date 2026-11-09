@@ -135,7 +135,7 @@ describe('pairings', () => {
     const withPongal = out.plan.slots.filter((s) => s.base_id === 10);
     expect(withPongal.length).toBeGreaterThan(0);
     for (const s of withPongal) {
-      expect(out.paired).toContainEqual({ day: s.day, meal: s.meal_slot, component: 11, by: 10 });
+      expect(out.paired).toContainEqual({ day: s.day, meal: s.meal_slot, component: 11, by: 10, ruleId: 5 });
     }
     expect(out.paired.every((p) => p.component === 11 && p.by === 10)).toBe(true);
   });

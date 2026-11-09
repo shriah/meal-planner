@@ -372,6 +372,8 @@ export interface SlotPair {
   component?: number;
   /** Id of the dish whose pairing brings it. */
   by: number;
+  /** The rule that makes the pairing, when it came from a stored rule. */
+  ruleId?: number;
   /** Brought by a `must` pair that is enforced. */
   unit: boolean;
   /** Not enforced because another pair from the same dish claims the same role (curry or subzi). */
@@ -394,6 +396,7 @@ export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): Slot
         candidates: candidateIds(m, p),
         ...(component !== undefined && { component }),
         by: id,
+        ...(p.def.ruleId !== undefined && { ruleId: p.def.ruleId }),
         ...(code & 1 ? { unit: false, suppressed: true } : { unit: p.must }),
       });
     }
