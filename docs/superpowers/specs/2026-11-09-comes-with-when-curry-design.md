@@ -36,9 +36,12 @@ Agreed from my proposals (the user said "works"):
   the curry is settled first, and the link only adds its dish once the curry is there.
 - The curry counts however it got into the meal: chosen by the planner, brought by another link (including Rice's own
   "Comes with Sambar"), or locked by the user before a regenerate.
-- **The brought dish's own rules never limit the base or the curry** (user, after the builder check). "Papad at most 2 a
-  week" with an Always link: the third Rice + Sambar meal keeps Sambar and goes without Papad, reported as a soft problem.
-  Neither Papad's limits nor the missing pair may move the curry choice.
+- **The brought dish's own rules never limit the base or the curry** (user, after the builder check). Neither Papad's
+  limits nor a missing pair may move the curry choice.
+- **Count and repeat limits do not stop a brought dish** (user). When the link names one dish, that dish is brought
+  whatever its count or repeat limits say ("Papad at most 2 a week", "Vary dishes across the week", "No dish on the same
+  or next day"), and those limits are not charged for it. When the link names several, the limits are used only to
+  choose among them; one of them is still brought.
 
 ## Picks and locks (user)
 
@@ -128,9 +131,8 @@ Agreed from my proposals (the user said "works"):
   count against Sambar. The curry choice (construction and local search, curry moves and swaps) must be blind to
   everything a conditional link causes: the missing-pair cost and the brought dish's own costs and limits. How (score
   the curry before conditional brings, or leave those costs out of curry moves) is left to the builder.
-- An Always conditional link overrides the brought dish's day/meal/never-auto rules (as "Comes with" does) but not its
-  count or repeat limits; where those stop it, the meal goes without and the miss is a soft problem, not a hard
-  violation (my call, from "Papad's limits should not limit Rice or Sambar").
+- An Always conditional link overrides the brought dish's day/meal/never-auto rules (as "Comes with" does). Count and
+  repeat limits never stop a brought dish (see The rule); with several candidates they only rank the pick.
 - The lock nudge (see Picks and locks) is the only path by which the link may move the curry.
 - Moving suppression to where the meal is known: a conditional pair can only claim the subzi role in meals where its
   curry is present.
@@ -148,8 +150,10 @@ and Sambar are in the shared library or added there:
 - Condition with two curries (Sambar or Rasam).
 - Sambar brought by Rice's own "Comes with Sambar" still triggers the Papad link (chain).
 - A locked Sambar on a Rice meal triggers it at regenerate; a locked Rasam does not.
-- Papad at most 2 a week with an Always link: Rice + Sambar meals are as many as without the link; two have Papad, the
-  rest report a soft problem and no hard violation.
+- Papad at most 2 a week with an Always link: Rice + Sambar meals are as many as without the link, every one has Papad,
+  and the limit reports no violation for them.
+- A link naming Papad and a second crunchy extra, with Papad at most 2 a week: every Rice + Sambar meal has one of them,
+  and the pick favours the other extra once Papad has reached its limit.
 - Papad and Rice locked in a meal: over many seeds, that meal gets Sambar more often than with Papad unlocked.
 - A conditional subzi link beats a plain Usually subzi link on the same base in Sambar meals, and does not suppress it
   in other meals.
