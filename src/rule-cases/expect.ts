@@ -161,3 +161,33 @@ export const nearNoRulesCount = (dish: string): PlanExpectation => ({
     return { pass, got: `${total} (${base} without the rules)` };
   },
 });
+
+/** Every meal of the dish has at least one of these other dishes. */
+export const everyMealWithOneOf = (dish: string, oneOf: string[]): PlanExpectation => {
+  const lacks = (w: CaseWeeks, s: PlanSlotLike) => !oneOf.some((n) => idsOf(s).includes(w.lib.dish(n).id));
+  const mine = (w: CaseWeeks, s: PlanSlotLike) => idsOf(s).includes(w.lib.dish(dish).id);
+  return {
+    says: `Every ${dish} meal has ${list(oneOf, 'or')}`,
+    check: (w) => {
+      const meals = slotsOf(w).filter((s) => mine(w, s));
+      const k = meals.filter((s) => !lacks(w, s)).length;
+      return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
+    },
+    failingSeed: (w) => firstWeek(w, (wk) => wk.some((s) => mine(w, s) && lacks(w, s))),
+    highlights: (slot, lib) => idsOf(slot).includes(lib.dish(dish).id),
+  };
+};
+
+/** Each of the dishes is planned with the partner in at least one meal. */
+export const eachPlanned = (names: string[], partner: string): PlanExpectation => ({
+  says: `Each of ${list(names)} is planned with ${partner} at least once`,
+  check: (w) => {
+    const p = w.lib.dish(partner).id;
+    const missing = names.filter((n) => {
+      const id = w.lib.dish(n).id;
+      return !slotsOf(w).some((s) => idsOf(s).includes(id) && idsOf(s).includes(p));
+    });
+    return { pass: missing.length === 0, got: missing.length === 0 ? 'all of them' : `never with ${partner}: ${list(missing)}` };
+  },
+  highlights: (slot, lib) => idsOf(slot).includes(lib.dish(partner).id),
+});

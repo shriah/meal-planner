@@ -3,7 +3,7 @@ import { exclusionRule, mealRule } from '@/rules';
 import { neverAt, plannedAtLeast, plannedBetween } from '../expect';
 import type { CaseRule, RuleCase } from '../types';
 
-const CURRY_AT_EVERY_MEAL: CaseRule = {
+export const CURRY_AT_EVERY_MEAL: CaseRule = {
   name: 'A curry at every meal',
   spec: { template: 'require', params: { match: is('componentType', 'curry'), min: 1, strength: 'must' } },
 };
