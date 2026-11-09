@@ -1,6 +1,6 @@
 // Expectation helpers: each is a sentence with a check over the planned weeks.
 import type { Day, Meal, PlanSlotLike } from '@/planner';
-import type { CaseWeeks, PlanExpectation } from './types';
+import type { CaseLibrary, CaseWeeks, PlanExpectation } from './types';
 
 export const idsOf = (s: PlanSlotLike): number[] =>
   [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((x): x is number => x !== undefined);
@@ -202,4 +202,45 @@ export const eachPlanned = (names: string[], partner: string): PlanExpectation =
     return { pass: missing.length === 0, got: missing.length === 0 ? 'all of them' : `never with ${partner}: ${list(missing)}` };
   },
   highlights: (slot, lib) => idsOf(slot).includes(lib.dish(partner).id),
+});
+
+/** Which meals an expectation looks at. */
+export type Pick = (s: PlanSlotLike, lib: CaseLibrary) => boolean;
+export const mealsPicked = (w: CaseWeeks, pick: Pick): PlanSlotLike[] => w.weeks.flat().filter((s) => pick(s, w.lib));
+
+/** A check over the meals `where` picks: `pass` gets the count that also satisfy `then` and the meals picked. */
+const overPicked = (says: string, where: Pick, then: Pick, pass: (k: number, n: number) => boolean): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const meals = mealsPicked(w, where);
+    const k = meals.filter((s) => then(s, w.lib)).length;
+    return { pass: meals.length > 0 && pass(k, meals.length), got: `${k} of ${meals.length}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
+
+/** Every meal `where` picks also satisfies `then`; at least one meal is picked. */
+export const everyPicked = (says: string, where: Pick, then: Pick): PlanExpectation => overPicked(says, where, then, (k, n) => k === n);
+/** No meal `where` picks satisfies `then`; at least one meal is picked, so the check is not empty. */
+export const nonePicked = (says: string, where: Pick, then: Pick): PlanExpectation => overPicked(says, where, then, (k) => k === 0);
+/** At least `num` of every `den` picked meals satisfy `then`. */
+export const mostPicked = (says: string, where: Pick, then: Pick, num: number, den: number): PlanExpectation =>
+  overPicked(says, where, then, (k, n) => k * den >= n * num);
+/** At least `min` meals are picked. */
+export const atLeastPicked = (says: string, where: Pick, min: number): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const n = mealsPicked(w, where).length;
+    return { pass: n >= min, got: `${n}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
+/** Some week has more than `over` picked meals. */
+export const someWeekPicks = (says: string, where: Pick, over: number): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const counts = w.weeks.map((wk) => wk.filter((s) => where(s, w.lib)).length);
+    return { pass: counts.some((c) => c > over), got: `weekly counts ${counts.join(', ')}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
 });
