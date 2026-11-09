@@ -6,7 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { ALL_CASES } from './cases';
 import { TEST_LIBRARY } from './library';
 import { renderReport } from './report';
-import { runPlanCase } from './run';
+import { failsWithoutSubject, runPlanCase } from './run';
 import type { CaseResult } from './types';
 
 const results: CaseResult[] = [];
@@ -32,6 +32,16 @@ describe('rule cases', () => {
         const failed = r.expectations.filter((e) => !e.pass).map((e) => `${e.says} (got ${e.got})`);
         expect.fail(`${c.id} failed:\n- ${failed.join('\n- ')}`);
       }
+    });
+  }
+});
+
+// A case that still passes without its own rules, pins and named defaults would pass for any planner.
+describe('rule cases fail without their subject', () => {
+  for (const c of ALL_CASES.filter((x) => !x.known)) {
+    it(c.name, { timeout: 30_000 }, () => {
+      const { fails, passing } = failsWithoutSubject(c);
+      if (!fails) expect.fail(`${c.id} passes without what it is about:\n- ${passing.join('\n- ')}`);
     });
   }
 });

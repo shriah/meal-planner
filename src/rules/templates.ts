@@ -92,6 +92,13 @@ const PairsWithParams = z
   .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
+const ComesWithParams = z
+  .object({ match: MatcherSchema, of: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict()
+  // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
+  .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
+    { message: 'name one kind of dish first, then the dishes', path: ['of'] });
+
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
   .strict();
@@ -114,6 +121,7 @@ export const RuleSpecSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('skip_when'), params: SkipWhenParams }).strict(),
   z.object({ template: z.literal('require_with'), params: RequireWithParams }).strict(),
   z.object({ template: z.literal('pairs_with'), params: PairsWithParams }).strict(),
+  z.object({ template: z.literal('comes_with'), params: ComesWithParams }).strict(),
   z.object({ template: z.literal('avoid_with'), params: AvoidWithParams }).strict(),
   z.object({ template: z.literal('allowed_days'), params: AllowedDaysParams }).strict(),
   z.object({ template: z.literal('prefer'), params: PreferParams }).strict(),
@@ -259,7 +267,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     compile: (p) => [
       // A pairing is a pair constraint, which carries its own cost; `compileSpec` leaves it alone.
       ...p.components.map((component): ConstraintBody => ({
-        kind: 'pair', when: p.when, component, ...(p.scope && { scope: p.scope }), strength: p.strength,
+        kind: 'pair', when: p.when, of: is('id', component), ...(p.scope && { scope: p.scope }), strength: p.strength,
         ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
       })),
       ...p.extraCategories.map((cat) => slotCount(all(is('role', 'extra'), is('extra_category_id', cat)), p.scope, p.strength, 1, undefined, p.when)),
@@ -277,6 +285,19 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       r.extraCategories.push(...p.extraCategories);
       return r;
     },
+  },
+  comes_with: {
+    label: 'Comes with',
+    summary: 'When a meal contains a matching dish, it must also include one of the dishes named.',
+    compile: (p) => [{
+      kind: 'pair', when: p.match, of: p.of, ...(p.scope && { scope: p.scope }), strength: p.strength,
+      ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
+    }],
+    describe: (p, n) => {
+      const several = 'all' in p.of && p.of.all.some((m) => isLeaf(m) && m.field === 'id' && Array.isArray(m.value) && m.value.length > 1);
+      return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`;
+    },
+    references: (p) => refsOf(p.match, p.of),
   },
   pairs_with: {
     label: 'Only with these bases',
@@ -320,7 +341,12 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
   },
 };
 
+/** Templates a dish's own links write; not offered on the Rules page or to the assistant. */
+export const OWNED_ONLY_TEMPLATES: TemplateId[] = ['comes_with'];
+
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+/** The templates a person or the assistant may author by hand. */
+export const HAND_TEMPLATE_IDS = TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t));
 
 /** Rule types grouped by what they do, for the type picker. Every type appears exactly once. */
 export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { ownedChanges, type RuleRecord } from '@/rules';
+import { linkRule, ownedChanges, type DishLink, type LinkChange, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import { planFromData, type PlanningInput, type PlanningOptions } from './plan-generation';
 import { compareRuleSets, pendingRules } from './compare-rules';
@@ -58,11 +58,35 @@ describe('pendingRules', () => {
   });
 
   it('adds new rules with ids -1, -2 in slot order and leaves untouched slots alone', () => {
-    const built = ownedChanges('curry', { ...NONE, days: ['friday'], neverAuto: true, links: [{ mode: 'never', target: 'base_category', values: [1] }] });
-    const changes = { 'never:base_category': built['never:base_category'], allowed_days: built.allowed_days, exclude: built.exclude };
-    const out = pendingRules([otherDish], 2, changes, 'Paneer');
+    const built = ownedChanges('curry', { ...NONE, days: ['friday'], neverAuto: true });
+    const changes = { allowed_days: built.allowed_days, exclude: built.exclude };
+    const links: LinkChange[] = [{ kind: 'add', link: { mode: 'never', target: 'base_category', values: [1], strength: 'always' } }];
+    const out = pendingRules([otherDish], 2, changes, 'Paneer', links);
     expect(out.map((r) => r.id)).toEqual([12, -1, -2, -3]);
     expect(out.slice(1).map((r) => r.spec.template)).toEqual(['allowed_days', 'exclude', 'avoid_with']);
     expect(out.slice(1).every((r) => r.enabled && r.owner_component_id === 2)).toBe(true);
+  });
+
+  it('pendingRules applies link changes by rule id', () => {
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const paneer = { id: 2, name: 'Paneer' };
+    const a = rule(20, 2, linkRule(paneer, comes([5])).spec, false);
+    const b = rule(21, 2, linkRule(paneer, comes([6])).spec);
+    const c = rule(22, 2, linkRule(paneer, comes([7])).spec);
+    const out = pendingRules([a, b, c, otherDish], 2, {}, 'Paneer', [
+      { kind: 'update', ruleId: 20, link: comes([5, 8]) },
+      { kind: 'remove', ruleId: 22 },
+      { kind: 'add', link: comes([9]) },
+    ]);
+    expect(out.map((r) => r.id)).toEqual([20, 21, 12, -1]);
+    expect(out[0]).toMatchObject({ id: 20, enabled: true, created_at: 'then', name: 'Paneer: comes with' });
+    expect(out[0].spec).toEqual(linkRule(paneer, comes([5, 8])).spec);
+    expect(out[1]).toBe(b);
+    expect(out[3]).toMatchObject({ owner_component_id: 2, enabled: true, spec: linkRule(paneer, comes([9])).spec });
+  });
+
+  it('pendingRules leaves another dish\'s rule alone even when named by id', () => {
+    const out = pendingRules([otherDish], 2, {}, 'Paneer', [{ kind: 'remove', ruleId: 12 }]);
+    expect(out).toEqual([otherDish]);
   });
 });

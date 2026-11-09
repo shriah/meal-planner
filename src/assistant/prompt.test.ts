@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RuleSpecSchema, TEMPLATE_IDS } from '@/rules';
+import { OWNED_ONLY_TEMPLATES, RuleSpecSchema, TEMPLATE_IDS } from '@/rules';
 import { TOOL_DECLARATIONS } from './tools';
 import { looksOffTopic, REFUSAL, SYSTEM_PROMPT, wrapData } from './prompt';
 import type { Slice } from './retrieve';
@@ -46,7 +46,9 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('<data>');
     expect(SYSTEM_PROMPT).toContain(REFUSAL);
     for (const t of TOOL_DECLARATIONS) expect(SYSTEM_PROMPT).toContain(t.name);
-    for (const id of TEMPLATE_IDS) expect(SYSTEM_PROMPT).toContain(id);
+    for (const id of TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t))) expect(SYSTEM_PROMPT).toContain(id);
+    // The comes_with draft parameter shares its name with the hidden template, so look for the template's own line.
+    for (const id of OWNED_ONLY_TEMPLATES) expect(SYSTEM_PROMPT).not.toMatch(new RegExp(`^- ${id} \\(`, 'm'));
     expect(SYSTEM_PROMPT).toContain('Monday');
   });
   it('shows an exclude example that RuleSpecSchema accepts', () => {
@@ -64,6 +66,10 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toMatch(/changes nothing/);
     expect(SYSTEM_PROMPT).toMatch(/touchedByRule/);
     expect(SYSTEM_PROMPT).toMatch(/reshuffled/);
+  });
+  it('teaches comes_with owner first: a base brings its curry, never a curry its base', () => {
+    expect(SYSTEM_PROMPT).toContain('"Idiyappam comes with Kerala Stew"');
+    expect(SYSTEM_PROMPT).not.toMatch(/Kerala Stew comes with Idiyappam/);
   });
   it('keeps day and meal out of match fields', () => {
     expect(SYSTEM_PROMPT).toMatch(/Match fields: [^.]*\./);

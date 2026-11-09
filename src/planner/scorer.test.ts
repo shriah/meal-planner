@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
-import { all, is } from './matcher';
+import { all, is, oneOf } from './matcher';
 import { bringsWith, compareScore, compileModel, explain, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
 import { component } from './test-utils';
 import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
@@ -107,7 +107,7 @@ describe('pairings', () => {
   const lib = [pongal, sambar, rasam, chutney, idli];
 
   const pair = (component: number, p: Partial<PairConstraint> = {}): PairConstraint => ({
-    kind: 'pair', id: `pair-${component}`, label: 'Served with', origin: 'rule', when: is('id', 1), component, strength: 'must', ...p,
+    kind: 'pair', id: `pair-${component}`, label: 'Served with', origin: 'rule', when: is('id', 1), of: is('id', component), strength: 'must', ...p,
   });
   const prefer = (p: Partial<PreferConstraint>): PreferConstraint => ({
     kind: 'prefer', id: 'p', label: 'Sides cost', origin: 'rule', select: is('role', 'curry'), weight: 2, ...p,
@@ -181,11 +181,11 @@ describe('pairings', () => {
     expect(soft).toHaveLength(1);
     expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 } });
     expect(slotPairs(m, plan, slot)).toEqual([
-      { component: 2, by: 1, unit: true },
-      { component: 5, by: 1, unit: false, suppressed: true },
-      { component: 4, by: 1, unit: true },
+      { candidates: [2], component: 2, by: 1, unit: true },
+      { candidates: [5], by: 1, unit: false, suppressed: true },
+      { candidates: [4], component: 4, by: 1, unit: true },
     ]);
-    expect(bringsWith(m, 1, 'base', slot).unit).toEqual([2, 4]);
+    expect(bringsWith(m, 1, 'base', slot).wants).toEqual([{ of: [2], unit: true }, { of: [4], unit: true }]);
   });
 
   it('a prefer curry that cannot fit beside a must curry is suppressed, in either order', () => {
@@ -197,8 +197,8 @@ describe('pairings', () => {
       const r = score(m, meal, true);
       expect(r).toMatchObject({ hard: 0, soft: 0 });
       expect(r.justifications).toEqual([expect.objectContaining({ cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
-      expect(bringsWith(m, 1, 'base', slot)).toEqual({ unit: [2], asked: [2] });
-      expect(slotPairs(m, meal, slot)).toContainEqual({ component: 5, by: 1, unit: false, suppressed: true });
+      expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [{ of: [2], unit: true }] });
+      expect(slotPairs(m, meal, slot)).toContainEqual({ candidates: [5], by: 1, unit: false, suppressed: true });
     }
   });
 
@@ -238,7 +238,7 @@ describe('pairings', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarNever, breakfastOnlySambar({ owner: 2, yieldsTo: 'unit' })]);
     const slot = slotIndex('monday', 'lunch');
     expect(score(m, at('lunch', { base: 1 }))).toMatchObject({ hard: 0, soft: 0 });
-    expect(bringsWith(m, 1, 'base', slot)).toEqual({ unit: [], asked: [] });
+    expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [] });
     expect(slotPairs(m, at('lunch', { base: 1 }), slot)).toEqual([]);
   });
 
@@ -246,7 +246,7 @@ describe('pairings', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), breakfastOnlySambar({ owner: 2, yieldsTo: 'unit' })]);
     expect(score(m, at('lunch', { base: 1 })).soft).toBe(0);
     expect(score(m, at('breakfast', { base: 1 })).soft).toBe(10);
-    expect(bringsWith(m, 1, 'base', slotIndex('monday', 'breakfast')).asked).toEqual([2]);
+    expect(bringsWith(m, 1, 'base', slotIndex('monday', 'breakfast')).wants).toEqual([{ of: [2], unit: false }]);
   });
 
   it('a prefer pair still asks for a side forbidden only by a rule it does not own, or one with a trigger', () => {
@@ -277,7 +277,7 @@ describe('pairings', () => {
     const plan = at('lunch', { base: 6, curry: 2 });
     expect(score(m, plan).hard).toBe(0);
     expect(slotPairs(m, plan, slotIndex('monday', 'lunch'))).toEqual([]);
-    expect(bringsWith(m, 2, 'curry', slotIndex('monday', 'lunch'))).toEqual({ unit: [], asked: [] });
+    expect(bringsWith(m, 2, 'curry', slotIndex('monday', 'lunch'))).toEqual({ wants: [] });
   });
 
   it('scoring again gives the same result (no stale unit state)', () => {
@@ -287,5 +287,57 @@ describe('pairings', () => {
     expect(score(m, unit).hard).toBe(0);
     expect(score(m, free).hard).toBe(1);
     expect(score(m, unit).hard).toBe(0);
+  });
+});
+
+describe('pairs naming several candidates', () => {
+  const lib = [component('base', { id: 1 }), ...[11, 12, 13].map((id) => component('curry', { id }))];
+  const pair = (of: number[], p: Partial<PairConstraint> = {}): PairConstraint => ({
+    kind: 'pair', id: `pair-${of.join('-')}`, label: 'Served with', origin: 'rule', when: is('id', 1), of: oneOf('id', of), strength: 'must', ...p,
+  });
+  const lunch = (s: Partial<SlotState>) => planWith([['monday', 'lunch', s]]);
+  const runLib = (constraints: Constraint[], plan: PlanState) => score(compileModel(lib, constraints), plan, true);
+
+  it('a pair of two candidates is met by either', () => {
+    expect(runLib([pair([11, 12])], lunch({ base: 1, curry: 12 })).hard).toBe(0);
+    expect(runLib([pair([11, 12])], lunch({ base: 1, curry: 11 })).hard).toBe(0);
+    const r = runLib([pair([11, 12])], lunch({ base: 1 }));
+    expect(r.hard).toBe(1);
+    expect(r.justifications[0]).toMatchObject({ group: { componentId: 11 }, candidates: [11, 12] });
+  });
+
+  it('two pairs claiming the curry role are suppressed only when they share no candidate', () => {
+    expect(runLib([pair([11, 12]), pair([12, 13])], lunch({ base: 1, curry: 12 })).hard).toBe(0);
+    // Sharing 12, neither gives way to the other: curry 11 leaves the second unmet.
+    expect(runLib([pair([11, 12]), pair([12, 13])], lunch({ base: 1, curry: 11 })).hard).toBe(1);
+    const r = runLib([pair([11]), pair([13])], lunch({ base: 1, curry: 11 }));
+    expect(r.hard).toBe(0);
+    expect(r.justifications).toHaveLength(1);
+    expect(r.justifications[0].group.componentId).toBe(13);
+    expect(r.justifications[0].suppressed?.by).toBe(1);
+    expect(r.justifications[0]).not.toHaveProperty('candidates');
+  });
+
+  it('a pair with no candidate in the library is ignored', () => {
+    const m = compileModel(lib, [{ ...pair([]), of: is('id', 99) }]);
+    expect(score(m, lunch({ base: 1 }))).toMatchObject({ hard: 0, soft: 0 });
+    expect(bringsWith(m, 1, 'base', 0)).toEqual({ wants: [] });
+  });
+
+  it('bringsWith lists the candidates of each want', () => {
+    expect(bringsWith(compileModel(lib, [pair([12, 11])]), 1, 'base', 0)).toEqual({ wants: [{ of: [11, 12], unit: true }] });
+  });
+
+  it('slotPairs names the candidate present', () => {
+    const m = compileModel(lib, [pair([11, 12])]);
+    const slot = slotIndex('monday', 'lunch');
+    expect(slotPairs(m, lunch({ base: 1, curry: 12 }), slot)).toEqual([{ candidates: [11, 12], component: 12, by: 1, unit: true }]);
+    expect(slotPairs(m, lunch({ base: 1 }), slot)).toEqual([{ candidates: [11, 12], by: 1, unit: true }]);
+  });
+
+  it('a candidate does not trigger its own pair', () => {
+    const m = compileModel(lib, [pair([11, 12], { when: is('role', 'curry') })]);
+    expect(score(m, lunch({ base: 1, curry: 11 })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 13 })).hard).toBe(1);
   });
 });

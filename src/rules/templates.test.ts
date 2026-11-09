@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
-import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
+import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, OWNED_ONLY_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
 
 // ─── Library: two base categories, several curries/subzis, extras in two categories ──────────
 const RICE = 10;
@@ -181,7 +181,7 @@ describe('require_with compilation', () => {
   it('compiles each component to a pair keeping its cost, and each extra category to a slot count', () => {
     const bodies = compileSpec({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer', cost: 6 } });
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toMatchObject({ kind: 'pair', component: 31, strength: 'prefer', cost: 6 });
+    expect(bodies[0]).toMatchObject({ kind: 'pair', of: is('id', 31), strength: 'prefer', cost: 6 });
     expect(bodies[1]).toMatchObject({ kind: 'count', groupBy: 'slot', costs: { min: 6, max: 6 } });
   });
 
@@ -191,6 +191,29 @@ describe('require_with compilation', () => {
     const [hardPair] = compileSpec(RuleSpecSchema.parse({ template: 'require_with', params: { when: is('id', 12), components: [31], scope: { meals: ['lunch'] } } }));
     expect(hardPair).toMatchObject({ kind: 'pair', strength: 'must', scope: { meals: ['lunch'] } });
     expect(hardPair).not.toHaveProperty('cost');
+  });
+});
+
+describe('comes_with compilation', () => {
+  it('comes_with compiles to one pair naming its candidates', () => {
+    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    expect(compileSpec(RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, strength: 'must' } })))
+      .toEqual([{ kind: 'pair', when: is('id', 1), of, strength: 'must' }]);
+  });
+
+  it('refuses an of that does not pin one kind of dish', () => {
+    const parse = (of: unknown) => RuleSpecSchema.safeParse({ template: 'comes_with', params: { match: is('id', 1), of } }).success;
+    expect(parse(oneOf('id', [11, 21]))).toBe(false);
+    expect(parse(all(oneOf('id', [11]), is('componentType', 'curry')))).toBe(false);
+    expect(parse(all(is('componentType', 'curry'), oneOf('id', [11])))).toBe(true);
+  });
+
+  it('keeps scope and cost on a preferred pair, and describes it', () => {
+    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 } });
+    expect(compileSpec(spec)).toEqual([{ kind: 'pair', when: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 }]);
+    expect(describeSpec(spec, { component: (id) => ({ 1: 'Idiyappam', 11: 'Stew A', 12: 'Stew B' } as Record<number, string>)[id] }))
+      .toBe('With Idiyappam, also one of Stew A or Stew B at lunch (preferred)');
   });
 });
 
@@ -204,7 +227,9 @@ describe('rule template params', () => {
 
   it('groups every rule type exactly once, for the type picker', () => {
     expect(TEMPLATE_GROUPS.map((g) => g.label)).toEqual(['Where and when', 'Keep out', 'Pair and require', 'Count and spread', 'Preference']);
-    expect(TEMPLATE_GROUPS.flatMap((g) => g.templates).sort()).toEqual([...TEMPLATE_IDS].sort());
+    expect(OWNED_ONLY_TEMPLATES).toEqual(['comes_with']);
+    expect(TEMPLATE_GROUPS.flatMap((g) => g.templates).sort())
+      .toEqual(TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t)).sort());
   });
 
   it('accepts a prefer weight up to 10 and no more', () => {

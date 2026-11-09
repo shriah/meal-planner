@@ -43,12 +43,13 @@ describe('constraint schema', () => {
   });
 
   it('validates pair constraints', () => {
-    const pair = { kind: 'pair', id: 'x', label: 'Served with', origin: 'rule', when: is('id', 1), component: 2, strength: 'must' };
+    const pair = { kind: 'pair', id: 'x', label: 'Served with', origin: 'rule', when: is('id', 1), of: is('id', 2), strength: 'must' };
     expect(ConstraintSchema.safeParse(pair).success).toBe(true);
     expect(ConstraintSchema.safeParse({ ...pair, strength: 'prefer' }).success).toBe(true);
     expect(ConstraintSchema.safeParse({ ...pair, strength: 'prefer', cost: 4, scope: { meals: ['breakfast'] } }).success).toBe(true);
     expect(ConstraintSchema.safeParse({ ...pair, bounds: { hardMin: 1 } }).success).toBe(false);
     expect(ConstraintSchema.safeParse({ ...pair, cost: 11 }).success).toBe(false);
+    expect(ConstraintSchema.safeParse({ ...pair, of: undefined, component: 2 }).success).toBe(false);
   });
 
   it('accepts giving way on count and prefer constraints', () => {

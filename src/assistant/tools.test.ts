@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import type { RuleRecord } from '@/rules';
+import type { DishLink, RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS, problemsForSlot, runTool } from './tools';
 import type { PlanProblem } from '@/services/plan-generation';
-import { dayRule, linkRule, TEMPLATE_IDS } from '@/rules';
+import { dayRule, linkRule, HAND_TEMPLATE_IDS } from '@/rules';
 import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
 import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
@@ -109,7 +109,8 @@ describe('declarations', () => {
       const spec = (TOOL_DECLARATIONS.find((t) => t.name === name)!.parameters as Schema & { properties: Record<string, { type: string; description: string }> }).properties.spec;
       expect(spec.type, name).toBe('string');
       expect(spec.description).toMatch(/JSON text of the rule spec/);
-      for (const id of TEMPLATE_IDS) expect(spec.description).toContain(id);
+      for (const id of HAND_TEMPLATE_IDS) expect(spec.description).toContain(id);
+      expect(spec.description).not.toContain('comes_with');
     }
   });
 });
@@ -283,7 +284,7 @@ describe('explain_plan_slot: dishes and why not', () => {
       library: lib, rules: [link],
       plan: { slots: [{ day: 'wednesday', meal_slot: 'breakfast', base_id: 10, curry_id: 11, extra_ids: [] }] },
     }));
-    expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([{ dish: 'Sambar', by: 'Pongal' }]);
+    expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([{ dish: 'Sambar', by: 'Pongal', how: 'Sambar is served with Pongal' }]);
     const w = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch', dish: 'Pongal' }, ctxOf({ library: lib, rules: [link], plan }));
     const why = (w as { data: Data }).data.whyNot!;
     expect(why.blockedBy).toEqual([]);
@@ -440,6 +441,15 @@ describe('simulate_with_rule', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('refuses a comes_with spec, which only a dish form or propose_pairing makes, without comparing', async () => {
+    const calls: unknown[] = [];
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: comes }, withCompare(1, calls));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/comes_with/);
+    expect(calls).toHaveLength(0);
+  });
+
   it('turns a failing comparison into ok:false', async () => {
     const r = await runTool('simulate_with_rule', { name: 'x', spec }, ctxOf());
     expect(r).toEqual({ ok: false, error: 'unused' });
@@ -462,6 +472,15 @@ describe('propose_rule', () => {
   it('rejects an unknown template without an effect', async () => {
     const r = await runTool('propose_rule', { name: 'x', spec: { template: 'nonsense', params: {} } }, ctxOf({ library }));
     expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('refuses a comes_with spec and points at propose_pairing', async () => {
+    const lib = [dish(1, 'Idiyappam', { componentType: 'base' }), dish(2, 'Kerala Stew')];
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const r = await runTool('propose_rule', { name: 'x', spec: comes }, ctxOf({ library: lib }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/propose_pairing/);
     expect(r).not.toHaveProperty('effect');
   });
 
@@ -637,6 +656,14 @@ describe('propose_pairing', () => {
     expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
   });
 
+  it('propose_pairing refuses a pairing clashing with a comes-with link', async () => {
+    const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
+    const comes = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 3, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [1], strength: 'always' }) };
+    const c = () => ctxOf({ library: lib, categories, rules: [comes] });
+    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('Idli always comes with Sambar') });
+    expect((await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
+  });
+
   it('checks every base a firmer strength applies to, not only the bases asked for', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Pongal', { componentType: 'base' })];
     const link = (id: number, owner: number, name: string, values: number[], strength: 'always' | 'usually') =>
@@ -678,5 +705,146 @@ describe('propose_pairing', () => {
     const unknownCategory = await runTool('propose_pairing', { dish: 'Sambar', served_with_base_categories: ['grainy'] }, ctx());
     expect((unknownCategory as { error: string }).error).toContain('no base category named "grainy"');
     expect((await runTool('propose_pairing', { dish: 'Sambar' }, ctx())).ok).toBe(false);
+  });
+});
+
+describe('comes-with drafts', () => {
+  const categories = [{ id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' }];
+  const library = [
+    dish(1, 'Idli', { componentType: 'base' }),
+    dish(2, 'Sambar'),
+    dish(3, 'Rasam', { componentType: 'extra' }),
+    dish(4, 'Mutton Curry'),
+    dish(5, 'Beans Poriyal', { componentType: 'subzi' }),
+    dish(6, 'Cabbage Thoran', { componentType: 'subzi' }),
+  ];
+  const ctx = (over: Partial<AssistantData> = {}) => ctxOf({ library, categories, ...over });
+  const effectOf = (r: unknown) => (r as { effect?: unknown }).effect;
+
+  it('propose_pairing drafts two comes-with links on one dish', async () => {
+    const r = await runTool('propose_pairing', {
+      dish: 'Idli',
+      comes_with: [{ dishes: ['Sambar'], strength: 'usually' }, { extra_categories: ['crunchy'] }],
+    }, ctx());
+    expect(r.ok).toBe(true);
+    expect(effectOf(r)).toEqual({
+      kind: 'dish-links', dishId: 1, dishName: 'Idli',
+      links: [
+        { mode: 'comes', target: 'curry_dish', values: [2], strength: 'usually' },
+        { mode: 'comes', target: 'extra_category', values: [2], strength: 'always' },
+      ],
+    });
+  });
+
+  it('propose_dish drafts Mutton Curry coming with Rasam', async () => {
+    const r = await runTool('propose_dish', { name: 'Mutton Kuzhambu', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
+    expect(r.ok).toBe(true);
+    expect((effectOf(r) as { links: unknown }).links).toEqual([{ mode: 'comes', target: 'extra_dish', values: [3], strength: 'always' }]);
+    const named = await runTool('propose_dish', { name: 'Mutton Curry 2', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
+    expect(named.ok).toBe(true);
+  });
+
+  it('draws the dish type of each entry from the dishes named, and curry types from their own list', async () => {
+    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }, { curry_types: ['soup'] }] }, ctx());
+    expect((effectOf(r) as { links: unknown }).links).toEqual([
+      { mode: 'comes', target: 'subzi_dish', values: [5], strength: 'always' },
+      { mode: 'comes', target: 'curry_category', values: ['soup'], strength: 'always' },
+    ]);
+  });
+
+  it('returns an error for names and targets the dish may not use', async () => {
+    const msg = async (name: string, args: object) => {
+      const r = await runTool('propose_pairing', { dish: name, ...args }, ctx());
+      expect(r.ok).toBe(false);
+      return (r as { error: string }).error;
+    };
+    expect(await msg('Idli', { comes_with: [{ dishes: ['Pesarattu'] }] })).toMatch(/Pesarattu/);
+    expect(await msg('Idli', { comes_with: [{ extra_categories: ['grainy'] }] })).toMatch(/grainy/);
+    expect(await msg('Idli', { comes_with: [{ curry_types: ['gravy-ish'] }] })).toMatch(/gravy-ish/);
+    // a curry never comes with curries, a subzi never with subzis, and a base is not a side
+    expect(await msg('Mutton Curry', { comes_with: [{ dishes: ['Sambar'] }] })).toMatch(/curr/);
+    expect(await msg('Beans Poriyal', { comes_with: [{ dishes: ['Cabbage Thoran'] }] })).toMatch(/subzi/);
+    expect(await msg('Sambar', { comes_with: [{ dishes: ['Idli'] }] })).toMatch(/base/);
+    expect(await msg('Idli', { comes_with: [{}] })).toMatch(/comes_with/);
+    expect(await msg('Idli', { comes_with: [{ dishes: ['Sambar'], curry_types: ['soup'] }] })).toMatch(/one kind/);
+    expect(await msg('Idli', { comes_with: [{ dishes: ['Sambar', 'Rasam'] }] })).toMatch(/same type|one type/);
+  });
+
+  it('refuses a comes-with draft that cannot hold with what is stored', async () => {
+    const serve = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 4, name: 'Mutton Curry' }, { mode: 'serve', target: 'base_dish', values: [1] }) } as RuleRecord;
+    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx({ rules: [serve] }));
+    // Idli would bring Sambar and Mutton Curry, two curries in one meal
+    expect(r.ok).toBe(false);
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx())).ok).toBe(true);
+  });
+
+  it('refuses a comes-with draft that clashes with the dish\'s own stored links', async () => {
+    const owned = (id: number, owner: { id: number; name: string }, link: DishLink) =>
+      ({ id, enabled: true, created_at: '', ...linkRule(owner, link) }) as RuleRecord;
+    const idli = { id: 1, name: 'Idli' };
+    const rules = [
+      owned(20, idli, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }),
+      owned(21, { id: 2, name: 'Sambar' }, { mode: 'comes', target: 'subzi_dish', values: [5], strength: 'always' }),
+    ];
+    // Idli always brings Sambar, which always brings Beans Poriyal: no room for Cabbage Thoran.
+    const subzi = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Cabbage Thoran'] }] }, ctx({ rules }));
+    expect(subzi.ok).toBe(false);
+    expect((subzi as { error: string }).error).toBe('Sambar always comes with Beans Poriyal, which leaves no room for Cabbage Thoran, and a meal holds one subzi.');
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctx({ rules }))).ok).toBe(true);
+    // A second Always curry beside the stored one.
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules }))).ok).toBe(false);
+    // A stored clash is not the draft's doing: switched off, the stored link is not in force.
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules: [{ ...rules[0], enabled: false }] }))).ok).toBe(true);
+  });
+
+  it('explain_plan_slot says Idiyappam comes with Kerala Stew (Veg)', async () => {
+    const lib = [dish(10, 'Idiyappam', { componentType: 'base' }), dish(11, 'Kerala Stew (Veg)')];
+    const owned = linkRule({ id: 10, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [11], strength: 'always' });
+    const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
+    const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctxOf({
+      library: lib, rules: [link],
+      plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 10, curry_id: 11, extra_ids: [] }] },
+    }));
+    expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([
+      { dish: 'Kerala Stew (Veg)', by: 'Idiyappam', how: 'Idiyappam comes with Kerala Stew (Veg)' },
+    ]);
+  });
+
+  it('keeps the comes_with template out of the rule templates', () => {
+    expect(HAND_TEMPLATE_IDS).not.toContain('comes_with');
+  });
+
+  it('declares comes_with on both draft tools', () => {
+    for (const name of ['propose_dish', 'propose_pairing']) {
+      const d = TOOL_DECLARATIONS.find((t) => t.name === name)!;
+      expect(JSON.stringify(d.parameters)).toContain('comes_with');
+    }
+  });
+
+  it('says in each meal which link brought a side that has both a comes link and a serve link', async () => {
+    const lib = [dish(10, 'Rice', { componentType: 'base' }), dish(11, 'Mutton Curry'), dish(12, 'Rasam', { componentType: 'extra' }), dish(13, 'Appam', { componentType: 'base' })];
+    const comes = linkRule({ id: 11, name: 'Mutton Curry' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always' });
+    const serve = linkRule({ id: 12, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const rules = [
+      { id: 5, name: comes.name, spec: comes.spec, enabled: true, created_at: '', owner_component_id: 11 },
+      { id: 6, name: serve.name, spec: serve.spec, enabled: true, created_at: '', owner_component_id: 12 },
+    ] as RuleRecord[];
+    const plan: WeeklyPlan = { slots: [
+      { day: 'monday', meal_slot: 'lunch', base_id: 13, curry_id: 11, extra_ids: [12] },
+      { day: 'tuesday', meal_slot: 'lunch', base_id: 10, extra_ids: [12] },
+    ] };
+    const how = async (day: string) => ((await runTool('explain_plan_slot', { day, meal: 'lunch' }, ctxOf({ library: lib, rules, plan }))) as { data: { pairedWith: { how: string }[] } }).data.pairedWith.map((p) => p.how);
+    expect(await how('monday')).toEqual(['Mutton Curry comes with Rasam']);
+    expect(await how('tuesday')).toEqual(['Rasam is served with Rice']);
+  });
+
+  it('propose_pairing appends a comes link beside a stored one instead of merging into it', async () => {
+    const lib = [dish(1, 'Idli', { componentType: 'base' }), dish(2, 'Sambar'), dish(3, 'Rasam', { componentType: 'extra' })];
+    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }) } as RuleRecord;
+    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Rasam'] }] }, ctxOf({ library: lib, categories, rules: [stored] }));
+    expect(effectOf(r)).toEqual({
+      kind: 'dish-links', dishId: 1, dishName: 'Idli',
+      links: [{ mode: 'comes', target: 'extra_dish', values: [3], strength: 'always' }],
+    });
   });
 });

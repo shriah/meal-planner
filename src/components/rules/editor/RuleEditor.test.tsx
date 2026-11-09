@@ -68,6 +68,7 @@ describe('RuleEditor', () => {
     for (const label of ['Where and when', 'Keep out', 'Pair and require', 'Count and spread', 'Preference']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
+    expect(screen.queryByRole('option', { name: 'Comes with' })).not.toBeInTheDocument();
   });
 
   it.each([

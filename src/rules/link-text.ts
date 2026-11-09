@@ -39,6 +39,7 @@ export function listValues(link: DishLink, names: Names): string {
 /** "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast", or "Sambar is always served with Idli". */
 export function describeLink(dishName: string, link: DishLink, names: Names): string {
   const listed = listValues(link, names);
+  if (link.mode === 'comes') return `${dishName} ${STRENGTH_WORDS[link.strength].word} comes with ${listed}${scopeText(link)}`;
   const what = link.mode === 'with' ? 'planned only with' : link.mode === 'serve' ? 'served with' : 'kept away from';
   return `${dishName} is ${STRENGTH_WORDS[link.strength].word} ${what} ${listed}${scopeText(link)}`;
 }
@@ -49,6 +50,6 @@ export function shortLink(link: DishLink, names: Names): string {
   const unscoped = !link.scope?.days?.length && !link.scope?.meals?.length;
   if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
   const word = link.strength === 'always' ? '' : STRENGTH_WORDS[link.strength].label;
-  const what = link.mode === 'with' ? 'only with' : link.mode === 'serve' ? 'served with' : 'not with';
+  const what = { with: 'only with', serve: 'served with', comes: 'comes with', never: 'not with' }[link.mode];
   return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${scopeText(link)}`;
 }

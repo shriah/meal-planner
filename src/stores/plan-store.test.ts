@@ -349,7 +349,7 @@ describe('week navigation', () => {
       const plan = makePlan();
       plan.slots = plan.slots.map((s) => ({ ...s, base_id: rice }));
       plan.slots[0] = { ...plan.slots[0], base_id: pongal, curry_id: sambar };
-      return { plan, expected: [{ day: 'monday', meal: 'breakfast', component: sambar, by: pongal }] };
+      return { plan, expected: [{ day: 'monday', meal: 'breakfast', component: sambar, by: pongal, ruleId: expect.any(Number) }] };
     }
 
     it('are worked out when the app loads the current plan', async () => {

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { is } from '@/planner';
 import {
-  clashCurryCategories, compileRules, linkRule, readLink, curryClashRule, dayRule, exclusionRule, pairingCategories, pairingRule, ruleDays,
+  clashCurryCategories, compileRules, readLink, readOwned, dayRule, exclusionRule, pairingCategories, ruleDays,
+  type DishLink,
 } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
@@ -19,6 +20,7 @@ import {
   deleteRule,
   getComponentsByType,
   getOwnedRule,
+  getOwnedRules,
   getRules,
   restoreDefaultRules,
   saveComponent,
@@ -120,7 +122,7 @@ describe('Phase 14 category services', () => {
       regional_tags: ['pan-indian'],
       occasion_tags: [],
       created_at: '',
-    }, { 'with:base_category': (c) => pairingRule(c, [breadId, riceId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [breadId, riceId], strength: 'always' } }]);
 
     const choleId = await saveComponent(undefined, {
       name: 'Chole',
@@ -129,7 +131,7 @@ describe('Phase 14 category services', () => {
       regional_tags: ['north-indian'],
       occasion_tags: [],
       created_at: '',
-    }, { 'with:base_category': (c) => pairingRule(c, [breadId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [breadId], strength: 'always' } }]);
 
     await addRule({
       name: 'Bread dinner',
@@ -174,7 +176,7 @@ describe('Phase 14 category services', () => {
       regional_tags: ['pan-indian'],
       occasion_tags: [],
       created_at: '',
-    }, { 'with:base_category': (c) => pairingRule(c, [breadId, riceId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [breadId, riceId], strength: 'always' } }]);
     await saveComponent(undefined, {
       name: 'Never Auto Pick',
       componentType: 'curry',
@@ -190,7 +192,7 @@ describe('Phase 14 category services', () => {
       regional_tags: ['north-indian'],
       occasion_tags: [],
       created_at: '',
-    }, { 'with:base_category': (c) => pairingRule(c, [breadId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [breadId], strength: 'always' } }]);
 
     await renameCategory(breadId, 'flatbread');
 
@@ -213,7 +215,7 @@ describe('Phase 14 category services', () => {
   it('stores a curry pairing as a rule the curry owns, renamed and deleted with it', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'rice-based' });
     const curry = { name: 'Sambar', componentType: 'curry' as const, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
-    const id = await saveComponent(undefined, curry, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    const id = await saveComponent(undefined, curry, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
 
     const rule = await getOwnedRule(id, 'with:base_category');
     expect(rule).toMatchObject({
@@ -235,10 +237,10 @@ describe('Phase 14 category services', () => {
     await updateComponent(id, { name: 'Tiffin Sambar' });
     expect((await getOwnedRule(id, 'with:base_category'))?.name).toBe('Tiffin Sambar: base pairing');
 
-    await saveComponent(id, curry, { 'with:base_category': null });
+    await saveComponent(id, curry, {}, [{ kind: 'remove', ruleId: rule!.id }]);
     expect(await getOwnedRule(id, 'with:base_category')).toBeUndefined();
 
-    await saveComponent(id, curry, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    await saveComponent(id, curry, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
     await deleteComponent(id);
     expect(await getRules()).toEqual([]);
   });
@@ -248,9 +250,9 @@ describe('Phase 14 category services', () => {
     const breadId = await addCategory({ kind: 'base', name: 'bread-based' });
     const dish = (name: string, componentType: 'curry' | 'subzi' | 'extra') =>
       ({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' });
-    const subziId = await saveComponent(undefined, dish('Bhindi', 'subzi'), { 'with:base_category': (c) => pairingRule(c, [riceId]) });
-    const curryId = await saveComponent(undefined, dish('Bread Curry', 'curry'), { 'with:base_category': (c) => pairingRule(c, [breadId]) });
-    const extraId = await saveComponent(undefined, dish('Papad', 'extra'), { 'never:curry_category': (c) => curryClashRule(c, ['soup']) });
+    const subziId = await saveComponent(undefined, dish('Bhindi', 'subzi'), {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
+    const curryId = await saveComponent(undefined, dish('Bread Curry', 'curry'), {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [breadId], strength: 'always' } }]);
+    const extraId = await saveComponent(undefined, dish('Papad', 'extra'), {}, [{ kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } }]);
 
     expect(clashCurryCategories((await getOwnedRule(extraId, 'never:curry_category'))!)).toEqual(['soup']);
     await updateComponent(extraId, { name: 'Masala Papad' });
@@ -271,9 +273,9 @@ describe('Phase 14 category services', () => {
     const crunchy = await addCategory({ kind: 'extra', name: 'Crunchy' });
     const base = { componentType: 'base' as const, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    const idli = await saveComponent(undefined, { ...base, name: 'Idli' }, {
-      'never:extra_category': (c) => linkRule(c, { mode: 'never', target: 'extra_category', values: [liquid, crunchy], strength: 'moderately', scope }),
-    });
+    const idli = await saveComponent(undefined, { ...base, name: 'Idli' }, {}, [
+      { kind: 'add', link: { mode: 'never', target: 'extra_category', values: [liquid, crunchy], strength: 'moderately', scope } },
+    ]);
 
     await deleteCategory(liquid);
     expect(readLink((await getOwnedRule(idli, 'never:extra_category'))!)).toEqual({ mode: 'never', target: 'extra_category', values: [crunchy], strength: 'moderately', scope });
@@ -285,14 +287,65 @@ describe('Phase 14 category services', () => {
     const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
     const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' });
     const dosa = await saveComponent(undefined, { ...tags, name: 'Dosa', componentType: 'base' });
-    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {
-      'with:base_dish': (c) => linkRule(c, { mode: 'with', target: 'base_dish', values: [idli, dosa], strength: 'sometimes', scope: { days: ['friday'] } }),
-    });
+    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' }, {}, [
+      { kind: 'add', link: { mode: 'with', target: 'base_dish', values: [idli, dosa], strength: 'sometimes', scope: { days: ['friday'] } } },
+    ]);
 
     await deleteComponent(idli);
     expect(readLink((await getOwnedRule(sambar, 'with:base_dish'))!)).toEqual({ mode: 'with', target: 'base_dish', values: [dosa], strength: 'sometimes', scope: { days: ['friday'] } });
     await deleteComponent(dosa);
     expect(await getOwnedRule(sambar, 'with:base_dish')).toBeUndefined();
+  });
+
+  it('two comes-with links are saved, edited and removed on their own', async () => {
+    const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const coconut = await saveComponent(undefined, { ...tags, name: 'Coconut Chutney', componentType: 'extra' });
+    const tomato = await saveComponent(undefined, { ...tags, name: 'Tomato Chutney', componentType: 'extra' });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' }, {}, [
+      { kind: 'add', link: comes([coconut]) }, { kind: 'add', link: comes([tomato]) },
+    ]);
+    const stored = await getOwnedRules(idli);
+    expect(stored).toHaveLength(2);
+    const [first, second] = stored;
+    expect(readOwned(stored).links.map((l) => l.ruleId)).toEqual([first.id, second.id]);
+
+    await saveComponent(idli, { ...tags, name: 'Idli', componentType: 'base' }, {}, [{ kind: 'update', ruleId: first.id, link: comes([coconut, tomato]) }]);
+    expect(readLink((await db.rules.get(first.id))!)?.values).toEqual([coconut, tomato]);
+    expect(await db.rules.get(second.id)).toEqual(second);
+
+    await saveComponent(idli, { ...tags, name: 'Idli', componentType: 'base' }, {}, [{ kind: 'remove', ruleId: first.id }]);
+    expect(await getOwnedRules(idli)).toEqual([second]);
+  });
+
+  it('a saved link update switches the rule on', async () => {
+    const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const coconut = await saveComponent(undefined, { ...tags, name: 'Coconut Chutney', componentType: 'extra' });
+    const link: DishLink = { mode: 'comes', target: 'extra_dish', values: [coconut], strength: 'always' };
+    const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' }, {}, [{ kind: 'add', link }]);
+    const [rule] = await getOwnedRules(idli);
+    await db.rules.update(rule.id, { enabled: false });
+    await saveComponent(idli, { ...tags, name: 'Idli', componentType: 'base' }, {}, [{ kind: 'update', ruleId: rule.id, link: { ...link, strength: 'usually' } }]);
+    expect(await db.rules.get(rule.id)).toMatchObject({ enabled: true, created_at: rule.created_at });
+  });
+
+  it('deleting a dish keeps every link of the same kind on other dishes', async () => {
+    const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const coconut = await saveComponent(undefined, { ...tags, name: 'Coconut Chutney', componentType: 'extra' });
+    const tomato = await saveComponent(undefined, { ...tags, name: 'Tomato Chutney', componentType: 'extra' });
+    const pickle = await saveComponent(undefined, { ...tags, name: 'Pickle', componentType: 'extra' });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const idli = await saveComponent(undefined, { ...tags, name: 'Idli', componentType: 'base' }, {}, [
+      { kind: 'add', link: comes([coconut]) }, { kind: 'add', link: comes([tomato, pickle]) },
+    ]);
+
+    await deleteComponent(pickle);
+    expect(readOwned(await getOwnedRules(idli)).links.map((l) => l.values)).toEqual([[coconut], [tomato]]);
+
+    await updateComponent(idli, { name: 'Ghee Idli' });
+    expect((await getOwnedRules(idli)).map((r) => r.name)).toEqual(['Ghee Idli: comes with', 'Ghee Idli: comes with']);
+    await updateComponent(idli, { name: 'Idli' });
+    expect((await getOwnedRules(idli)).map((r) => r.name)).toEqual(['Idli: comes with', 'Idli: comes with']);
   });
 
   it('restores deleted default rules without touching ones that are still there, edited or not', async () => {

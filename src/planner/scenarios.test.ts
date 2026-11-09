@@ -153,7 +153,7 @@ describe('planner scenarios (seed library)', () => {
     const chutney = byName('Coconut Chutney').id;
     const rasam = byName('Rasam').id;
     const pair = (id: string, when: Matcher, component: number, extra: Partial<PairConstraint> = {}): PairConstraint =>
-      ({ kind: 'pair', id, label: id, origin: 'rule', when, component, strength: 'must', ...extra });
+      ({ kind: 'pair', id, label: id, origin: 'rule', when, of: is('id', component), strength: 'must', ...extra });
     // Sambar's own rule: lunch only. It gives way when Sambar comes with Pongal.
     const sambarLunchOnly = rule({
       id: 'owned:sambar-meals', label: 'Sambar only at lunch', select: all(is('id', sambar), not(oneOf('meal', ['lunch']))),

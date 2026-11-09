@@ -1,5 +1,5 @@
 // The primitives. COUNT bounds how many matching assignments a group may hold; PREFER adds a soft
-// cost (or reward) per matching assignment; PAIR asks a meal to hold a dish when another dish is in it.
+// cost (or reward) per matching assignment; PAIR asks a meal to hold one of a set of dishes when another dish is in it.
 // Plain, serialisable data.
 import { z } from 'zod';
 import { MatcherSchema, type Matcher } from './matcher';
@@ -63,14 +63,15 @@ export interface PreferConstraint extends Common {
 }
 
 /**
- * When an assignment in a meal matches `when` (other than `component` itself), the meal should hold
- * `component`. A missing `must` component is a hard violation; a missing `prefer` component costs `cost`
- * (default 10).
+ * When an assignment in a meal matches `when` (other than one of the candidates itself), the meal should
+ * hold one of the candidates: the library dishes matching `of` (as their own type; one dish is
+ * `is('id', id)`). A pairing with no candidate in the library is ignored. A missing `must` pairing is a
+ * hard violation; a missing `prefer` one costs `cost` (default 10).
  */
 export interface PairConstraint extends Common {
   kind: 'pair';
   when: Matcher;
-  component: number;
+  of: Matcher;
   scope?: { days?: Day[]; meals?: Meal[] };
   strength: 'must' | 'prefer';
   cost?: number;
@@ -152,7 +153,7 @@ const PairSchema = z
     kind: z.literal('pair'),
     ...CommonShape,
     when: MatcherSchema,
-    component: z.number().int(),
+    of: MatcherSchema,
     scope: ScopeSchema.optional(),
     strength: z.enum(['must', 'prefer']),
     cost: z.number().min(1).max(10).optional(),

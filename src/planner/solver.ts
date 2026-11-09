@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, score, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, ownRulesOverridden, score, unitPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -41,6 +41,84 @@ const NOTHING: readonly number[] = [];
 const BRING_ROUNDS = 3;
 /** Most passes of the final descent; it stops sooner once a pass changes nothing. */
 const DESCENT_PASSES = 10;
+/** Default `constructionSample`. */
+const SAMPLE_SIZE = 10;
+/** Puts a brought dish's broken own rules ahead of every soft cost when choosing among a want's candidates. */
+const OVERRIDE_WEIGHT = 1e6;
+/** Bound on `w` in `chooseCandidate`'s weighted use. */
+const MAX_WEIGHT = 2;
+/** Mixed into the seed for the stream of candidate offsets, kept apart from the search's own `rng`. */
+const OFFSET_SEED_MIX = 0x9e3779b9;
+
+/**
+ * Which of a want's candidates to bring into slot `slot`: the one with the best score; ties go to the one
+ * with the lowest weighted use `(timesPlanned + o) × 2^w`. `w` comes from `weightOf` (0 when omitted),
+ * clamped to [−2, 2], so a frequent candidate (w = −1) comes about twice as often as a normal one and a
+ * rare one (w = +1) about half as often. `o` in [0, 1) comes from `offsetOf` (0.5 when omitted); the solver
+ * draws it per candidate from the seed, so which candidate a week starts with varies with the seed and a
+ * candidate with few chances is still planned in some weeks. Remaining ties go to the earlier in the order
+ * `candidates[(slot + k) % n]`, so meals in turn start from a different candidate. At most `limit`
+ * candidates (0 = all) are scored, taken in that order. Deterministic.
+ */
+export function chooseCandidate(
+  candidates: readonly number[],
+  slot: number,
+  scoreWith: (id: number) => Score,
+  timesPlanned: (id: number) => number,
+  limit = SAMPLE_SIZE,
+  weightOf: (id: number) => number = () => 0,
+  offsetOf: (id: number) => number = () => 0.5,
+): number {
+  const n = candidates.length;
+  if (n <= 1) return candidates[0];
+  const k = limit > 0 && limit < n ? limit : n;
+  const weightedUse = (id: number) => (timesPlanned(id) + offsetOf(id)) * 2 ** Math.min(MAX_WEIGHT, Math.max(-MAX_WEIGHT, weightOf(id)));
+  let best = candidates[slot % n];
+  let bestScore = scoreWith(best);
+  let bestUse: number | undefined;
+  for (let j = 1; j < k; j++) {
+    const id = candidates[(slot + j) % n];
+    const s = scoreWith(id);
+    const c = compareScore(s, bestScore);
+    if (c > 0) continue;
+    if (c === 0) {
+      bestUse ??= weightedUse(best);
+      const u = weightedUse(id);
+      if (u >= bestUse) continue;
+      bestUse = u;
+    } else {
+      bestUse = undefined;
+    }
+    best = id;
+    bestScore = s;
+  }
+  return best;
+}
+
+/**
+ * `w` for `chooseCandidate` at slot `slot`: the weight of the prefer rules that match a candidate there but
+ * give way to a unit member, so the score cannot see them for a brought dish ("Prefer frequent dishes",
+ * "Avoid rare dishes").
+ */
+export function candidateWeight(m: CompiledModel, slot: number): (id: number) => number {
+  return (id) => {
+    const type = m.byId.get(id)?.componentType;
+    return type ? unitPreferWeight(m, id, type, slot) : 0;
+  };
+}
+
+/**
+ * How to judge a plan holding `id`, brought into slot `slot`, against the other candidates: its hard score
+ * first, then the dish's own rules it overrides there (its days, meals and "never planned automatically",
+ * which give way to a unit member and so are not in the score), then its soft score. So a candidate those
+ * rules allow wins over one they forbid.
+ */
+export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number): Score {
+  const s = score(m, plan);
+  const type = m.byId.get(id)?.componentType;
+  const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
+  return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + s.soft };
+}
 
 type Snapshot = Readonly<SlotState>;
 const snapshot = (s: SlotState): Snapshot => ({ base: s.base, curry: s.curry, subzi: s.subzi, extras: s.extras });
@@ -57,10 +135,19 @@ export const clonePlan = (p: PlanState): PlanState => p.map((s) => ({ ...s, extr
 export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const t0 = now();
   const rng = mulberry32(opts.seed ?? 1);
+  // Each candidate's offset in `chooseCandidate`, drawn once per solve from its own stream so the search's
+  // `rng` sequence is unchanged.
+  const offsetRng = mulberry32(((opts.seed ?? 1) ^ OFFSET_SEED_MIX) >>> 0);
+  const offsets = new Map<number, number>();
+  const offsetOf = (id: number): number => {
+    let o = offsets.get(id);
+    if (o === undefined) offsets.set(id, (o = offsetRng()));
+    return o;
+  };
   const deadline = t0 + (opts.timeLimitMs ?? 300);
   const maxIterations = opts.maxIterations ?? 200_000;
   const plateau = opts.plateauIterations ?? 3000;
-  const sampleSize = opts.constructionSample ?? 10;
+  const sampleSize = opts.constructionSample ?? SAMPLE_SIZE;
   const temperature = opts.temperature ?? 1;
   const evaluate = (p: PlanState): Score => score(m, p);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
@@ -81,11 +168,21 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // ── Pairings ──
   const hasPairs = m.constraints.some((c) => c.kind === 'pair');
-  /** What the dish in `role` brings to slot `i`: all of it (asked for), or only its unit members. */
+  /** Every candidate of a dish's wants (asked for), and of its unit wants only. Cached per memoised `Brings`. */
+  const unions = new WeakMap<Brings, { asked: readonly number[]; unit: readonly number[] }>();
+  /** What the dish in `role` may bring to slot `i`: the candidates of all its wants, or of its unit wants only. */
   const broughtBy = (id: number | undefined, role: Role, i: number, unitOnly = false): readonly number[] => {
     if (!hasPairs || id === undefined) return NOTHING;
     const b = bringsWith(m, id, role, i);
-    return unitOnly ? b.unit : b.asked;
+    let u = unions.get(b);
+    if (!u) {
+      const asked = new Set<number>();
+      const unit = new Set<number>();
+      for (const w of b.wants) for (const c of w.of) { asked.add(c); if (w.unit) unit.add(c); }
+      u = { asked: asked.size ? [...asked] : NOTHING, unit: unit.size ? [...unit] : NOTHING };
+      unions.set(b, u);
+    }
+    return unitOnly ? u.unit : u.asked;
   };
   /** Whether `id` is in slot `i` as a unit member: another dish there must be served with it. */
   const isUnit = (s: SlotState, i: number, id: number | undefined): boolean => {
@@ -95,10 +192,13 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     for (const e of s.extras) if (by(e, 'extra')) return true;
     return false;
   };
+  const timesPlanned = (id: number) =>
+    plan.reduce((k, s) => (s.base === id || s.curry === id || s.subzi === id || s.extras.includes(id) ? k + 1 : k), 0);
   /**
    * After a change to slot `i`'s base, curry or subzi, first remove the sides the replaced dish brought
-   * (`prev`) that no dish in the meal still brings, then bring the sides its dishes are paired with into
-   * roles that are not pinned and are empty, or that hold a side the replaced dish brought.
+   * (`prev`) that no dish in the meal still brings, then, for each want of its dishes with no candidate in
+   * the meal, bring one of its candidates into a role that is not pinned and is empty, or that holds a side
+   * the replaced dish brought. Among several candidates that fit, `chooseCandidate` picks.
    * Unit members may take such a role; asked-for sides only fill an empty one. Extras are appended.
    * Repeats while anything changes, since a brought side can bring its own. Uses no randomness.
    */
@@ -106,25 +206,58 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     if (!hasPairs) return;
     const s = plan[i];
     let changed = false;
-    const place = (c: number, unit: boolean) => {
+    /** Whether `place(c, unit)` would put `c` in the meal. */
+    const fits = (c: number, unit: boolean): boolean => {
       const type = m.byId.get(c)?.componentType;
-      if (type === 'extra') {
-        if (!isFree(i, 'extras') || s.extras.includes(c)) return;
-        s.extras = [...s.extras, c];
-        changed = true;
-      } else if (type === 'curry' || type === 'subzi') {
-        const cur = s[type];
-        if (cur === c || !isFree(i, type)) return;
-        if (cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur))) {
-          s[type] = c;
-          changed = true;
+      if (type === 'extra') return isFree(i, 'extras') && !s.extras.includes(c);
+      if (type !== 'curry' && type !== 'subzi') return false;
+      const cur = s[type];
+      if (cur === c || !isFree(i, type)) return false;
+      return cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur));
+    };
+    const place = (c: number, unit: boolean) => {
+      if (!fits(c, unit)) return;
+      const type = m.byId.get(c)!.componentType;
+      if (type === 'extra') s.extras = [...s.extras, c];
+      else s[type as 'curry' | 'subzi'] = c;
+      changed = true;
+    };
+    // A candidate is judged with what it brings in turn (each want's first candidate that fits), so its
+    // own pairings do not count against it.
+    const scoreWith = (unit: boolean) => (c: number): Score => {
+      const before = snapshot(s);
+      const was = changed;
+      place(c, unit);
+      fill(false);
+      const result = broughtScore(m, plan, i, c);
+      restore(s, before);
+      changed = was;
+      return result;
+    };
+    const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
+    const visit = (id: number | undefined, role: Role, choose: boolean) => {
+      if (id === undefined) return;
+      for (const w of bringsWith(m, id, role, i).wants) {
+        if (w.of.some(inMeal)) continue;
+        if (w.of.length === 1) {
+          place(w.of[0], w.unit);
+          continue;
         }
+        const options = w.of.filter((c) => fits(c, w.unit));
+        if (!options.length) continue;
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf) : options[0], w.unit);
       }
     };
-    const visit = (id: number | undefined, role: Role) => {
-      if (id === undefined) return;
-      const b = bringsWith(m, id, role, i);
-      for (const c of b.asked) place(c, b.unit.includes(c));
+    /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */
+    const fill = (choose: boolean) => {
+      for (let round = 0; round < BRING_ROUNDS; round++) {
+        changed = false;
+        visit(s.base, 'base', choose);
+        visit(s.curry, 'curry', choose);
+        visit(s.subzi, 'subzi', choose);
+        for (const e of s.extras) visit(e, 'extra', choose);
+        if (!changed) break;
+      }
     };
     // The replaced dish's sides leave with it, unless a dish still in the meal brings them too.
     const stillBrought = (c: number) => {
@@ -139,14 +272,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         s[type] = undefined;
       }
     }
-    for (let round = 0; round < BRING_ROUNDS; round++) {
-      changed = false;
-      visit(s.base, 'base');
-      visit(s.curry, 'curry');
-      visit(s.subzi, 'subzi');
-      for (const e of s.extras) visit(e, 'extra');
-      if (!changed) break;
-    }
+    fill(true);
   };
   /** Sides brought by the dishes in two roles, for `bring`'s `prev`. */
   const both = (a: readonly number[], b: readonly number[]): readonly number[] => (!a.length ? b : !b.length ? a : [...a, ...b]);

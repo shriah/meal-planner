@@ -1,3 +1,4 @@
+import { is } from '@/planner';
 import { exclusionRule, linkRule, mealRule } from '@/rules';
 import { everyMealWith, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, someMealWith, yieldsTo } from '../expect';
 import type { PlanExpectation, RuleCase } from '../types';
@@ -45,7 +46,7 @@ export const PAIRING_CASES: RuleCase[] = [
     id: 'pairing-usually-gives-way-to-never-auto',
     group: 'Pairings',
     name: 'Usually pairing gives way to never-auto',
-    why: 'The Pongal pairing fix of 8 Nov 2026: a Usually pairing to a curry that is never planned automatically must not push its base out of the plan.',
+    why: 'The Pongal pairing fix of 8 Nov 2026: a Usually pairing to a curry that is never planned automatically must not push its base out of the plan, and the pairing still brings the side that fits.',
     rules: (lib) => {
       const pongal = lib.dish('Pongal');
       const sambar = lib.dish('Sambar');
@@ -57,7 +58,7 @@ export const PAIRING_CASES: RuleCase[] = [
         exclusionRule(sambar),
       ];
     },
-    expect: [nearNoRulesCount('Pongal'), noHardProblems()],
+    expect: [nearNoRulesCount('Pongal'), someMealWith('Pongal', ['Coconut Chutney'], ['breakfast', 'lunch', 'dinner']), noHardProblems()],
   },
   {
     kind: 'plan',
@@ -73,6 +74,27 @@ export const PAIRING_CASES: RuleCase[] = [
       ];
     },
     expect: [plannedAtLeast('Pongal', 4), everyMealWith('Pongal', ['Sambar']), neverWith('Rasam', 'Pongal'), yieldsTo('Rasam', 'Sambar'), noHardProblems()],
+  },
+  {
+    kind: 'plan',
+    id: 'pairing-brings-its-own-pairing',
+    group: 'Pairings',
+    name: 'A brought side brings its own pairing',
+    why: 'Placing a dish brings its pairings, then theirs: Pongal brings Sambar, and Sambar brings the Coconut Chutney always served with it, though neither side is ever planned automatically.',
+    rules: (lib) => {
+      const sambar = lib.dish('Sambar');
+      const chutney = lib.dish('Coconut Chutney');
+      return [
+        linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [lib.dish('Pongal').id] }),
+        {
+          name: 'Coconut Chutney with Sambar',
+          spec: { template: 'require_with', params: { when: is('id', sambar.id), components: [chutney.id], strength: 'must' } },
+        },
+        exclusionRule(sambar),
+        exclusionRule(chutney),
+      ];
+    },
+    expect: [plannedAtLeast('Pongal', 4), everyMealWith('Pongal', ['Sambar', 'Coconut Chutney']), noHardProblems()],
   },
   {
     kind: 'plan',

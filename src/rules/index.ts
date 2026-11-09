@@ -1,6 +1,6 @@
 // Rule types (templates), stored rules, and their compilation into planner constraints.
 export {
-  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, TEMPLATE_GROUPS, PREFER_COST, compileSpec, describeSpec, specReferences,
+  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, TEMPLATE_GROUPS, OWNED_ONLY_TEMPLATES, HAND_TEMPLATE_IDS, PREFER_COST, compileSpec, describeSpec, specReferences,
   type RuleSpec, type RuleSpecInput, type TemplateId, type ParamsOf, type RuleTemplate, type Scope, type Strength,
   type ConstraintBody, type Refs,
 } from './templates';
@@ -11,9 +11,9 @@ export { linkWarnings, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, type Names } from './describe';
 export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
-  pairingRule, pairingCategories, curryClashRule, clashCurryCategories, linkRule, readLink, offersServe, isServeTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, addableSlots, LINK_TARGETS, LINK_SLOTS, isLinkSlot, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
-  readOwned, ownedChanges, dayModeOf, daysOfMode, describeDays, describeMeals,
-  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type ServeTarget, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type DayMode,
+  pairingRule, pairingCategories, curryClashRule, clashCurryCategories, linkRule, readLink, offersServe, offersComes, isServeTarget, isSideTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, addableSlots, LINK_TARGETS, LINK_SLOTS, isLinkSlot, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
+  readOwned, ownedChanges, linkChanges, sameLink, PLAIN_OWNED_SLOTS, dayModeOf, daysOfMode, describeDays, describeMeals,
+  type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type ServeTarget, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type LinkChange, type DayMode,
 } from './owned';
 export { compileRules, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export {

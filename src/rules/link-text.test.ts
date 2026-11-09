@@ -77,3 +77,15 @@ describe('served with', () => {
     expect(shortLink(link({ mode: 'serve', values: [1], strength: 'usually', scope: { meals: ['breakfast'] } }), names)).toBe('Usually served with Idli, at breakfast');
   });
 });
+
+describe('comes with', () => {
+  const stew = { component: (id: number) => ({ 11: 'Kerala Stew (Veg)', 12: 'Kerala Stew (Non-Veg)', 13: 'Rasam' } as Record<number, string>)[id] };
+  it('words a comes link', () => {
+    expect(describeLink('Idiyappam', link({ mode: 'comes', target: 'curry_dish', values: [11, 12] }), stew))
+      .toBe('Idiyappam always comes with Kerala Stew (Veg) or Kerala Stew (Non-Veg)');
+    expect(describeLink('Mutton Curry', link({ mode: 'comes', target: 'extra_dish', values: [13], strength: 'usually' }), stew))
+      .toBe('Mutton Curry usually comes with Rasam');
+    expect(shortLink(link({ mode: 'comes', target: 'extra_dish', values: [13] }), stew)).toBe('Comes with Rasam');
+    expect(shortLink(link({ mode: 'comes', target: 'extra_dish', values: [13], strength: 'usually' }), stew)).toBe('Usually comes with Rasam');
+  });
+});

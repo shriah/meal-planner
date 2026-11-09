@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addableSlots, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
-  mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  addableSlots, isSideTarget, LINK_TARGETS, offersComes, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
+  mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
+  linkChanges, offersServe, sameLink,
   type DishLink,
 } from './owned';
 
@@ -45,51 +46,20 @@ describe('readOwned', () => {
 });
 
 describe('ownedChanges', () => {
-  const v = {
-    links: [link('with', 'base_category', [1]), link('never', 'curry_category', ['soup'])],
-    days: ['monday' as const], meals: ['lunch' as const], neverAuto: true,
-  };
+  const v = { days: ['monday' as const], meals: ['lunch' as const], neverAuto: true };
 
   it('builds a rule for every value that is set and removes the others', () => {
     expect(ownedChanges('base', NONE).allowed_meals).toBeNull();
     const changes = ownedChanges('curry', v);
-    expect(changes['with:base_category']?.(dish).spec).toMatchObject({ template: 'pairs_with', params: { baseCategories: [1] } });
-    expect(changes['never:curry_category']?.(dish).spec).toMatchObject({ template: 'avoid_with' });
-    expect(changes['never:base_category']).toBeNull();
     expect(changes.allowed_days?.(dish).spec).toMatchObject({ template: 'allowed_days', params: { days: ['monday'] } });
     expect(changes.exclude?.(dish).spec).toMatchObject({ template: 'exclude' });
     expect(ownedChanges('curry', NONE)).toEqual({ allowed_days: null, exclude: null });
   });
 
-  it('sets or clears every offered slot from a list', () => {
-    const one = ownedChanges('extra', { ...NONE, links: [link('never', 'curry_category', ['soup'])] });
-    expect(one['never:curry_category']).toBeTypeOf('function');
-    for (const slot of LINK_SLOTS.filter((s) => s !== 'never:curry_category')) expect(one[slot]).toBeNull();
-    const curry = ownedChanges('curry', { ...NONE, links: [link('never', 'curry_category', ['soup'])] });
-    expect(curry).not.toHaveProperty('with:curry_dish');
-    expect(curry).not.toHaveProperty('never:curry_dish');
-    expect(Object.keys(ownedChanges('extra', NONE)).filter((k) => k.includes(':'))).toEqual([]);
-  });
-
-  it('removes a link rule when nothing is chosen', () => {
-    const none = ownedChanges('extra', { ...NONE, links: [link('with', 'curry_category', [])] });
-    expect(none['with:curry_category']).toBeNull();
-    expect(none['never:curry_category']).toBeNull();
-  });
-
-  it('offers every dish type links to the other kinds of category, but a base none to base categories', () => {
-    const all = [link('never', 'base_category', [1]), link('never', 'extra_category', [2]), link('never', 'curry_category', ['soup'])];
-    const base = ownedChanges('base', { ...NONE, links: all });
-    expect(Object.keys(base).sort()).toEqual([
-      'allowed_days', 'allowed_meals', 'exclude',
-      'never:curry_category', 'never:curry_dish', 'never:extra_category', 'never:extra_dish', 'never:subzi_dish',
-      'with:curry_category', 'with:curry_dish', 'with:extra_category', 'with:extra_dish', 'with:subzi_dish',
-    ]);
-    expect(base['with:curry_dish']).toBeNull();
-    expect(base).not.toHaveProperty('with:base_dish');
-    expect(base).not.toHaveProperty('never:base_dish');
-    expect(base).not.toHaveProperty('never:base_category');
-    expect(ownedChanges('extra', { ...NONE, links: all })['never:base_category']).toBeTypeOf('function');
+  it('never touches links, which change by rule id', () => {
+    for (const type of ['base', 'curry', 'subzi', 'extra'] as const) {
+      expect(Object.keys(ownedChanges(type, { ...v, links: [link('never', 'curry_category', ['soup'])] } as never)).filter((k) => k.includes(':'))).toEqual([]);
+    }
   });
 });
 
@@ -126,12 +96,6 @@ describe('link strength', () => {
     expect(readOwned([sometimes]).links).toEqual([link('with', 'base_category', [1], 'sometimes')]);
   });
 
-  it('carries the strength into the rule change, and defaults to always', () => {
-    const c = ownedChanges('extra', { ...NONE, links: [link('never', 'extra_category', [2], 'usually'), { mode: 'never', target: 'curry_category', values: ['soup'] } as DishLink] });
-    expect(c['never:extra_category']?.(dish).spec.params).toMatchObject({ strength: 'prefer', cost: 10 });
-    expect(c['never:curry_category']?.(dish).spec.params).toMatchObject({ strength: 'must' });
-  });
-
   it('round-trips scope and every strength through each link shape', () => {
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
     for (const strength of ['always', 'usually', 'moderately', 'sometimes'] as const) {
@@ -165,10 +129,9 @@ describe('served with', () => {
   });
 
   it('offers serving with bases to every dish but a base', () => {
-    const serve = { ...NONE, links: [{ mode: 'serve' as const, target: 'base_dish' as const, values: [3], strength: 'always' as const }] };
-    expect(ownedChanges('curry', serve)['serve:base_dish']?.(dish).spec.template).toBe('require_with');
-    expect(ownedChanges('extra', serve)['serve:base_category']).toBeNull();
-    expect('serve:base_dish' in ownedChanges('base', serve)).toBe(false);
+    expect(offersServe('curry')).toBe(true);
+    expect(offersServe('extra')).toBe(true);
+    expect(offersServe('base')).toBe(false);
   });
 });
 
@@ -234,20 +197,26 @@ describe('meals', () => {
 });
 
 describe('addableSlots', () => {
-  it('offers a curry served with bases, then only with / never with every target it may link to, specific dishes included', () => {
+  it('offers a curry served with bases, then only with bases and never with every target it may link to, specific dishes included', () => {
     expect(addableSlots('curry', []).sort()).toEqual([
       'serve:base_category', 'serve:base_dish',
-      'with:base_category', 'never:base_category', 'with:extra_category', 'never:extra_category',
-      'with:curry_category', 'never:curry_category', 'with:base_dish', 'never:base_dish',
-      'with:subzi_dish', 'never:subzi_dish', 'with:extra_dish', 'never:extra_dish',
+      'with:base_category', 'never:base_category', 'never:extra_category',
+      'never:curry_category', 'with:base_dish', 'never:base_dish',
+      'never:subzi_dish', 'never:extra_dish',
     ].sort());
     expect(addableSlots('curry', [])[0]).toBe('serve:base_category');
   });
 
   it('offers an extra specific curries, subzis and extras too', () => {
     const slots = addableSlots('extra', []);
-    for (const slot of ['serve:base_dish', 'with:curry_dish', 'never:curry_dish', 'with:subzi_dish', 'with:extra_dish', 'never:extra_dish'] as const) {
+    for (const slot of ['serve:base_dish', 'never:curry_dish', 'never:subzi_dish', 'never:extra_dish'] as const) {
       expect(slots).toContain(slot);
+    }
+  });
+
+  it('never offers only with for a side target: a link to sides is made as comes with', () => {
+    for (const type of ['base', 'curry', 'subzi', 'extra'] as const) {
+      expect(addableSlots(type, []).filter((s) => s.startsWith('with:') && isSideTarget(s.slice(5) as never))).toEqual([]);
     }
   });
 
@@ -261,5 +230,79 @@ describe('addableSlots', () => {
     const slots = addableSlots('curry', [link('serve', 'base_category', [1])]);
     expect(slots).not.toContain('serve:base_category');
     expect(slots).toContain('serve:base_dish');
+  });
+});
+
+describe('comes with', () => {
+  const idiyappam = { id: 1, name: 'Idiyappam' };
+
+  it('a comes link round-trips through its rule', () => {
+    const sides = LINK_TARGETS.filter((t) => isSideTarget(t) && offersComes('base', t));
+    expect(sides.length).toBeGreaterThan(0);
+    for (const target of sides) {
+      const values = target === 'curry_category' ? ['soup'] : [11, 12];
+      const l = link('comes', target, values);
+      const rule = linkRule(idiyappam, l);
+      expect(rule.spec.template).toBe('comes_with');
+      expect(rule.name).toBe('Idiyappam: comes with');
+      expect(readLink(rule)).toEqual(l);
+      expect(ownedSlot(rule)).toBe(`comes:${target}`);
+    }
+    const soft: DishLink = { ...link('comes', 'curry_dish', [11], 'usually'), scope: { meals: ['breakfast'] } };
+    expect(readLink(linkRule(idiyappam, soft))).toEqual(soft);
+  });
+
+  it('never offers bases as sides', () => {
+    expect(offersComes('base', 'base_dish')).toBe(false);
+    expect(offersComes('base', 'base_category')).toBe(false);
+    expect(offersComes('base', 'curry_dish')).toBe(true);
+    expect(offersComes('curry', 'curry_dish')).toBe(false);
+  });
+
+  it('an old only-with link to side dishes still reads as with', () => {
+    const rule = linkRule(dish, { mode: 'with', target: 'curry_dish', values: [11] });
+    expect(rule.spec.template).toBe('avoid_with');
+    expect(readLink(rule)).toMatchObject({ mode: 'with', target: 'curry_dish', values: [11] });
+  });
+});
+
+describe('links by rule id', () => {
+  const idli = { id: 1, name: 'Idli' };
+  const comes = (values: DishLink['values']) => link('comes', 'extra_dish', values);
+
+  it('readOwned keeps two links of the same kind', () => {
+    const rules = [{ id: 7, ...linkRule(idli, comes([12])) }, { id: 5, ...linkRule(idli, comes([11])) }];
+    expect(readOwned(rules).links).toEqual([{ ...comes([11]), ruleId: 5 }, { ...comes([12]), ruleId: 7 }]);
+  });
+
+  it('linkChanges writes only what changed', () => {
+    const a = { ...comes([11]), ruleId: 5 };
+    const b = { ...comes([12]), ruleId: 7 };
+    const changed = { ...b, values: [12, 13] };
+    const c = comes([14]);
+    expect(linkChanges([a, b], [a, changed, c])).toEqual([{ kind: 'update', ruleId: 7, link: changed }, { kind: 'add', link: c }]);
+    expect(linkChanges([a, b], [{ ...b, values: [12] }, { ...a, values: [11] }])).toEqual([]);
+    expect(linkChanges([a, b], [b])).toEqual([{ kind: 'remove', ruleId: 5 }]);
+  });
+
+  it('linkChanges treats a link with no values as absent', () => {
+    const a = { ...comes([11]), ruleId: 5 };
+    expect(linkChanges([a], [{ ...a, values: [] }])).toEqual([{ kind: 'remove', ruleId: 5 }]);
+    expect(linkChanges([], [comes([])])).toEqual([]);
+  });
+
+  it('linkChanges updates a stored link the baseline left out', () => {
+    const a = { ...comes([11]), ruleId: 5 };
+    expect(linkChanges([], [a])).toEqual([{ kind: 'update', ruleId: 5, link: a }]);
+  });
+
+  it('sameLink ignores order and the rule id', () => {
+    expect(sameLink({ ...comes([11, 12]), ruleId: 5 }, comes([12, 11]))).toBe(true);
+    expect(sameLink(comes([11]), comes([12]))).toBe(false);
+    expect(sameLink(undefined, undefined)).toBe(true);
+  });
+
+  it('addableSlots never counts a comes slot as taken', () => {
+    expect(addableSlots('base', [comes([11]), comes([12])])).toEqual(addableSlots('base', []));
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { TEMPLATE_IDS, type RuleRecord } from '@/rules';
+import { HAND_TEMPLATE_IDS, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import { MAX_LIST_ITEMS } from './limits';
@@ -68,9 +68,10 @@ describe('buildSlice', () => {
 
   it('is empty for empty data', () => {
     const slice = buildSlice('hello', data());
+    expect(slice.summary.templates).not.toContain('comes_with');
     expect(slice).toEqual({
       dishes: [], rules: [],
-      summary: { categories: [], dishCount: 0, ruleCount: 0, templates: TEMPLATE_IDS },
+      summary: { categories: [], dishCount: 0, ruleCount: 0, templates: HAND_TEMPLATE_IDS },
       mentionsAnything: false,
     });
   });

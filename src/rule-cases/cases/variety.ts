@@ -9,6 +9,7 @@ export const VARIETY_CASES: RuleCase[] = [
     name: 'No base on the next day',
     why: 'The spacing default (no dish on the same or next day) keeps a base from coming back the next day; this checks bases on consecutive days only. It is a soft rule, so it holds when the library has room for it.',
     rules: () => [],
+    without: ['spacing'],
     expect: [
       {
         says: 'No base is planned on two consecutive days in any of the 8 weeks',

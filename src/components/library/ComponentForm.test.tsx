@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { linkRule, readLink, clashCurryCategories, curryClashRule, pairingCategories, pairingRule, ruleDays, ruleMeals, type DishLink } from '@/rules';
+import { readLink, clashCurryCategories, linkRule, pairingCategories, pairingRule, ruleDays, ruleMeals, type DishLink, type RuleRecord } from '@/rules';
 import * as foodDb from '@/services/food-db';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
@@ -316,7 +316,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
 
     render(
       <>
@@ -346,7 +346,7 @@ describe('ComponentForm dynamic category wiring', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
 
     render(<LiveEditForm componentId={curryId} />);
 
@@ -392,7 +392,7 @@ describe('ComponentForm dynamic category wiring', () => {
     await addCategory({ kind: 'base', name: 'Flatbreads' });
     const curryId = await saveComponent(undefined, {
       name: 'Sambar', componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString(),
-    }, { 'with:base_category': (c) => pairingRule(c, [riceId]) });
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
 
     render(<LiveEditForm componentId={curryId} />);
     expect(await screen.findByText(/planned only with Rice Plates/)).toBeInTheDocument();
@@ -405,9 +405,9 @@ describe('ComponentForm dynamic category wiring', () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
     const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', base_category_id: riceId, ...tags });
-    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [pongal], strength: 'moderately' }),
-    });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_dish', values: [pongal], strength: 'moderately' } },
+    ]);
     const before = await getOwnedRule(sambar, 'serve:base_dish');
 
     render(<LiveEditForm componentId={pongal} />);
@@ -509,7 +509,7 @@ describe('ComponentForm dynamic category wiring', () => {
 
 const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
 
-async function addLink(target: string, mode: 'Only with' | 'Never with', values: string[], strength?: string) {
+async function addLink(target: string, mode: 'Only with' | 'Never with' | 'Comes with', values: string[], strength?: string) {
   await userEvent.click(await readyButton('Add link'));
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), target);
   await userEvent.click(screen.getByRole('button', { name: mode }));
@@ -613,10 +613,10 @@ describe('ComponentForm links', () => {
 
   it('removing a link deletes its rule', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'with:base_category': (c) => pairingRule(c, [riceId]),
-      'never:curry_category': (c) => curryClashRule(c, ['soup']),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } },
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
 
     render(<LiveEditForm componentId={curryId} />);
     const item = await screen.findByText(/planned only with Rice Plates/);
@@ -674,10 +674,10 @@ describe('ComponentForm links', () => {
 
   it('saving without touching links writes no link rule changes', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'with:base_category': (c) => pairingRule(c, [riceId], 'moderately'),
-      'never:curry_category': (c) => curryClashRule(c, ['soup']),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'moderately' } },
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
     // A hand-edited cost reads back as "often" but must not be rewritten as 6.
     const stored = (await getOwnedRule(curryId, 'with:base_category'))!;
     await db.rules.update(stored.id, { spec: { ...stored.spec, params: { ...stored.spec.params, cost: 5 } } as typeof stored.spec });
@@ -688,16 +688,15 @@ describe('ComponentForm links', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    const changes = save.mock.calls[0][2] ?? {};
-    expect(Object.keys(changes).filter((k) => k.startsWith('with:') || k.startsWith('never:'))).toEqual([]);
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
     expect((await getOwnedRule(curryId, 'with:base_category'))?.spec.params).toMatchObject({ strength: 'prefer', cost: 5 });
   });
 
   it('saves only the links that changed', async () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'with:base_category': (c) => pairingRule(c, [riceId], 'moderately'),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'moderately' } },
+    ]);
     const stored = (await getOwnedRule(curryId, 'with:base_category'))!;
     await db.rules.update(stored.id, { spec: { ...stored.spec, params: { ...stored.spec.params, cost: 5 } } as typeof stored.spec });
 
@@ -714,10 +713,10 @@ describe('ComponentForm links', () => {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     await addCategory({ kind: 'base', name: 'Flatbreads' });
     await addCategory({ kind: 'base', name: 'Millets' });
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'with:base_category': (c) => pairingRule(c, [riceId]),
-      'never:curry_category': (c) => curryClashRule(c, ['soup']),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } },
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
     for (const slot of ['with:base_category', 'never:curry_category'] as const) {
       await db.rules.update((await getOwnedRule(curryId, slot))!.id, { enabled: false });
     }
@@ -756,6 +755,169 @@ describe('ComponentForm links', () => {
       const extras = await getOwnedRule(papad.id, 'never:extra_category');
       expect(extras && readLink(extras)?.values).toEqual([liquid]);
     });
+  });
+});
+
+describe('ComponentForm links: several of one kind', () => {
+  async function setup() {
+    const coconut = await saveComponent(undefined, { name: 'Coconut Chutney', componentType: 'extra', ...tags });
+    const tomato = await saveComponent(undefined, { name: 'Tomato Chutney', componentType: 'extra', ...tags });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {}, [
+      { kind: 'add', link: comes([coconut]) }, { kind: 'add', link: comes([tomato]) },
+    ]);
+    return { idli, before: await foodDb.getOwnedRules(idli) };
+  }
+
+  async function saveUntouched(idli: number, before: unknown) {
+    expect(await screen.findByText(/Idli always comes with Coconut Chutney/)).toBeInTheDocument();
+    expect(screen.getByText(/Idli always comes with Tomato Chutney/)).toBeInTheDocument();
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
+    save.mockRestore();
+    expect(await foodDb.getOwnedRules(idli)).toEqual(before);
+  }
+
+  it('shows both links and saves neither when untouched, opened before the library loads', async () => {
+    const { idli, before } = await setup();
+    render(<LiveEditForm componentId={idli} />);
+    await saveUntouched(idli, before);
+  });
+
+  it('shows both links and saves neither when untouched, opened once loaded', async () => {
+    const { idli, before } = await setup();
+    function OpenWhenLoaded() {
+      return useLibraryLookup().loaded ? <LiveEditForm componentId={idli} /> : null;
+    }
+    render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    await saveUntouched(idli, before);
+  });
+
+  it('removing one link deletes only its rule', async () => {
+    const { idli, before } = await setup();
+    render(<LiveEditForm componentId={idli} />);
+    const item = (await screen.findByText(/Idli always comes with Coconut Chutney/)).closest('li')!;
+    await userEvent.click(await readyButton('Remove', item));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+    await waitFor(async () => expect(await foodDb.getOwnedRules(idli)).toEqual([before[1]]));
+  });
+});
+
+describe('ComponentForm links: comes with', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const OLD = '2020-01-01T00:00:00.000Z';
+
+  /** Idli comes with two chutneys, and keeps an old only-with link to specific curries and a never-with link. */
+  async function setup() {
+    const coconut = await saveComponent(undefined, { name: 'Coconut Chutney', componentType: 'extra', ...tags });
+    const tomato = await saveComponent(undefined, { name: 'Tomato Chutney', componentType: 'extra', ...tags });
+    const mint = await saveComponent(undefined, { name: 'Mint Chutney', componentType: 'extra', ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {}, [
+      { kind: 'add', link: comes([coconut]) },
+      { kind: 'add', link: comes([tomato]) },
+      { kind: 'add', link: { mode: 'with', target: 'curry_dish', values: [sambar], strength: 'usually' } },
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
+    // A known, old creation time shows an edit updates the rule rather than replacing it.
+    for (const rule of await foodDb.getOwnedRules(idli)) await db.rules.update(rule.id, { created_at: OLD });
+    return { idli, coconut, tomato, mint, sambar, before: await foodDb.getOwnedRules(idli) };
+  }
+
+  const loadOrders = [
+    ['before the library loads', (id: number) => render(<LiveEditForm componentId={id} />)],
+    ['once the library has loaded', (id: number) => {
+      function OpenWhenLoaded() {
+        return useLibraryLookup().loaded ? <LiveEditForm componentId={id} /> : null;
+      }
+      return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    }],
+  ] as const;
+
+  const itemOf = async (text: RegExp) => (await screen.findByText(text)).closest('li')!;
+
+  it.each(loadOrders)('a save with no edits writes no link rule, opened %s', async (_, open) => {
+    const { idli, before } = await setup();
+    open(idli);
+    expect(await itemOf(/Idli always comes with Coconut Chutney/)).toBeInTheDocument();
+    expect(await itemOf(/usually planned only with Sambar/)).toHaveTextContent('(only limits: edit it to have it come with the meal)');
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
+    expect(await foodDb.getOwnedRules(idli)).toEqual(before);
+  });
+
+  it.each(loadOrders)('Add link offers Comes with again for a kind already used, opened %s', async (_, open) => {
+    const { idli, before, mint } = await setup();
+    open(idli);
+    await userEvent.click(await readyButton('Add link'));
+    const linkTo = screen.getByRole('combobox', { name: 'Link to' });
+    await userEvent.selectOptions(linkTo, 'Specific extras');
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).toBeNull();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Mint Chutney' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => expect(await foodDb.getOwnedRules(idli)).toHaveLength(before.length + 1));
+    const after = await foodDb.getOwnedRules(idli);
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(readLink(after[before.length])).toEqual({ mode: 'comes', target: 'extra_dish', values: [mint], strength: 'always' });
+  });
+
+  it.each(loadOrders)('two comes-with links are edited independently, opened %s', async (_, open) => {
+    const { idli, before, tomato, mint } = await setup();
+    open(idli);
+    const second = await itemOf(/Idli always comes with Tomato Chutney/);
+    await userEvent.click(await readyButton('Edit', second));
+    // Only the link clicked opens.
+    expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1);
+    expect(screen.getByText(/Idli always comes with Coconut Chutney/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Mint Chutney' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    const edited = before.find((r) => readLink(r)?.values.includes(tomato))!;
+    await waitFor(async () => expect(readLink((await db.rules.get(edited.id))!)?.values).toEqual([tomato, mint]));
+    const after = await foodDb.getOwnedRules(idli);
+    // An update: same rule id and creation time; every other rule as it was.
+    expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
+    expect(after.find((r) => r.id === edited.id)?.created_at).toBe(OLD);
+    expect(after.filter((r) => r.id !== edited.id)).toEqual(before.filter((r) => r.id !== edited.id));
+  });
+
+  it.each(loadOrders)('opening an old only-with link and saving stores it as comes with, opened %s', async (_, open) => {
+    const { idli, before, sambar } = await setup();
+    open(idli);
+    const old = before.find((r) => r.spec.template === 'avoid_with' && readLink(r)?.mode === 'with')!;
+    await userEvent.click(await readyButton('Edit', await itemOf(/usually planned only with Sambar/)));
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).toBeNull();
+    expect(screen.getByText('Idli usually comes with Sambar')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await itemOf(/Idli usually comes with Sambar/)).not.toHaveTextContent('only limits');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => expect((await db.rules.get(old.id))?.spec.template).toBe('comes_with'));
+    const stored = (await db.rules.get(old.id))!;
+    expect(readLink(stored)).toEqual({ mode: 'comes', target: 'curry_dish', values: [sambar], strength: 'usually' });
+    expect(stored.created_at).toBe(OLD);
+    const after = await foodDb.getOwnedRules(idli);
+    expect(after.filter((r) => r.id !== old.id)).toEqual(before.filter((r) => r.id !== old.id));
+  });
+
+  it('the strength row is labelled How firmly', async () => {
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await userEvent.click(await readyButton('Add link'));
+    expect(screen.getByText('How firmly')).toBeVisible();
+    expect(within(screen.getByRole('group', { name: 'How firmly' })).getByRole('button', { name: 'Always' })).toBeInTheDocument();
   });
 });
 
@@ -875,9 +1037,9 @@ describe('ComponentForm draft prefill', () => {
   });
 
   it('merges drafted links over a dish\'s stored links and saves only those', async () => {
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'never:curry_category': (c) => curryClashRule(c, ['soup']),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
     const stored = (await getOwnedRule(curryId, 'never:curry_category'))!;
     await db.rules.update(stored.id, { spec: { ...stored.spec, params: { ...stored.spec.params, cost: 5 } } as typeof stored.spec });
     const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags });
@@ -889,8 +1051,7 @@ describe('ComponentForm draft prefill', () => {
     await userEvent.click(await readyButton('Save Curry'));
 
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-    const changes = save.mock.calls[0][2] ?? {};
-    expect(Object.keys(changes).filter((k) => k.includes(':'))).toEqual(['serve:base_dish']);
+    expect(save.mock.calls[0][3]).toEqual([{ kind: 'add', link: { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' } }]);
     await waitFor(async () => {
       const rule = await getOwnedRule(curryId, 'serve:base_dish');
       expect(rule && readLink(rule)).toEqual({ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' });
@@ -900,9 +1061,9 @@ describe('ComponentForm draft prefill', () => {
 
   it('switches on a switched-off link that a drafted link replaces, even an identical one', async () => {
     const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags });
-    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli] }),
-    });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' } },
+    ]);
     await db.rules.update((await getOwnedRule(curryId, 'serve:base_dish'))!.id, { enabled: false });
 
     render(<LiveEditForm componentId={curryId} draftLinks={[{ mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }]} />);
@@ -910,6 +1071,25 @@ describe('ComponentForm draft prefill', () => {
     await userEvent.click(await readyButton('Save Curry'));
 
     await waitFor(async () => expect((await getOwnedRule(curryId, 'serve:base_dish'))?.enabled).toBe(true));
+  });
+
+  it('merges a drafted served-with link into the enabled link of its slot, not a switched-off one', async () => {
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags });
+    const dosa = await saveComponent(undefined, { name: 'Dosa', componentType: 'base', ...tags });
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', ...tags });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    const owner = { id: curryId, name: 'Sambar' };
+    // The switched-off link has the lower id, so a lowest-id pick would land on it.
+    const offId = await db.rules.add({ ...linkRule(owner, { mode: 'serve', target: 'base_dish', values: [pongal] }), enabled: false, owner_component_id: curryId, created_at: '' } as RuleRecord) as number;
+    const onId = await db.rules.add({ ...linkRule(owner, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, owner_component_id: curryId, created_at: '' } as RuleRecord) as number;
+
+    render(<LiveEditForm componentId={curryId} draftLinks={[{ mode: 'serve', target: 'base_dish', values: [idli, dosa], strength: 'always' }]} />);
+    await userEvent.click(await readyButton('Save Curry'));
+
+    await waitFor(async () => expect(readLink((await db.rules.get(onId))!)).toMatchObject({ values: [idli, dosa] }));
+    const off = (await db.rules.get(offId))!;
+    expect(off.enabled).toBe(false);
+    expect(readLink(off)).toMatchObject({ values: [pongal] });
   });
 
   it('ignores a draft when editing an existing dish', async () => {
@@ -929,9 +1109,9 @@ describe('ComponentForm links: one always curry per base', () => {
   async function setup() {
     const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
     const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {});
-    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }),
-    });
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' } },
+    ]);
     return saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, {});
   }
 
@@ -972,9 +1152,9 @@ describe('ComponentForm links: one always curry per base', () => {
   async function setupStoredConflict() {
     const rasam = await setup();
     const idli = (await db.components.toArray()).find((c) => c.name === 'Idli')!.id!;
-    await saveComponent(rasam, { name: 'Rasam', componentType: 'curry', ...tags }, {
-      'serve:base_dish': (c) => linkRule(c, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' }),
-    });
+    await saveComponent(rasam, { name: 'Rasam', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_dish', values: [idli], strength: 'always' } },
+    ]);
     return rasam;
   }
 
@@ -997,5 +1177,49 @@ describe('ComponentForm links: one always curry per base', () => {
     }
     render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
     await renameAndExpectEnabled();
+  });
+});
+
+describe('ComponentForm links: a base judged by the category being edited', () => {
+  /** Idli (Rice Plates) always comes with Rasam; Sambar is always served with every Tiffin base. */
+  async function setup() {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const tiffinId = await addCategory({ kind: 'base', name: 'Tiffin' });
+    const rasam = await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, {});
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_category', values: [tiffinId], strength: 'always' } },
+    ]);
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {}, [
+      { kind: 'add', link: { mode: 'comes', target: 'curry_dish', values: [rasam], strength: 'always' } },
+    ]);
+    return { idli, before: await foodDb.getOwnedRules(idli) };
+  }
+
+  const loadOrders = [
+    ['before the library loads', (id: number) => render(<LiveEditForm componentId={id} />)],
+    ['once the library has loaded', (id: number) => {
+      function OpenWhenLoaded() {
+        return useLibraryLookup().loaded ? <LiveEditForm componentId={id} /> : null;
+      }
+      return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    }],
+  ] as const;
+
+  it.each(loadOrders)('moving the base into a category whose curry is always served with it blocks Save, opened %s', async (_, open) => {
+    const { idli, before } = await setup();
+    open(idli);
+    expect(await screen.findByText(/Idli always comes with Rasam/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Base' })).toBeEnabled());
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Base Category' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Tiffin' }));
+
+    expect(await screen.findByText('Sambar is always served with Idli, which leaves no room for Rasam, and a meal holds one curry.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Base' })).toBeDisabled();
+    // Back in its own category, nothing clashes and nothing stored has changed.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Base Category' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Rice Plates' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Base' })).toBeEnabled());
+    expect(screen.queryByText(/leaves no room for Rasam/)).toBeNull();
+    expect(await foodDb.getOwnedRules(idli)).toEqual(before);
   });
 });
