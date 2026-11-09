@@ -92,6 +92,10 @@ const PairsWithParams = z
   .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
+const ComesWithParams = z
+  .object({ match: MatcherSchema, of: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
   .strict();
@@ -114,6 +118,7 @@ export const RuleSpecSchema = z.discriminatedUnion('template', [
   z.object({ template: z.literal('skip_when'), params: SkipWhenParams }).strict(),
   z.object({ template: z.literal('require_with'), params: RequireWithParams }).strict(),
   z.object({ template: z.literal('pairs_with'), params: PairsWithParams }).strict(),
+  z.object({ template: z.literal('comes_with'), params: ComesWithParams }).strict(),
   z.object({ template: z.literal('avoid_with'), params: AvoidWithParams }).strict(),
   z.object({ template: z.literal('allowed_days'), params: AllowedDaysParams }).strict(),
   z.object({ template: z.literal('prefer'), params: PreferParams }).strict(),
@@ -278,6 +283,19 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       return r;
     },
   },
+  comes_with: {
+    label: 'Comes with',
+    summary: 'When a meal contains a matching dish, it must also include one of the dishes named.',
+    compile: (p) => [{
+      kind: 'pair', when: p.match, of: p.of, ...(p.scope && { scope: p.scope }), strength: p.strength,
+      ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
+    }],
+    describe: (p, n) => {
+      const several = 'all' in p.of && p.of.all.some((m) => isLeaf(m) && m.field === 'id' && Array.isArray(m.value) && m.value.length > 1);
+      return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`;
+    },
+    references: (p) => refsOf(p.match, p.of),
+  },
   pairs_with: {
     label: 'Only with these bases',
     summary: 'Matching dishes only share a meal with a base from the chosen categories.',
@@ -326,7 +344,7 @@ export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
 export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [
   { label: 'Where and when', templates: ['allowed_meals', 'allowed_days', 'only_allow'] },
   { label: 'Keep out', templates: ['exclude', 'skip_when', 'avoid_with'] },
-  { label: 'Pair and require', templates: ['require', 'require_with', 'pairs_with'] },
+  { label: 'Pair and require', templates: ['require', 'require_with', 'comes_with', 'pairs_with'] },
   { label: 'Count and spread', templates: ['limit', 'no_repeat'] },
   { label: 'Preference', templates: ['prefer'] },
 ];

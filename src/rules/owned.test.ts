@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  addableSlots, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
+  addableSlots, isSideTarget, LINK_TARGETS, offersComes, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
   mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, LINK_SLOTS, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
   type DishLink,
 } from './owned';
@@ -81,7 +81,7 @@ describe('ownedChanges', () => {
     const all = [link('never', 'base_category', [1]), link('never', 'extra_category', [2]), link('never', 'curry_category', ['soup'])];
     const base = ownedChanges('base', { ...NONE, links: all });
     expect(Object.keys(base).sort()).toEqual([
-      'allowed_days', 'allowed_meals', 'exclude',
+      'allowed_days', 'allowed_meals', 'comes:curry_category', 'comes:curry_dish', 'comes:extra_category', 'comes:extra_dish', 'comes:subzi_dish', 'exclude',
       'never:curry_category', 'never:curry_dish', 'never:extra_category', 'never:extra_dish', 'never:subzi_dish',
       'with:curry_category', 'with:curry_dish', 'with:extra_category', 'with:extra_dish', 'with:subzi_dish',
     ]);
@@ -261,5 +261,38 @@ describe('addableSlots', () => {
     const slots = addableSlots('curry', [link('serve', 'base_category', [1])]);
     expect(slots).not.toContain('serve:base_category');
     expect(slots).toContain('serve:base_dish');
+  });
+});
+
+describe('comes with', () => {
+  const idiyappam = { id: 1, name: 'Idiyappam' };
+
+  it('a comes link round-trips through its rule', () => {
+    const sides = LINK_TARGETS.filter((t) => isSideTarget(t) && offersComes('base', t));
+    expect(sides.length).toBeGreaterThan(0);
+    for (const target of sides) {
+      const values = target === 'curry_category' ? ['soup'] : [11, 12];
+      const l = link('comes', target, values);
+      const rule = linkRule(idiyappam, l);
+      expect(rule.spec.template).toBe('comes_with');
+      expect(rule.name).toBe('Idiyappam: comes with');
+      expect(readLink(rule)).toEqual(l);
+      expect(ownedSlot(rule)).toBe(`comes:${target}`);
+    }
+    const soft: DishLink = { ...link('comes', 'curry_dish', [11], 'usually'), scope: { meals: ['breakfast'] } };
+    expect(readLink(linkRule(idiyappam, soft))).toEqual(soft);
+  });
+
+  it('never offers bases as sides', () => {
+    expect(offersComes('base', 'base_dish')).toBe(false);
+    expect(offersComes('base', 'base_category')).toBe(false);
+    expect(offersComes('base', 'curry_dish')).toBe(true);
+    expect(offersComes('curry', 'curry_dish')).toBe(false);
+  });
+
+  it('an old only-with link to side dishes still reads as with', () => {
+    const rule = linkRule(dish, { mode: 'with', target: 'curry_dish', values: [11] });
+    expect(rule.spec.template).toBe('avoid_with');
+    expect(readLink(rule)).toMatchObject({ mode: 'with', target: 'curry_dish', values: [11] });
   });
 });

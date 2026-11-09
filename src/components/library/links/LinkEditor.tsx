@@ -10,7 +10,7 @@ import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
-const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with' }
+const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with', comes: 'Comes with' }
 
 const MODES: LinkMode[] = ['serve', 'with', 'never']
 

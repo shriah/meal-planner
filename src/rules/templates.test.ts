@@ -194,6 +194,22 @@ describe('require_with compilation', () => {
   });
 });
 
+describe('comes_with compilation', () => {
+  it('comes_with compiles to one pair naming its candidates', () => {
+    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    expect(compileSpec(RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, strength: 'must' } })))
+      .toEqual([{ kind: 'pair', when: is('id', 1), of, strength: 'must' }]);
+  });
+
+  it('keeps scope and cost on a preferred pair, and describes it', () => {
+    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 } });
+    expect(compileSpec(spec)).toEqual([{ kind: 'pair', when: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 }]);
+    expect(describeSpec(spec, { component: (id) => ({ 1: 'Idiyappam', 11: 'Stew A', 12: 'Stew B' } as Record<number, string>)[id] }))
+      .toBe('With Idiyappam, also one of Stew A or Stew B at lunch (preferred)');
+  });
+});
+
 describe('rule template params', () => {
   const valid = (spec: unknown) => RuleSpecSchema.safeParse(spec).success;
 
