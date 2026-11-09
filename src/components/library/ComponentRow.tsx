@@ -11,10 +11,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels'
-import { describeDays, describeMeals, linkSlotOf, readOwned, shortLink } from '@/rules'
+import { describeDays, describeMeals, readOwned, shortLink } from '@/rules'
 import { ComponentForm } from './ComponentForm'
 import { linkNames, useLibraryLookup } from './LibraryLookup'
 import { DeleteConfirmStrip } from './DeleteConfirmStrip'
+import { linkKey } from './links/LinkList'
 import type { ComponentRecord } from '@/types/component'
 
 interface ComponentRowProps {
@@ -49,7 +50,7 @@ export function ComponentRow({
   const names = useMemo(() => linkNames(lookup), [lookup])
   const linkBadges = owned.links
     .filter((link) => link.values.length > 0)
-    .map((link) => ({ key: String(link.ruleId ?? linkSlotOf(link)), text: shortLink(link, names) }))
+    .map((link, i) => ({ key: linkKey(link, i), text: shortLink(link, names) }))
   const dayLabel = describeDays(owned.days)
   const mealLabel = describeMeals(owned.meals)
   const showsNeverAutoWarning = owned.neverAuto

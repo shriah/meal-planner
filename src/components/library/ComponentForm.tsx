@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { saveComponent } from '@/services/food-db'
 import { describeSpec, dayModeOf, parseSpec, specReferences, daysOfMode, linkChanges, linkSlotOf, ownedChanges, readOwned, sameLink, type DayMode, type DishLink, type LinkChange, type RuleRecord } from '@/rules'
-import { LinkList, useLinkWarnings } from './links/LinkList'
+import { linkKey, LinkList, useLinkWarnings } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
@@ -205,7 +205,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   // does not stop unrelated edits from being saved.
   const self = { id: component?.id, name: form.name, componentType }
   const blockingOf = (list: DishLink[], warnings: { link: number; message: string; blocking?: boolean }[]) =>
-    warnings.filter((w) => w.blocking).map((w) => `${linkSlotOf(list[w.link])}|${w.message}`)
+    warnings.filter((w) => w.blocking).map((w) => `${linkKey(list[w.link], w.link)}|${w.message}`)
   const storedBlocking = blockingOf(form.linksBase ?? storedLinks, useLinkWarnings(self, form.linksBase ?? storedLinks))
   const linkBlocked = blockingOf(links, useLinkWarnings(self, links)).some((k) => !storedBlocking.includes(k))
   // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
@@ -214,7 +214,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const isOff = (l: DishLink) => l.ruleId !== undefined && offRuleIds.includes(l.ruleId)
   const shownOff = links
     .filter((l) => isOff(l) && sameLink(l, (form.linksBase ?? storedLinks).find((b) => b.ruleId === l.ruleId)))
-    .map(linkSlotOf)
+    .map((l) => l.ruleId as number)
   // Hand-written rules (not owned by any dish) that name it, shown read-only with a link to the Rules page.
   const names = linkNames(lookup)
   const mentioning = component
@@ -534,7 +534,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             componentType={componentType}
             selfId={component?.id}
             links={links}
-            offSlots={shownOff}
+            offRuleIds={shownOff}
             onEditingChange={setEditingLink}
             onChange={(next) => setForm(s => ({ ...s, links: next, linksBase: s.linksBase ?? storedLinks }))}
           />

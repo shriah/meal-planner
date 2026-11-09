@@ -29,8 +29,8 @@ async function readyButton(name: string, container: HTMLElement = document.body)
 const dish = (name: string, componentType: ComponentType) =>
   db.components.add({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' }) as Promise<number>;
 
-function Harness({ initial, componentType = 'curry', selfId, onChange }: {
-  initial: DishLink[]; componentType?: ComponentType; selfId?: number; onChange?: (links: DishLink[]) => void
+function Harness({ initial, componentType = 'curry', selfId, offRuleIds, onChange }: {
+  initial: DishLink[]; componentType?: ComponentType; selfId?: number; offRuleIds?: number[]; onChange?: (links: DishLink[]) => void
 }) {
   const [links, setLinks] = useState(initial);
   return (
@@ -39,6 +39,7 @@ function Harness({ initial, componentType = 'curry', selfId, onChange }: {
       componentType={componentType}
       selfId={selfId}
       links={links}
+      offRuleIds={offRuleIds}
       onChange={(next) => { setLinks(next); onChange?.(next); }}
     />
   );
@@ -91,12 +92,14 @@ describe('LinkList', () => {
     await userEvent.click(await readyButton('Add link'));
     const linkTo = screen.getByRole('combobox', { name: 'Link to' });
     const targets = within(linkTo).getAllByRole('option').map((o) => o.textContent);
-    // Both curry type slots are used; extra categories still has "never with" free.
-    expect(targets).not.toContain('Curry types');
-    expect(targets).toContain('Extra categories');
+    // Never with is used for curry types; a dish may come with several sides, so Comes with is still offered.
+    expect(targets).toContain('Curry types');
+    await userEvent.selectOptions(linkTo, 'Curry types');
+    expect(within(screen.getByRole('group', { name: 'Mode' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['Comes with']);
     await userEvent.selectOptions(linkTo, 'Extra categories');
     expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Never with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Never with' })).toBeInTheDocument();
 
     await userEvent.selectOptions(linkTo, 'Base categories');
     await userEvent.click(screen.getByRole('button', { name: 'Only with' }));
@@ -161,8 +164,10 @@ describe('LinkList', () => {
     expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Only with' })).toBeInTheDocument();
     await userEvent.selectOptions(linkTo, 'Specific extras');
+    // A side is brought along rather than limited to.
     expect(screen.queryByRole('button', { name: 'Served with' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Only with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: 'Never with' })).toBeInTheDocument();
   });
 
@@ -177,19 +182,21 @@ describe('LinkList', () => {
     expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('keeps a stored only-with link on specific curries listed, editable and removable', async () => {
+  it('keeps a stored only-with link on specific curries listed with a note, and opens it as comes with', async () => {
     const other = await dish('Kootu', 'curry');
     const onChange = vi.fn();
-    render(<Harness initial={[{ mode: 'with', target: 'curry_dish', values: [other], strength: 'always' }]} componentType="extra" onChange={onChange} />);
+    render(<Harness initial={[{ mode: 'with', target: 'curry_dish', values: [other], strength: 'always', ruleId: 7 }]} componentType="extra" onChange={onChange} />);
 
     const item = await screen.findByRole('listitem');
-    await waitFor(() => expect(item).toHaveTextContent('Sambar is always planned only with Kootu'));
+    await waitFor(() => expect(item).toHaveTextContent('Sambar is always planned only with Kootu (only limits: edit it to have it come with the meal)'));
     await userEvent.click(await readyButton('Edit', item));
     expect(screen.getByRole('combobox', { name: 'Link to' })).toHaveValue('curry_dish');
-    expect(screen.getByRole('button', { name: 'Only with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Sometimes' }));
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
-    expect(onChange).toHaveBeenLastCalledWith([{ mode: 'with', target: 'curry_dish', values: [other], strength: 'sometimes' }]);
+    expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: 'curry_dish', values: [other], strength: 'sometimes', ruleId: 7 }]);
+    expect(screen.getByRole('listitem')).not.toHaveTextContent('only limits');
     await userEvent.click(await readyButton('Remove'));
     expect(onChange).toHaveBeenLastCalledWith([]);
   });
@@ -263,5 +270,25 @@ describe('LinkList', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onChange).not.toHaveBeenCalled();
     expect(screen.getByRole('listitem')).toHaveTextContent('Sambar is always kept away from soup');
+  });
+
+  it('edits and marks off each of two links of one kind on its own', async () => {
+    const coconut = await dish('Coconut Chutney', 'extra');
+    const tomato = await dish('Tomato Chutney', 'extra');
+    await dish('Mint Chutney', 'extra');
+    const first: DishLink = { mode: 'comes', target: 'extra_dish', values: [coconut], strength: 'always', ruleId: 1 };
+    const second: DishLink = { mode: 'comes', target: 'extra_dish', values: [tomato], strength: 'always', ruleId: 2 };
+    const onChange = vi.fn();
+    render(<Harness initial={[first, second]} componentType="base" offRuleIds={[2]} onChange={onChange} />);
+
+    const items = await screen.findAllByRole('listitem');
+    await waitFor(() => expect(items[1]).toHaveTextContent('Sambar always comes with Tomato Chutney (off)'));
+    expect(items[0]).not.toHaveTextContent('(off)');
+    await userEvent.click(await readyButton('Edit', items[1]));
+    expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1);
+    expect(screen.getByText('Sambar always comes with Coconut Chutney')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Mint Chutney' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(onChange).toHaveBeenLastCalledWith([first, { ...second, values: [tomato, expect.any(Number)] }]);
   });
 });

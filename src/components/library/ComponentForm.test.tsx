@@ -509,7 +509,7 @@ describe('ComponentForm dynamic category wiring', () => {
 
 const tags = { dietary_tags: ['veg' as const], regional_tags: [], occasion_tags: [], created_at: new Date().toISOString() };
 
-async function addLink(target: string, mode: 'Only with' | 'Never with', values: string[], strength?: string) {
+async function addLink(target: string, mode: 'Only with' | 'Never with' | 'Comes with', values: string[], strength?: string) {
   await userEvent.click(await readyButton('Add link'));
   await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), target);
   await userEvent.click(screen.getByRole('button', { name: mode }));
@@ -803,6 +803,121 @@ describe('ComponentForm links: several of one kind', () => {
     await userEvent.click(await readyButton('Remove', item));
     await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
     await waitFor(async () => expect(await foodDb.getOwnedRules(idli)).toEqual([before[1]]));
+  });
+});
+
+describe('ComponentForm links: comes with', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  const OLD = '2020-01-01T00:00:00.000Z';
+
+  /** Idli comes with two chutneys, and keeps an old only-with link to specific curries and a never-with link. */
+  async function setup() {
+    const coconut = await saveComponent(undefined, { name: 'Coconut Chutney', componentType: 'extra', ...tags });
+    const tomato = await saveComponent(undefined, { name: 'Tomato Chutney', componentType: 'extra', ...tags });
+    const mint = await saveComponent(undefined, { name: 'Mint Chutney', componentType: 'extra', ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {}, [
+      { kind: 'add', link: comes([coconut]) },
+      { kind: 'add', link: comes([tomato]) },
+      { kind: 'add', link: { mode: 'with', target: 'curry_dish', values: [sambar], strength: 'usually' } },
+      { kind: 'add', link: { mode: 'never', target: 'curry_category', values: ['soup'], strength: 'always' } },
+    ]);
+    // A known, old creation time shows an edit updates the rule rather than replacing it.
+    for (const rule of await foodDb.getOwnedRules(idli)) await db.rules.update(rule.id, { created_at: OLD });
+    return { idli, coconut, tomato, mint, sambar, before: await foodDb.getOwnedRules(idli) };
+  }
+
+  const loadOrders = [
+    ['before the library loads', (id: number) => render(<LiveEditForm componentId={id} />)],
+    ['once the library has loaded', (id: number) => {
+      function OpenWhenLoaded() {
+        return useLibraryLookup().loaded ? <LiveEditForm componentId={id} /> : null;
+      }
+      return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    }],
+  ] as const;
+
+  const itemOf = async (text: RegExp) => (await screen.findByText(text)).closest('li')!;
+
+  it.each(loadOrders)('a save with no edits writes no link rule, opened %s', async (_, open) => {
+    const { idli, before } = await setup();
+    open(idli);
+    expect(await itemOf(/Idli always comes with Coconut Chutney/)).toBeInTheDocument();
+    expect(await itemOf(/usually planned only with Sambar/)).toHaveTextContent('(only limits: edit it to have it come with the meal)');
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
+    expect(await foodDb.getOwnedRules(idli)).toEqual(before);
+  });
+
+  it.each(loadOrders)('Add link offers Comes with again for a kind already used, opened %s', async (_, open) => {
+    const { idli, before, mint } = await setup();
+    open(idli);
+    await userEvent.click(await readyButton('Add link'));
+    const linkTo = screen.getByRole('combobox', { name: 'Link to' });
+    await userEvent.selectOptions(linkTo, 'Specific extras');
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).toBeNull();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Mint Chutney' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => expect(await foodDb.getOwnedRules(idli)).toHaveLength(before.length + 1));
+    const after = await foodDb.getOwnedRules(idli);
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(readLink(after[before.length])).toEqual({ mode: 'comes', target: 'extra_dish', values: [mint], strength: 'always' });
+  });
+
+  it.each(loadOrders)('two comes-with links are edited independently, opened %s', async (_, open) => {
+    const { idli, before, tomato, mint } = await setup();
+    open(idli);
+    const second = await itemOf(/Idli always comes with Tomato Chutney/);
+    await userEvent.click(await readyButton('Edit', second));
+    // Only the link clicked opens.
+    expect(screen.getAllByRole('button', { name: 'Done' })).toHaveLength(1);
+    expect(screen.getByText(/Idli always comes with Coconut Chutney/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Mint Chutney' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    const edited = before.find((r) => readLink(r)?.values.includes(tomato))!;
+    await waitFor(async () => expect(readLink((await db.rules.get(edited.id))!)?.values).toEqual([tomato, mint]));
+    const after = await foodDb.getOwnedRules(idli);
+    // An update: same rule id and creation time; every other rule as it was.
+    expect(after.map((r) => r.id)).toEqual(before.map((r) => r.id));
+    expect(after.find((r) => r.id === edited.id)?.created_at).toBe(OLD);
+    expect(after.filter((r) => r.id !== edited.id)).toEqual(before.filter((r) => r.id !== edited.id));
+  });
+
+  it('opening an old only-with link and saving stores it as comes with', async () => {
+    const { idli, before, sambar } = await setup();
+    render(<LiveEditForm componentId={idli} />);
+    const old = before.find((r) => r.spec.template === 'avoid_with' && readLink(r)?.mode === 'with')!;
+    await userEvent.click(await readyButton('Edit', await itemOf(/usually planned only with Sambar/)));
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Only with' })).toBeNull();
+    expect(screen.getByText('Idli usually comes with Sambar')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await itemOf(/Idli usually comes with Sambar/)).not.toHaveTextContent('only limits');
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => expect((await db.rules.get(old.id))?.spec.template).toBe('comes_with'));
+    const stored = (await db.rules.get(old.id))!;
+    expect(readLink(stored)).toEqual({ mode: 'comes', target: 'curry_dish', values: [sambar], strength: 'usually' });
+    expect(stored.created_at).toBe(OLD);
+    const after = await foodDb.getOwnedRules(idli);
+    expect(after.filter((r) => r.id !== old.id)).toEqual(before.filter((r) => r.id !== old.id));
+  });
+
+  it('the strength row is labelled How firmly', async () => {
+    render(<ComponentForm componentType="curry" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await userEvent.click(await readyButton('Add link'));
+    expect(screen.getByText('How firmly')).toBeVisible();
+    expect(within(screen.getByRole('group', { name: 'How firmly' })).getByRole('button', { name: 'Always' })).toBeInTheDocument();
   });
 });
 

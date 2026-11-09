@@ -5,14 +5,20 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { addableSlots, describeLink, dishTypeOf, isDishTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
+import { addableSlots, describeLink, dishTypeOf, isDishTarget, isSideTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersComes, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
-const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with', comes: 'Comes with' }
+export const MODE_LABEL: Record<LinkMode, string> = { serve: 'Served with', with: 'Only with', never: 'Never with', comes: 'Comes with' }
 
-const MODES: LinkMode[] = ['serve', 'with', 'never']
+/** A side is brought along ("comes with") rather than limited to; bases keep "only with". */
+const SIDE_MODES: LinkMode[] = ['comes', 'never']
+const BASE_MODES: LinkMode[] = ['serve', 'with', 'never']
+
+/** The mode a link opens with: an old "only with" link to sides opens as "comes with", so saving it brings the dish. */
+const shownMode = (link: Pick<DishLink, 'mode' | 'target'>): LinkMode =>
+  link.mode === 'with' && isSideTarget(link.target) ? 'comes' : link.mode
 
 const capitalise = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -49,14 +55,16 @@ interface LinkEditorProps {
 export function LinkEditor({ componentType, selfId, dishName, initial, links, onDone, onCancel }: LinkEditorProps) {
   const lookup = useLibraryLookup()
   // What Add offers, plus the link being edited, so a stored link stays editable even where Add would not offer it.
-  const offered: LinkSlot[] = [...addableSlots(componentType, links), ...(initial ? [linkSlotOf(initial)] : [])]
-  const free = (mode: LinkMode, target: LinkTarget) => offered.includes(linkSlotOf({ mode, target }))
-  const modesFor = (t: LinkTarget): LinkMode[] => MODES.filter((m) => free(m, t))
+  const offered: LinkSlot[] = [...addableSlots(componentType, links), ...(initial ? [linkSlotOf({ mode: shownMode(initial), target: initial.target })] : [])]
+  // A dish may come with several sides, so "comes with" is offered wherever it suits, however often it is used.
+  const free = (mode: LinkMode, target: LinkTarget) =>
+    (mode === 'comes' && offersComes(componentType, target)) || offered.includes(linkSlotOf({ mode, target }))
+  const modesFor = (t: LinkTarget): LinkMode[] => (isSideTarget(t) ? SIDE_MODES : BASE_MODES).filter((m) => free(m, t))
   const targets = LINK_TARGETS.filter((t) => modesFor(t).length > 0)
   const firstMode = (target: LinkTarget) => modesFor(target)[0] ?? 'with'
 
   const [target, setTarget] = useState<LinkTarget | undefined>(initial?.target ?? targets[0])
-  const [mode, setMode] = useState<DishLink['mode']>(initial?.mode ?? (targets[0] ? firstMode(targets[0]) : 'with'))
+  const [mode, setMode] = useState<DishLink['mode']>(initial ? shownMode(initial) : (targets[0] ? firstMode(targets[0]) : 'with'))
   const [strength, setStrength] = useState<LinkStrength>(initial?.strength ?? 'always')
   const [values, setValues] = useState<LinkValue[]>(initial?.values ?? [])
   const [days, setDays] = useState<Day[]>(initial?.scope?.days ?? [])
@@ -105,13 +113,16 @@ export function LinkEditor({ componentType, selfId, dishName, initial, links, on
         ))}
       </div>
 
-      <div className="flex flex-wrap gap-1" role="group" aria-label="How firmly">
-        {LINK_STRENGTHS.map((s) => (
-          <Button key={s} type="button" size="sm" variant={strength === s ? 'secondary' : 'outline'} aria-pressed={strength === s}
-            onClick={() => setStrength(s)}>
-            {STRENGTH_WORDS[s].label}
-          </Button>
-        ))}
+      <div className="space-y-1">
+        <span className="text-xs font-semibold">How firmly</span>
+        <div className="flex flex-wrap gap-1" role="group" aria-label="How firmly">
+          {LINK_STRENGTHS.map((s) => (
+            <Button key={s} type="button" size="sm" variant={strength === s ? 'secondary' : 'outline'} aria-pressed={strength === s}
+              onClick={() => setStrength(s)}>
+              {STRENGTH_WORDS[s].label}
+            </Button>
+          ))}
+        </div>
       </div>
 
       <OptionPicker key={target} options={linkOptions(lookup, target, selfId)} selected={values} onChange={setValues} />
