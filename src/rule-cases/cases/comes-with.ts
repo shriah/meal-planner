@@ -1,7 +1,8 @@
+import { is } from '@/planner';
 import { linkRule, mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
 import { eachPlanned, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, yieldsTo } from '../expect';
-import type { PlanExpectation, RuleCase } from '../types';
+import type { CaseRule, PlanExpectation, RuleCase } from '../types';
 import { TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
@@ -19,6 +20,12 @@ const DISHES: ComponentRecord[] = [IDIYAPPAM, STEW_VEG, STEW_NON_VEG, MUTTON_CUR
 const FREQUENT_STEW_VEG: ComponentRecord = { ...STEW_VEG, id: 905, frequency: 'frequent' };
 const RARE_STEW_NON_VEG: ComponentRecord = { ...STEW_NON_VEG, id: 906, frequency: 'rare' };
 const DISHES_BY_FREQUENCY: ComponentRecord[] = [IDIYAPPAM, FREQUENT_STEW_VEG, RARE_STEW_NON_VEG];
+
+/** A hand-written count limit on one dish, as the Rules page stores it (not an owned rule). */
+export const limitRule = (dish: ComponentRecord, max: number, per: 'week' | 'day'): CaseRule => ({
+  name: `Limit ${dish.name} to ${max} per ${per}`,
+  spec: { template: 'limit', params: { match: is('id', dish.id), per, max, strength: 'must' } },
+});
 
 const STEWS = ['Kerala Stew (Veg)', 'Kerala Stew (Non-Veg)'];
 const REPORT = 'The 2026-11-09 Idiyappam report: ';
@@ -220,5 +227,83 @@ export const COMES_WITH_CASES: RuleCase[] = [
       yieldsTo('Idiyappam', 'Kerala Stew (Veg)'),
       noHardProblems(),
     ],
+  },
+  {
+    kind: 'plan',
+    id: 'brought-side-ignores-its-limit',
+    known: "a brought dish's own limit makes its base rarer — fixed in Task 2",
+    group: 'Pairings',
+    name: "A brought side's limit does not make its base rarer",
+    why: `${REPORT}Kerala Stew (Veg) was limited to once a week, and Idiyappam, which always comes with it, became rarer: a brought dish's own limit made its base rarer. A brought dish's limits only rank the pick among a link's dishes.`,
+    dishes: DISHES,
+    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [lib.dish('Kerala Stew (Veg)').id] })],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
+    expect: [nearNoRulesCount('Idiyappam'), everyMealWith('Idiyappam', ['Kerala Stew (Veg)']), noHardProblems()],
+  },
+  {
+    kind: 'plan',
+    id: 'brought-side-ignores-its-limit-usually',
+    known: "a brought dish's own limit makes its base rarer — fixed in Task 2",
+    group: 'Pairings',
+    name: "A usually-brought side's limit does not make its base rarer",
+    why: `${REPORT}as the Always case, with a Usually link: a brought dish's own limit made its base rarer. The stew is still in at least 3 of 4 Idiyappam meals.`,
+    dishes: DISHES,
+    rules: () => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id], strength: 'usually' })],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
+    expect: [
+      nearNoRulesCount('Idiyappam'),
+      {
+        says: 'Kerala Stew (Veg) is in at least 3 of 4 Idiyappam meals',
+        check: (w) => {
+          const idi = w.lib.dish('Idiyappam').id;
+          const stew = w.lib.dish('Kerala Stew (Veg)').id;
+          const meals = w.weeks.flat().filter((s) => idsOf(s).includes(idi));
+          const k = meals.filter((s) => idsOf(s).includes(stew)).length;
+          return { pass: meals.length > 0 && k * 4 >= meals.length * 3, got: `${k} of ${meals.length}` };
+        },
+        highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
+      },
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'limit-ranks-a-links-dishes',
+    group: 'Pairings',
+    name: "A limit ranks the dishes of a link",
+    why: `${REPORT}Idiyappam comes with either stew and Kerala Stew (Veg) is limited to once a week: the limit only ranks the pick, so the Veg stew is in at most one Idiyappam meal a week and the other meals take the Non-Veg stew. This passes on today's code, so it is a guard for Task 3, which makes the limit rank the pick.`,
+    dishes: DISHES,
+    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: STEWS.map((n) => lib.dish(n).id) })],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
+    expect: [
+      everyMealWithOneOf('Idiyappam', STEWS),
+      {
+        says: 'Kerala Stew (Veg) is in at most one Idiyappam meal in any week with two or more Idiyappam meals',
+        check: (w) => {
+          const idi = w.lib.dish('Idiyappam').id;
+          const stew = w.lib.dish('Kerala Stew (Veg)').id;
+          const bad = w.weeks.filter((wk) => {
+            const meals = wk.filter((s) => idsOf(s).includes(idi));
+            return meals.length >= 2 && meals.filter((s) => idsOf(s).includes(stew)).length > 1;
+          }).length;
+          return { pass: bad === 0, got: `${bad} of ${w.weeks.length} weeks have more` };
+        },
+        highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
+      },
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'brought-chain-ignores-limit',
+    known: "a brought dish's own limit makes its base rarer — fixed in Task 2",
+    group: 'Pairings',
+    name: "A limit on the end of a chain does not make the base rarer",
+    why: `${REPORT}Idiyappam brings Kerala Stew (Veg), which brings Pepper Rasam, limited to once a week: a brought dish's own limit, two links down, made the base rarer.`,
+    dishes: DISHES,
+    rules: () => [
+      linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id] }),
+      linkRule(STEW_VEG, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] }),
+    ],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(PEPPER_RASAM, 1, 'week')],
+    expect: [nearNoRulesCount('Idiyappam'), everyMealWith('Idiyappam', ['Kerala Stew (Veg)', 'Pepper Rasam'])],
   },
 ];

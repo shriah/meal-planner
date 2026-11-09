@@ -2,6 +2,7 @@ import { is } from '@/planner';
 import { exclusionRule, linkRule, mealRule } from '@/rules';
 import { everyMealWith, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, someMealWith, yieldsTo } from '../expect';
 import type { PlanExpectation, RuleCase } from '../types';
+import { limitRule } from './comes-with';
 
 /** Idli planned outside breakfast without Coconut Chutney: the breakfast scope must not leak. */
 const idliElsewhereHasNoChutney = (): PlanExpectation => ({
@@ -137,5 +138,19 @@ export const PAIRING_CASES: RuleCase[] = [
       },
       idliElsewhereHasNoChutney(),
     ],
+  },
+  {
+    kind: 'plan',
+    id: 'served-with-ignores-its-limit',
+    group: 'Pairings',
+    name: "A served side's limit does not make its base rarer",
+    why: "Papad always served with Rice, limited to twice a week: a brought dish's own limit made its base, Rice, rarer. A served dish's limits only rank the pick among a link's dishes. This passes on today's code (a served dish's limit is not yet felt by Rice), so it is a guard for the change.",
+    rules: (lib) => {
+      const papad = lib.dish('Papad');
+      const rice = lib.dish('Rice');
+      return [linkRule(papad, { mode: 'serve', target: 'base_dish', values: [rice.id] })];
+    },
+    given: (lib) => [limitRule(lib.dish('Papad'), 2, 'week')],
+    expect: [nearNoRulesCount('Rice'), everyMealWith('Rice', ['Papad']), noHardProblems()],
   },
 ];
