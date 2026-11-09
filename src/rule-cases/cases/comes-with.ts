@@ -2,7 +2,8 @@ import { is } from '@/planner';
 import { linkRule, mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
 import { eachPlanned, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
-import type { CaseRule, PlanExpectation, RuleCase } from '../types';
+import type { PlanSlotLike } from '@/planner';
+import type { CaseLibrary, CaseRule, CaseWeeks, PlanExpectation, RuleCase } from '../types';
 import { TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
@@ -15,6 +16,8 @@ const STEW_VEG: CurryRecord = { ...fields(), id: 901, name: 'Kerala Stew (Veg)',
 const STEW_NON_VEG: CurryRecord = { ...fields(), id: 902, name: 'Kerala Stew (Non-Veg)', componentType: 'curry', curry_category: 'stew' };
 const MUTTON_CURRY: CurryRecord = { ...fields(), id: 903, name: 'Mutton Curry', componentType: 'curry', curry_category: 'mutton' };
 const PEPPER_RASAM: ExtraRecord = { ...fields(), id: 904, name: 'Pepper Rasam', componentType: 'extra', extra_category_id: 11, extra_category: 'condiment' };
+// A second crunchy extra for the cases where a conditional link ranks two extras.
+const MURUKKU: ExtraRecord = { ...fields(), id: 907, name: 'Murukku', componentType: 'extra', extra_category_id: 12, extra_category: 'crunchy' };
 const DISHES: ComponentRecord[] = [IDIYAPPAM, STEW_VEG, STEW_NON_VEG, MUTTON_CURRY, PEPPER_RASAM];
 // The two stews again (ids from 905), the Veg one frequent and the Non-Veg one rare, in place of 901 and 902.
 const FREQUENT_STEW_VEG: ComponentRecord = { ...STEW_VEG, id: 905, frequency: 'frequent' };
@@ -44,7 +47,7 @@ const mondayLunchExtras = (names: string[]): PlanExpectation => ({
   highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
 });
 
-export const COMES_WITH_CASES: RuleCase[] = [
+const PAIRING_CASES: RuleCase[] = [
   {
     kind: 'plan',
     id: 'comes-with-either-stew',
@@ -312,4 +315,278 @@ export const COMES_WITH_CASES: RuleCase[] = [
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(PEPPER_RASAM, 1, 'week')],
     expect: [notRarerThanNoRules('Idiyappam'), everyMealWith('Idiyappam', ['Kerala Stew (Veg)', 'Pepper Rasam'])],
   },
+
 ];
+
+// "Papad only with Rice and Sambar": Rice comes with Papad when the meal's curry is Sambar.
+const PAPAD_RULE = 'Papad only with Rice and Sambar: ';
+type Pick = (s: PlanSlotLike, lib: CaseLibrary) => boolean;
+const dishId = (lib: CaseLibrary, name: string) => lib.dish(name).id;
+const hasDish = (name: string): Pick => (s, lib) => idsOf(s).includes(dishId(lib, name));
+const curryIs = (...names: string[]): Pick => (s, lib) => s.curry_id !== undefined && names.some((n) => s.curry_id === dishId(lib, n));
+const otherCurry = (...names: string[]): Pick => (s, lib) => s.curry_id !== undefined && !curryIs(...names)(s, lib);
+const subziIs = (name: string): Pick => (s, lib) => s.subzi_id === dishId(lib, name);
+const baseIs = (...names: string[]): Pick => (s, lib) => s.base_id !== undefined && names.some((n) => s.base_id === dishId(lib, n));
+const allOf = (...picks: Pick[]): Pick => (s, lib) => picks.every((p) => p(s, lib));
+const not = (p: Pick): Pick => (s, lib) => !p(s, lib);
+const mealsPicked = (w: CaseWeeks, pick: Pick) => w.weeks.flat().filter((s) => pick(s, w.lib));
+
+/** Every meal that `where` picks also satisfies `then`; at least one meal is picked. */
+const everyPicked = (says: string, where: Pick, then: Pick): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const meals = mealsPicked(w, where);
+    const k = meals.filter((s) => then(s, w.lib)).length;
+    return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
+
+/** No meal that `where` picks satisfies `then`; at least one meal is picked, so the check is not empty. */
+const nonePicked = (says: string, where: Pick, then: Pick): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const meals = mealsPicked(w, where);
+    const k = meals.filter((s) => then(s, w.lib)).length;
+    return { pass: meals.length > 0 && k === 0, got: `${k} of ${meals.length}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
+
+/** At least `num` of every `den` picked meals satisfy `then`. */
+const mostPicked = (says: string, where: Pick, then: Pick, num: number, den: number): PlanExpectation => ({
+  says,
+  check: (w) => {
+    const meals = mealsPicked(w, where);
+    const k = meals.filter((s) => then(s, w.lib)).length;
+    return { pass: meals.length > 0 && k * den >= meals.length * num, got: `${k} of ${meals.length}` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
+
+const riceSambar = allOf(baseIs('Rice'), curryIs('Sambar'));
+const papad = hasDish('Papad');
+
+/** The number of Rice + Sambar meals stays within x1.5 of the count without the case's rules. */
+const nearNoRulesRiceSambar: PlanExpectation = {
+  says: 'Rice with Sambar is planned about as often as without the case\'s rules',
+  check: (w, ctx) => {
+    const total = mealsPicked(w, riceSambar).length;
+    const base = mealsPicked(ctx.baseline(), riceSambar).length;
+    const pass = base < 4 ? total >= 4 : total >= base / 1.5 && total <= base * 1.5;
+    return { pass, got: `${total} (${base} without the rules)` };
+  },
+  highlights: (slot, lib) => riceSambar(slot, lib),
+};
+
+const papadWhen = (when: { curry?: string[]; subzi?: string[] }, extra: { strength?: 'usually'; scope?: { meals: ['lunch'] }; values?: string[] } = {}) =>
+  (lib: CaseLibrary): CaseRule[] => [
+    linkRule(lib.dish('Rice'), {
+      mode: 'comes',
+      target: 'extra_dish',
+      values: (extra.values ?? ['Papad']).map((n) => dishId(lib, n)),
+      when: { ...(when.curry && { curry: when.curry.map((n) => dishId(lib, n)) }), ...(when.subzi && { subzi: when.subzi.map((n) => dishId(lib, n)) }) },
+      ...(extra.strength && { strength: extra.strength }),
+      ...(extra.scope && { scope: extra.scope }),
+    }),
+  ];
+
+const papadOnSambar = papadWhen({ curry: ['Sambar'] });
+const EVERY_RICE_SAMBAR_HAS_PAPAD = everyPicked('Every Rice meal with Sambar has Papad', riceSambar, papad);
+const NO_OTHER_PAPAD = [
+  nonePicked('No Rice meal with another curry has Papad', allOf(baseIs('Rice'), otherCurry('Sambar')), papad),
+  nonePicked('No Idli or Dosa meal with Sambar has Papad', allOf(baseIs('Idli', 'Dosa'), curryIs('Sambar')), papad),
+];
+
+const SUBZI_AT_EVERY_MEAL: CaseRule = {
+  name: 'A subzi at every meal',
+  spec: { template: 'require', params: { match: is('componentType', 'subzi'), min: 1, strength: 'must' } },
+};
+/** Rice comes with Sambar, so Rice and Sambar meals are common enough to check. */
+const riceWithSambar = (lib: CaseLibrary, strength?: 'usually' | 'sometimes') =>
+  linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')], ...(strength && { strength }) });
+
+function conditionalCases(): RuleCase[] {
+  return [
+    {
+      kind: 'plan',
+      id: 'when-curry-brings',
+      group: 'Pairings',
+      name: 'Papad comes with Rice only when the curry is Sambar',
+      why: `${PAPAD_RULE}Rice comes with Papad when the meal has Sambar: every Rice and Sambar meal has Papad, and no Rice meal with another curry, nor Idli or Dosa with Sambar, is given it by the link.`,
+      rules: papadOnSambar,
+      given: () => [CURRY_AT_EVERY_MEAL],
+      expect: [EVERY_RICE_SAMBAR_HAS_PAPAD, ...NO_OTHER_PAPAD, noHardProblems()],
+      known: 'the planner ignores the condition, so Papad comes with every Rice meal, not only Rice with Sambar — fixed in Task 6',
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-keeps-curry-count',
+      group: 'Pairings',
+      name: 'A conditional link does not make Rice with Sambar rarer',
+      why: `${PAPAD_RULE}the link waits for Sambar, so it must not crowd Sambar out of the Rice meals it was made for: Rice and Sambar meals stay within x1.5 of the count with no rules, and still have Papad. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadOnSambar,
+      given: () => [CURRY_AT_EVERY_MEAL],
+      expect: [nearNoRulesRiceSambar, EVERY_RICE_SAMBAR_HAS_PAPAD],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-usually',
+      group: 'Pairings',
+      name: 'Usually papad with Rice when the curry is Sambar',
+      why: `${PAPAD_RULE}a Usually conditional link is a preference: Papad is in at least 3 of 4 Rice and Sambar meals. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadWhen({ curry: ['Sambar'] }, { strength: 'usually' }),
+      given: () => [CURRY_AT_EVERY_MEAL],
+      expect: [mostPicked('Papad is in at least 3 of 4 Rice meals with Sambar', riceSambar, papad, 3, 4)],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-two-curries',
+      group: 'Pairings',
+      name: 'Papad comes with Rice when the curry is Sambar or Rasam',
+      why: `${PAPAD_RULE}a condition naming two curries is met by either: every Rice meal with Sambar or with Rasam has Papad. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadWhen({ curry: ['Sambar', 'Rasam'] }),
+      given: () => [CURRY_AT_EVERY_MEAL],
+      expect: [
+        everyPicked('Every Rice meal with Sambar has Papad', riceSambar, papad),
+        everyPicked('Every Rice meal with Rasam has Papad', allOf(baseIs('Rice'), curryIs('Rasam')), papad),
+      ],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-and-subzi',
+      group: 'Pairings',
+      name: 'Papad comes with Rice when the curry is Sambar and the subzi Beans Poriyal',
+      why: `${PAPAD_RULE}the parts of a condition are all required: only a Rice meal with Sambar and Beans Poriyal has Papad, not Sambar with another or no subzi, nor Beans Poriyal with another curry (a pinned Monday lunch of Rice, Rasam and Beans Poriyal).`,
+      rules: papadWhen({ curry: ['Sambar'], subzi: ['Beans Poriyal'] }),
+      given: (lib) => [CURRY_AT_EVERY_MEAL, SUBZI_AT_EVERY_MEAL, riceWithSambar(lib, 'sometimes')],
+      expect: [
+        everyPicked('Every Rice meal with Sambar and Beans Poriyal has Papad', allOf(riceSambar, subziIs('Beans Poriyal')), papad),
+        nonePicked('No Rice meal with Sambar and another or no subzi has Papad', allOf(riceSambar, not(subziIs('Beans Poriyal'))), papad),
+        mondayLunchHas('Papad', false, 'pinned Monday lunch of Rice, Rasam and Beans Poriyal'),
+      ],
+      pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Rasam').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
+      known: 'the planner ignores the condition, so Papad comes with every Rice meal, whatever its curry and subzi — fixed in Task 6',
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-chain',
+      group: 'Pairings',
+      name: 'Papad waits for a curry that Rice itself brings',
+      why: `${PAPAD_RULE}Rice always comes with Sambar, and Papad waits for Sambar: the condition is met by a curry another link brought, so every Rice meal has Sambar and Papad. Passes today because the planner ignores the condition and brings the dish to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadOnSambar,
+      given: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')] })],
+      expect: [everyPicked('Every Rice meal has Sambar and Papad', baseIs('Rice'), allOf(curryIs('Sambar'), papad))],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-subzi',
+      group: 'Pairings',
+      name: 'A subzi comes with Rice when the curry is Sambar',
+      why: `${PAPAD_RULE}a condition can wait to bring a subzi too: Rice comes with Beans Poriyal when the meal has Sambar, so every Rice and Sambar meal has it. Passes today because the planner ignores the condition and brings the dish to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
+      given: () => [CURRY_AT_EVERY_MEAL],
+      expect: [everyPicked('Every Rice meal with Sambar has Beans Poriyal', riceSambar, subziIs('Beans Poriyal'))],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-scope',
+      group: 'Pairings',
+      name: 'A conditional link keeps its meals',
+      why: `${PAPAD_RULE}the link applies to lunch only: Rice and Sambar lunches have Papad and no Rice and Sambar dinner has it from the link. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadWhen({ curry: ['Sambar'] }, { scope: { meals: ['lunch'] } }),
+      given: (lib) => [CURRY_AT_EVERY_MEAL, riceWithSambar(lib)],
+      expect: [
+        everyPicked('Every Rice lunch with Sambar has Papad', allOf(riceSambar, (s) => s.meal_slot === 'lunch'), papad),
+        nonePicked('No Rice dinner with Sambar has Papad', allOf(riceSambar, (s) => s.meal_slot === 'dinner'), papad),
+      ],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-beats-plain-subzi',
+      group: 'Pairings',
+      name: 'A conditional subzi link beats an older plain one',
+      why: `${PAPAD_RULE}Rice usually comes with Aloo Gobi (an older link) and with Beans Poriyal when the meal has Sambar: the conditional one is firmer for its meals, so every Rice and Sambar meal has Beans Poriyal, and other Rice meals mostly keep Aloo Gobi.`,
+      rules: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
+      given: (lib) => [
+        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Aloo Gobi')], strength: 'usually' }),
+        CURRY_AT_EVERY_MEAL,
+        SUBZI_AT_EVERY_MEAL,
+      ],
+      expect: [
+        everyPicked('Every Rice meal with Sambar has Beans Poriyal', riceSambar, subziIs('Beans Poriyal')),
+        mostPicked('Aloo Gobi is in most other Rice meals', allOf(baseIs('Rice'), not(curryIs('Sambar'))), subziIs('Aloo Gobi'), 1, 2),
+      ],
+      known: 'the planner ignores the condition, so Beans Poriyal comes with every Rice meal and Aloo Gobi never does — fixed in Task 6',
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-ignores-limit',
+      group: 'Pairings',
+      name: "A brought dish's limit does not stop a conditional link",
+      why: `${PAPAD_RULE}Papad is limited to twice a week: its limit only ranks a pick, so every Rice and Sambar meal still has Papad, no hard rule is broken and Rice with Sambar is not made rarer. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadOnSambar,
+      given: (lib) => [limitRule(lib.dish('Papad'), 2, 'week'), CURRY_AT_EVERY_MEAL],
+      expect: [EVERY_RICE_SAMBAR_HAS_PAPAD, noHardProblems(), nearNoRulesRiceSambar],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-ranks-two-extras',
+      group: 'Pairings',
+      name: 'A conditional link ranks its two extras by the limit',
+      why: `${PAPAD_RULE}Rice comes with Papad or Murukku when the meal has Sambar, and Papad is limited to twice a week: every Rice and Sambar meal has one of them, and the limit ranks Papad down so it is in at most two meals a week. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      dishes: [MURUKKU],
+      rules: papadWhen({ curry: ['Sambar'] }, { values: ['Papad', 'Murukku'] }),
+      given: (lib) => [limitRule(lib.dish('Papad'), 2, 'week'), CURRY_AT_EVERY_MEAL],
+      expect: [
+        everyPicked('Every Rice meal with Sambar has Papad or Murukku', riceSambar, (s, lib) => papad(s, lib) || hasDish('Murukku')(s, lib)),
+        {
+          says: 'Papad is in at most two meals in any week',
+          check: (w) => {
+            const bad = w.weeks.filter((wk) => wk.filter((s) => papad(s, w.lib)).length > 2).length;
+            return { pass: bad === 0, got: `${bad} of ${w.weeks.length} weeks have more` };
+          },
+          highlights: (slot, lib) => papad(slot, lib),
+        },
+      ],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-locked-curry',
+      group: 'Locks and picks',
+      name: 'A locked Sambar meets the condition',
+      why: `${PAPAD_RULE}Monday lunch is locked to Rice and Sambar: the locked curry meets the condition, so the meal has Papad in every week, and so does every other Rice and Sambar meal. Passes today because the planner ignores the condition and brings Papad to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
+      rules: papadOnSambar,
+      given: () => [CURRY_AT_EVERY_MEAL],
+      pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Sambar').id } },
+      expect: [mondayLunchHas('Papad', true), EVERY_RICE_SAMBAR_HAS_PAPAD],
+    },
+    {
+      kind: 'plan',
+      id: 'when-curry-locked-other-curry',
+      group: 'Locks and picks',
+      name: 'A locked other curry does not meet the condition',
+      why: `${PAPAD_RULE}Monday lunch is locked to Rice and Rasam: the locked curry does not meet the condition, so the link never brings Papad to it, while other Rice and Sambar meals still have Papad.`,
+      rules: papadOnSambar,
+      given: () => [CURRY_AT_EVERY_MEAL],
+      pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Rasam').id } },
+      expect: [mondayLunchHas('Papad', false), EVERY_RICE_SAMBAR_HAS_PAPAD],
+      known: 'the planner ignores the condition, so a locked Rice and Rasam meal has Papad — fixed in Task 6',
+    },
+  ];
+}
+
+/** The pinned Monday lunch has the dish in every week, or in none. */
+function mondayLunchHas(dish: string, has: boolean, meal = 'pinned Monday lunch'): PlanExpectation {
+  const at = (w: CaseWeeks, wk: PlanSlotLike[]) => idsOf(wk.find((x) => x.day === 'monday' && x.meal_slot === 'lunch') ?? ({ extra_ids: [] } as unknown as PlanSlotLike)).includes(w.lib.dish(dish).id);
+  return {
+    says: has ? `The ${meal} has ${dish} in every week` : `The ${meal} never has ${dish} from the link`,
+    check: (w) => {
+      const k = w.weeks.filter((wk) => at(w, wk)).length;
+      return { pass: has ? k === w.weeks.length : k === 0, got: `${k} of ${w.weeks.length} weeks` };
+    },
+    highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
+  };
+}
+
+export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases()];
