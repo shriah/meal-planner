@@ -307,7 +307,7 @@ function servedWithLinks(
   };
 }
 
-/** The error for links that would put two curries (or two subzis) in one base's always-served unit. */
+/** The error for links that cannot all hold: two curries (or subzis) in one base's always-served unit, or a clash with a comes-with link. */
 function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[]): string | undefined {
   return linkWarnings(self, links, { dishes: data.library, rules: data.rules }, namesFor(data)).find((w) => w.blocking)?.message;
 }

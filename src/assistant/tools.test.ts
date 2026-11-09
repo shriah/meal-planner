@@ -638,6 +638,14 @@ describe('propose_pairing', () => {
     expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
   });
 
+  it('propose_pairing refuses a pairing clashing with a comes-with link', async () => {
+    const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
+    const comes = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 3, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [1], strength: 'always' }) };
+    const c = () => ctxOf({ library: lib, categories, rules: [comes] });
+    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('Idli always comes with Sambar') });
+    expect((await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
+  });
+
   it('checks every base a firmer strength applies to, not only the bases asked for', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Pongal', { componentType: 'base' })];
     const link = (id: number, owner: number, name: string, values: number[], strength: 'always' | 'usually') =>
