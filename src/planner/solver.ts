@@ -46,8 +46,8 @@ const SAMPLE_SIZE = 10;
 /** Puts a brought dish's broken own rules ahead of every soft cost when choosing among a want's candidates. */
 const OVERRIDE_WEIGHT = 1e6;
 /**
- * Puts each unit of a brought dish's limits (the rules that give way to it, so the score does not charge
- * them) ahead of every soft cost when choosing among a want's candidates; below OVERRIDE_WEIGHT, so a dish's
+ * Puts each unit of a brought dish's hard frequency limits (which give way to it, so the score does not
+ * charge them) ahead of every soft cost when choosing among a want's candidates; below OVERRIDE_WEIGHT, so a dish's
  * days and meals outrank its limits.
  */
 const LIMIT_WEIGHT = 1e3;
@@ -121,16 +121,17 @@ export function candidateWeight(m: CompiledModel, slot: number): (id: number) =>
 /**
  * How to judge a plan holding `id`, brought into slot `slot`, against the other candidates: its hard score
  * first, then the dish's own rules it overrides there (its days, meals and "never planned automatically",
- * which give way to a unit member and so are not in the score), then the limits that give way to it (the
- * hard units the plan would break were `id` a free pick), then its soft score. So a candidate those rules
- * allow wins over one they forbid, and the limits that no longer stop a link still rank its pick. The soft
- * score is the plan's own, not the free pick's: charging the free pick's soft limits ("Vary dishes across
- * the week") ranked a link away from a frequent dish whenever the search had it elsewhere for a moment, and
- * the frequency prefers already rank the pick through `candidateWeight`.
+ * which give way to a unit member and so are not in the score), then its hard frequency limits that give
+ * way to it (the hard units the plan would break were `id` a free pick in every meal it is in), then its
+ * soft score. So a candidate those rules allow wins over one they forbid, and the hard limits that no longer
+ * stop a link still rank its pick. Only hard limits rank: the soft score is the plan's own, not the free
+ * pick's, since charging soft limits ("Vary dishes across the week") ranked a link away from a frequent dish
+ * whenever the search had it elsewhere for a moment, and the frequency prefers already rank the pick
+ * through `candidateWeight`.
  */
 export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number): Score {
   const s = score(m, plan);
-  const f = score(m, plan, false, { freePick: { slot, id } });
+  const f = score(m, plan, false, { freePick: { id } });
   const type = m.byId.get(id)?.componentType;
   const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
   return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + (f.hard - s.hard) * LIMIT_WEIGHT + s.soft };

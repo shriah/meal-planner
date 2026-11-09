@@ -414,11 +414,12 @@ const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => 
 
 export interface ScoreOptions {
   /**
-   * Score the assignment of `id` at `slot` as a free pick: no count rule gives way to it, so the limits
-   * that give way to a brought dish are charged to it. Its prefer rules still give way (they rank a link's
-   * candidates through the solver's `candidateWeight`). Used to rank a link's candidates.
+   * Score every assignment of `id` in the plan as a free pick: no count rule gives way to it, so the hard
+   * limits that give way to a brought dish are charged to it, and a weekly limit sees the dish's other
+   * brought meals too. Its prefer rules still give way (they rank a link's candidates through the solver's
+   * `candidateWeight`). Used to rank a link's candidates.
    */
-  freePick?: { slot: number; id: number };
+  freePick?: { id: number };
   /** Declared for the conditional links of Task 7; it has no effect yet. */
   ignoreConditional?: boolean;
 }
@@ -428,9 +429,8 @@ export interface ScoreOptions {
  * reporting, not inside the search loop).
  */
 export function score(m: CompiledModel, plan: PlanState, justify = false, opts: ScoreOptions = {}): ScoreResult {
-  const { freePick } = opts;
-  /** The free pick's assignment, or -1. */
-  let freeIdx = -1;
+  /** The free pick's library index, or -1. */
+  const freeCi = opts.freePick ? (m.state.idIndex.get(opts.freePick.id) ?? -1) : -1;
   const st = m.state;
   const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
   const just: Justification[] = [];
@@ -568,9 +568,6 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
     if (s.subzi !== undefined) place(s.subzi, ROLE_INDEX.subzi, slot);
     for (const id of s.extras) place(id, ROLE_INDEX.extra, slot);
     if (pairs.length && n > start) pairSlot(slot, start, n);
-    if (freePick?.slot === slot) {
-      for (let k = start; k < n; k++) if (m.library[bufCi[k]].id === freePick.id) freeIdx = k;
-    }
   }
 
   for (const cc of counts) {
@@ -591,7 +588,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
     // which charging them here would count twice. Only its count rules are charged.
     const preferFlag = bufFlag[i];
     soft += memo.prefer + (preferFlag & UNIT ? 0 : memo.preferUnit) + (preferFlag & ASKED ? 0 : memo.preferAsk);
-    const flag = i === freeIdx ? 0 : preferFlag;
+    const flag = bufCi[i] === freeCi ? 0 : preferFlag;
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
     const base = flag & UNIT ? plan[slot].base : undefined;

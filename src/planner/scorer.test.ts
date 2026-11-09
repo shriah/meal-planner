@@ -153,7 +153,15 @@ describe('pairings', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarNever]);
     const plan = at('lunch', { base: 1, curry: 2 });
     expect(score(m, plan).hard).toBe(0);
-    expect(score(m, plan, false, { freePick: { slot: slotIndex('monday', 'lunch'), id: 2 } }).hard).toBe(1);
+    expect(score(m, plan, false, { freePick: { id: 2 } }).hard).toBe(1);
+  });
+
+  it("a free pick's weekly limit counts the dish's other brought meals", () => {
+    const sambarOnce = count({ id: 'sambar-once', select: is('id', 2), groupBy: 'plan', bounds: { hardMax: 1 }, yieldsTo: 'ask' });
+    const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarOnce]);
+    const plan = planWith([['monday', 'lunch', { base: 1, curry: 2 }], ['tuesday', 'lunch', { base: 1, curry: 2 }]]);
+    expect(score(m, plan).hard).toBe(0);
+    expect(score(m, plan, false, { freePick: { id: 2 } }).hard).toBe(1);
   });
 
   it('a prefer that gives way to units still charges a side only asked for', () => {
