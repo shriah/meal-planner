@@ -100,12 +100,16 @@ Rules that are invalid or refer to deleted components or categories are skipped 
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
-component's form; the Rules page does not list owned rules, and a link to one goes to its dish. Any dish can own a list of **goes with / never with**
+component's form (`comes_with` is owned-only: `OWNED_ONLY_TEMPLATES`, hidden from the Rules page and the assistant's rule templates, and its `of` must pin one kind of dish); the Rules page does not list owned rules, and a link to one goes to its dish. Any dish can own a list of **goes with / never with**
 links (`DishLink` in `src/rules/owned.ts`). A link has a mode, a target, values, a strength and an optional scope. The target is
 the categories of another kind of dish (base categories, extra categories, curry types) or specific dishes (bases, curries,
 subzis, extras); a dish is never offered its own kind where a meal holds only one, and a base is not offered base categories or
 bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
-of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A curry, subzi or extra may also be
+of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A dish may also **come with** sides
+(`comes:<target>`, a `comes_with` rule): a base, curry, subzi or extra brings one of the chosen side dishes (or a side of the chosen
+categories) into its meal, so Idiyappam can come with Kerala Stew. A dish may hold several comes links of one kind, each its own
+rule. An old "only with" link to side targets still compiles as the limit it was and is listed with a note; editing it stores it as
+comes. A curry, subzi or extra may also be
 **served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
 is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner plans a base together with
 its served-with dishes (see **Pairings as units** below); picking a base by hand on the plan re-plans only that meal through the
@@ -124,9 +128,12 @@ On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shor
 option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
 flow offers: Served with first, then "Only with" and "Never with" for every target the dish may link to, specific dishes
 included. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
-marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links left untouched are never rewritten on save. `link-warnings.ts` shows
+marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links are tracked by rule id (`DishLink.ruleId`; `readOwned` keeps every link, `linkChanges` diffs the form's links against the stored ones, and `saveComponent(..., links)` and `pendingRules(..., links)` take them), so links left untouched are never rewritten on save. `link-warnings.ts` shows
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
-day limits. One warning blocks Save: a second curry (or subzi) **Always** served with the same base, since a meal holds one.
+day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
+**Always** served with the same base, two **Always** comes links of one kind that name no dish in common, and an Always served-with
+link against an Always comes link that leaves no room for it (checked from either dish's form). A narrowing warning (a dish always
+served with the base makes the other chosen dishes unreachable) does not block. Scoped links are skipped by these clash checks.
 Only a conflict the edit introduces blocks; one already stored does not. `propose_dish` and `propose_pairing` refuse the same thing. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
 (`compareRuleSets` and `pendingRules` in `src/services/compare-rules.ts`; it needs a stored plan). Rows and forms share one
@@ -173,8 +180,8 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - **Score** is lexicographic: any hard violation outweighs every soft cost.
 - **Built-ins** are only the structure of a meal: one base, at most one curry and one subzi, each
   component in its own role, no extra twice. Everything else is a stored rule.
-- **Pair** constraint: when a meal holds a dish matching `when`, it should also hold `component`; missing it is a hard
-  violation (`must`) or costs `cost` (`prefer`).
+- **Pair** constraint: when a meal holds a dish matching `when`, it should also hold a dish matching `of` (a set of candidates);
+  missing it is a hard violation (`must`) or costs `cost` (`prefer`).
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
 - The **final descent** runs after the random search: it tries every single change of a free base, curry or subzi in a
   fixed order and keeps each strict improvement, for at most `DESCENT_PASSES` (10) passes or until a pass changes nothing.
@@ -186,28 +193,33 @@ Design: `docs/superpowers/specs/2026-11-08-pairing-units-design.md`. A base and 
 Pongal means choosing Pongal with the Sambar always served with it. Softer pairings (Usually, Often, Sometimes) bring their
 side along when it fits and give way otherwise. Either way, a pairing never makes its base less likely to be planned.
 
-- **Compiling.** An enabled `require_with` that names specific dishes compiles to `pair` constraints (`must` makes units,
-  `prefer` makes asked-for sides); its `extraCategories` stay ordinary counts. A pairing's scope limits where it applies.
-  `compileRules` marks owned rules with `owner` and `yieldsTo: 'unit'`, default rules with `yieldsTo: 'unit'`, and
-  "sides only when a rule asks" with `yieldsTo: 'ask'`.
+- **Compiling.** An enabled `require_with` that names specific dishes, and a `comes_with` rule (one pair whose `of` is all
+  the dishes it names), compile to `pair` constraints (`must` makes units, `prefer` makes asked-for sides); `require_with`'s
+  `extraCategories` stay ordinary counts. Any one candidate meets a pair, and a pair with no candidate in the library is ignored. A pairing's scope limits where it applies.
+  `compileRules` marks owned rules with `owner` and `yieldsTo: 'unit'`, other default rules with `yieldsTo: 'unit'`, and
+  "sides only when a rule asks", variety and spacing with `yieldsTo: 'ask'` (`givesWayTo` in `src/rules/record.ts`).
 - **Scoring.** Each score works out every meal's unit members and asked-for sides from the `pair` constraints whose trigger is
   present. A unit member is not counted by constraints that give way (its own days, meals, links, never-auto, the defaults);
-  an asked-for side is not counted by `yieldsTo: 'ask'`. A unit member does not trigger rules owned by its meal's base.
-  Hand-written rules and built-ins never give way. Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
+  an asked-for side is not counted by `yieldsTo: 'ask'`, so the variety and spacing defaults yield to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
+  Hand-written rules and built-ins never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
+  is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
+  (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
-  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` takes
-  the best score, then the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that
-  give way to a unit (by default frequent −1, rare +1; clamped to ±2) and `o` a per-candidate offset in [0, 1) drawn from the
-  seed (0.5 in the meal picker), then each meal in turn. Unit members stay while their base does; asked-for sides
+  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
+  the candidate's own rules it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
+  then soft score; ties go to the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that
+  give way to a unit (by default frequent −1, rare +1; clamped to ±2) and `o` a per-candidate offset in [0, 1) drawn from a separate
+  stream seeded by the solve's seed (0.5 in the meal picker), then rotation (each meal starts from a different candidate, which in
+  practice only matters in the meal picker). Unit members stay while their base does; asked-for sides
   are free, and polish may drop one.
 - **Conflicts.** Where stored data holds two Always curries (or subzis) for one base, the rule with the lower id makes the unit
   and the other is reported once as a soft problem; it never blocks the base. A pinned or held-empty role keeps the pin, and
   the missing pairing is reported as "replaced by your pick".
 - **Around the planner.** `PlanningOutcome.paired` (`pairedSides` in `src/services/plan-generation.ts`) lists each meal's
-  paired sides, and the plan board labels such a side "with <base>", also on a reloaded plan. The meal picker
-  (`slotConflicts`) places a candidate base with its unit before counting problems. `explain_plan_slot` reports paired sides and
-  never gives a missing pairing as the reason a base is left out; the prompt tells the assistant to give only reasons a tool returned.
+  paired sides with the candidates and the rule that brought them (`SlotPair`, `PairedSide`; `bringsWith` returns `{ wants }`), and the plan board labels such a side "with <base>", also on a reloaded plan. The meal picker
+  (`slotConflicts`) places a candidate base with its unit before counting problems. `explain_plan_slot` reports paired sides, naming the bringing rule in `pairedWith.how` ("Idiyappam comes with Kerala Stew (Veg)",
+  "Sambar is served with Pongal"), and never gives a missing pairing as the reason a base is left out; the prompt tells the assistant to give only reasons a tool returned.
 
 ## Rule case library (`src/rule-cases`)
 

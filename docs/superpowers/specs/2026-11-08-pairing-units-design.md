@@ -59,12 +59,16 @@ A side placed by an Always pairing is a **unit member** in that meal. A side pla
 |---|---|---|---|
 | The side's own days, meals, "never plan automatically" | gives way | applies | applies |
 | The side's own "only with" / "never with" links | gives way | applies | applies |
-| Default variety and spacing | gives way | applies | applies |
+| Default variety and spacing | gives way | gives way (see note) | applies |
 | Default prefer-frequent / avoid-rare | gives way | applies | applies |
 | Default extras-per-meal caps | gives way | applies | applies |
 | Default "sides only when a rule asks" | gives way | gives way | applies |
 | The base's own rules where the unit member is only the trigger (Pongal "never with Sambar") | gives way | applies | applies |
 | Another dish's rule where the unit member is only the trigger (Chutney "never with Sambar") | applies; Chutney gives way | applies | applies |
+
+*Note, 2026-11-09 (links that bring dishes):* the "Default variety and spacing" row changed. Variety and spacing now give way to
+asked-for sides too (`yieldsTo: 'ask'`, as "sides only when a rule asks"), so a link's side is not blocked by them when its
+dish was planned recently. The cell above originally read "applies".
 | Hand-written rules (not owned by a dish, not a default) | applies to the whole meal | applies | applies |
 | Built-ins: one base, one curry, one subzi, roles, no extra twice | applies | applies | applies |
 | The base's own rules (Pongal lunch-only) | applies to the base | applies | applies |
