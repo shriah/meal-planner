@@ -893,9 +893,9 @@ describe('ComponentForm links: comes with', () => {
     expect(after.filter((r) => r.id !== edited.id)).toEqual(before.filter((r) => r.id !== edited.id));
   });
 
-  it('opening an old only-with link and saving stores it as comes with', async () => {
+  it.each(loadOrders)('opening an old only-with link and saving stores it as comes with, opened %s', async (_, open) => {
     const { idli, before, sambar } = await setup();
-    render(<LiveEditForm componentId={idli} />);
+    open(idli);
     const old = before.find((r) => r.spec.template === 'avoid_with' && readLink(r)?.mode === 'with')!;
     await userEvent.click(await readyButton('Edit', await itemOf(/usually planned only with Sambar/)));
     expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
