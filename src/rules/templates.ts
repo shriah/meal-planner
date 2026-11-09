@@ -5,7 +5,7 @@ import {
   DAYS, MEALS, ROLES, MatcherSchema, all, is, isLeaf, not, oneOf,
   type Bounds, type Constraint, type GroupBy, type Matcher, type Role,
 } from '@/planner';
-import { describeMatcher, describeScope, type Names } from './describe';
+import { describeMatcher, describeScope, describeWhen, type Names } from './describe';
 import { nearestLevel } from './levels';
 
 // ─── Shared params ────────────────────────────────────────────────────────────
@@ -92,12 +92,22 @@ const PairsWithParams = z
   .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
+const ids1 = z.array(z.number().int()).min(1);
+/** The curry and subzi a "comes with" link waits for: both parts must hold, any one dish of a part will do. */
+const WhenSchema = z.object({ curry: ids1.optional(), subzi: ids1.optional() }).strict()
+  .refine((w) => w.curry !== undefined || w.subzi !== undefined, { message: 'name a curry or a subzi' });
+
 const ComesWithParams = z
-  .object({ match: MatcherSchema, of: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .object({ match: MatcherSchema, of: MatcherSchema, when: WhenSchema.optional(), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict()
   // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
   .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
-    { message: 'name one kind of dish first, then the dishes', path: ['of'] });
+    { message: 'name one kind of dish first, then the dishes', path: ['of'] })
+  .refine((p) => {
+    if (!p.when) return true;
+    const kind = 'all' in p.of && isLeaf(p.of.all[0]) ? p.of.all[0].value : undefined;
+    return kind !== 'curry' && !(kind === 'subzi' && p.when.subzi);
+  }, { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
 
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
@@ -170,6 +180,10 @@ function matcherRefs(m: Matcher, out: Refs): Refs {
   return out;
 }
 const refsOf = (...ms: Matcher[]): Refs => ms.reduce((acc, m) => matcherRefs(m, acc), { components: [], baseCategories: [], extraCategories: [] } as Refs);
+
+/** One matcher per part of a link's condition, curry first. */
+const whenMatchers = (when: { curry?: number[]; subzi?: number[] }): Matcher[] =>
+  (['curry', 'subzi'] as const).filter((part) => when[part]).map((part) => all(is('role', part), oneOf('id', when[part]!)));
 
 const strengthWord = (s: Strength) => (s === 'must' ? '' : ' (preferred)');
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -290,14 +304,15 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     label: 'Comes with',
     summary: 'When a meal contains a matching dish, it must also include one of the dishes named.',
     compile: (p) => [{
-      kind: 'pair', when: p.match, of: p.of, ...(p.scope && { scope: p.scope }), strength: p.strength,
+      kind: 'pair', when: p.match, of: p.of, ...(p.when && { inMeal: whenMatchers(p.when) }), ...(p.scope && { scope: p.scope }), strength: p.strength,
       ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
     }],
     describe: (p, n) => {
       const several = 'all' in p.of && p.of.all.some((m) => isLeaf(m) && m.field === 'id' && Array.isArray(m.value) && m.value.length > 1);
-      return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`;
+      const when = p.when ? ` when ${describeWhen(p.when, (id) => n.component?.(id) ?? `component #${id}`)}` : '';
+      return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${when}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
-    references: (p) => refsOf(p.match, p.of),
+    references: (p) => refsOf(p.match, p.of, ...(p.when ? whenMatchers(p.when) : [])),
   },
   pairs_with: {
     label: 'Only with these bases',

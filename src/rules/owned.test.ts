@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { all, is, oneOf } from '@/planner';
 import {
   addableSlots, isSideTarget, LINK_TARGETS, offersComes, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
   mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
@@ -250,6 +251,33 @@ describe('comes with', () => {
     }
     const soft: DishLink = { ...link('comes', 'curry_dish', [11], 'usually'), scope: { meals: ['breakfast'] } };
     expect(readLink(linkRule(idiyappam, soft))).toEqual(soft);
+  });
+
+  it('a condition round-trips, and a link without one reads back without the key', () => {
+    const when = { curry: [8], subzi: [12] };
+    const rice = { id: 4, name: 'Rice' };
+    const l: DishLink = { ...link('comes', 'extra_dish', [16]), when };
+    const rule = linkRule(rice, l);
+    expect(rule.spec.params).toMatchObject({ when });
+    expect(readLink(rule)).toEqual(l);
+    expect(readLink(linkRule(rice, link('comes', 'extra_dish', [16])))).not.toHaveProperty('when');
+    const stored = { spec: { template: 'comes_with' as const, params: { match: is('id', 4), of: all(is('componentType', 'extra'), oneOf('id', [16])), strength: 'must' as const } } };
+    expect(readLink(stored)).not.toHaveProperty('when');
+    expect(linkRule(rice, link('comes', 'extra_dish', [16])).spec.params).not.toHaveProperty('when');
+  });
+
+  it('refuses a condition on a link that brings a dish into a part it waits for', () => {
+    const rice = { id: 4, name: 'Rice' };
+    expect(() => linkRule(rice, { ...link('comes', 'curry_dish', [11]), when: { subzi: [12] } })).toThrow('a link cannot bring a dish into a part it waits for');
+    expect(() => linkRule(rice, { ...link('comes', 'curry_category', ['soup']), when: { subzi: [12] } })).toThrow();
+    expect(() => linkRule(rice, { ...link('comes', 'subzi_dish', [12]), when: { subzi: [13] } })).toThrow();
+    expect(() => linkRule(rice, { ...link('comes', 'subzi_dish', [12]), when: { curry: [8] } })).not.toThrow();
+  });
+
+  it('a change of condition is a change of link', () => {
+    const a = link('comes', 'extra_dish', [16]);
+    expect(sameLink(a, { ...a, when: { curry: [8] } })).toBe(false);
+    expect(sameLink({ ...a, when: { curry: [8, 9] } }, { ...a, when: { curry: [9, 8] } })).toBe(true);
   });
 
   it('never offers bases as sides', () => {

@@ -1,6 +1,6 @@
 // One plain sentence for a dish link, for the library row badges and the links editor.
 import { MEALS } from '@/planner';
-import type { Names } from './describe';
+import { describeWhen, type Names } from './describe';
 import { STRENGTH_WORDS } from './levels';
 import { describeDays, isDishTarget, type DishLink } from './owned';
 
@@ -36,10 +36,14 @@ export function listValues(link: DishLink, names: Names): string {
     : all.length > 1 ? `${all.slice(0, -1).join(', ')} or ${all[all.length - 1]}` : all.join('');
 }
 
+/** " when the curry is Sambar", or "" for a link with no condition. */
+const whenText = (link: DishLink, names: Names): string =>
+  link.when ? ` when ${describeWhen(link.when, (id) => names.component?.(id) ?? 'a deleted dish')}` : '';
+
 /** "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast", or "Sambar is always served with Idli". */
 export function describeLink(dishName: string, link: DishLink, names: Names): string {
   const listed = listValues(link, names);
-  if (link.mode === 'comes') return `${dishName} ${STRENGTH_WORDS[link.strength].word} comes with ${listed}${scopeText(link)}`;
+  if (link.mode === 'comes') return `${dishName} ${STRENGTH_WORDS[link.strength].word} comes with ${listed}${whenText(link, names)}${scopeText(link)}`;
   const what = link.mode === 'with' ? 'planned only with' : link.mode === 'serve' ? 'served with' : 'kept away from';
   return `${dishName} is ${STRENGTH_WORDS[link.strength].word} ${what} ${listed}${scopeText(link)}`;
 }
@@ -51,5 +55,8 @@ export function shortLink(link: DishLink, names: Names): string {
   if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
   const word = link.strength === 'always' ? '' : STRENGTH_WORDS[link.strength].label;
   const what = { with: 'only with', serve: 'served with', comes: 'comes with', never: 'not with' }[link.mode];
-  return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${scopeText(link)}`;
+  const waits = link.when
+    ? ` (with ${[...(link.when.curry ?? []), ...(link.when.subzi ?? [])].map((id) => names.component?.(id) ?? 'a deleted dish').join(' or ')})`
+    : '';
+  return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${waits}${scopeText(link)}`;
 }

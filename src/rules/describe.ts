@@ -99,3 +99,11 @@ export function describeScope(scope: { days?: readonly Day[]; meals?: readonly M
   if (scope?.meals?.length) out.push(`at ${list([...scope.meals])}`);
   return out.length ? ` ${out.join(' ')}` : '';
 }
+
+/** The condition of a conditional link: "the curry is Sambar or Rasam and the subzi is Beans Poriyal". */
+export function describeWhen(when: { curry?: number[]; subzi?: number[] }, name: (id: number) => string): string {
+  return (['curry', 'subzi'] as const)
+    .filter((part) => when[part])
+    .map((part) => `the ${part} is ${list(when[part]!.map(name))}`)
+    .join(' and ');
+}

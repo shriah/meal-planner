@@ -75,6 +75,8 @@ export interface PairConstraint extends Common {
   scope?: { days?: Day[]; meals?: Meal[] };
   strength: 'must' | 'prefer';
   cost?: number;
+  /** The pair triggers only when, for every matcher, another dish in the meal matches it. */
+  inMeal?: Matcher[];
 }
 
 export type Constraint = CountConstraint | PreferConstraint | PairConstraint;
@@ -157,6 +159,7 @@ const PairSchema = z
     scope: ScopeSchema.optional(),
     strength: z.enum(['must', 'prefer']),
     cost: z.number().min(1).max(10).optional(),
+    inMeal: z.array(MatcherSchema).min(1).optional(),
   })
   .strict();
 

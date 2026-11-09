@@ -31,10 +31,13 @@ export type LinkStrength = 'always' | 'usually' | 'moderately' | 'sometimes';
 export const LINK_STRENGTHS: LinkStrength[] = ['always', 'usually', 'moderately', 'sometimes'];
 /** The days and meals a link holds on; left out, it holds everywhere. */
 export interface LinkScope { days?: Day[]; meals?: Meal[] }
+export interface LinkWhen { curry?: number[]; subzi?: number[] }
 /** `with` limits the dish to the chosen values; `never` keeps it away from them; `serve` adds it to meals
  * whose base is one of them; `comes` brings one of the chosen side dishes (or a side from the chosen categories) along with it. */
 export interface DishLink {
   mode: LinkMode; target: LinkTarget; values: LinkValue[]; strength: LinkStrength; scope?: LinkScope
+  /** `comes` only: the curry and subzi the meal must hold (both parts, any dish of a part) for the side to come. */
+  when?: LinkWhen
   /** The stored rule this link was read from; absent on a link not yet saved. */
   ruleId?: number
 }
@@ -153,10 +156,13 @@ export function linkRule(component: { id: number; name: string }, link: LinkInpu
   }
   if (mode === 'comes') {
     if (!isSideTarget(target)) throw new Error(`a dish cannot come with ${target}`);
+    if (link.when && (target === 'curry_dish' || target === 'curry_category' || (target === 'subzi_dish' && link.when.subzi))) {
+      throw new Error('a link cannot bring a dish into a part it waits for');
+    }
     const of = all(is('componentType', LINK_DISH_TYPE[target]), oneOf(LINK_FIELD[target], [...values] as never));
     return {
       name: ownedRuleName(`comes:${target}`, component.name),
-      spec: { template: 'comes_with', params: { match: is('id', component.id), of, ...scopeParams(scope), ...strengthParams(strength) } },
+      spec: { template: 'comes_with', params: { match: is('id', component.id), of, ...(link.when && { when: link.when }), ...scopeParams(scope), ...strengthParams(strength) } },
       owner_component_id: component.id,
     };
   }
@@ -198,7 +204,8 @@ export function readLink(rule: Pick<RuleRecord, 'spec'>): DishLink | undefined {
     if (!isLeaf(kind) || kind.field !== 'componentType' || !isLeaf(set)) return undefined;
     const target = LINK_TARGETS.find((t) => isSideTarget(t) && LINK_DISH_TYPE[t] === kind.value && LINK_FIELD[t] === set.field);
     if (!target) return undefined;
-    return scoped({ mode: 'comes', target, values: [set.value].flat() as LinkValue[], strength: strengthOf(p) });
+    const when = p.when && { ...(p.when.curry && { curry: [...p.when.curry] }), ...(p.when.subzi && { subzi: [...p.when.subzi] }) };
+    return scoped({ mode: 'comes', target, values: [set.value].flat() as LinkValue[], strength: strengthOf(p), ...(when && { when }) });
   }
   if (rule.spec.template !== 'avoid_with') return undefined;
   const side = rule.spec.params.with as Matcher;
@@ -362,7 +369,8 @@ const sameSet = <T>(a: readonly T[] = [], b: readonly T[] = []) => a.length === 
 export const sameLink = (a: DishLink | undefined, b: DishLink | undefined): boolean =>
   a === undefined || b === undefined ? a === b
     : a.mode === b.mode && a.target === b.target && a.strength === b.strength && sameSet(a.values, b.values) &&
-      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals);
+      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals) &&
+      sameSet(a.when?.curry, b.when?.curry) && sameSet(a.when?.subzi, b.when?.subzi);
 
 /**
  * The link changes that turn `base` (the links as stored when editing began) into `next`, matched by rule id.
