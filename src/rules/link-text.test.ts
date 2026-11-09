@@ -93,6 +93,7 @@ describe('comes with a condition', () => {
   it('shortens the condition', () => {
     expect(shortLink(papad({ when: { curry: [8] } }), dishes)).toBe('Comes with Papad (with Sambar)');
     expect(shortLink(papad({ strength: 'usually', when: { curry: [8, 9] } }), dishes)).toBe('Usually comes with Papad (with Sambar or Rasam)');
+    expect(shortLink(papad({ when: { curry: [8, 9], subzi: [12] } }), dishes)).toBe('Comes with Papad (with Sambar or Rasam, and Beans Poriyal)');
   });
 });
 

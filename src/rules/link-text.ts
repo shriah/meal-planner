@@ -55,8 +55,8 @@ export function shortLink(link: DishLink, names: Names): string {
   if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
   const word = link.strength === 'always' ? '' : STRENGTH_WORDS[link.strength].label;
   const what = { with: 'only with', serve: 'served with', comes: 'comes with', never: 'not with' }[link.mode];
-  const waits = link.when
-    ? ` (with ${[...(link.when.curry ?? []), ...(link.when.subzi ?? [])].map((id) => names.component?.(id) ?? 'a deleted dish').join(' or ')})`
-    : '';
+  const part = (ids?: number[]) => ids?.map((id) => names.component?.(id) ?? 'a deleted dish').join(' or ');
+  const parts = [part(link.when?.curry), part(link.when?.subzi)].filter(Boolean);
+  const waits = parts.length ? ` (with ${parts.join(', and ')})` : '';
   return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${waits}${scopeText(link)}`;
 }

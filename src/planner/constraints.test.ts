@@ -47,6 +47,9 @@ describe('constraint schema', () => {
     expect(ConstraintSchema.safeParse(pair).success).toBe(true);
     expect(ConstraintSchema.safeParse({ ...pair, strength: 'prefer' }).success).toBe(true);
     expect(ConstraintSchema.safeParse({ ...pair, strength: 'prefer', cost: 4, scope: { meals: ['breakfast'] } }).success).toBe(true);
+    expect(ConstraintSchema.safeParse({ ...pair, inMeal: [is('role', 'curry')] }).success).toBe(true);
+    // The schema requires at least one matcher: an empty inMeal is rejected (absent means no condition).
+    expect(ConstraintSchema.safeParse({ ...pair, inMeal: [] }).success).toBe(false);
     expect(ConstraintSchema.safeParse({ ...pair, bounds: { hardMin: 1 } }).success).toBe(false);
     expect(ConstraintSchema.safeParse({ ...pair, cost: 11 }).success).toBe(false);
     expect(ConstraintSchema.safeParse({ ...pair, of: undefined, component: 2 }).success).toBe(false);
