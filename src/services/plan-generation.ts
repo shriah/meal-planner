@@ -237,19 +237,30 @@ export function slotConflicts(
       else if (type === 'subzi') slot.subzi = side;
       else if (type === 'extra') slot.extras = [...new Set([...slot.extras, side])];
     };
+    /** Brings `side` and the unit sides it brings in turn (their first candidates, into an empty role). */
+    const bringWithOwn = (side: number) => {
+      bringSide(side);
+      const type = typeOf.get(side);
+      if (type !== 'curry' && type !== 'subzi' && type !== 'extra') return;
+      for (const w of bringsWith(m, side, type, i).wants) {
+        const next = w.of[0];
+        const role = typeOf.get(next);
+        if (w.unit && !w.of.some(inMeal) && !((role === 'curry' || role === 'subzi') && slot[role] !== undefined)) bringSide(next);
+      }
+    };
+    // A side is judged with what it brings, so its own pairings do not count against it.
     const scoreWith = (side: number) => {
       const before = { curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
-      bringSide(side);
-      const result = judgeBrought(state);
+      bringWithOwn(side);
+      const result = broughtScore(m, state, i, side);
       Object.assign(slot, before);
       return result;
     };
     for (const w of bringsWith(m, id, 'base', i).wants) {
       if (!w.unit || w.of.some(inMeal)) continue;
-      bringSide(chooseCandidate(w.of, i, scoreWith, timesPlanned));
+      bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned));
     }
   };
-  const judgeBrought = broughtScore(m);
   const timesPlanned = (id: number) =>
     state.reduce((k, s) => (s.base === id || s.curry === id || s.subzi === id || s.extras.includes(id) ? k + 1 : k), 0);
   const key = (j: Justification) => `${j.constraintId}|${JSON.stringify(j.group)}`;

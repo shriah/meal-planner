@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, compileModel, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, ownRulesOverridden, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -85,22 +85,16 @@ export function chooseCandidate(
 }
 
 /**
- * How to judge a plan when choosing which candidate to bring: its hard score first, then the rules the
- * brought dishes override (their own days, meals and "never planned automatically", which give way to a
- * unit member, so an allowed candidate wins over one that would override them), then its soft score
- * counted as if every pairing were only asked for (so the defaults that give way to unit members, such as
- * variety, still tell the candidates apart).
+ * How to judge a plan holding `id`, brought into slot `slot`, against the other candidates: its hard score
+ * first, then the dish's own rules it overrides there (its days, meals and "never planned automatically",
+ * which give way to a unit member and so are not in the score), then its soft score. So a candidate those
+ * rules allow wins over one they forbid.
  */
-export function broughtScore(m: CompiledModel): (plan: PlanState) => Score {
-  let asked: CompiledModel | undefined;
-  return (plan) => {
-    asked ??= compileModel(
-      m.library,
-      m.constraints.map((c) => (c.kind === 'pair' && c.strength === 'must' ? { ...c, strength: 'prefer' as const } : c)),
-    );
-    const a = score(asked, plan);
-    return { hard: score(m, plan).hard, soft: a.hard * OVERRIDE_WEIGHT + a.soft };
-  };
+export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number): Score {
+  const s = score(m, plan);
+  const type = m.byId.get(id)?.componentType;
+  const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
+  return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + s.soft };
 }
 
 type Snapshot = Readonly<SlotState>;
@@ -166,7 +160,6 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     for (const e of s.extras) if (by(e, 'extra')) return true;
     return false;
   };
-  const judgeBrought = hasPairs ? broughtScore(m) : evaluate;
   const timesPlanned = (id: number) =>
     plan.reduce((k, s) => (s.base === id || s.curry === id || s.subzi === id || s.extras.includes(id) ? k + 1 : k), 0);
   /**
@@ -197,17 +190,20 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       else s[type as 'curry' | 'subzi'] = c;
       changed = true;
     };
+    // A candidate is judged with what it brings in turn (each want's first candidate that fits), so its
+    // own pairings do not count against it.
     const scoreWith = (unit: boolean) => (c: number): Score => {
       const before = snapshot(s);
       const was = changed;
       place(c, unit);
-      const result = judgeBrought(plan);
+      fill(false);
+      const result = broughtScore(m, plan, i, c);
       restore(s, before);
       changed = was;
       return result;
     };
     const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
-    const visit = (id: number | undefined, role: Role) => {
+    const visit = (id: number | undefined, role: Role, choose: boolean) => {
       if (id === undefined) return;
       for (const w of bringsWith(m, id, role, i).wants) {
         if (w.of.some(inMeal)) continue;
@@ -216,7 +212,19 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
           continue;
         }
         const options = w.of.filter((c) => fits(c, w.unit));
-        if (options.length) place(chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize), w.unit);
+        if (!options.length) continue;
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize) : options[0], w.unit);
+      }
+    };
+    /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */
+    const fill = (choose: boolean) => {
+      for (let round = 0; round < BRING_ROUNDS; round++) {
+        changed = false;
+        visit(s.base, 'base', choose);
+        visit(s.curry, 'curry', choose);
+        visit(s.subzi, 'subzi', choose);
+        for (const e of s.extras) visit(e, 'extra', choose);
+        if (!changed) break;
       }
     };
     // The replaced dish's sides leave with it, unless a dish still in the meal brings them too.
@@ -232,14 +240,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         s[type] = undefined;
       }
     }
-    for (let round = 0; round < BRING_ROUNDS; round++) {
-      changed = false;
-      visit(s.base, 'base');
-      visit(s.curry, 'curry');
-      visit(s.subzi, 'subzi');
-      for (const e of s.extras) visit(e, 'extra');
-      if (!changed) break;
-    }
+    fill(true);
   };
   /** Sides brought by the dishes in two roles, for `bring`'s `prev`. */
   const both = (a: readonly number[], b: readonly number[]): readonly number[] => (!a.length ? b : !b.length ? a : [...a, ...b]);

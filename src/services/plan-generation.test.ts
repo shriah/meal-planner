@@ -182,6 +182,22 @@ describe('pairings', () => {
       expect(picker.get(20)).toBeUndefined();
     });
 
+    it('the meal picker brings a stew with what that stew always comes with', () => {
+      const papad = dish(23, 'Papad', 'extra');
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const vegBrings = record(6, linkRule(stewVeg, { mode: 'comes', target: 'extra_dish', values: [23], strength: 'always' }));
+      const notNonVeg: RuleRecord = {
+        id: 7, name: 'Idiyappam never with Kerala Stew (Non-Veg)', enabled: true, created_at: '',
+        spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 22), strength: 'must' } },
+      } as RuleRecord;
+      const picker = slotConflicts(
+        { library: [pongal, idiyappam, stewVeg, stewNonVeg, papad], categories: [], rules: [comes, vegBrings, notNonVeg] },
+        planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 }),
+        'monday', 'breakfast', 'base', [20],
+      );
+      expect(picker.get(20)).toBeUndefined();
+    });
+
     it('a pairing it cannot hold names every stew', () => {
       const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [20], strength: 'always' }));
       const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));

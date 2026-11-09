@@ -117,10 +117,20 @@ describe('solver', () => {
     it('a candidate the week forbids is passed over', () => {
       // Curry 12's own rule keeps it out of every meal; it gives way to a unit, as a dish's "never planned
       // automatically" does, so only the choice between the candidates keeps it out.
-      const never12: Constraint = { kind: 'count', id: 'exclude-12', label: 'Never plan curry 12', origin: 'rule', select: is('id', 12), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 12 };
-      const r = solve(buildModel({ library: lib, constraints: [want, never12] }), { ...quick, seed: 1 });
+      const never11: Constraint = { kind: 'count', id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 11 };
+      const r = solve(buildModel({ library: lib, constraints: [want, never11] }), { ...quick, seed: 1 });
       expect(r.score.hard).toBe(0);
-      for (const s of r.plan) expect(s.curry).toBe(11);
+      for (const s of r.plan) expect(s.curry).toBe(12);
+    });
+
+    it('a candidate with its own Always pairing is chosen too, and brings its side', () => {
+      const brings31: Constraint = { kind: 'pair', id: 'pair-11', label: 'Curry 11 with extra 31', origin: 'rule', when: is('id', 11), of: is('id', 31), strength: 'must' };
+      const r = solve(buildModel({ library: lib, constraints: [want, brings31] }), { ...quick, seed: 1 });
+      expect(r.score.hard).toBe(0);
+      const curries = new Set(r.plan.map((s) => s.curry));
+      expect(curries).toContain(11);
+      expect(curries).toContain(12);
+      for (const s of r.plan) if (s.curry === 11) expect(s.extras).toContain(31);
     });
 
     it('two overlapping wants plan a dish both name', () => {

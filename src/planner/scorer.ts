@@ -109,6 +109,8 @@ interface Memo {
   hits: Int32Array;
   /** Pairs this assignment triggers, in constraint order: (index << 1) | 1 if suppressed by a conflict. */
   pairs: Int32Array;
+  /** The dish's own rules that forbid this assignment and give way only to a unit member (days, meals, never-auto). */
+  overrides: number;
   brings?: Brings;
 }
 
@@ -282,9 +284,11 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
     const prefer = [0, 0, 0];
     for (const p of st.prefers) if (bits[p.idx]) prefer[p.yields] += p.weight;
     const hits: number[] = [];
+    let overrides = 0;
     st.counts.forEach((cc, ck) => {
       const v = (bits[cc.sel] ? 1 : 0) | (cc.when >= 0 && bits[cc.when] ? 2 : 0);
       if (v) hits.push((ck << 2) | v);
+      if (bits[cc.sel] && cc.owner === a.c.id && cc.hardMax === 0 && cc.when < 0 && cc.yields === YIELD_UNIT && groupInScope(cc, slot)) overrides++;
     });
     // Pairs this dish triggers (not those it is a candidate of). A meal holds one curry and one subzi, so
     // the first pair to claim either role wins, `must` pairs before `prefer` ones, each in constraint
@@ -308,7 +312,7 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
     const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
     e = st.memo[key] = {
       prefer: prefer[0], preferUnit: prefer[YIELD_UNIT], preferAsk: prefer[YIELD_ASK],
-      hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS,
+      hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS, overrides,
     };
   }
   return e;
@@ -339,6 +343,16 @@ export function bringsWith(m: CompiledModel, id: number, role: Role, slot: numbe
     memo.brings = { wants };
   }
   return memo.brings;
+}
+
+/**
+ * How many of the dish's own rules (its days, meals, "never planned automatically") forbid placing `id` in
+ * `role` at `slot`. Placed as a unit member, the dish overrides them: they give way and the score does not
+ * count them. Memoised.
+ */
+export function ownRulesOverridden(m: CompiledModel, id: number, role: Role, slot: number): number {
+  const ci = m.state.idIndex.get(id);
+  return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).overrides;
 }
 
 export interface SlotPair {
