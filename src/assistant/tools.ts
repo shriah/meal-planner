@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, offersComes, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, offersComes, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -187,7 +187,7 @@ const parse = <S extends z.ZodType>(schema: S, args: unknown): { ok: true; value
   return r.success ? { ok: true, value: r.data } : { ok: false, error: `invalid arguments: ${r.error.issues.map((i) => i.message).join('; ')}` };
 };
 
-/** Shared by simulate_with_rule and propose_rule: the spec must satisfy the template schema. */
+/** Shared by simulate_with_rule and propose_rule: the spec must satisfy the template schema and not be one only a dish owns. */
 function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; error: string } {
   let spec = raw;
   if (typeof raw === 'string') {
@@ -198,7 +198,12 @@ function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; er
     }
   }
   const r = RuleSpecSchema.safeParse(spec);
-  return r.success ? { ok: true, spec: r.data } : { ok: false, error: `invalid rule: ${r.error.issues.map((i) => i.message).join('; ')}` };
+  if (!r.success) return { ok: false, error: `invalid rule: ${r.error.issues.map((i) => i.message).join('; ')}` };
+  // A comes-with link is drafted on its dish, where the form checks it against the dish's other links.
+  if (OWNED_ONLY_TEMPLATES.includes(r.data.template)) {
+    return { ok: false, error: `${r.data.template} is not a rule you can draft here; use comes_with on propose_pairing (or propose_dish) for the dish that brings the side` };
+  }
+  return { ok: true, spec: r.data };
 }
 
 const knownIds = ({ library, categories }: AssistantData): KnownIds => ({

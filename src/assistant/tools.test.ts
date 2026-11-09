@@ -441,6 +441,15 @@ describe('simulate_with_rule', () => {
     expect(calls).toHaveLength(0);
   });
 
+  it('refuses a comes_with spec, which only a dish form or propose_pairing makes, without comparing', async () => {
+    const calls: unknown[] = [];
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: comes }, withCompare(1, calls));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/comes_with/);
+    expect(calls).toHaveLength(0);
+  });
+
   it('turns a failing comparison into ok:false', async () => {
     const r = await runTool('simulate_with_rule', { name: 'x', spec }, ctxOf());
     expect(r).toEqual({ ok: false, error: 'unused' });
@@ -463,6 +472,15 @@ describe('propose_rule', () => {
   it('rejects an unknown template without an effect', async () => {
     const r = await runTool('propose_rule', { name: 'x', spec: { template: 'nonsense', params: {} } }, ctxOf({ library }));
     expect(r.ok).toBe(false);
+    expect(r).not.toHaveProperty('effect');
+  });
+
+  it('refuses a comes_with spec and points at propose_pairing', async () => {
+    const lib = [dish(1, 'Idiyappam', { componentType: 'base' }), dish(2, 'Kerala Stew')];
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const r = await runTool('propose_rule', { name: 'x', spec: comes }, ctxOf({ library: lib }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/propose_pairing/);
     expect(r).not.toHaveProperty('effect');
   });
 

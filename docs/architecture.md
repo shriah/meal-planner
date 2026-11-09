@@ -256,7 +256,7 @@ a compact library summary, the discussed plan and its problems). Step 2 sends th
 Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
 week's dish names, `explain_rule` for whether a rule is active and where the plan breaks it, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
 named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
-(`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text. `propose_dish` can
+(`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text; `propose_rule` and `simulate_with_rule` refuse an owned-only template (`comes_with`) and point the model at `comes_with` on `propose_pairing` or `propose_dish`. `propose_dish` can
 include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together. `propose_pairing` drafts served-with links for a dish that
 already exists; "Review pairing" opens that dish's form in edit mode with the draft merged over its stored links, and saving
 writes only the new link. Both draft tools also take `comes_with` (sides the dish brings along, one link per entry, appended as new links and never merged); `propose_pairing` then accepts a base too.
