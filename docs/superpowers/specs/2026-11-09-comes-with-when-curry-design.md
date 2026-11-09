@@ -143,7 +143,7 @@ week", "No dish on the same or next day", and the like.
 
 ## Storage (my calls)
 
-- Stored as the existing `comes_with` template with one new optional param, `whenCurry` (a matcher naming curry ids).
+- Stored as the existing `comes_with` template with one new optional param, `whenCurry` (a list of curry ids).
   Absent means unconditional, so every stored `comes_with` rule keeps its meaning and no upgrade is needed.
 - The template's validation rejects `whenCurry` when `of` names curries.
 - `describe` and `references` include the condition, so rename/delete/merge, compare-rules and link warnings see it.
