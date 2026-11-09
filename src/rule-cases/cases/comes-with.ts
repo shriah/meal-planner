@@ -268,7 +268,7 @@ export const COMES_WITH_CASES: RuleCase[] = [
     id: 'limit-ranks-a-links-dishes',
     group: 'Pairings',
     name: "A limit ranks the dishes of a link",
-    why: `${REPORT}Idiyappam comes with a frequent Kerala Stew (Veg) or a rare Kerala Stew (Non-Veg), and the frequent one is limited to once a week. Frequency alone would pick the frequent stew for most meals; the limit ranks it down, so it is in at most one Idiyappam meal a week and the others take the other stew. A brought dish's limit no longer counts against its base, so only the limit ranking the link's dishes can hold this.`,
+    why: `${REPORT}Idiyappam comes with a frequent Kerala Stew (Veg) or a rare Kerala Stew (Non-Veg), and the frequent one is limited to once a week. Frequency alone would pick the frequent stew for most meals; the limit ranks it down, so it is in at most one Idiyappam meal a week and the others take the other stew. A brought dish's limit no longer counts against its base, so only the limit ranking the link's dishes can hold this. The frequent stew must still get its one meal in most weeks: a pick made while the search briefly had it in another meal was never revisited, crowding it out of the link.`,
     dishes: DISHES_BY_FREQUENCY,
     rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [lib.dish('Kerala Stew (Veg)').id, lib.dish('Kerala Stew (Non-Veg)').id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(FREQUENT_STEW_VEG, 1, 'week')],
@@ -281,6 +281,18 @@ export const COMES_WITH_CASES: RuleCase[] = [
           const stew = w.lib.dish('Kerala Stew (Veg)').id;
           const bad = w.weeks.filter((wk) => wk.filter((s) => idsOf(s).includes(idi) && idsOf(s).includes(stew)).length > 1).length;
           return { pass: bad === 0, got: `${bad} of ${w.weeks.length} weeks have more` };
+        },
+        highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
+      },
+      {
+        // Every week has an Idiyappam meal and the limit allows the frequent stew once in each; 6 of 8 leaves
+        // room for a week the search ends with another breakfast holding it.
+        says: 'Kerala Stew (Veg) is in an Idiyappam meal in at least 6 of 8 weeks',
+        check: (w) => {
+          const idi = w.lib.dish('Idiyappam').id;
+          const stew = w.lib.dish('Kerala Stew (Veg)').id;
+          const good = w.weeks.filter((wk) => wk.some((s) => idsOf(s).includes(idi) && idsOf(s).includes(stew))).length;
+          return { pass: good * 8 >= w.weeks.length * 6, got: `${good} of ${w.weeks.length} weeks` };
         },
         highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
       },

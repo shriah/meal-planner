@@ -121,8 +121,9 @@ export function candidateWeight(m: CompiledModel, slot: number): (id: number) =>
 /**
  * How to judge a plan holding `id`, brought into slot `slot`, against the other candidates: its hard score
  * first, then the dish's own rules it overrides there (its days, meals and "never planned automatically",
- * which give way to a unit member and so are not in the score), then its hard frequency limits that give
- * way to it (the hard units the plan would break were `id` a free pick in every meal it is in), then its
+ * which give way to a unit member and so are not in the score), then its hard frequency limits (count
+ * rules that give way to asked sides: the hard units, at least 0, the plan would break were `id` a free
+ * pick of those rules in every meal it is in), then its
  * soft score. So a candidate those rules allow wins over one they forbid, and the hard limits that no longer
  * stop a link still rank its pick. Only hard limits rank: the soft score is the plan's own, not the free
  * pick's, since charging soft limits ("Vary dishes across the week") ranked a link away from a frequent dish
@@ -134,7 +135,9 @@ export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id
   const f = score(m, plan, false, { freePick: { id } });
   const type = m.byId.get(id)?.componentType;
   const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
-  return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + (f.hard - s.hard) * LIMIT_WEIGHT + s.soft };
+  // At least 0: charging the frequency rules can only add hard units, but a net figure is never a credit.
+  const limits = Math.max(0, f.hard - s.hard);
+  return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + limits * LIMIT_WEIGHT + s.soft };
 }
 
 type Snapshot = Readonly<SlotState>;
@@ -502,6 +505,38 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       }
     }
     if (!improved) break;
+  }
+  // Re-pick: a link's pick is made when its dish comes into the meal and is not revisited after, so a pick
+  // made while the search briefly had one candidate elsewhere (where a limit ranked it down) would stand.
+  // Once, meals in order, each met want of several candidates is picked again from the week as it now is:
+  // its candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless
+  // the score is worse.
+  for (let i = 0; i < SLOT_COUNT; i++) {
+    const s = plan[i];
+    const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
+    const dishes: [number | undefined, Role][] = [[s.base, 'base'], [s.curry, 'curry'], [s.subzi, 'subzi'], ...s.extras.map((e): [number, Role] => [e, 'extra'])];
+    for (const [id, role] of dishes) {
+      if (id === undefined || !inMeal(id)) continue;
+      for (const w of bringsWith(m, id, role, i).wants) {
+        if (w.of.length < 2) continue;
+        const c = w.of.find(inMeal);
+        const type = c === undefined ? undefined : m.byId.get(c)?.componentType;
+        if (c === undefined || (type !== 'curry' && type !== 'subzi' && type !== 'extra')) continue;
+        if (!isFree(i, type === 'extra' ? 'extras' : type)) continue;
+        const before = snapshot(s);
+        if (type === 'extra') s.extras = s.extras.filter((e) => e !== c);
+        else s[type] = undefined;
+        bring(i, broughtBy(c, type, i));
+        if (inMeal(c) && s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras.length === before.extras.length && s.extras.every((e, k) => e === before.extras[k])) continue;
+        const next = evaluate(plan);
+        if (compareScore(next, best) <= 0) {
+          best = next;
+          descended = true;
+        } else {
+          restore(s, before);
+        }
+      }
+    }
   }
   if (descended) bestPlan = clonePlan(plan);
 

@@ -141,6 +141,23 @@ describe('solver', () => {
       expect(compareScore(withCurry(12), withCurry(11))).toBeLessThan(0);
     });
 
+    it("broughtScore ranks a candidate over its limit ahead of one outside its own meals", () => {
+      // A dish's days and meals (OVERRIDE_WEIGHT) outrank its limits (LIMIT_WEIGHT): curry 11 is over its
+      // once-a-week limit, curry 12 is kept to lunch and dinner and this is breakfast.
+      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, yieldsTo: 'ask' };
+      const meals12: Constraint = { kind: 'count', id: 'meals-12', label: 'Curry 12 at lunch and dinner', origin: 'rule', select: is('id', 12), groupBy: 'slot', scope: { meals: ['breakfast'] }, bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 12 };
+      const m = buildModel({ library, constraints: [want, once11, meals12] });
+      const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
+      plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
+      const slot = slotIndex('tuesday', 'breakfast');
+      const withCurry = (curry: number) => {
+        const p = clonePlan(plan);
+        p[slot] = { base: 1, curry, extras: [] };
+        return broughtScore(m, p, slot, curry);
+      };
+      expect(compareScore(withCurry(11), withCurry(12))).toBeLessThan(0);
+    });
+
     it('a candidate with its own Always pairing is chosen too, and brings its side', () => {
       const brings31: Constraint = { kind: 'pair', id: 'pair-11', label: 'Curry 11 with extra 31', origin: 'rule', when: is('id', 11), of: is('id', 31), strength: 'must' };
       const r = solve(buildModel({ library: lib, constraints: [want, brings31] }), { ...quick, seed: 1 });

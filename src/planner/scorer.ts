@@ -414,10 +414,10 @@ const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => 
 
 export interface ScoreOptions {
   /**
-   * Score every assignment of `id` in the plan as a free pick: no count rule gives way to it, so the hard
-   * limits that give way to a brought dish are charged to it, and a weekly limit sees the dish's other
-   * brought meals too. Its prefer rules still give way (they rank a link's candidates through the solver's
-   * `candidateWeight`). Used to rank a link's candidates.
+   * Score every assignment of `id` in the plan as a free pick for its frequency count rules (the count
+   * rules that give way to asked sides): they are charged to it, and a weekly limit sees the dish's other
+   * brought meals too. Its prefer rules and its other count rules (its days and meals) still give way.
+   * Used to rank a link's candidates.
    */
   freePick?: { id: number };
   /** Declared for the conditional links of Task 7; it has no effect yet. */
@@ -584,11 +584,12 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
   const N = m.library.length;
   for (let i = 0; i < n; i++) {
     const memo = bufMemo[i];
-    // A free pick's prefer rules still give way: they rank a link's candidates through `candidateWeight`,
-    // which charging them here would count twice. Only its count rules are charged.
-    const preferFlag = bufFlag[i];
-    soft += memo.prefer + (preferFlag & UNIT ? 0 : memo.preferUnit) + (preferFlag & ASKED ? 0 : memo.preferAsk);
-    const flag = bufCi[i] === freeCi ? 0 : preferFlag;
+    const flag = bufFlag[i];
+    soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
+    // The free pick is charged its frequency count rules (those that give way to asked sides). Its prefer
+    // rules still give way: they rank a link's candidates through the solver's `candidateWeight`, which
+    // charging them here would count twice. Its other rules (days, meals) give way as usual.
+    const free = bufCi[i] === freeCi;
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
     const base = flag & UNIT ? plan[slot].base : undefined;
@@ -599,7 +600,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       if (flag) {
         // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
         // not trigger its own base's rules.
-        if (selected && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
+        if (selected && !(free && cc.yields === YIELD_ASK) && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
         if (triggers && cc.owner === base) triggers = false;
         if (!selected && !triggers) continue;
       }
