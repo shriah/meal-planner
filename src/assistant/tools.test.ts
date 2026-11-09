@@ -760,16 +760,16 @@ describe('comes-with drafts', () => {
     expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx())).ok).toBe(true);
   });
 
-  it('explain_plan_slot says Kerala Stew (Veg) comes with Idiyappam', async () => {
-    const lib = [dish(10, 'Appam', { componentType: 'base' }), dish(11, 'Kerala Stew (Veg)'), dish(12, 'Idiyappam', { componentType: 'extra' })];
-    const owned = linkRule({ id: 11, name: 'Kerala Stew (Veg)' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always' });
-    const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
+  it('explain_plan_slot says Idiyappam comes with Kerala Stew (Veg)', async () => {
+    const lib = [dish(10, 'Idiyappam', { componentType: 'base' }), dish(11, 'Kerala Stew (Veg)')];
+    const owned = linkRule({ id: 10, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [11], strength: 'always' });
+    const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
     const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctxOf({
       library: lib, rules: [link],
-      plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 10, curry_id: 11, extra_ids: [12] }] },
+      plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 10, curry_id: 11, extra_ids: [] }] },
     }));
     expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([
-      { dish: 'Idiyappam', by: 'Kerala Stew (Veg)', how: 'Kerala Stew (Veg) comes with Idiyappam' },
+      { dish: 'Kerala Stew (Veg)', by: 'Idiyappam', how: 'Idiyappam comes with Kerala Stew (Veg)' },
     ]);
   });
 
