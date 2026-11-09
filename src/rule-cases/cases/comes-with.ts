@@ -2,6 +2,7 @@ import { linkRule, mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
 import { eachPlanned, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, yieldsTo } from '../expect';
 import type { PlanExpectation, RuleCase } from '../types';
+import { TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -72,7 +73,7 @@ export const COMES_WITH_CASES: RuleCase[] = [
       linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [lib.dish('Papad').id] }),
       linkRule(MUTTON_CURRY, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] }),
     ],
-    pins: { 'monday-lunch': { base_id: 2, curry_id: MUTTON_CURRY.id } },
+    pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: MUTTON_CURRY.id } },
     expect: [mondayLunchExtras(['Papad', 'Pepper Rasam'])],
   },
   {
@@ -143,19 +144,33 @@ export const COMES_WITH_CASES: RuleCase[] = [
     id: 'only-with-bases-still-limits',
     group: 'Pairings',
     name: 'Only-with bases still limits a curry',
-    why: `${REPORT}a curry that goes only with certain bases is kept to them, and is still planned: the older with-link limits and does not bring.`,
+    why: `${REPORT}a curry that goes only with certain bases is kept to them, and is still planned; and it is not brought to them: some Idli or Dosa meal has another curry.`,
     rules: (lib) => [
       linkRule(lib.dish('Sambar'), { mode: 'with', target: 'base_dish', values: [lib.dish('Idli').id, lib.dish('Dosa').id] }),
     ],
     given: () => [CURRY_AT_EVERY_MEAL],
-    expect: [neverWith('Sambar', 'Pongal'), plannedAtLeast('Sambar', 1)],
+    expect: [
+      neverWith('Sambar', 'Pongal'),
+      plannedAtLeast('Sambar', 1),
+      {
+        says: 'Some Idli or Dosa meal has no Sambar (the link limits Sambar, it does not bring it)',
+        check: (w) => {
+          const sambar = w.lib.dish('Sambar').id;
+          const bases = [w.lib.dish('Idli').id, w.lib.dish('Dosa').id];
+          const meals = w.weeks.flat().filter((s) => bases.some((b) => idsOf(s).includes(b)));
+          const without = meals.filter((s) => !idsOf(s).includes(sambar)).length;
+          return { pass: without > 0, got: `${without} of ${meals.length} Idli and Dosa meals` };
+        },
+        highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idli').id) || idsOf(slot).includes(lib.dish('Dosa').id),
+      },
+    ],
   },
   {
     kind: 'plan',
     id: 'old-only-with-still-limits',
     group: 'Pairings',
     name: 'Only-with curries still limits a base',
-    why: `${REPORT}a base that goes only with certain curries is kept to them: the older with-link limits and does not bring.`,
+    why: `${REPORT}a base that goes only with certain curries is kept to them: every Idiyappam meal has a stew. That an old only-with link does not bring is pinned by the owned.test.ts unit test that the avoid_with link still reads as mode 'with'; a curry at every meal makes it unobservable here.`,
     dishes: DISHES,
     rules: () => [linkRule(IDIYAPPAM, { mode: 'with', target: 'curry_dish', values: [STEW_VEG.id, STEW_NON_VEG.id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), CURRY_AT_EVERY_MEAL],
