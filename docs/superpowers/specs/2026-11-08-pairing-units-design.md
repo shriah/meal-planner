@@ -60,27 +60,29 @@ A side placed by an Always pairing is a **unit member** in that meal. A side pla
 | The side's own days, meals, "never plan automatically" | gives way | applies | applies |
 | The side's own "only with" / "never with" links | gives way | applies | applies |
 | Default variety and spacing | gives way | gives way (see note) | applies |
-| Default prefer-frequent / avoid-rare | gives way | applies | applies |
+| Default prefer-frequent / avoid-rare | gives way | gives way (see note) | applies |
 | Default extras-per-meal caps | gives way | applies | applies |
 | Default "sides only when a rule asks" | gives way | gives way | applies |
 | The base's own rules where the unit member is only the trigger (Pongal "never with Sambar") | gives way | applies | applies |
 | Another dish's rule where the unit member is only the trigger (Chutney "never with Sambar") | applies; Chutney gives way | applies | applies |
+| The side's own frequency rules (its limits per day or week, no repeats, prefer / avoid) | gives way | gives way (see note) | applies |
+| Hand-written rules (not owned by a dish, not a default) | applies to the whole meal; frequency rules give way (see note) | applies; frequency rules give way (see note) | applies |
+| Built-ins: one base, one curry, one subzi, roles, no extra twice | applies | applies | applies |
+| The base's own rules (Pongal lunch-only) | applies to the base | applies | applies |
 
 *Note, 2026-11-09 (links that bring dishes):* the "Default variety and spacing" row changed. Variety and spacing now give way to
 asked-for sides too (`yieldsTo: 'ask'`, as "sides only when a rule asks"), so a link's side is not blocked by them when its
 dish was planned recently. The cell above originally read "applies".
-| Hand-written rules (not owned by a dish, not a default) | applies to the whole meal | applies | applies |
-| Built-ins: one base, one curry, one subzi, roles, no extra twice | applies | applies | applies |
-| The base's own rules (Pongal lunch-only) | applies to the base | applies | applies |
 
 *Note, 2026-11-09 (frequency rules follow the hierarchy, `2026-11-09-comes-with-when-curry-design.md`):* a brought dish sits
 below the dish that brought it, and its **frequency rules** never make that dish rarer. A frequency rule is a count across
 days, the week or per dish with an upper bound ("at most N", variety, spacing), or a prefer / avoid. Every one of them,
 whoever it belongs to, now gives way to every brought dish (`yieldsTo: 'ask'`):
 - "Default prefer-frequent / avoid-rare": the "Asked for" cell above originally read "applies"; it now gives way.
-- The side's own frequency rules (owned): they gave way to unit members only; now to asked-for sides too.
-- Hand-written frequency rules (a Rules page `limit` per day or week, `no_repeat`, `prefer`): they applied; now they give
-  way to asked-for sides. A hand-written rule's minimum ("at least N") still counts a brought dish: a rule with both a
+- The side's own frequency rules (owned, a row of their own above): they gave way to unit members only; now to asked-for
+  sides too.
+- Hand-written frequency rules (a Rules page `limit` per day or week, `no_repeat`, `prefer`): they applied to unit members
+  and asked-for sides; now they give way to both. A hand-written rule's minimum ("at least N") still counts a brought dish: a rule with both a
   minimum and a maximum is compiled as two constraints, and only the maximum gives way.
 - Not frequency, unchanged: the extras-per-meal caps and any per-meal `limit` (what one meal can hold), and every rule on
   days, meals, "never with" and the like.
