@@ -1,5 +1,5 @@
 // Local, no-LLM retrieval: picks the small slice of the user's data relevant to a chat message.
-import { describeSpec, parseSpec, specReferences, TEMPLATE_IDS, type Names, type TemplateId } from '@/rules';
+import { describeSpec, parseSpec, specReferences, HAND_TEMPLATE_IDS, type Names, type TemplateId } from '@/rules';
 import type { PlanningInput } from '@/services/plan-generation';
 import {
   CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS, type ComponentRecord,
@@ -111,7 +111,7 @@ export function buildSlice(message: string, data: AssistantData): Slice {
       categories: data.categories.map((c) => c.name),
       dishCount: data.library.length,
       ruleCount: data.rules.length,
-      templates: TEMPLATE_IDS,
+      templates: HAND_TEMPLATE_IDS,
     },
     mentionsAnything: matched.length > 0 || matchedRules.length > 0,
   };

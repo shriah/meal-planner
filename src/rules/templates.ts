@@ -345,6 +345,8 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
 export const OWNED_ONLY_TEMPLATES: TemplateId[] = ['comes_with'];
 
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
+/** The templates a person or the assistant may author by hand. */
+export const HAND_TEMPLATE_IDS = TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t));
 
 /** Rule types grouped by what they do, for the type picker. Every type appears exactly once. */
 export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [

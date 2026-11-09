@@ -6,7 +6,7 @@ import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS, problemsForSlot, runTool } from './tools';
 import type { PlanProblem } from '@/services/plan-generation';
-import { dayRule, linkRule, TEMPLATE_IDS } from '@/rules';
+import { dayRule, linkRule, HAND_TEMPLATE_IDS } from '@/rules';
 import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
 import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
@@ -109,7 +109,8 @@ describe('declarations', () => {
       const spec = (TOOL_DECLARATIONS.find((t) => t.name === name)!.parameters as Schema & { properties: Record<string, { type: string; description: string }> }).properties.spec;
       expect(spec.type, name).toBe('string');
       expect(spec.description).toMatch(/JSON text of the rule spec/);
-      for (const id of TEMPLATE_IDS) expect(spec.description).toContain(id);
+      for (const id of HAND_TEMPLATE_IDS) expect(spec.description).toContain(id);
+      expect(spec.description).not.toContain('comes_with');
     }
   });
 });

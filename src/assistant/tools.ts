@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -21,7 +21,7 @@ const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
 // A string, not an object schema: Gemini rejects object parameters declared without properties.
 const SPEC_PARAM = {
   type: 'string',
-  description: `JSON text of the rule spec: {"template": ..., "params": {...}}. template is one of ${TEMPLATE_IDS.join('|')}.`,
+  description: `JSON text of the rule spec: {"template": ..., "params": {...}}. template is one of ${HAND_TEMPLATE_IDS.join('|')}.`,
 };
 
 // The strengths a served-with pairing may take, in the words the model uses.
