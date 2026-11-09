@@ -130,9 +130,12 @@ marked "(off)" and stays off until it is changed and saved, which switches it on
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
 **Always** served with the same base, two **Always** comes links of one kind that name no dish in common, and an Always served-with
-link against an Always comes link that leaves no room for it (checked from either dish's form). A narrowing warning (a dish always
+link against an Always comes link that leaves no room for it (checked from either dish's form), and a meal-level clash: a dish
+always brings a curry (or subzi) whose own Always comes link to the other role shares no dish with the dish's own Always link
+to that role (blocked only when every dish the link may bring clashes; also checked from the curry's form, against a dish
+that always brings only that curry). A base's clashes are judged by the category chosen in the form. A narrowing warning (a dish always
 served with the base makes the other chosen dishes unreachable) does not block. The comes-related clash checks skip scoped links.
-Only a conflict the edit introduces blocks; one already stored does not. `propose_dish` and `propose_pairing` refuse the same thing. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
+Only a conflict the edit introduces blocks; one already stored does not. `propose_dish` and `propose_pairing` refuse the same thing (`propose_pairing` judges the draft together with the dish's links in force, and refuses only a clash on a drafted link). The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
 (`compareRuleSets` and `pendingRules` in `src/services/compare-rules.ts`; it needs a stored plan). Rows and forms share one
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its

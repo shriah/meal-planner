@@ -1,5 +1,5 @@
 // Problems with a dish's links that the planner would only show as a dish that never appears. They warn; only a
-// `blocking` one (two curries always served with the same base) also stops saving.
+// `blocking` one (a meal that would need two curries or two subzis) also stops saving.
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { Names } from './describe';
 import { listValues, scopeText } from './link-text';
@@ -9,6 +9,10 @@ import type { RuleRecord } from './record';
 export interface LinkWarning { link: number; message: string; blocking?: boolean }
 
 const unscoped = (l: DishLink) => !l.scope?.days?.length && !l.scope?.meals?.length;
+/** An unscoped Always "comes with" link that brings a dish of `role`: one that must hold in every meal. */
+const alwaysBrings = (l: DishLink | undefined, role: ComponentType): l is DishLink =>
+  l !== undefined && l.mode === 'comes' && l.strength === 'always' && unscoped(l) && l.values.length > 0 && isSideTarget(l.target) && dishTypeOf(l.target) === role;
+const OTHER_ROLE: Partial<Record<ComponentType, ComponentType>> = { curry: 'subzi', subzi: 'curry' };
 
 type Lookup = { dishes: readonly ComponentRecord[]; rules: readonly RuleRecord[] };
 
@@ -133,6 +137,73 @@ export function linkWarnings(
     if (noMeals || noDays) {
       const text = scopeText({ scope: { ...(noDays && { days }), ...(noMeals && { meals }) } }).replace(/^, /, '');
       if (text) out.push({ link: i, message: `None of these are planned ${text}.` });
+    }
+  });
+  out.push(...mealClashes(self, links, lookup, names, mine));
+  return out;
+}
+
+/**
+ * Clashes across one meal that the form can see: a dish always brings a curry that itself always brings a subzi other
+ * than the ones the dish always brings (or the same with curry and subzi swapped), and, from the curry's own form,
+ * a dish that always brings only this curry and also a subzi this curry's link leaves no room for. A meal holds one of each.
+ */
+function mealClashes(
+  self: { id?: number; componentType: ComponentType },
+  links: readonly DishLink[],
+  lookup: Lookup,
+  names: Names,
+  mine: string,
+): LinkWarning[] {
+  const out: LinkWarning[] = [];
+  const rules = lookup.rules.filter((r) => r.enabled);
+  const brings = (owner: number, role: ComponentType) =>
+    rules.filter((r) => r.owner_component_id === owner).map(readLink).filter((l): l is DishLink => alwaysBrings(l, role));
+  const ids = (l: DishLink, owner: number | undefined) => new Set(chosenDishes(l, owner, lookup.dishes).map((d) => d.id));
+  // A link whose dishes are all gone brings nothing, so it leaves room for anything.
+  const crowds = (theirs: DishLink, owner: number | undefined, room: Set<number>) => {
+    const t = ids(theirs, owner);
+    return t.size > 0 && ![...t].some((id) => room.has(id));
+  };
+
+  // On the dish's own form: link `a` brings a dish of one role, link `b` a dish of the other. The later one carries it.
+  links.forEach((a, i) => {
+    for (const role of ['curry', 'subzi'] as const) {
+      const other = OTHER_ROLE[role]!;
+      if (!alwaysBrings(a, role)) continue;
+      const candidates = chosenDishes(a, self.id, lookup.dishes);
+      if (candidates.length === 0) continue;
+      links.forEach((b, j) => {
+        if (j === i || !alwaysBrings(b, other)) return;
+        const room = ids(b, self.id);
+        if (room.size === 0) return;
+        // Ruled out only when every dish `a` may bring leaves no room; otherwise the planner picks one that does.
+        const forced = candidates.map((c) => ({ c, theirs: brings(c.id, other).find((m) => crowds(m, c.id, room)) }));
+        if (!forced.every((f) => f.theirs)) return;
+        const said = forced.length === 1
+          ? `${forced[0].c.name} always comes with ${listValues(forced[0].theirs!, names)}`
+          : `${forced.slice(0, -1).map((f) => f.c.name).join(', ')} and ${forced[forced.length - 1].c.name} each always come with another ${other}`;
+        out.push({ link: Math.max(i, j), blocking: true, message: `${said}, which leaves no room for ${listValues(b, names)}, and a meal holds one ${other}.` });
+      });
+    }
+  });
+
+  // On a curry's (or subzi's) form: a dish that always brings only this one, and also always brings a dish of the other role.
+  const other = OTHER_ROLE[self.componentType];
+  if (self.id === undefined || !other) return out;
+  const owners = lookup.dishes.filter((d) => d.id !== self.id && brings(d.id, self.componentType).some((l) => {
+    const t = ids(l, d.id);
+    return t.size === 1 && t.has(self.id!);
+  }));
+  links.forEach((link, i) => {
+    if (!alwaysBrings(link, other)) return;
+    const room = ids(link, self.id);
+    if (room.size === 0) return;
+    for (const owner of owners) {
+      const theirs = brings(owner.id, other).find((l) => crowds(l, owner.id, room));
+      if (!theirs) continue;
+      out.push({ link: i, blocking: true, message: `${owner.name} always comes with ${mine} and with ${listValues(theirs, names)}, which leaves no room for ${listValues(link, names)}, and a meal holds one ${other}.` });
+      break;
     }
   });
   return out;

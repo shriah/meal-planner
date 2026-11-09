@@ -160,3 +160,84 @@ describe('comes-with warnings', () => {
     ]);
   });
 });
+
+describe('meal-level comes-with clashes', () => {
+  const nm = {
+    component: (id: number) => ({ 900: 'Idiyappam', 901: 'Kerala Stew (Veg)', 902: 'Kerala Stew (Non-Veg)', 905: 'Beans', 906: 'Cabbage', 907: 'Egg Curry' } as Record<number, string>)[id],
+  };
+  const lib = [
+    dish(900, 'base', { name: 'Idiyappam' }), dish(901, 'curry', { name: 'Kerala Stew (Veg)' }), dish(902, 'curry', { name: 'Kerala Stew (Non-Veg)' }),
+    dish(905, 'subzi', { name: 'Beans' }), dish(906, 'subzi', { name: 'Cabbage' }), dish(907, 'curry', { name: 'Egg Curry' }),
+  ];
+  const idiyappam = { id: 900, name: 'Idiyappam', componentType: 'base' as ComponentType };
+  const stewVeg = { id: 901, name: 'Kerala Stew (Veg)', componentType: 'curry' as ComponentType };
+  const curry = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'curry_dish', values, strength: 'always', ...over });
+  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'subzi_dish', values, strength: 'always', ...over });
+  let next = 500;
+  const stored = (owner: { id: number; name: string }, l: DishLink) => rec(linkRule(owner, l), next++);
+  const blocking = (w: ReturnType<typeof linkWarnings>) => w.filter((x) => x.blocking);
+
+  describe("on the dish's own form", () => {
+    const stewBringsBeans = (over: Partial<DishLink> = {}) => stored({ id: 901, name: 'Kerala Stew (Veg)' }, subzi([905], over));
+
+    it('blocks a subzi link that the always curry leaves no room for', () => {
+      const w = linkWarnings(idiyappam, [curry([901]), subzi([906])], { dishes: lib, rules: [stewBringsBeans()] }, nm);
+      expect(w).toEqual([{ link: 1, blocking: true, message: 'Kerala Stew (Veg) always comes with Beans, which leaves no room for Cabbage, and a meal holds one subzi.' }]);
+      // Either order: the later of the two links carries it.
+      expect(blocking(linkWarnings(idiyappam, [subzi([906]), curry([901])], { dishes: lib, rules: [stewBringsBeans()] }, nm))).toMatchObject([{ link: 1 }]);
+    });
+
+    it('does not block when the sets overlap', () => {
+      expect(linkWarnings(idiyappam, [curry([901]), subzi([905, 906])], { dishes: lib, rules: [stewBringsBeans()] }, nm)).toEqual([]);
+    });
+
+    it('does not block a softer, scoped or switched-off link on either side', () => {
+      const rules = [stewBringsBeans()];
+      expect(blocking(linkWarnings(idiyappam, [curry([901], { strength: 'usually' }), subzi([906])], { dishes: lib, rules }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(idiyappam, [curry([901]), subzi([906], { strength: 'usually' })], { dishes: lib, rules }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(idiyappam, [curry([901]), subzi([906])], { dishes: lib, rules: [stewBringsBeans({ strength: 'usually' })] }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(idiyappam, [curry([901]), subzi([906])], { dishes: lib, rules: [stewBringsBeans({ scope: { meals: ['lunch'] } })] }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(idiyappam, [curry([901]), subzi([906])], { dishes: lib, rules: [{ ...stewBringsBeans(), enabled: false }] }, nm))).toEqual([]);
+    });
+
+    it('blocks only when every curry the link may bring leaves no room', () => {
+      const rules = [stewBringsBeans()];
+      expect(blocking(linkWarnings(idiyappam, [curry([901, 902]), subzi([906])], { dishes: lib, rules }, nm))).toEqual([]);
+      const both = [...rules, stored({ id: 902, name: 'Kerala Stew (Non-Veg)' }, subzi([905]))];
+      expect(blocking(linkWarnings(idiyappam, [curry([901, 902]), subzi([906])], { dishes: lib, rules: both }, nm))).toEqual([
+        { link: 1, blocking: true, message: 'Kerala Stew (Veg) and Kerala Stew (Non-Veg) each always come with another subzi, which leaves no room for Cabbage, and a meal holds one subzi.' },
+      ]);
+    });
+
+    it('judges the other way round too: an always subzi that brings a curry', () => {
+      const rules = [stored({ id: 906, name: 'Cabbage' }, curry([907]))];
+      expect(linkWarnings(idiyappam, [curry([901]), subzi([906])], { dishes: lib, rules }, nm)).toEqual([
+        { link: 1, blocking: true, message: 'Cabbage always comes with Egg Curry, which leaves no room for Kerala Stew (Veg), and a meal holds one curry.' },
+      ]);
+    });
+  });
+
+  describe("on the curry's form", () => {
+    const idiyappamBrings = (l: DishLink) => stored({ id: 900, name: 'Idiyappam' }, l);
+
+    it('blocks a subzi link when a base that always comes with only this curry wants another subzi', () => {
+      const rules = [idiyappamBrings(curry([901])), idiyappamBrings(subzi([906]))];
+      expect(linkWarnings(stewVeg, [subzi([905])], { dishes: lib, rules }, nm)).toEqual([
+        { link: 0, blocking: true, message: 'Idiyappam always comes with Kerala Stew (Veg) and with Cabbage, which leaves no room for Beans, and a meal holds one subzi.' },
+      ]);
+    });
+
+    it('does not block when the sets overlap', () => {
+      const rules = [idiyappamBrings(curry([901])), idiyappamBrings(subzi([906]))];
+      expect(linkWarnings(stewVeg, [subzi([905, 906])], { dishes: lib, rules }, nm)).toEqual([]);
+    });
+
+    it('does not block a softer link on either side, or a base that may bring another curry', () => {
+      const rules = [idiyappamBrings(curry([901])), idiyappamBrings(subzi([906]))];
+      expect(blocking(linkWarnings(stewVeg, [subzi([905], { strength: 'usually' })], { dishes: lib, rules }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(stewVeg, [subzi([905])], { dishes: lib, rules: [idiyappamBrings(curry([901])), idiyappamBrings(subzi([906], { strength: 'usually' }))] }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(stewVeg, [subzi([905])], { dishes: lib, rules: [idiyappamBrings(curry([901], { strength: 'usually' })), idiyappamBrings(subzi([906]))] }, nm))).toEqual([]);
+      expect(blocking(linkWarnings(stewVeg, [subzi([905])], { dishes: lib, rules: [idiyappamBrings(curry([901, 902])), idiyappamBrings(subzi([906]))] }, nm))).toEqual([]);
+    });
+  });
+});

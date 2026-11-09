@@ -393,9 +393,14 @@ function comesLinks(
   return { ok: true, links };
 }
 
-/** The error for links that cannot all hold: two curries (or subzis) in one base's always-served unit, or a clash with a comes-with link. */
-function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[]): string | undefined {
-  return linkWarnings(self, links, { dishes: data.library, rules: data.rules }, namesFor(data)).find((w) => w.blocking)?.message;
+/**
+ * The error for links that cannot all hold: two curries (or subzis) in one base's always-served unit, or a clash with a
+ * comes-with link. `stored` are the dish's links in force; they are judged with the new ones, but only a clash that
+ * lands on a new link is the draft's doing.
+ */
+function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[], stored: DishLink[] = []): string | undefined {
+  return linkWarnings(self, [...stored, ...links], { dishes: data.library, rules: data.rules }, namesFor(data))
+    .find((w) => w.blocking && w.link >= stored.length)?.message;
 }
 
 const PART_OF: Record<ComponentType, SlotPart> = { base: 'base', curry: 'curry', subzi: 'subzi', extra: 'extras' };
@@ -674,7 +679,7 @@ const HANDLERS: Record<string, Handler> = {
       };
     });
     // A drafted comes-with link is always a new link, so all of it is checked.
-    const conflict = pairingConflict(data, dish, [...changed, ...comes.links]);
+    const conflict = pairingConflict(data, dish, [...changed, ...comes.links], stored);
     if (conflict) return { ok: false, error: conflict };
     return {
       ok: true,

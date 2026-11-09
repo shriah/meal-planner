@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import type { RuleRecord } from '@/rules';
+import type { DishLink, RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
@@ -776,6 +776,25 @@ describe('comes-with drafts', () => {
     // Idli would bring Sambar and Mutton Curry, two curries in one meal
     expect(r.ok).toBe(false);
     expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx())).ok).toBe(true);
+  });
+
+  it('refuses a comes-with draft that clashes with the dish\'s own stored links', async () => {
+    const owned = (id: number, owner: { id: number; name: string }, link: DishLink) =>
+      ({ id, enabled: true, created_at: '', ...linkRule(owner, link) }) as RuleRecord;
+    const idli = { id: 1, name: 'Idli' };
+    const rules = [
+      owned(20, idli, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }),
+      owned(21, { id: 2, name: 'Sambar' }, { mode: 'comes', target: 'subzi_dish', values: [5], strength: 'always' }),
+    ];
+    // Idli always brings Sambar, which always brings Beans Poriyal: no room for Cabbage Thoran.
+    const subzi = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Cabbage Thoran'] }] }, ctx({ rules }));
+    expect(subzi.ok).toBe(false);
+    expect((subzi as { error: string }).error).toBe('Sambar always comes with Beans Poriyal, which leaves no room for Cabbage Thoran, and a meal holds one subzi.');
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctx({ rules }))).ok).toBe(true);
+    // A second Always curry beside the stored one.
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules }))).ok).toBe(false);
+    // A stored clash is not the draft's doing: switched off, the stored link is not in force.
+    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules: [{ ...rules[0], enabled: false }] }))).ok).toBe(true);
   });
 
   it('explain_plan_slot says Idiyappam comes with Kerala Stew (Veg)', async () => {
