@@ -61,6 +61,19 @@ week", "No dish on the same or next day", and the like.
   `2026-11-08-pairing-units-design.md`, the gives-way section of `2026-11-09-links-bring-dishes-design.md` and
   `docs/architecture.md` are updated to state the hierarchy.
 - A dish the planner picks freely (not brought) is at its own level and its frequency rules work as today.
+- **Not frequency rules** (user confirmed): the per-meal extras cap (`extras-limit-*`) is what a meal can hold, and keeps
+  working as today; the "Extras cap per meal" case is unchanged.
+
+**What changes from today** (`givesWayTo` in `src/rules/record.ts`):
+- "Vary dishes across the week" and "No dish on the same or next day" already give way to every brought dish; unchanged.
+- Hand-written frequency rules (Rules page `limit`, `no_repeat`) on a brought dish: today they count; now they only rank
+  the pick.
+- A dish's own frequency rules under a softer link: today they give way only to Always links; now to every link.
+- "Prefer frequent" and "Avoid rare": today a softer link's side can lose to them; now they only rank the pick. The case
+  "Comes with a frequent stew more often than a rare one" must keep passing.
+- Expected impact: all 47 existing rule cases pass unchanged. Unit tests that encode the old rule are rewritten to the
+  new one: `src/rules/record.test.ts` ("extras caps and prefer-frequent give way to a unit only", "leaves hand-written
+  rules unmarked") and possibly the gives-way tests in `src/planner/scorer.test.ts`.
 
 ## Picks and locks (user)
 
