@@ -146,6 +146,8 @@ interface ScoringState {
   bufPairs: Int32Array;
   /** Per pair, while one slot is scored: library index of the first dish that triggered it. */
   pairBy: Int32Array;
+  /** Per pair, while one slot is scored: 1 if a candidate of this enforced `must` pair is in the meal (it holds a unit member). */
+  pairUnit: Uint8Array;
 }
 
 const NO_PAIRS = new Int32Array(0);
@@ -255,6 +257,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       pairState: new Uint8Array(pairs.length),
       bufPairs: new Int32Array(pairs.length),
       pairBy: new Int32Array(pairs.length),
+      pairUnit: new Uint8Array(pairs.length),
     },
   };
 }
@@ -386,7 +389,7 @@ const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => 
  */
 export function score(m: CompiledModel, plan: PlanState, justify = false): ScoreResult {
   const st = m.state;
-  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy } = st;
+  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
   const just: Justification[] = [];
   let hard = 0;
   let soft = 0;
@@ -445,8 +448,19 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       if (k >= 0) {
         bufFlag[k] |= ASKED | UNIT;
         unitRoles |= p.roleBit;
+        pairUnit[pk] = 1;
       }
     }
+    // A missing pair gives way to a unit member holding its role only when no unit pair for that role
+    // shares a candidate with it: a shared candidate would meet both, so the gap is charged.
+    const yieldsToUnit = (p: CompiledPair): boolean => {
+      if (!(p.roleBit & unitRoles)) return false;
+      for (let q = 0; q < np; q++) {
+        const u = pairs[bufPairs[q]];
+        if (pairUnit[bufPairs[q]] && u.roleBit === p.roleBit && sharesCandidate(u, p)) return false;
+      }
+      return true;
+    };
     // For explanations: which enforced pair holds each role, a unit member present first, then any
     // `must`, then any other. Worked out before the loop below clears the pair states.
     let holders: [number, number] | undefined;
@@ -472,7 +486,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
         if (enforced) bufFlag[k] |= ASKED;
         continue;
       }
-      if (p.roleBit & unitRoles) enforced = false;
+      if (yieldsToUnit(p)) enforced = false;
       if (enforced && p.must) hard += 1;
       else if (enforced) soft += p.cost;
       if (justify) {
@@ -500,6 +514,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
         });
       }
     }
+    for (let q = 0; q < np; q++) pairUnit[bufPairs[q]] = 0;
   };
 
   for (let slot = 0; slot < plan.length; slot++) {

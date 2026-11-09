@@ -111,7 +111,8 @@ describe('solver', () => {
         { kind: 'pair', id: 'a', label: '11 with 21', origin: 'rule', when: is('id', 11), of: is('id', 21), strength: 'must' },
         { kind: 'pair', id: 'b', label: '21 with 11', origin: 'rule', when: is('id', 21), of: is('id', 11), strength: 'must' },
       ];
-      const r = solve(buildModel({ library, constraints }), { ...quick, seed: 1 });
+      const r = solve(buildModel({ library, constraints }), { ...quick, seed: 1, pins: { 'monday-lunch': { curry_id: 11 } } });
+      expect(r.plan[slotIndex('monday', 'lunch')]).toMatchObject({ curry: 11, subzi: 21 });
       for (const s of r.plan) if (s.curry === 11) expect(s.subzi).toBe(21);
     });
   });

@@ -308,6 +308,8 @@ describe('pairs naming several candidates', () => {
 
   it('two pairs claiming the curry role are suppressed only when they share no candidate', () => {
     expect(runLib([pair([11, 12]), pair([12, 13])], lunch({ base: 1, curry: 12 })).hard).toBe(0);
+    // Sharing 12, neither gives way to the other: curry 11 leaves the second unmet.
+    expect(runLib([pair([11, 12]), pair([12, 13])], lunch({ base: 1, curry: 11 })).hard).toBe(1);
     const r = runLib([pair([11]), pair([13])], lunch({ base: 1, curry: 11 }));
     expect(r.hard).toBe(0);
     expect(r.justifications).toHaveLength(1);
