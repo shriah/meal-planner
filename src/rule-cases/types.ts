@@ -48,7 +48,12 @@ export interface PlanCase {
   why: string;
   /** Extra dishes for this case only (ids from 900). */
   dishes?: ComponentRecord[];
+  /** The rules the case is about: its expectations must fail without them (and without its pins). */
   rules(lib: CaseLibrary): CaseRule[];
+  /** Supporting rules the case needs but is not about; kept when the subject is taken away. */
+  given?(lib: CaseLibrary): CaseRule[];
+  /** Default rules (by `default_key`) the case is about, taken away with its own rules. */
+  without?: string[];
   /** Leave out the default rules. */
   defaults?: false;
   pins?: Pins;

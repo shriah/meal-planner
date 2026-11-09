@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { everyMealWith, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
-import { mealRule } from '@/rules';
+import { is } from '@/planner';
+import { exclusionRule, mealRule } from '@/rules';
 import { TEST_LIBRARY } from './library';
-import { recordsOf, runPlanCase, statusOf } from './run';
-import type { CaseWeeks } from './types';
+import { failsWithoutSubject, recordsOf, runPlanCase, statusOf } from './run';
+import type { CaseWeeks, PlanCase } from './types';
 
 const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], suppressed: [[]], lib });
 /** Weeks where Pongal is planned `n` times in total. */
@@ -69,6 +70,41 @@ describe('recordsOf', () => {
   it('leaves the defaults out for a defaults: false case, baseline included', () => {
     expect(recordsOf({ ...base, defaults: false }, [])).toEqual([]);
     expect(recordsOf(base, []).length).toBeGreaterThan(0);
+  });
+  it('orders own rules, then given ones, then the defaults less those dropped', () => {
+    const own = mealRule(TEST_LIBRARY.dish('Dal'), ['lunch']);
+    const given = exclusionRule(TEST_LIBRARY.dish('Chole'));
+    const records = recordsOf(base, [own], [given], ['spacing']);
+    expect(records.slice(0, 2).map((r) => [r.id, r.name])).toEqual([[1, own.name], [2, given.name]]);
+    expect(records.some((r) => r.default_key === 'spacing')).toBe(false);
+    expect(records.some((r) => r.default_key === 'variety')).toBe(true);
+  });
+});
+
+describe('failsWithoutSubject', () => {
+  const dal = TEST_LIBRARY.dish('Dal');
+  const lunchOnly: PlanCase = {
+    kind: 'plan', id: 's', group: 'Days and meals', name: 'S', why: 'x',
+    rules: () => [mealRule(dal, ['lunch'])],
+    given: () => [{ name: 'A curry at every meal', spec: { template: 'require', params: { match: is('componentType', 'curry'), min: 1, strength: 'must' } } }],
+    expect: [neverAt('Dal', { meals: ['breakfast', 'dinner'] })],
+  };
+  it('fails a case once its own rules are taken away, keeping the given ones', () => {
+    expect(runPlanCase(lunchOnly).status).toBe('pass');
+    expect(failsWithoutSubject(lunchOnly)).toEqual({ fails: true, passing: [] });
+  });
+  it('names the expectations that pass anyway', () => {
+    const r = failsWithoutSubject({ ...lunchOnly, expect: [noHardProblems()] });
+    expect(r).toEqual({ fails: false, passing: ['No hard rule is broken'] });
+  });
+  it('takes the pins away too', () => {
+    const lock: PlanCase = {
+      ...lunchOnly, rules: () => [],
+      pins: { 'monday-lunch': { curry_id: TEST_LIBRARY.dish('Chole').id } },
+      expect: [lockedMealKept('monday-lunch', 'curry', 'Chole')],
+    };
+    expect(runPlanCase(lock).status).toBe('pass');
+    expect(failsWithoutSubject(lock).fails).toBe(true);
   });
 });
 
