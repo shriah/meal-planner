@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, ownRulesOverridden, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, ownRulesOverridden, score, unitPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -48,9 +48,10 @@ const OVERRIDE_WEIGHT = 1e6;
 
 /**
  * Which of a want's candidates to bring into slot `slot`: the one with the best score; ties go to the one
- * planned fewest times in the week, then to the earlier in the order `candidates[(slot + k) % n]`, so
- * meals in turn start from a different candidate. At most `limit` candidates (0 = all) are scored, taken
- * in that order. Deterministic.
+ * with the lowest weighted use `(timesPlanned + 1) × 2^w`, `w` from `weightOf` (0 when omitted), so a
+ * frequent candidate (w = −1) comes about twice as often as a normal one and a rare one (w = +1) about half
+ * as often; then to the earlier in the order `candidates[(slot + k) % n]`, so meals in turn start from a
+ * different candidate. At most `limit` candidates (0 = all) are scored, taken in that order. Deterministic.
  */
 export function chooseCandidate(
   candidates: readonly number[],
@@ -58,30 +59,44 @@ export function chooseCandidate(
   scoreWith: (id: number) => Score,
   timesPlanned: (id: number) => number,
   limit = SAMPLE_SIZE,
+  weightOf: (id: number) => number = () => 0,
 ): number {
   const n = candidates.length;
   if (n <= 1) return candidates[0];
   const k = limit > 0 && limit < n ? limit : n;
+  const weightedUse = (id: number) => (timesPlanned(id) + 1) * 2 ** weightOf(id);
   let best = candidates[slot % n];
   let bestScore = scoreWith(best);
-  let bestTimes: number | undefined;
+  let bestUse: number | undefined;
   for (let j = 1; j < k; j++) {
     const id = candidates[(slot + j) % n];
     const s = scoreWith(id);
     const c = compareScore(s, bestScore);
     if (c > 0) continue;
     if (c === 0) {
-      bestTimes ??= timesPlanned(best);
-      const times = timesPlanned(id);
-      if (times >= bestTimes) continue;
-      bestTimes = times;
+      bestUse ??= weightedUse(best);
+      const u = weightedUse(id);
+      if (u >= bestUse) continue;
+      bestUse = u;
     } else {
-      bestTimes = undefined;
+      bestUse = undefined;
     }
     best = id;
     bestScore = s;
   }
   return best;
+}
+
+/**
+ * `w` for `chooseCandidate` at slot `slot`: the weight of the prefer rules that match a candidate there but
+ * give way to a unit member, so the score cannot see them for a brought dish ("Prefer frequent dishes",
+ * "Avoid rare dishes").
+ */
+export function candidateWeight(m: CompiledModel, slot: number): (id: number) => number {
+  return (id) => {
+    const type = m.byId.get(id)?.componentType;
+    return type ? unitPreferWeight(m, id, type, slot) : 0;
+  };
 }
 
 /**
@@ -213,7 +228,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
         const options = w.of.filter((c) => fits(c, w.unit));
         if (!options.length) continue;
-        place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize) : options[0], w.unit);
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize, candidateWeight(m, i)) : options[0], w.unit);
       }
     };
     /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */

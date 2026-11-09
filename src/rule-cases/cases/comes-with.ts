@@ -15,6 +15,10 @@ const STEW_NON_VEG: CurryRecord = { ...fields(), id: 902, name: 'Kerala Stew (No
 const MUTTON_CURRY: CurryRecord = { ...fields(), id: 903, name: 'Mutton Curry', componentType: 'curry', curry_category: 'mutton' };
 const PEPPER_RASAM: ExtraRecord = { ...fields(), id: 904, name: 'Pepper Rasam', componentType: 'extra', extra_category_id: 11, extra_category: 'condiment' };
 const DISHES: ComponentRecord[] = [IDIYAPPAM, STEW_VEG, STEW_NON_VEG, MUTTON_CURRY, PEPPER_RASAM];
+// The two stews again (ids from 905), the Veg one frequent and the Non-Veg one rare, in place of 901 and 902.
+const FREQUENT_STEW_VEG: ComponentRecord = { ...STEW_VEG, id: 905, frequency: 'frequent' };
+const RARE_STEW_NON_VEG: ComponentRecord = { ...STEW_NON_VEG, id: 906, frequency: 'rare' };
+const DISHES_BY_FREQUENCY: ComponentRecord[] = [IDIYAPPAM, FREQUENT_STEW_VEG, RARE_STEW_NON_VEG];
 
 const STEWS = ['Kerala Stew (Veg)', 'Kerala Stew (Non-Veg)'];
 const REPORT = 'The 2026-11-09 Idiyappam report: ';
@@ -48,6 +52,30 @@ export const COMES_WITH_CASES: RuleCase[] = [
       eachPlanned(STEWS, 'Idiyappam'),
       nearNoRulesCount('Idiyappam'),
       noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'comes-with-respects-frequency',
+    group: 'Pairings',
+    name: 'Comes with a frequent stew more often than a rare one',
+    why: `${REPORT}"prefer frequent / avoid rare" still holds among a link's dishes: Idiyappam comes with Kerala Stew (Veg), which is frequent, or Kerala Stew (Non-Veg), which is rare; both turn up, the frequent one more than twice as often.`,
+    dishes: DISHES_BY_FREQUENCY,
+    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: STEWS.map((n) => lib.dish(n).id) })],
+    given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
+    expect: [
+      eachPlanned(STEWS, 'Idiyappam'),
+      {
+        says: 'Kerala Stew (Veg) is planned with Idiyappam more than twice as often as Kerala Stew (Non-Veg)',
+        check: (w) => {
+          const idi = w.lib.dish('Idiyappam').id;
+          const meals = w.weeks.flat().filter((s) => idsOf(s).includes(idi));
+          const count = (name: string) => meals.filter((s) => idsOf(s).includes(w.lib.dish(name).id)).length;
+          const [frequent, rare] = STEWS.map(count);
+          return { pass: frequent > 2 * rare, got: `${frequent} with Kerala Stew (Veg), ${rare} with Kerala Stew (Non-Veg)` };
+        },
+        highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
+      },
     ],
   },
   {

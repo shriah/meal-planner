@@ -1,6 +1,6 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
-  bringsWith, broughtScore, buildModel, chooseCandidate, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
+  bringsWith, broughtScore, buildModel, candidateWeight, chooseCandidate, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
   MEALS, type Brings, type Justification, type Meal, type ModelInput, type Pins, type Role,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
@@ -258,7 +258,7 @@ export function slotConflicts(
     };
     for (const w of bringsWith(m, id, 'base', i).wants) {
       if (!w.unit || w.of.some(inMeal)) continue;
-      bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned));
+      bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned, undefined, candidateWeight(m, i)));
     }
   };
   const timesPlanned = (id: number) =>

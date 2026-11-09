@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { dayRule, exclusionRule, linkRule, type RuleRecord } from '@/rules';
+import { dayRule, defaultRules, exclusionRule, linkRule, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
@@ -196,6 +196,28 @@ describe('pairings', () => {
         'monday', 'breakfast', 'base', [20],
       );
       expect(picker.get(20)).toBeUndefined();
+    });
+
+    it('the meal picker brings the frequent stew when both have been planned equally often', () => {
+      // Idiyappam may hold neither stew, so both cost the same and the picker reports the one it brings.
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const never = (id: number, stew: number): RuleRecord => ({
+        id, name: `Idiyappam never with ${stew}`, enabled: true, created_at: '',
+        spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', stew), strength: 'must' } },
+      } as RuleRecord);
+      const frequency = defaultRules()
+        .filter((r) => r.default_key === 'prefer-frequent' || r.default_key === 'avoid-rare')
+        .map((r, k) => ({ ...r, id: 10 + k, enabled: true, created_at: '' } as RuleRecord));
+      const picker = slotConflicts(
+        { library: [pongal, idiyappam, stewVeg, { ...stewNonVeg, frequency: 'frequent' }], categories: [], rules: [comes, never(6, 21), never(7, 22), ...frequency] },
+        planOf(
+          { day: 'monday', meal_slot: 'breakfast', base_id: 10 },
+          { day: 'thursday', meal_slot: 'lunch', base_id: 10, curry_id: 21 },
+          { day: 'saturday', meal_slot: 'lunch', base_id: 10, curry_id: 22 },
+        ),
+        'monday', 'breakfast', 'base', [20],
+      );
+      expect(picker.get(20)?.map((p) => p.ruleId)).toEqual([7]);
     });
 
     it('a pairing it cannot hold names every stew', () => {

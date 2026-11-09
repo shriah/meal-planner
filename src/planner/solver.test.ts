@@ -133,6 +133,31 @@ describe('solver', () => {
       for (const s of r.plan) if (s.curry === 11) expect(s.extras).toContain(31);
     });
 
+    describe('frequent and rare candidates', () => {
+      const libByFrequency = lib.map((c) => (c.id === 11 ? { ...c, frequency: 'frequent' as const } : c.id === 12 ? { ...c, frequency: 'rare' as const } : c));
+      const frequencyRules: Constraint[] = [
+        { kind: 'prefer', id: 'prefer-frequent', label: 'Prefer frequent dishes', origin: 'rule', select: is('frequency', 'frequent'), weight: -1, yieldsTo: 'unit' },
+        { kind: 'prefer', id: 'avoid-rare', label: 'Avoid rare dishes', origin: 'rule', select: is('frequency', 'rare'), weight: 1, yieldsTo: 'unit' },
+      ];
+      const curryCounts = (constraints: Constraint[]) => {
+        const r = solve(buildModel({ library: libByFrequency, constraints }), { ...quick, seed: 1 });
+        expect(r.score.hard).toBe(0);
+        const count = (id: number) => r.plan.filter((s) => s.curry === id).length;
+        return { frequent: count(11), rare: count(12) };
+      };
+
+      it('a frequent candidate is chosen more often than a rare one', () => {
+        const { frequent, rare } = curryCounts([want, ...frequencyRules]);
+        expect(rare).toBeGreaterThan(0);
+        expect(frequent).toBeGreaterThan(2 * rare);
+      });
+
+      it('without frequency rules candidates alternate evenly', () => {
+        const { frequent, rare } = curryCounts([want]);
+        expect(Math.abs(frequent - rare)).toBeLessThanOrEqual(1);
+      });
+    });
+
     it('two overlapping wants plan a dish both name', () => {
       const overlap: Constraint = { kind: 'pair', id: 'pair-2', label: 'Base 1 with 12 or 13', origin: 'rule', when: is('id', 1), of: oneOf('id', [12, 13]), strength: 'must' };
       const r = solve(buildModel({ library: lib, constraints: [want, overlap] }), { ...quick, seed: 1 });

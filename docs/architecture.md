@@ -196,7 +196,9 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   Hand-written rules and built-ins never give way. Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
-  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Unit members stay while their base does; asked-for sides
+  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` takes
+  the best score, then the lowest weighted use `(times planned + 1) × 2^w`, where `w` is the weight of the prefer rules that
+  give way to a unit (by default frequent −1, rare +1), then each meal in turn. Unit members stay while their base does; asked-for sides
   are free, and polish may drop one.
 - **Conflicts.** Where stored data holds two Always curries (or subzis) for one base, the rule with the lower id makes the unit
   and the other is reported once as a soft problem; it never blocks the base. A pinned or held-empty role keeps the pin, and

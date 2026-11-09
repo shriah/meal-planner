@@ -355,6 +355,16 @@ export function ownRulesOverridden(m: CompiledModel, id: number, role: Role, slo
   return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).overrides;
 }
 
+/**
+ * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a unit member
+ * (by default "Prefer frequent dishes" and "Avoid rare dishes"): what the score leaves out when the dish is
+ * brought as one. Memoised.
+ */
+export function unitPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
+  const ci = m.state.idIndex.get(id);
+  return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).preferUnit;
+}
+
 export interface SlotPair {
   /** The dishes that meet the pairing, in library order. */
   candidates: number[];
