@@ -1,7 +1,7 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
   bringsWith, buildModel, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
-  MEALS, type Justification, type Meal, type ModelInput, type Pins, type Role,
+  MEALS, type Brings, type Justification, type Meal, type ModelInput, type Pins, type Role,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
@@ -152,13 +152,16 @@ export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): 
   };
 }
 
-/** Ids of the dishes that placing this base in a meal would bring with it (unit or asked). */
+/** Every candidate of a dish's wants, unit or asked. */
+const candidatesOf = (b: Brings): number[] => [...new Set(b.wants.flatMap((w) => w.of))];
+
+/** Ids of the dishes that placing this base in a meal may bring with it (unit or asked). */
 export function broughtByBase(input: PlanningInput, id: number, day: DayOfWeek, meal: Meal): number[] {
   const m = buildModel(modelFromData(input).model);
-  return bringsWith(m, id, 'base', slotIndex(day, meal)).asked;
+  return candidatesOf(bringsWith(m, id, 'base', slotIndex(day, meal)));
 }
 
-/** The sides in each meal that a pairing brought, whether a unit member or only asked for. */
+/** The sides in each meal that a pairing brought (the candidate present), whether a unit member or only asked for. */
 export function pairedSides(input: PlanningInput, plan: WeeklyPlan): PairedSide[] {
   const m = buildModel(modelFromData(input).model);
   const state = fromPlanSlots(plan.slots);
@@ -166,12 +169,11 @@ export function pairedSides(input: PlanningInput, plan: WeeklyPlan): PairedSide[
   for (const day of ALL_DAYS) {
     for (const meal of MEALS) {
       const i = slotIndex(day, meal);
-      const s = state[i];
-      const present = new Set([s.base, s.curry, s.subzi, ...s.extras].filter((id): id is number => id !== undefined));
       const seen = new Set<string>();
       for (const p of slotPairs(m, state, i)) {
+        if (p.suppressed || p.component === undefined) continue;
         const k = `${p.component}|${p.by}`;
-        if (p.suppressed || !present.has(p.component) || seen.has(k)) continue;
+        if (seen.has(k)) continue;
         seen.add(k);
         out.push({ day, meal, component: p.component, by: p.by });
       }
@@ -213,10 +215,10 @@ export function slotConflicts(
     slot.base = id;
     if (original.base !== undefined) {
       const stillBrought = (c: number) => {
-        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && bringsWith(m, d, role, i).asked.includes(c);
+        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && candidatesOf(bringsWith(m, d, role, i)).includes(c);
         return by(slot.base, 'base') || by(slot.curry, 'curry') || by(slot.subzi, 'subzi') || slot.extras.some((e) => by(e, 'extra'));
       };
-      for (const side of bringsWith(m, original.base, 'base', i).asked) {
+      for (const side of candidatesOf(bringsWith(m, original.base, 'base', i))) {
         const type = typeOf.get(side);
         if (type === 'extra') {
           if (slot.extras.includes(side) && !stillBrought(side)) slot.extras = slot.extras.filter((e) => e !== side);
@@ -225,7 +227,11 @@ export function slotConflicts(
         }
       }
     }
-    for (const side of bringsWith(m, id, 'base', i).unit) {
+    // Each unit want with no candidate in the meal brings its first candidate.
+    const inMeal = (c: number) => slot.base === c || slot.curry === c || slot.subzi === c || slot.extras.includes(c);
+    for (const w of bringsWith(m, id, 'base', i).wants) {
+      if (!w.unit || w.of.some(inMeal)) continue;
+      const side = w.of[0];
       const type = typeOf.get(side);
       if (type === 'curry') slot.curry = side;
       else if (type === 'subzi') slot.subzi = side;

@@ -32,6 +32,8 @@ export interface Justification {
   units: number;
   /** Units multiplied by severity (hard) or cost (soft). */
   cost: number;
+  /** On a pairing that names more than one dish: every candidate, in library order (`group.componentId` is the first). */
+  candidates?: number[];
   /**
    * Set on a pairing that is not enforced in this meal because another pairing holds the role
    * (a meal holds one curry and one subzi): `by` triggered it; `heldBy`, if known, holds the role by a
@@ -80,17 +82,22 @@ interface CompiledCount {
 interface CompiledPair {
   def: PairConstraint;
   when: number;
-  /** Library index of the paired component, or -1 when it is not in the library. */
-  ci: number;
-  /** ROLE_CURRY or ROLE_SUBZI when the paired component fills one of those roles, else 0. A meal holds one of each. */
+  /** Library indices of the candidates (the dishes matching `of`), in library order. Empty: never triggered. */
+  cis: Int32Array;
+  /** Per library index, 1 for a candidate. */
+  isCandidate: Uint8Array;
+  /** ROLE_CURRY or ROLE_SUBZI when the first candidate fills one of those roles, else 0. A meal holds one of each. */
   roleBit: number;
   must: boolean;
   cost: number;
   inScope: Uint8Array;
 }
 
+/** One pairing a placed dish brings: the meal should hold one of `of` (ids in library order). */
+export interface Want { of: readonly number[]; unit: boolean }
+
 /** What placing one dish brings, after conflict resolution. */
-export interface Brings { unit: number[]; asked: number[] }
+export interface Brings { wants: Want[] }
 
 /** Cached matcher results for one (component, role, slot). */
 interface Memo {
@@ -162,13 +169,23 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       continue;
     }
     if (c.kind === 'pair') {
-      const ci = idIndex.get(c.component) ?? -1;
+      // Candidates are matched as their own type, at the first slot: `of` names dishes, `scope` times.
+      const of = compileMatcher(c.of);
+      const isCandidate = new Uint8Array(N);
+      const cis: number[] = [];
+      library.forEach((d, i) => {
+        if (of({ c: d, role: d.componentType, day: slotDay(0), meal: slotMeal(0) })) {
+          isCandidate[i] = 1;
+          cis.push(i);
+        }
+      });
       const inScope = new Uint8Array(SLOT_COUNT);
       for (let t = 0; t < SLOT_COUNT; t++) {
         inScope[t] = +((!c.scope?.days || c.scope.days.includes(slotDay(t))) && (!c.scope?.meals || c.scope.meals.includes(slotMeal(t))));
       }
       pairs.push({
-        def: c, when: addMatcher(compileMatcher(c.when)), ci, roleBit: ci >= 0 ? roleBitOf(library[ci].componentType) : 0,
+        def: c, when: addMatcher(compileMatcher(c.when)), cis: Int32Array.from(cis), isCandidate,
+        roleBit: cis.length ? roleBitOf(library[cis[0]].componentType) : 0,
         must: c.strength === 'must', cost: c.cost ?? 10, inScope,
       });
       continue;
@@ -203,18 +220,23 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     });
   }
 
-  // A softer pairing gives way where the side's own rules forbid it (its "never planned automatically",
-  // days or meals): there it is not enforced, so the side is neither brought nor missed. Only `must`
-  // pairs make the side's own rules give way.
+  // A softer pairing gives way where the sides' own rules forbid every candidate (their "never planned
+  // automatically", days or meals): there it is not enforced, so no side is brought or missed. Only
+  // `must` pairs make the sides' own rules give way.
   for (const p of pairs) {
-    if (p.must || p.ci < 0) continue;
-    const side = library[p.ci];
-    const own = counts.filter((cc) => cc.owner === side.id && cc.hardMax === 0 && cc.when < 0 && cc.yields !== YIELD_ASK);
-    if (!own.length) continue;
+    if (p.must || !p.cis.length) continue;
+    const sides = Array.from(p.cis, (ci) => {
+      const side = library[ci];
+      return { side, own: counts.filter((cc) => cc.owner === side.id && cc.hardMax === 0 && cc.when < 0 && cc.yields !== YIELD_ASK) };
+    });
+    if (sides.some((x) => !x.own.length)) continue;
     for (let t = 0; t < SLOT_COUNT; t++) {
       if (!p.inScope[t]) continue;
-      const a: Assignment = { c: side, role: side.componentType, day: slotDay(t), meal: slotMeal(t) };
-      if (own.some((cc) => groupInScope(cc, t) && matchers[cc.sel](a))) p.inScope[t] = 0;
+      const forbidden = sides.every(({ side, own }) => {
+        const a: Assignment = { c: side, role: side.componentType, day: slotDay(t), meal: slotMeal(t) };
+        return own.some((cc) => groupInScope(cc, t) && matchers[cc.sel](a));
+      });
+      if (forbidden) p.inScope[t] = 0;
     }
   }
 
@@ -261,22 +283,23 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
       const v = (bits[cc.sel] ? 1 : 0) | (cc.when >= 0 && bits[cc.when] ? 2 : 0);
       if (v) hits.push((ck << 2) | v);
     });
-    // Pairs this dish triggers. A meal holds one curry and one subzi, so the first pair to claim either
-    // role wins, `must` pairs before `prefer` ones, each in constraint order; later pairs for the same
-    // role are suppressed. Extras never conflict.
+    // Pairs this dish triggers (not those it is a candidate of). A meal holds one curry and one subzi, so
+    // the first pair to claim either role wins, `must` pairs before `prefer` ones, each in constraint
+    // order; a later pair for the same role is suppressed when it shares no candidate with the first.
+    // Extras never conflict.
     const triggered: number[] = [];
     st.pairs.forEach((p, pk) => {
-      if (p.inScope[slot] && bits[p.when] && p.def.component !== a.c.id) triggered.push(pk);
+      if (p.cis.length && p.inScope[slot] && bits[p.when] && !p.isCandidate[ci]) triggered.push(pk);
     });
-    const claimedBy = new Map<number, number>();
+    const claimedBy = new Map<number, CompiledPair>();
     const suppressed = new Set<number>();
     for (const must of [true, false]) {
       for (const pk of triggered) {
         const p = st.pairs[pk];
         if (p.must !== must || !p.roleBit) continue;
         const first = claimedBy.get(p.roleBit);
-        if (first === undefined) claimedBy.set(p.roleBit, p.def.component);
-        else if (first !== p.def.component) suppressed.add(pk);
+        if (first === undefined) claimedBy.set(p.roleBit, p);
+        else if (!sharesCandidate(first, p)) suppressed.add(pk);
       }
     }
     const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
@@ -288,30 +311,38 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
   return e;
 }
 
+const sharesCandidate = (a: CompiledPair, b: CompiledPair): boolean => {
+  for (const ci of b.cis) if (a.isCandidate[ci]) return true;
+  return false;
+};
+
+const candidateIds = (m: CompiledModel, p: CompiledPair): number[] => Array.from(p.cis, (ci) => m.library[ci].id);
+
 /**
- * The dishes that placing `id` in `role` at `slot` brings, after conflict resolution: `unit` from its
- * `must` pairs, `asked` from all of them (so it includes `unit`). Memoised.
+ * What placing `id` in `role` at `slot` brings, after conflict resolution: one want per enforced pair,
+ * `unit` for `must` pairs. Memoised.
  */
 export function bringsWith(m: CompiledModel, id: number, role: Role, slot: number): Brings {
   const ci = m.state.idIndex.get(id);
-  if (ci === undefined) return { unit: [], asked: [] };
+  if (ci === undefined) return { wants: [] };
   const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
   if (!memo.brings) {
-    const unit: number[] = [];
-    const asked: number[] = [];
+    const wants: Want[] = [];
     for (const code of memo.pairs) {
       if (code & 1) continue;
       const p = m.state.pairs[code >> 1];
-      if (p.must) unit.push(p.def.component);
-      asked.push(p.def.component);
+      wants.push({ of: candidateIds(m, p), unit: p.must });
     }
-    memo.brings = { unit, asked };
+    memo.brings = { wants };
   }
   return memo.brings;
 }
 
 export interface SlotPair {
-  component: number;
+  /** The dishes that meet the pairing, in library order. */
+  candidates: number[];
+  /** The candidate present in the meal, if any. */
+  component?: number;
   /** Id of the dish whose pairing brings it. */
   by: number;
   /** Brought by a `must` pair that is enforced. */
@@ -324,15 +355,20 @@ export interface SlotPair {
 export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): SlotPair[] {
   const out: SlotPair[] = [];
   const s = plan[slot];
+  const inMeal = [s.base, s.curry, s.subzi, ...s.extras].filter((d): d is number => d !== undefined);
   const visit = (id: number | undefined, role: Role) => {
     if (id === undefined) return;
     const ci = m.state.idIndex.get(id);
     if (ci === undefined) return;
     for (const code of memoFor(m, ci, ROLE_INDEX[role], slot).pairs) {
       const p = m.state.pairs[code >> 1];
-      out.push(code & 1
-        ? { component: p.def.component, by: id, unit: false, suppressed: true }
-        : { component: p.def.component, by: id, unit: p.must });
+      const component = inMeal.find((d) => p.isCandidate[m.state.idIndex.get(d) ?? -1]);
+      out.push({
+        candidates: candidateIds(m, p),
+        ...(component !== undefined && { component }),
+        by: id,
+        ...(code & 1 ? { unit: false, suppressed: true } : { unit: p.must }),
+      });
     }
   };
   visit(s.base, 'base');
@@ -377,9 +413,10 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
     n++;
   };
 
-  const present = (ci: number, start: number, end: number): boolean => {
-    for (let k = start; k < end; k++) if (bufCi[k] === ci) return true;
-    return false;
+  /** The first assignment in [start, end) holding a candidate of `p`, or -1. */
+  const present = (p: CompiledPair, start: number, end: number): number => {
+    for (let k = start; k < end; k++) if (p.isCandidate[bufCi[k]]) return k;
+    return -1;
   };
 
   // Pairs triggered in one meal (assignments [start, end)): flag the sides they bring and score the
@@ -404,9 +441,8 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       const pk = bufPairs[q];
       const p = pairs[pk];
       if (!p.must || pairState[pk] !== 2) continue;
-      let k = start;
-      while (k < end && bufCi[k] !== p.ci) k++;
-      if (k < end) {
+      const k = present(p, start, end);
+      if (k >= 0) {
         bufFlag[k] |= ASKED | UNIT;
         unitRoles |= p.roleBit;
       }
@@ -421,7 +457,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
         const pk = bufPairs[q];
         const p = pairs[pk];
         if (!p.roleBit || pairState[pk] !== 2) continue;
-        const r = p.must ? (p.roleBit & unitRoles && present(p.ci, start, end) ? 3 : 2) : 1;
+        const r = p.must ? (p.roleBit & unitRoles && present(p, start, end) >= 0 ? 3 : 2) : 1;
         const h = p.roleBit === ROLE_CURRY ? 0 : 1;
         if (r > rank[h]) { rank[h] = r; holders[h] = pk; }
       }
@@ -431,9 +467,8 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       const p = pairs[pk];
       let enforced = pairState[pk] === 2;
       pairState[pk] = 0;
-      let k = start;
-      while (k < end && bufCi[k] !== p.ci) k++;
-      if (k < end) {
+      const k = present(p, start, end);
+      if (k >= 0) {
         if (enforced) bufFlag[k] |= ASKED;
         continue;
       }
@@ -446,16 +481,21 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
         let suppressed: Justification['suppressed'];
         if (!enforced && p.roleBit) {
           const holder = holders![p.roleBit === ROLE_CURRY ? 0 : 1];
-          const held = holder >= 0 && pairs[holder].def.component !== p.def.component ? pairs[holder] : undefined;
+          const held = holder >= 0 && !sharesCandidate(pairs[holder], p) ? pairs[holder] : undefined;
+          // The holder's candidate in the meal, else its first.
+          const heldAt = held ? present(held, start, end) : -1;
           suppressed = {
             by: m.library[pairBy[pk]].id, role: p.roleBit === ROLE_CURRY ? 'curry' : 'subzi',
-            ...(held && { heldBy: held.def.component, heldMust: held.must, heldWith: m.library[pairBy[holder]].id }),
+            ...(held && {
+              heldBy: m.library[heldAt >= 0 ? bufCi[heldAt] : held.cis[0]].id, heldMust: held.must, heldWith: m.library[pairBy[holder]].id,
+            }),
           };
         }
         just.push({
           constraintId: p.def.id, label: p.def.label, level, origin: p.def.origin, ruleId: p.def.ruleId,
-          group: { day: slotDay(slot), meal: slotMeal(slot), componentId: p.def.component },
+          group: { day: slotDay(slot), meal: slotMeal(slot), componentId: m.library[p.cis[0]].id },
           actual: 0, bound: { kind: level === 'hard' ? 'hardMin' : 'softMin', value: 1 }, units: 1, cost,
+          ...(p.cis.length > 1 && { candidates: candidateIds(m, p) }),
           ...(suppressed && { suppressed }),
         });
       }

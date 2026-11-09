@@ -259,7 +259,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     compile: (p) => [
       // A pairing is a pair constraint, which carries its own cost; `compileSpec` leaves it alone.
       ...p.components.map((component): ConstraintBody => ({
-        kind: 'pair', when: p.when, component, ...(p.scope && { scope: p.scope }), strength: p.strength,
+        kind: 'pair', when: p.when, of: is('id', component), ...(p.scope && { scope: p.scope }), strength: p.strength,
         ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
       })),
       ...p.extraCategories.map((cat) => slotCount(all(is('role', 'extra'), is('extra_category_id', cat)), p.scope, p.strength, 1, undefined, p.when)),

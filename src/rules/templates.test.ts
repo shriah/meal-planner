@@ -181,7 +181,7 @@ describe('require_with compilation', () => {
   it('compiles each component to a pair keeping its cost, and each extra category to a slot count', () => {
     const bodies = compileSpec({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer', cost: 6 } });
     expect(bodies).toHaveLength(2);
-    expect(bodies[0]).toMatchObject({ kind: 'pair', component: 31, strength: 'prefer', cost: 6 });
+    expect(bodies[0]).toMatchObject({ kind: 'pair', of: is('id', 31), strength: 'prefer', cost: 6 });
     expect(bodies[1]).toMatchObject({ kind: 'count', groupBy: 'slot', costs: { min: 6, max: 6 } });
   });
 

@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, score, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -81,11 +81,21 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // ── Pairings ──
   const hasPairs = m.constraints.some((c) => c.kind === 'pair');
-  /** What the dish in `role` brings to slot `i`: all of it (asked for), or only its unit members. */
+  /** Every candidate of a dish's wants (asked for), and of its unit wants only. Cached per memoised `Brings`. */
+  const unions = new WeakMap<Brings, { asked: readonly number[]; unit: readonly number[] }>();
+  /** What the dish in `role` may bring to slot `i`: the candidates of all its wants, or of its unit wants only. */
   const broughtBy = (id: number | undefined, role: Role, i: number, unitOnly = false): readonly number[] => {
     if (!hasPairs || id === undefined) return NOTHING;
     const b = bringsWith(m, id, role, i);
-    return unitOnly ? b.unit : b.asked;
+    let u = unions.get(b);
+    if (!u) {
+      const asked = new Set<number>();
+      const unit = new Set<number>();
+      for (const w of b.wants) for (const c of w.of) { asked.add(c); if (w.unit) unit.add(c); }
+      u = { asked: asked.size ? [...asked] : NOTHING, unit: unit.size ? [...unit] : NOTHING };
+      unions.set(b, u);
+    }
+    return unitOnly ? u.unit : u.asked;
   };
   /** Whether `id` is in slot `i` as a unit member: another dish there must be served with it. */
   const isUnit = (s: SlotState, i: number, id: number | undefined): boolean => {
@@ -97,8 +107,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   };
   /**
    * After a change to slot `i`'s base, curry or subzi, first remove the sides the replaced dish brought
-   * (`prev`) that no dish in the meal still brings, then bring the sides its dishes are paired with into
-   * roles that are not pinned and are empty, or that hold a side the replaced dish brought.
+   * (`prev`) that no dish in the meal still brings, then, for each want of its dishes with no candidate in
+   * the meal, bring its first candidate into a role that is not pinned and is empty, or that holds a side
+   * the replaced dish brought.
    * Unit members may take such a role; asked-for sides only fill an empty one. Extras are appended.
    * Repeats while anything changes, since a brought side can bring its own. Uses no randomness.
    */
@@ -121,10 +132,12 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
       }
     };
+    const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
     const visit = (id: number | undefined, role: Role) => {
       if (id === undefined) return;
-      const b = bringsWith(m, id, role, i);
-      for (const c of b.asked) place(c, b.unit.includes(c));
+      for (const w of bringsWith(m, id, role, i).wants) {
+        if (!w.of.some(inMeal)) place(w.of[0], w.unit);
+      }
     };
     // The replaced dish's sides leave with it, unless a dish still in the meal brings them too.
     const stillBrought = (c: number) => {

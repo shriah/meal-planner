@@ -75,7 +75,7 @@ describe('solver', () => {
     // Base 1 is always served with curry 11; curry 11's own rule keeps it out of every meal, but it
     // gives way when 11 comes with its base.
     const constraints = [
-      { kind: 'pair' as const, id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule' as const, when: is('id', 1), component: 11, strength: 'must' as const },
+      { kind: 'pair' as const, id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule' as const, when: is('id', 1), of: is('id', 11), strength: 'must' as const },
       { kind: 'count' as const, id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule' as const, select: is('id', 11), groupBy: 'slot' as const, bounds: { hardMax: 0 }, yieldsTo: 'unit' as const, owner: 11 },
     ];
 
@@ -93,6 +93,26 @@ describe('solver', () => {
       const hard = r.score.justifications.filter((j) => j.level === 'hard');
       expect(hard).toHaveLength(1);
       expect(hard[0]).toMatchObject({ constraintId: 'pair-1-11', group: { componentId: 11 } });
+    });
+  });
+
+  describe('a pair naming several candidates', () => {
+    const lib: ComponentLike[] = [component('base', { id: 1 }), ...library.filter((c) => c.componentType !== 'base')];
+    const want: Constraint = { kind: 'pair', id: 'pair-1', label: 'Base 1 with 11 or 12', origin: 'rule', when: is('id', 1), of: oneOf('id', [11, 12]), strength: 'must' };
+
+    it('bringing places one candidate of a want', () => {
+      const r = solve(buildModel({ library: lib, constraints: [want] }), { ...quick, seed: 1 });
+      expect(r.score.hard).toBe(0);
+      for (const s of r.plan) expect([11, 12]).toContain(s.curry);
+    });
+
+    it('bringing stops when two dishes bring each other', () => {
+      const constraints: Constraint[] = [
+        { kind: 'pair', id: 'a', label: '11 with 21', origin: 'rule', when: is('id', 11), of: is('id', 21), strength: 'must' },
+        { kind: 'pair', id: 'b', label: '21 with 11', origin: 'rule', when: is('id', 21), of: is('id', 11), strength: 'must' },
+      ];
+      const r = solve(buildModel({ library, constraints }), { ...quick, seed: 1 });
+      for (const s of r.plan) if (s.curry === 11) expect(s.subzi).toBe(21);
     });
   });
 
@@ -173,7 +193,7 @@ describe('final descent', () => {
     // Base 1 must come with curry 11, and curry 11 is never planned on its own, so a curry 11 left
     // behind when a base 1 was changed would break a hard rule.
     const pairing: Constraint[] = [
-      { kind: 'pair', id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule', when: is('id', 1), component: 11, strength: 'must' },
+      { kind: 'pair', id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule', when: is('id', 1), of: is('id', 11), strength: 'must' },
       rule({ id: 'exclude-11', label: 'Never plan curry 11', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 11 }),
     ];
     const r = solve(buildModel({ library: lib, constraints: [...defaults, ...pairing] }), { ...budget, seed });

@@ -14,7 +14,7 @@ export {
 } from './constraints';
 export {
   compileModel, score, compareScore, explain, groupText, bringsWith, slotPairs, UNKNOWN_COMPONENT,
-  type CompiledModel, type SlotPair, type Brings, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
+  type CompiledModel, type SlotPair, type Brings, type Want, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';
 export { solve, clonePlan, type SolveOptions, type SolveResult, type StopReason } from './solver';
