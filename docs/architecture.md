@@ -120,28 +120,28 @@ picked, and a replaced base takes the sides it brought with it.
 Strength is one set of words, `STRENGTH_WORDS` in `src/rules/levels.ts`: **Always** (`must`), **Usually**, **Often** and
 **Sometimes** (`prefer` with cost 10, 6 or 3). Links, the Rules page cost select and the assistant all use it. A stored cost
 reads back as Usually at 8 or more, Often at 5 to 7 and Sometimes at 4 or less, so older links keep their meaning. A scope limits a link to some days or meals. Storage is unchanged: "only with base categories" is a
-`pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other link an `avoid_with` rule whose other
-side is the dish type plus the (negated) categories.
+`pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other "never with" link an `avoid_with` rule whose other
+side is the dish type plus the (negated) categories; a comes link is a `comes_with` rule and a served-with link a `require_with` rule.
 
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
 option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
-flow offers: Served with first, then "Only with" and "Never with" for every target the dish may link to, specific dishes
-included. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+flow offers: Served with (base targets, for every dish but a base), then "Only with" and "Never with" for base targets and "Comes with" and
+"Never with" for side targets (`offersComes`), specific dishes included; a comes slot is never used up, so a dish may hold several. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links are tracked by rule id (`DishLink.ruleId`; `readOwned` keeps every link, `linkChanges` diffs the form's links against the stored ones, and `saveComponent(..., links)` and `pendingRules(..., links)` take them), so links left untouched are never rewritten on save. `link-warnings.ts` shows
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
 **Always** served with the same base, two **Always** comes links of one kind that name no dish in common, and an Always served-with
 link against an Always comes link that leaves no room for it (checked from either dish's form). A narrowing warning (a dish always
-served with the base makes the other chosen dishes unreachable) does not block. Scoped links are skipped by these clash checks.
+served with the base makes the other chosen dishes unreachable) does not block. The comes-related clash checks skip scoped links.
 Only a conflict the edit introduces blocks; one already stored does not. `propose_dish` and `propose_pairing` refuse the same thing. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
 (`compareRuleSets` and `pendingRules` in `src/services/compare-rules.ts`; it needs a stored plan). Rows and forms share one
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
 own queries).
 
-Pairings are edited only on the side dish (its "Served with" link); a base's form and Manage Categories have no pairing
-editor. A dish's specific days
+Served with is edited on the side dish; comes with on the dish that brings the sides (a base included); Manage Categories has
+no pairing editor. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
 `festive`). Owned rules are renamed and deleted with their component and lose a deleted value
@@ -202,7 +202,7 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   present. A unit member is not counted by constraints that give way (its own days, meals, links, never-auto, the defaults);
   an asked-for side is not counted by `yieldsTo: 'ask'`, so the variety and spacing defaults yield to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
   Hand-written rules and built-ins never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
-  is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
+  (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
