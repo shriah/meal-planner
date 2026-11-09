@@ -107,9 +107,11 @@ subzis, extras); a dish is never offered its own kind where a meal holds only on
 bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
 of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A curry, subzi or extra may also be
 **served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
-is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner does this through the rule;
-picking a base by hand on the plan re-plans only that meal through the planner: `pinsForMeal` in `src/services/pins.ts` pins every
-other meal exactly (and holds a role empty with `null` in `SlotPins`), so the meal's sides follow every rule and locked parts stay.
+is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner plans a base together with
+its served-with dishes (see **Pairings as units** below); picking a base by hand on the plan re-plans only that meal through the
+planner: `pinsForMeal` in `src/services/pins.ts` pins every other meal exactly (and holds a role empty with `null` in
+`SlotPins`), so the meal's sides follow every rule and locked parts stay. The re-plan is applied only if the meal is still as
+picked, and a replaced base takes the sides it brought with it.
 
 Strength is one set of words, `STRENGTH_WORDS` in `src/rules/levels.ts`: **Always** (`must`), **Usually**, **Often** and
 **Sometimes** (`prefer` with cost 10, 6 or 3). Links, the Rules page cost select and the assistant all use it. A stored cost
@@ -123,17 +125,16 @@ option picker and optional day and meal limits. `addableSlots(componentType, lin
 flow offers: Served with first, then "Only with" and "Never with" for every target the dish may link to, specific dishes
 included. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links left untouched are never rewritten on save. `link-warnings.ts` shows
-non-blocking warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
-day limits. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
+warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
+day limits. One warning blocks Save: a second curry (or subzi) **Always** served with the same base, since a meal holds one.
+Only a conflict the edit introduces blocks; one already stored does not. `propose_dish` and `propose_pairing` refuse the same thing. The form also lists, read only, "Other rules mentioning this dish" (linking to `/rules#rule-<id>`), and in edit mode
 a "Preview on this week" button that compares the current plan with and without the unsaved links
 (`compareRuleSets` and `pendingRules` in `src/services/compare-rules.ts`; it needs a stored plan). Rows and forms share one
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
 own queries).
 
-Manage Categories has no pairing editor. A base's form has a "Served with" picker (Curries, Subzis, Extras, each searchable):
-ticking a dish adds this base to that dish's own `serve:base_dish` link, created at the "new picks" strength when the dish has
-none, and unticking takes the base out (`setServedWithBase` in `src/services/food-db.ts`); nothing is written when the list is
-left alone. Dishes served with the base's whole category are shown there for context and edited on those dishes. A dish's specific days
+Pairings are edited only on the side dish (its "Served with" link); a base's form and Manage Categories have no pairing
+editor. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
 `festive`). Owned rules are renamed and deleted with their component and lose a deleted value
@@ -158,9 +159,12 @@ flowchart TD
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
     D --> E{"No hard violations and no improvement for N iterations, or time cap?"}
     E -->|no| D
-    E -->|yes| F["Polish: drop curries, subzis and extras that do not help"]
+    E -->|yes| H["Final descent: every single change of a free base, curry or subzi; keep strict improvements"]
+    H --> F["Polish: drop curries, subzis and extras that do not help"]
     F --> G["Best plan + score (hard, soft) + justification per violated group"]
 ```
+
+Every step that places a dish brings its pairings with it (see below), so a base is always scored with its sides in place.
 
 - **Count** constraint: select assignments (component + role + day + meal), group them (slot, day,
   meal, week, per component, sliding k-day window), optionally only where a trigger exists in the
@@ -169,7 +173,53 @@ flowchart TD
 - **Score** is lexicographic: any hard violation outweighs every soft cost.
 - **Built-ins** are only the structure of a meal: one base, at most one curry and one subzi, each
   component in its own role, no extra twice. Everything else is a stored rule.
+- **Pair** constraint: when a meal holds a dish matching `when`, it should also hold `component`; missing it is a hard
+  violation (`must`) or costs `cost` (`prefer`).
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
+- The **final descent** runs after the random search: it tries every single change of a free base, curry or subzi in a
+  fixed order and keeps each strict improvement, for at most `DESCENT_PASSES` (10) passes or until a pass changes nothing.
+  The time limit (300 ms by default) does not cut it short.
+
+### Pairings as units
+
+Design: `docs/superpowers/specs/2026-11-08-pairing-units-design.md`. A base and its **Always** pairings are one unit: choosing
+Pongal means choosing Pongal with the Sambar always served with it. Softer pairings (Usually, Often, Sometimes) bring their
+side along when it fits and give way otherwise. Either way, a pairing never makes its base less likely to be planned.
+
+- **Compiling.** An enabled `require_with` that names specific dishes compiles to `pair` constraints (`must` makes units,
+  `prefer` makes asked-for sides); its `extraCategories` stay ordinary counts. A pairing's scope limits where it applies.
+  `compileRules` marks owned rules with `owner` and `yieldsTo: 'unit'`, default rules with `yieldsTo: 'unit'`, and
+  "sides only when a rule asks" with `yieldsTo: 'ask'`.
+- **Scoring.** Each score works out every meal's unit members and asked-for sides from the `pair` constraints whose trigger is
+  present. A unit member is not counted by constraints that give way (its own days, meals, links, never-auto, the defaults);
+  an asked-for side is not counted by `yieldsTo: 'ask'`. A unit member does not trigger rules owned by its meal's base.
+  Hand-written rules and built-ins never give way. Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
+  all see the same result as the solver.
+- **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
+  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Unit members stay while their base does; asked-for sides
+  are free, and polish may drop one.
+- **Conflicts.** Where stored data holds two Always curries (or subzis) for one base, the rule with the lower id makes the unit
+  and the other is reported once as a soft problem; it never blocks the base. A pinned or held-empty role keeps the pin, and
+  the missing pairing is reported as "replaced by your pick".
+- **Around the planner.** `PlanningOutcome.paired` (`pairedSides` in `src/services/plan-generation.ts`) lists each meal's
+  paired sides, and the plan board labels such a side "with <base>", also on a reloaded plan. The meal picker
+  (`slotConflicts`) places a candidate base with its unit before counting problems. `explain_plan_slot` reports paired sides and
+  never gives a missing pairing as the reason a base is left out; the prompt tells the assistant to give only reasons a tool returned.
+
+## Rule case library (`src/rule-cases`)
+
+Design: `docs/superpowers/specs/2026-11-08-rule-cases-design.md`. A catalogue of situations, each with its dishes, rules
+(built the way the app stores them, with the default rules unless a case turns them off), optional pins, and plain-sentence
+expectations checked over 8 planned weeks (seeds 1–8). Groups: Pairings, Days and meals, Variety, Locks and picks, Extras
+(`src/rule-cases/cases`). It covers the rule engine and planner only, no UI.
+
+- Cases use their own test library (`library.ts`), never the seed library or user data.
+- Runs use a fixed iteration budget (`run.ts`: 20 000 iterations, no time limit), so results do not depend on machine speed.
+- A case's `rules`, `pins` and `without` (default rules by `default_key`) are what it is about; supporting rules go in
+  `given`. `rule-cases.test.ts` plans every case without its subject (`failsWithoutSubject` in `run.ts`) and fails it if all
+  its expectations still pass, since such a case proves nothing.
+- Cases run with `npm test`; `npm run rule-cases` also writes the standalone `rule-cases-report.html` from the same run.
+  The report is not part of the app (no route, no import from app UI).
 
 ## Rules assistant (`src/assistant`)
 
