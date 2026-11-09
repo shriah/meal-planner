@@ -197,20 +197,26 @@ describe('meals', () => {
 });
 
 describe('addableSlots', () => {
-  it('offers a curry served with bases, then only with / never with every target it may link to, specific dishes included', () => {
+  it('offers a curry served with bases, then only with bases and never with every target it may link to, specific dishes included', () => {
     expect(addableSlots('curry', []).sort()).toEqual([
       'serve:base_category', 'serve:base_dish',
-      'with:base_category', 'never:base_category', 'with:extra_category', 'never:extra_category',
-      'with:curry_category', 'never:curry_category', 'with:base_dish', 'never:base_dish',
-      'with:subzi_dish', 'never:subzi_dish', 'with:extra_dish', 'never:extra_dish',
+      'with:base_category', 'never:base_category', 'never:extra_category',
+      'never:curry_category', 'with:base_dish', 'never:base_dish',
+      'never:subzi_dish', 'never:extra_dish',
     ].sort());
     expect(addableSlots('curry', [])[0]).toBe('serve:base_category');
   });
 
   it('offers an extra specific curries, subzis and extras too', () => {
     const slots = addableSlots('extra', []);
-    for (const slot of ['serve:base_dish', 'with:curry_dish', 'never:curry_dish', 'with:subzi_dish', 'with:extra_dish', 'never:extra_dish'] as const) {
+    for (const slot of ['serve:base_dish', 'never:curry_dish', 'never:subzi_dish', 'never:extra_dish'] as const) {
       expect(slots).toContain(slot);
+    }
+  });
+
+  it('never offers only with for a side target: a link to sides is made as comes with', () => {
+    for (const type of ['base', 'curry', 'subzi', 'extra'] as const) {
+      expect(addableSlots(type, []).filter((s) => s.startsWith('with:') && isSideTarget(s.slice(5) as never))).toEqual([]);
     }
   });
 

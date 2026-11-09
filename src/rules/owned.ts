@@ -322,9 +322,10 @@ export const offersLink = (componentType: ComponentType, target: LinkTarget): bo
 };
 
 /**
- * The link slots "Add link" may create for a dish: served with bases first, then only with / never with
- * every offered target, specific dishes included. Slots the dish already fills are left out (a comes-with slot never
- * counts as filled).
+ * The link slots "Add link" may create for a dish: served with bases first, then "only with" for base targets and
+ * "never with" for every offered target, specific dishes included. A link to sides is made as "comes with" instead
+ * (see `offersComes`), so "only with" is not offered there. Slots the dish already fills are left out (a comes-with
+ * slot never counts as filled).
  */
 export const addableSlots = (componentType: ComponentType, links: DishLink[]): LinkSlot[] => {
   // A dish may come with several sides, so a comes-with slot is never taken.
@@ -333,7 +334,8 @@ export const addableSlots = (componentType: ComponentType, links: DishLink[]): L
   for (const target of LINK_TARGETS) {
     if (isServeTarget(target) && offersServe(componentType)) out.push(linkSlotOf({ mode: 'serve', target }));
     if (!offersLink(componentType, target)) continue;
-    out.push(linkSlotOf({ mode: 'with', target }), linkSlotOf({ mode: 'never', target }));
+    if (!isSideTarget(target)) out.push(linkSlotOf({ mode: 'with', target }));
+    out.push(linkSlotOf({ mode: 'never', target }));
   }
   return out.filter((slot) => !taken.includes(slot));
 };
