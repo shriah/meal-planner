@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, compileModel, score, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -41,6 +41,67 @@ const NOTHING: readonly number[] = [];
 const BRING_ROUNDS = 3;
 /** Most passes of the final descent; it stops sooner once a pass changes nothing. */
 const DESCENT_PASSES = 10;
+/** Default `constructionSample`. */
+const SAMPLE_SIZE = 10;
+/** Puts a brought dish's broken own rules ahead of every soft cost when choosing among a want's candidates. */
+const OVERRIDE_WEIGHT = 1e6;
+
+/**
+ * Which of a want's candidates to bring into slot `slot`: the one with the best score; ties go to the one
+ * planned fewest times in the week, then to the earlier in the order `candidates[(slot + k) % n]`, so
+ * meals in turn start from a different candidate. At most `limit` candidates (0 = all) are scored, taken
+ * in that order. Deterministic.
+ */
+export function chooseCandidate(
+  candidates: readonly number[],
+  slot: number,
+  scoreWith: (id: number) => Score,
+  timesPlanned: (id: number) => number,
+  limit = SAMPLE_SIZE,
+): number {
+  const n = candidates.length;
+  if (n <= 1) return candidates[0];
+  const k = limit > 0 && limit < n ? limit : n;
+  let best = candidates[slot % n];
+  let bestScore = scoreWith(best);
+  let bestTimes: number | undefined;
+  for (let j = 1; j < k; j++) {
+    const id = candidates[(slot + j) % n];
+    const s = scoreWith(id);
+    const c = compareScore(s, bestScore);
+    if (c > 0) continue;
+    if (c === 0) {
+      bestTimes ??= timesPlanned(best);
+      const times = timesPlanned(id);
+      if (times >= bestTimes) continue;
+      bestTimes = times;
+    } else {
+      bestTimes = undefined;
+    }
+    best = id;
+    bestScore = s;
+  }
+  return best;
+}
+
+/**
+ * How to judge a plan when choosing which candidate to bring: its hard score first, then the rules the
+ * brought dishes override (their own days, meals and "never planned automatically", which give way to a
+ * unit member, so an allowed candidate wins over one that would override them), then its soft score
+ * counted as if every pairing were only asked for (so the defaults that give way to unit members, such as
+ * variety, still tell the candidates apart).
+ */
+export function broughtScore(m: CompiledModel): (plan: PlanState) => Score {
+  let asked: CompiledModel | undefined;
+  return (plan) => {
+    asked ??= compileModel(
+      m.library,
+      m.constraints.map((c) => (c.kind === 'pair' && c.strength === 'must' ? { ...c, strength: 'prefer' as const } : c)),
+    );
+    const a = score(asked, plan);
+    return { hard: score(m, plan).hard, soft: a.hard * OVERRIDE_WEIGHT + a.soft };
+  };
+}
 
 type Snapshot = Readonly<SlotState>;
 const snapshot = (s: SlotState): Snapshot => ({ base: s.base, curry: s.curry, subzi: s.subzi, extras: s.extras });
@@ -60,7 +121,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const deadline = t0 + (opts.timeLimitMs ?? 300);
   const maxIterations = opts.maxIterations ?? 200_000;
   const plateau = opts.plateauIterations ?? 3000;
-  const sampleSize = opts.constructionSample ?? 10;
+  const sampleSize = opts.constructionSample ?? SAMPLE_SIZE;
   const temperature = opts.temperature ?? 1;
   const evaluate = (p: PlanState): Score => score(m, p);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
@@ -105,11 +166,14 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     for (const e of s.extras) if (by(e, 'extra')) return true;
     return false;
   };
+  const judgeBrought = hasPairs ? broughtScore(m) : evaluate;
+  const timesPlanned = (id: number) =>
+    plan.reduce((k, s) => (s.base === id || s.curry === id || s.subzi === id || s.extras.includes(id) ? k + 1 : k), 0);
   /**
    * After a change to slot `i`'s base, curry or subzi, first remove the sides the replaced dish brought
    * (`prev`) that no dish in the meal still brings, then, for each want of its dishes with no candidate in
-   * the meal, bring its first candidate into a role that is not pinned and is empty, or that holds a side
-   * the replaced dish brought.
+   * the meal, bring one of its candidates into a role that is not pinned and is empty, or that holds a side
+   * the replaced dish brought. Among several candidates that fit, `chooseCandidate` picks.
    * Unit members may take such a role; asked-for sides only fill an empty one. Extras are appended.
    * Repeats while anything changes, since a brought side can bring its own. Uses no randomness.
    */
@@ -117,26 +181,42 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     if (!hasPairs) return;
     const s = plan[i];
     let changed = false;
-    const place = (c: number, unit: boolean) => {
+    /** Whether `place(c, unit)` would put `c` in the meal. */
+    const fits = (c: number, unit: boolean): boolean => {
       const type = m.byId.get(c)?.componentType;
-      if (type === 'extra') {
-        if (!isFree(i, 'extras') || s.extras.includes(c)) return;
-        s.extras = [...s.extras, c];
-        changed = true;
-      } else if (type === 'curry' || type === 'subzi') {
-        const cur = s[type];
-        if (cur === c || !isFree(i, type)) return;
-        if (cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur))) {
-          s[type] = c;
-          changed = true;
-        }
-      }
+      if (type === 'extra') return isFree(i, 'extras') && !s.extras.includes(c);
+      if (type !== 'curry' && type !== 'subzi') return false;
+      const cur = s[type];
+      if (cur === c || !isFree(i, type)) return false;
+      return cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur));
+    };
+    const place = (c: number, unit: boolean) => {
+      if (!fits(c, unit)) return;
+      const type = m.byId.get(c)!.componentType;
+      if (type === 'extra') s.extras = [...s.extras, c];
+      else s[type as 'curry' | 'subzi'] = c;
+      changed = true;
+    };
+    const scoreWith = (unit: boolean) => (c: number): Score => {
+      const before = snapshot(s);
+      const was = changed;
+      place(c, unit);
+      const result = judgeBrought(plan);
+      restore(s, before);
+      changed = was;
+      return result;
     };
     const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
     const visit = (id: number | undefined, role: Role) => {
       if (id === undefined) return;
       for (const w of bringsWith(m, id, role, i).wants) {
-        if (!w.of.some(inMeal)) place(w.of[0], w.unit);
+        if (w.of.some(inMeal)) continue;
+        if (w.of.length === 1) {
+          place(w.of[0], w.unit);
+          continue;
+        }
+        const options = w.of.filter((c) => fits(c, w.unit));
+        if (options.length) place(chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize), w.unit);
       }
     };
     // The replaced dish's sides leave with it, unless a dish still in the meal brings them too.

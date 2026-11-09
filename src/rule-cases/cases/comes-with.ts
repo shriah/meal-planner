@@ -49,7 +49,6 @@ export const COMES_WITH_CASES: RuleCase[] = [
       nearNoRulesCount('Idiyappam'),
       noHardProblems(),
     ],
-    known: 'The planner always brings the first candidate in library order, so the second stew never comes with Idiyappam (choosing between the dishes of a link is Task 4).',
   },
   {
     kind: 'plan',

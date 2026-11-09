@@ -17,7 +17,7 @@ export {
   type CompiledModel, type SlotPair, type Brings, type Want, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';
-export { solve, clonePlan, type SolveOptions, type SolveResult, type StopReason } from './solver';
+export { solve, clonePlan, chooseCandidate, broughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
 export { mulberry32 } from './rng';
 export {
   buildModel, planWeek, toPlanSlots, fromPlanSlots, InvalidConstraintError,

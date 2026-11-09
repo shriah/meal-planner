@@ -149,4 +149,47 @@ describe('pairings', () => {
     expect(p).toBeDefined();
     expect(p!.message.endsWith('— replaced by your pick')).toBe(true);
   });
+
+  describe('a comes-with link naming two stews', () => {
+    const idiyappam = dish(20, 'Idiyappam', 'base');
+    const stewVeg = dish(21, 'Kerala Stew (Veg)', 'curry');
+    const stewNonVeg = dish(22, 'Kerala Stew (Non-Veg)', 'curry');
+    const record = (id: number, owned: ReturnType<typeof linkRule>): RuleRecord =>
+      ({ id, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: owned.owner_component_id } as RuleRecord);
+
+    it('a comes-with link replaced by a pin says so', () => {
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21], strength: 'always' }));
+      const out = planFromData({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [comes] }, {
+        seed: 3,
+        pins: { 'monday-breakfast': { base_id: 20, curry_id: 11 } },
+      });
+      const p = out.problems.find((x) => x.level === 'hard' && x.day === 'monday' && x.meal === 'breakfast' && x.ruleId === 5);
+      expect(p).toBeDefined();
+      expect(p!.message.endsWith('— replaced by your pick')).toBe(true);
+    });
+
+    it('the meal picker brings the stew the rules allow', () => {
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const notVeg: RuleRecord = {
+        id: 6, name: 'Idiyappam never with Kerala Stew (Veg)', enabled: true, created_at: '',
+        spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 21), strength: 'must' } },
+      } as RuleRecord;
+      const picker = slotConflicts(
+        { library: [pongal, idiyappam, stewVeg, stewNonVeg], categories: [], rules: [comes, notVeg] },
+        planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 }),
+        'monday', 'breakfast', 'base', [20],
+      );
+      expect(picker.get(20)).toBeUndefined();
+    });
+
+    it('a pairing it cannot hold names every stew', () => {
+      const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [20], strength: 'always' }));
+      const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 20, curry_id: 11 });
+      const problems = explainPlan({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes] }, plan);
+      expect(problems.filter((p) => p.ruleId === 8).map((p) => p.reason)).toEqual([
+        'Kerala Stew (Veg) or Kerala Stew (Non-Veg) is not served with Idiyappam: a meal holds one curry and Sambar is always served with it.',
+      ]);
+    });
+  });
 });
