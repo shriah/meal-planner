@@ -38,10 +38,29 @@ Agreed from my proposals (the user said "works"):
   "Comes with Sambar"), or locked by the user before a regenerate.
 - **The brought dish's own rules never limit the base or the curry** (user, after the builder check). Neither Papad's
   limits nor a missing pair may move the curry choice.
-- **Count and repeat limits do not stop a brought dish** (user). When the link names one dish, that dish is brought
+- **Count and repeat limits do not stop a brought dish** (user; generalised below to every link). When the link names one dish, that dish is brought
   whatever its count or repeat limits say ("Papad at most 2 a week", "Vary dishes across the week", "No dish on the same
   or next day"), and those limits are not charged for it. When the link names several, the limits are used only to
   choose among them; one of them is still brought.
+
+## Frequency rules follow the hierarchy (user, applies to all links)
+
+**A lower level's frequency rules never influence a higher level.** A link puts the dish it brings below the dish (or
+dishes) that brought it: Rice → Sambar brought by Rice → Papad brought by Rice when the curry is Sambar; Papad "served
+with" Rice sits below Rice. Frequency rules are count and repeat limits: the user's "at most N", "Vary dishes across the
+week", "No dish on the same or next day", and the like.
+
+- A brought dish's frequency rules never decide whether the dish above it is planned, nor whether the link brings
+  something. They only rank the choice among the link's several dishes.
+- This applies to **every** link that brings a dish — existing plain "Comes with" and "Served with" links included
+  (user), at every strength — not only the new conditional one. It is a planner change, not a change to any stored rule.
+- The brought dish's other rules (days, meals, never planned automatically) work as today: an Always link overrides
+  them, a softer link gives way to them.
+- Existing plans can come out differently: a side that today was dropped by its own limit is now brought. Existing rule
+  cases that rely on the old behaviour are updated with a note in their `why`; the "What gives way to a unit" table in
+  `2026-11-08-pairing-units-design.md`, the gives-way section of `2026-11-09-links-bring-dishes-design.md` and
+  `docs/architecture.md` are updated to state the hierarchy.
+- A dish the planner picks freely (not brought) is at its own level and its frequency rules work as today.
 
 ## Picks and locks (user)
 
@@ -154,6 +173,11 @@ and Sambar are in the shared library or added there:
   and the limit reports no violation for them.
 - A link naming Papad and a second crunchy extra, with Papad at most 2 a week: every Rice + Sambar meal has one of them,
   and the pick favours the other extra once Papad has reached its limit.
+- Existing links: Idiyappam always comes with Kerala Stew (Veg), with the stew limited to 2 a week: Idiyappam is planned
+  as often as without the limit, every Idiyappam meal has the stew. The same for a softer link and for a "Served with"
+  link.
+- A chain: a curry brought by a base, with an extra brought by that curry limited to once a week; neither the curry nor
+  the base is planned less often.
 - Papad and Rice locked in a meal: over many seeds, that meal gets Sambar more often than with Papad unlocked.
 - A conditional subzi link beats a plain Usually subzi link on the same base in Sambar meals, and does not suppress it
   in other meals.
