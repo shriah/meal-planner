@@ -128,13 +128,13 @@ export const COMES_WITH_CASES: RuleCase[] = [
     expect: [
       nearNoRulesCount('Idiyappam'),
       {
-        says: 'Kerala Stew (Veg) is in at least half of the Idiyappam meals',
+        says: 'Kerala Stew (Veg) is in most of the Idiyappam meals',
         check: (w) => {
           const idi = w.lib.dish('Idiyappam').id;
           const stew = w.lib.dish('Kerala Stew (Veg)').id;
           const meals = w.weeks.flat().filter((s) => idsOf(s).includes(idi));
           const k = meals.filter((s) => idsOf(s).includes(stew)).length;
-          return { pass: meals.length > 0 && k * 2 >= meals.length, got: `${k} of ${meals.length}` };
+          return { pass: meals.length > 0 && k * 2 > meals.length, got: `${k} of ${meals.length}` };
         },
         highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
       },
