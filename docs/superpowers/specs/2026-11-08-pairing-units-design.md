@@ -73,10 +73,23 @@ dish was planned recently. The cell above originally read "applies".
 | Built-ins: one base, one curry, one subzi, roles, no extra twice | applies | applies | applies |
 | The base's own rules (Pongal lunch-only) | applies to the base | applies | applies |
 
+*Note, 2026-11-09 (frequency rules follow the hierarchy, `2026-11-09-comes-with-when-curry-design.md`):* a brought dish sits
+below the dish that brought it, and its **frequency rules** never make that dish rarer. A frequency rule is a count across
+days, the week or per dish with an upper bound ("at most N", variety, spacing), or a prefer / avoid. Every one of them,
+whoever it belongs to, now gives way to every brought dish (`yieldsTo: 'ask'`):
+- "Default prefer-frequent / avoid-rare": the "Asked for" cell above originally read "applies"; it now gives way.
+- The side's own frequency rules (owned): they gave way to unit members only; now to asked-for sides too.
+- Hand-written frequency rules (a Rules page `limit` per day or week, `no_repeat`, `prefer`): they applied; now they give
+  way to asked-for sides. A hand-written rule's minimum ("at least N") still counts a brought dish: a rule with both a
+  minimum and a maximum is compiled as two constraints, and only the maximum gives way.
+- Not frequency, unchanged: the extras-per-meal caps and any per-meal `limit` (what one meal can hold), and every rule on
+  days, meals, "never with" and the like.
+
 In rule terms:
-- **Owned rules** (`owner_component_id`) and **default rules** (`default_key`) give way to unit members.
+- **Frequency constraints** (`isFrequencyBody` in `src/rules/record.ts`) give way to asked-for sides, owned or not.
+- Other constraints of **owned rules** (`owner_component_id`) and **default rules** (`default_key`) give way to unit members.
 - `sides-only-when-asked` also gives way to asked-for sides.
-- **Hand-written rules** and **built-ins** never give way.
+- Other **hand-written rules** and **built-ins** never give way.
 
 ## Which rules make units
 

@@ -162,6 +162,18 @@ export const nearNoRulesCount = (dish: string): PlanExpectation => ({
   },
 });
 
+/** The dish is planned at least about as often as without the case's rules (more often is fine). */
+export const notRarerThanNoRules = (dish: string): PlanExpectation => ({
+  says: `${dish} is planned at least about as often as without the case's rules`,
+  check: (w, ctx) => {
+    const id = w.lib.dish(dish).id;
+    const total = countOf(w, id);
+    const base = countOf(ctx.baseline(), id);
+    const pass = base < 4 ? total >= 4 : total >= base / 1.5;
+    return { pass, got: `${total} (${base} without the rules)` };
+  },
+});
+
 /** Every meal of the dish has at least one of these other dishes. */
 export const everyMealWithOneOf = (dish: string, oneOf: string[]): PlanExpectation => {
   const lacks = (w: CaseWeeks, s: PlanSlotLike) => !oneOf.some((n) => idsOf(s).includes(w.lib.dish(n).id));

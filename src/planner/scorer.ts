@@ -356,13 +356,15 @@ export function ownRulesOverridden(m: CompiledModel, id: number, role: Role, slo
 }
 
 /**
- * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a unit member
- * (by default "Prefer frequent dishes" and "Avoid rare dishes"): what the score leaves out when the dish is
- * brought as one. Memoised.
+ * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a brought dish
+ * (a unit member or an asked-for side): what the score leaves out when the dish is brought. By default
+ * "Prefer frequent dishes", "Avoid rare dishes" and "Curries, subzis and extras only when a rule asks". Memoised.
  */
-export function unitPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
+export function yieldedPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
   const ci = m.state.idIndex.get(id);
-  return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).preferUnit;
+  if (ci === undefined) return 0;
+  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  return memo.preferUnit + memo.preferAsk;
 }
 
 export interface SlotPair {

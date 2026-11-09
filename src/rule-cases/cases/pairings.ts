@@ -145,7 +145,6 @@ export const PAIRING_CASES: RuleCase[] = [
     group: 'Pairings',
     name: "A served side's limit does not make its base rarer",
     why: "A served dish's own limit made its base rarer: Papad is always served with Rice and limited to once a week, and Rice was planned far less often than without the link. A served dish's limits only rank the pick among a link's dishes.",
-    known: "a served dish's own limit makes its base rarer — fixed in Task 2",
     rules: (lib) => {
       const papad = lib.dish('Papad');
       const rice = lib.dish('Rice');

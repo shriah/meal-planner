@@ -52,9 +52,14 @@ describe('compileRules', () => {
       }
     });
 
-    it('extras caps and prefer-frequent give way to a unit only', () => {
-      for (const key of ['extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner', 'prefer-frequent']) {
-        expect(compile(withKey(rule(1, skip), { default_key: key }))[0]).toMatchObject({ yieldsTo: 'unit' });
+    it('extras caps give way to a unit only; prefer-frequent and avoid-rare to asked sides', () => {
+      for (const key of ['extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner']) {
+        const limit = { template: 'limit', params: { match: is('componentType', 'extra'), per: 'meal', max: 2, strength: 'must' } };
+        expect(compile(withKey(rule(1, limit), { default_key: key }))[0]).toMatchObject({ yieldsTo: 'unit' });
+      }
+      for (const key of ['prefer-frequent', 'avoid-rare']) {
+        const prefer = { template: 'prefer', params: { match: is('frequency', 'frequent'), direction: 'prefer', weight: 1 } };
+        expect(compile(withKey(rule(1, prefer), { default_key: key }))[0]).toMatchObject({ yieldsTo: 'ask' });
       }
     });
 
@@ -62,10 +67,35 @@ describe('compileRules', () => {
       expect(compile(withKey(rule(2, skip), { default_key: 'sides-only-when-asked' }))[0]).toMatchObject({ yieldsTo: 'ask' });
     });
 
-    it('leaves hand-written rules unmarked', () => {
-      const [c] = compile(rule(1, skip));
-      expect(c).not.toHaveProperty('yieldsTo');
-      expect(c).not.toHaveProperty('owner');
+    it('hand-written frequency rules give way to asked sides; other hand-written rules are unmarked', () => {
+      const [weekly] = compile(rule(1, { template: 'limit', params: { match: is('id', 1), per: 'week', max: 3 } }));
+      expect(weekly).toMatchObject({ yieldsTo: 'ask' });
+      expect(weekly).not.toHaveProperty('owner');
+
+      const [exclude] = compile(rule(1, { template: 'exclude', params: { match: is('id', 1) } }));
+      expect(exclude).not.toHaveProperty('yieldsTo');
+      expect(exclude).not.toHaveProperty('owner');
+
+      const [perMeal] = compile(rule(1, { template: 'limit', params: { match: is('id', 1), per: 'meal', max: 1 } }));
+      expect(perMeal).not.toHaveProperty('yieldsTo');
+
+      const [prefer] = compile(rule(1, { template: 'prefer', params: { match: is('id', 1), direction: 'prefer' } }));
+      expect(prefer).toMatchObject({ kind: 'prefer', yieldsTo: 'ask' });
+    });
+
+    it('splits a frequency rule with a minimum: the minimum still counts a brought dish, the maximum gives way', () => {
+      const cs = compile(rule(4, { template: 'limit', params: { match: is('id', 1), per: 'week', min: 1, max: 3, strength: 'must' } }));
+      expect(cs.map((c) => [c.id, c.kind === 'count' && c.bounds])).toEqual([
+        ['rule:4:0', { hardMin: 1 }],
+        ['rule:4:0:max', { hardMax: 3 }],
+      ]);
+      expect(cs[0]).not.toHaveProperty('yieldsTo');
+      expect(cs[1]).toMatchObject({ yieldsTo: 'ask' });
+    });
+
+    it("an owned rule's frequency constraints give way to asked sides and keep the owner", () => {
+      const cs = compile(withKey(rule(1, { template: 'limit', params: { match: is('id', 7), per: 'week', max: 2 } }), { owner_component_id: 7 }));
+      expect(cs).toEqual([expect.objectContaining({ owner: 7, yieldsTo: 'ask' })]);
     });
 
     it('compiles an owned serve rule to a pair with neither field', () => {

@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { bringsWith, compareScore, ownRulesOverridden, score, unitPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { bringsWith, compareScore, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -45,16 +45,17 @@ const DESCENT_PASSES = 10;
 const SAMPLE_SIZE = 10;
 /** Puts a brought dish's broken own rules ahead of every soft cost when choosing among a want's candidates. */
 const OVERRIDE_WEIGHT = 1e6;
-/** Bound on `w` in `chooseCandidate`'s weighted use. */
+/** Bound on `w` in `chooseCandidate`'s weighted use: one candidate is weighted at most 2 × this past another. */
 const MAX_WEIGHT = 2;
 /** Mixed into the seed for the stream of candidate offsets, kept apart from the search's own `rng`. */
 const OFFSET_SEED_MIX = 0x9e3779b9;
 
 /**
  * Which of a want's candidates to bring into slot `slot`: the one with the best score; ties go to the one
- * with the lowest weighted use `(timesPlanned + o) × 2^w`. `w` comes from `weightOf` (0 when omitted),
- * clamped to [−2, 2], so a frequent candidate (w = −1) comes about twice as often as a normal one and a
- * rare one (w = +1) about half as often. `o` in [0, 1) comes from `offsetOf` (0.5 when omitted); the solver
+ * with the lowest weighted use `(timesPlanned + o) × 2^w`. `w` is `weightOf` (0 when omitted) less the lowest
+ * `weightOf` among the scored candidates, at most 2 × MAX_WEIGHT, so a weight every candidate shares changes
+ * nothing; a frequent candidate (weight −1) comes about twice as often as a normal one and a rare one (+1)
+ * about half as often. `o` in [0, 1) comes from `offsetOf` (0.5 when omitted); the solver
  * draws it per candidate from the seed, so which candidate a week starts with varies with the seed and a
  * candidate with few chances is still planned in some weeks. Remaining ties go to the earlier in the order
  * `candidates[(slot + k) % n]`, so meals in turn start from a different candidate. At most `limit`
@@ -72,7 +73,9 @@ export function chooseCandidate(
   const n = candidates.length;
   if (n <= 1) return candidates[0];
   const k = limit > 0 && limit < n ? limit : n;
-  const weightedUse = (id: number) => (timesPlanned(id) + offsetOf(id)) * 2 ** Math.min(MAX_WEIGHT, Math.max(-MAX_WEIGHT, weightOf(id)));
+  let lowest = Infinity;
+  for (let j = 0; j < k; j++) lowest = Math.min(lowest, weightOf(candidates[(slot + j) % n]));
+  const weightedUse = (id: number) => (timesPlanned(id) + offsetOf(id)) * 2 ** Math.min(2 * MAX_WEIGHT, weightOf(id) - lowest);
   let best = candidates[slot % n];
   let bestScore = scoreWith(best);
   let bestUse: number | undefined;
@@ -96,14 +99,16 @@ export function chooseCandidate(
 }
 
 /**
- * `w` for `chooseCandidate` at slot `slot`: the weight of the prefer rules that match a candidate there but
- * give way to a unit member, so the score cannot see them for a brought dish ("Prefer frequent dishes",
- * "Avoid rare dishes").
+ * The weight for `chooseCandidate` at slot `slot`: the prefer rules that match a candidate there but give way
+ * to a brought dish, so the score cannot see them ("Prefer frequent dishes", "Avoid rare dishes", a dish's
+ * own and hand-written prefer rules). "Curries, subzis and extras only when a rule asks" gives way too and
+ * adds the same weight to every candidate of one type (a link's candidates are one type); `chooseCandidate`
+ * weighs candidates against the lowest of them, so it cannot change their order.
  */
 export function candidateWeight(m: CompiledModel, slot: number): (id: number) => number {
   return (id) => {
     const type = m.byId.get(id)?.componentType;
-    return type ? unitPreferWeight(m, id, type, slot) : 0;
+    return type ? yieldedPreferWeight(m, id, type, slot) : 0;
   };
 }
 

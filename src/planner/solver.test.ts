@@ -3,7 +3,7 @@ import type { Constraint, CountConstraint } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, score, type CompiledModel, type Score } from './scorer';
-import { clonePlan, solve } from './solver';
+import { chooseCandidate, clonePlan, solve } from './solver';
 import { component } from './test-utils';
 import { DAYS, MEALS, SLOT_COUNT, slotIndex, type ComponentLike, type PlanState } from './types';
 
@@ -152,6 +152,17 @@ describe('solver', () => {
         expect(frequent).toBeGreaterThan(2 * rare);
       });
 
+      it('a frequent candidate is chosen more often than a rare one when the frequency prefers give way to asked sides', () => {
+        // The defaults as compiled since frequency rules give way to every brought dish: all three on 'ask'.
+        const askRules: Constraint[] = [
+          ...frequencyRules.map((c) => ({ ...c, yieldsTo: 'ask' as const })),
+          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 2, yieldsTo: 'ask' },
+        ];
+        const { frequent, rare } = curryCounts([want, ...askRules]);
+        expect(rare).toBeGreaterThan(0);
+        expect(frequent).toBeGreaterThan(2 * rare);
+      });
+
       it('a rare candidate of a base planned twice a week is still planned in some weeks', () => {
         // Base 1 is pinned at Tuesday and Thursday lunch (slots 4 and 10) and allowed nowhere else; it
         // always brings normal curry 11 or rare curry 12. Sides come only when asked for, at a cost high
@@ -210,6 +221,31 @@ describe('solver', () => {
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);
+  });
+});
+
+describe('chooseCandidate', () => {
+  const tie = () => ({ hard: 0, soft: 0 });
+  const used: Record<number, number> = { 1: 3, 2: 2 };
+  const pick = (weights: Record<number, number>) =>
+    chooseCandidate([1, 2], 0, tie, (id) => used[id], 0, (id) => weights[id], () => 0);
+
+  it('picks the lowest weighted use among equal scores', () => {
+    // 1: 3 × 2^0 = 3; 2: 2 × 2^1 = 4.
+    expect(pick({ 1: 0, 2: 1 })).toBe(1);
+  });
+
+  it('a weight every candidate shares does not change the pick, even past the bound on w', () => {
+    expect(pick({ 1: 2, 2: 3 })).toBe(1);
+    expect(pick({ 1: 20, 2: 21 })).toBe(1);
+  });
+
+  it('bounds how far apart two candidates are weighted', () => {
+    // A spread of 5 counts as 4: 1: 3 × 2^0 = 3; 2: 0.25 × 2^4 = 4.
+    const rarely: Record<number, number> = { 1: 3, 2: 0.25 };
+    expect(chooseCandidate([1, 2], 0, tie, (id) => rarely[id], 0, (id) => ({ 1: 0, 2: 5 })[id]!, () => 0)).toBe(1);
+    // A spread of 3 is kept: 2: 0.25 × 2^3 = 2.
+    expect(chooseCandidate([1, 2], 0, tie, (id) => rarely[id], 0, (id) => ({ 1: 0, 2: 3 })[id]!, () => 0)).toBe(2);
   });
 });
 
