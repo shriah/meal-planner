@@ -152,6 +152,37 @@ describe('solver', () => {
         expect(frequent).toBeGreaterThan(2 * rare);
       });
 
+      it('a rare candidate of a base planned twice a week is still planned in some weeks', () => {
+        // Base 1 is pinned at Tuesday and Thursday lunch (slots 4 and 10) and allowed nowhere else; it
+        // always brings normal curry 11 or rare curry 12. Sides come only when asked for, at a cost high
+        // enough that construction does not leave 11 or 12 in other meals to sway the choice.
+        const lib2: ComponentLike[] = library.map((c) => (c.id === 12 ? { ...c, frequency: 'rare' as const } : c));
+        const notElsewhere = (id: string, scope: { days?: (typeof DAYS)[number][]; meals?: (typeof MEALS)[number][] }): Constraint => (
+          { kind: 'count', id, label: id, origin: 'rule', select: is('id', 1), groupBy: 'slot', scope, bounds: { hardMax: 0 } });
+        const constraints: Constraint[] = [
+          want,
+          ...frequencyRules,
+          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 20, yieldsTo: 'ask' },
+          notElsewhere('base-1-days', { days: DAYS.filter((d) => d !== 'tuesday' && d !== 'thursday') }),
+          notElsewhere('base-1-meals', { meals: ['breakfast', 'dinner'] }),
+        ];
+        const pins = { 'tuesday-lunch': { base_id: 1 }, 'thursday-lunch': { base_id: 1 } };
+        let normal = 0;
+        let rare = 0;
+        for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
+          const r = solve(buildModel({ library: lib2, constraints }), { ...quick, seed, pins });
+          expect(r.score.hard).toBe(0);
+          for (const s of r.plan) {
+            if (s.base !== 1) continue;
+            if (s.curry === 11) normal++;
+            if (s.curry === 12) rare++;
+          }
+        }
+        expect(normal + rare).toBe(16);
+        expect(rare).toBeGreaterThan(0);
+        expect(normal).toBeGreaterThan(rare);
+      });
+
       it('without frequency rules candidates alternate evenly', () => {
         const { frequent, rare } = curryCounts([want]);
         expect(Math.abs(frequent - rare)).toBeLessThanOrEqual(1);
