@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { readLink, clashCurryCategories, pairingCategories, pairingRule, ruleDays, ruleMeals, type DishLink } from '@/rules';
+import { readLink, clashCurryCategories, linkRule, pairingCategories, pairingRule, ruleDays, ruleMeals, type DishLink, type RuleRecord } from '@/rules';
 import * as foodDb from '@/services/food-db';
 import { getComponentsByType, getOwnedRule, saveComponent } from '@/services/food-db';
 import { ComponentForm } from './ComponentForm';
@@ -1071,6 +1071,25 @@ describe('ComponentForm draft prefill', () => {
     await userEvent.click(await readyButton('Save Curry'));
 
     await waitFor(async () => expect((await getOwnedRule(curryId, 'serve:base_dish'))?.enabled).toBe(true));
+  });
+
+  it('merges a drafted served-with link into the enabled link of its slot, not a switched-off one', async () => {
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', ...tags });
+    const dosa = await saveComponent(undefined, { name: 'Dosa', componentType: 'base', ...tags });
+    const pongal = await saveComponent(undefined, { name: 'Pongal', componentType: 'base', ...tags });
+    const curryId = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    const owner = { id: curryId, name: 'Sambar' };
+    // The switched-off link has the lower id, so a lowest-id pick would land on it.
+    const offId = await db.rules.add({ ...linkRule(owner, { mode: 'serve', target: 'base_dish', values: [pongal] }), enabled: false, owner_component_id: curryId, created_at: '' } as RuleRecord) as number;
+    const onId = await db.rules.add({ ...linkRule(owner, { mode: 'serve', target: 'base_dish', values: [idli] }), enabled: true, owner_component_id: curryId, created_at: '' } as RuleRecord) as number;
+
+    render(<LiveEditForm componentId={curryId} draftLinks={[{ mode: 'serve', target: 'base_dish', values: [idli, dosa], strength: 'always' }]} />);
+    await userEvent.click(await readyButton('Save Curry'));
+
+    await waitFor(async () => expect(readLink((await db.rules.get(onId))!)).toMatchObject({ values: [idli, dosa] }));
+    const off = (await db.rules.get(offId))!;
+    expect(off.enabled).toBe(false);
+    expect(readLink(off)).toMatchObject({ values: [pongal] });
   });
 
   it('ignores a draft when editing an existing dish', async () => {

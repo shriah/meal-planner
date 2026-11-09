@@ -249,7 +249,7 @@ named dish would break there, and `simulate_with_rule` for the comparison below)
 (`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text. `propose_dish` can
 include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together. `propose_pairing` drafts served-with links for a dish that
 already exists; "Review pairing" opens that dish's form in edit mode with the draft merged over its stored links, and saving
-writes only the new link.
+writes only the new link. Both draft tools also take `comes_with` (sides the dish brings along, one link per entry, appended as new links and never merged); `propose_pairing` then accepts a base too.
 Each question makes at most 5 requests to Gemini (the last one without tools, so it must answer); the prompt
 tells the model to answer from the slice when it can and to batch its tool calls into one step.
 If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in

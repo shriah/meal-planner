@@ -239,12 +239,17 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const [draftMerged, setDraftMerged] = useState(false)
   if (mode === 'edit' && draftLinks?.length && lookup.loaded && !draftMerged) {
     setDraftMerged(true)
-    // Each drafted link takes the place of the first stored link of its kind (keeping its rule id), or is added.
+    // A drafted served-with link takes the place of the stored link of its kind: the enabled one, or the first when
+    // none is enabled (as propose_pairing reads it). A drafted comes-with link is always a new link.
     const merged = [...storedLinks]
     const added: DishLink[] = []
     const replaced: number[] = []
+    const free = (l: DishLink) => l.ruleId !== undefined && !replaced.includes(l.ruleId)
     for (const link of draftLinks) {
-      const i = merged.findIndex((l) => l.ruleId !== undefined && !replaced.includes(l.ruleId) && linkSlotOf(l) === linkSlotOf(link))
+      const slot = linkSlotOf(link)
+      const same = (l: DishLink) => free(l) && linkSlotOf(l) === slot
+      const enabled = merged.findIndex((l) => same(l) && !isOff(l))
+      const i = link.mode === 'comes' ? -1 : enabled >= 0 ? enabled : merged.findIndex(same)
       if (i < 0) {
         added.push(link)
         continue

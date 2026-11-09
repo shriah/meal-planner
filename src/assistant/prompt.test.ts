@@ -47,7 +47,8 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain(REFUSAL);
     for (const t of TOOL_DECLARATIONS) expect(SYSTEM_PROMPT).toContain(t.name);
     for (const id of TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t))) expect(SYSTEM_PROMPT).toContain(id);
-    for (const id of OWNED_ONLY_TEMPLATES) expect(SYSTEM_PROMPT).not.toContain(id);
+    // The comes_with draft parameter shares its name with the hidden template, so look for the template's own line.
+    for (const id of OWNED_ONLY_TEMPLATES) expect(SYSTEM_PROMPT).not.toMatch(new RegExp(`^- ${id} \\(`, 'm'));
     expect(SYSTEM_PROMPT).toContain('Monday');
   });
   it('shows an exclude example that RuleSpecSchema accepts', () => {
