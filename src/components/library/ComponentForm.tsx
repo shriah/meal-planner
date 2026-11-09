@@ -203,11 +203,16 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const links = form.links ?? storedLinks
   // Save is held back only by a conflict the edits introduced; one already stored still shows as a warning but
   // does not stop unrelated edits from being saved.
+  // Until the user picks one, default to the first category of the matching kind.
+  const baseCategoryId =
+    form.base_category_id || (componentType === 'base' ? String(baseCategories?.[0]?.id ?? '') : '')
   const self = { id: component?.id, name: form.name, componentType }
+  // A base is judged by the category chosen in the form; the baseline by the one stored, so moving it is an edit too.
+  const editedSelf = { ...self, ...(componentType === 'base' && baseCategoryId ? { base_category_id: Number(baseCategoryId) } : {}) }
   const blockingOf = (list: DishLink[], warnings: { link: number; message: string; blocking?: boolean }[]) =>
     warnings.filter((w) => w.blocking).map((w) => `${linkKey(list[w.link], w.link)}|${w.message}`)
   const storedBlocking = blockingOf(form.linksBase ?? storedLinks, useLinkWarnings(self, form.linksBase ?? storedLinks))
-  const linkBlocked = blockingOf(links, useLinkWarnings(self, links)).some((k) => !storedBlocking.includes(k))
+  const linkBlocked = blockingOf(links, useLinkWarnings(editedSelf, links)).some((k) => !storedBlocking.includes(k))
   // Stored links that are switched off (as an upgrade may leave a hand-written pairing). One left as stored stays
   // off and is marked so; a changed one is switched on when saved.
   const offRuleIds = owned.filter((r) => !r.enabled).map((r) => r.id)
@@ -262,9 +267,6 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
     setForm((s) => ({ ...s, links: [...merged, ...added], linksBase: base }))
   }
 
-  // Until the user picks one, default to the first category of the matching kind.
-  const baseCategoryId =
-    form.base_category_id || (componentType === 'base' ? String(baseCategories?.[0]?.id ?? '') : '')
   const extraCategoryId =
     form.extra_category_id || (componentType === 'extra' ? String(extraCategories?.[0]?.id ?? '') : '')
 
@@ -538,6 +540,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             dishName={form.name}
             componentType={componentType}
             selfId={component?.id}
+            baseCategoryId={editedSelf.base_category_id}
             links={links}
             offRuleIds={shownOff}
             onEditingChange={setEditingLink}

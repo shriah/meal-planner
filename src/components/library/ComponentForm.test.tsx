@@ -1179,3 +1179,47 @@ describe('ComponentForm links: one always curry per base', () => {
     await renameAndExpectEnabled();
   });
 });
+
+describe('ComponentForm links: a base judged by the category being edited', () => {
+  /** Idli (Rice Plates) always comes with Rasam; Sambar is always served with every Tiffin base. */
+  async function setup() {
+    const riceId = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const tiffinId = await addCategory({ kind: 'base', name: 'Tiffin' });
+    const rasam = await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags }, {});
+    await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags }, {}, [
+      { kind: 'add', link: { mode: 'serve', target: 'base_category', values: [tiffinId], strength: 'always' } },
+    ]);
+    const idli = await saveComponent(undefined, { name: 'Idli', componentType: 'base', base_category_id: riceId, ...tags }, {}, [
+      { kind: 'add', link: { mode: 'comes', target: 'curry_dish', values: [rasam], strength: 'always' } },
+    ]);
+    return { idli, before: await foodDb.getOwnedRules(idli) };
+  }
+
+  const loadOrders = [
+    ['before the library loads', (id: number) => render(<LiveEditForm componentId={id} />)],
+    ['once the library has loaded', (id: number) => {
+      function OpenWhenLoaded() {
+        return useLibraryLookup().loaded ? <LiveEditForm componentId={id} /> : null;
+      }
+      return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    }],
+  ] as const;
+
+  it.each(loadOrders)('moving the base into a category whose curry is always served with it blocks Save, opened %s', async (_, open) => {
+    const { idli, before } = await setup();
+    open(idli);
+    expect(await screen.findByText(/Idli always comes with Rasam/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Base' })).toBeEnabled());
+    await userEvent.click(await screen.findByRole('combobox', { name: 'Base Category' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Tiffin' }));
+
+    expect(await screen.findByText('Sambar is always served with Idli, which leaves no room for Rasam, and a meal holds one curry.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save Base' })).toBeDisabled();
+    // Back in its own category, nothing clashes and nothing stored has changed.
+    await userEvent.click(screen.getByRole('combobox', { name: 'Base Category' }));
+    await userEvent.click(screen.getByRole('option', { name: 'Rice Plates' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Save Base' })).toBeEnabled());
+    expect(screen.queryByText(/leaves no room for Rasam/)).toBeNull();
+    expect(await foodDb.getOwnedRules(idli)).toEqual(before);
+  });
+});

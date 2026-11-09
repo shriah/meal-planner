@@ -11,6 +11,8 @@ interface LinkListProps {
   dishName: string
   componentType: ComponentType
   selfId?: number
+  /** For a base, the category the form has chosen, which may differ from the stored one. */
+  baseCategoryId?: number
   links: DishLink[]
   /** Rule ids of links that are stored switched off; they are shown marked "(off)". */
   offRuleIds?: readonly number[]
@@ -20,7 +22,7 @@ interface LinkListProps {
 }
 
 /** The problems with a dish's links; empty until the library has loaded, as nothing is known about it before. */
-export function useLinkWarnings(self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[]): LinkWarning[] {
+export function useLinkWarnings(self: { id?: number; name: string; componentType: ComponentType; base_category_id?: number }, links: DishLink[]): LinkWarning[] {
   const lookup = useLibraryLookup()
   return lookup.loaded ? linkWarnings(self, links, lookup, linkNames(lookup)) : []
 }
@@ -32,7 +34,7 @@ export const linkKey = (link: DishLink, index: number): string => (link.ruleId !
 const limitsOnly = (link: DishLink) => link.mode === 'with' && isSideTarget(link.target)
 
 /** A dish's links as sentences, each editable in place, plus an "Add link" flow. */
-export function LinkList({ dishName, componentType, selfId, links, offRuleIds = [], onChange, onEditingChange }: LinkListProps) {
+export function LinkList({ dishName, componentType, selfId, baseCategoryId, links, offRuleIds = [], onChange, onEditingChange }: LinkListProps) {
   const lookup = useLibraryLookup()
   // The key of the link being edited (its rule id, so two links of one kind stay apart), 'adding' while adding, or null.
   const [editing, setEditing] = useState<string | null>(null)
@@ -43,7 +45,7 @@ export function LinkList({ dishName, componentType, selfId, links, offRuleIds = 
   }, [open, onEditingChange])
   const names = linkNames(lookup)
   // Nothing is known about the library until it has loaded, so every link would look unpairable.
-  const warnings = useLinkWarnings({ id: selfId, name: dishName, componentType }, links)
+  const warnings = useLinkWarnings({ id: selfId, name: dishName, componentType, base_category_id: baseCategoryId }, links)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
   const ready = lookup.loaded
   const name = dishName.trim() || 'This dish'
