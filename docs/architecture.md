@@ -120,14 +120,13 @@ picked, and a replaced base takes the sides it brought with it.
 Strength is one set of words, `STRENGTH_WORDS` in `src/rules/levels.ts`: **Always** (`must`), **Usually**, **Often** and
 **Sometimes** (`prefer` with cost 10, 6 or 3). Links, the Rules page cost select and the assistant all use it. A stored cost
 reads back as Usually at 8 or more, Often at 5 to 7 and Sometimes at 4 or less, so older links keep their meaning. A scope limits a link to some days or meals. Storage is unchanged: "only with base categories" is a
-`pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other "never with" link an `avoid_with` rule whose other
+`pairs_with` rule (which also accepts `scope`, editable on the Rules page), every other link ("never with", or "only with" a dish or a non-base category) an `avoid_with` rule whose other
 side is the dish type plus the (negated) categories; a comes link is a `comes_with` rule and a served-with link a `require_with` rule.
 
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
 option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` decides what the
-flow offers: Served with (base targets, for every dish but a base), then "Only with" and "Never with" for base targets and "Comes with" and
-"Never with" for side targets (`offersComes`), specific dishes included; a comes slot is never used up, so a dish may hold several. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+flow offers: `addableSlots` lists the slots Add may still fill (served with for every dish but a base; "with" and "never" per target `offersLink` allows, specific dishes included; comes links never count as taken). `LinkEditor` then offers "Comes with" and "Never with" for side targets and "Served with", "Only with" and "Never with" for base targets, and "Comes with" wherever `offersComes` allows, as often as wanted, so a dish may hold several. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links are tracked by rule id (`DishLink.ruleId`; `readOwned` keeps every link, `linkChanges` diffs the form's links against the stored ones, and `saveComponent(..., links)` and `pendingRules(..., links)` take them), so links left untouched are never rewritten on save. `link-warnings.ts` shows
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
