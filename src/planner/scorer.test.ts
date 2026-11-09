@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
 import { all, is, oneOf } from './matcher';
-import { bringsWith, compareScore, compileModel, explain, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
+import { bringsWith, compareScore, compileModel, explain, mealBrings, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
 import { component } from './test-utils';
 import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
 
@@ -355,5 +355,62 @@ describe('pairs naming several candidates', () => {
     const m = compileModel(lib, [pair([11, 12], { when: is('role', 'curry') })]);
     expect(score(m, lunch({ base: 1, curry: 11 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 13 })).hard).toBe(1);
+  });
+});
+
+describe('pairs that wait for a curry or subzi in the meal', () => {
+  const rice = component('base', { id: 1, name: 'Rice' });
+  const sambar = component('curry', { id: 2, name: 'Sambar' });
+  const rasam = component('curry', { id: 3, name: 'Rasam' });
+  const beans = component('subzi', { id: 4, name: 'Beans Poriyal' });
+  const aloo = component('subzi', { id: 5, name: 'Aloo Gobi' });
+  const papad = component('extra', { id: 6, name: 'Papad' });
+  const lib = [rice, sambar, rasam, beans, aloo, papad];
+  const pair = (of: number, p: Partial<PairConstraint> = {}): PairConstraint => ({
+    kind: 'pair', id: `pair-${of}`, label: 'Comes with', origin: 'rule', when: is('id', 1), of: is('id', of), strength: 'must', ...p,
+  });
+  const curryIs = (...ids: number[]) => all(is('role', 'curry'), oneOf('id', ids));
+  const subziIs = (...ids: number[]) => all(is('role', 'subzi'), oneOf('id', ids));
+  const slot = slotIndex('monday', 'lunch');
+  const lunch = (s: Partial<SlotState>) => planWith([['monday', 'lunch', s]]);
+
+  it('a conditional pair holds only when the meal has its curry', () => {
+    const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2)] })]);
+    expect(score(m, lunch({ base: 1, curry: 2 })).hard).toBe(1);
+    expect(score(m, lunch({ base: 1, curry: 2, extras: [6] })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 3 })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1 })).hard).toBe(0);
+  });
+
+  it("a met conditional pair takes the subzi role from its dish's plain pair", () => {
+    const m = compileModel(lib, [pair(5, { ruleId: 1 }), pair(4, { ruleId: 2, inMeal: [curryIs(2)] })]);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 })).hard).toBe(1);
+    expect(score(m, lunch({ base: 1, curry: 3, subzi: 5 })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 3, subzi: 4 })).hard).toBe(1);
+    expect(slotPairs(m, lunch({ base: 1, curry: 2, subzi: 4 }), slot)).toEqual([
+      { candidates: [5], by: 1, ruleId: 1, unit: false, suppressed: true },
+      { candidates: [4], component: 4, by: 1, ruleId: 2, unit: true },
+    ]);
+    expect(slotPairs(m, lunch({ base: 1, curry: 3, subzi: 5 }), slot)).toEqual([
+      { candidates: [5], component: 5, by: 1, ruleId: 1, unit: true },
+    ]);
+  });
+
+  it('mealBrings adds the conditional want only when the curry is there', () => {
+    const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2, 3)] })]);
+    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true }] });
+    expect(mealBrings(m, { base: 1, curry: 3, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true }] });
+    expect(mealBrings(m, { base: 1, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
+    expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [] });
+  });
+
+  it('a curry-and-subzi pair needs both', () => {
+    const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2), subziIs(4)] })]);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 })).hard).toBe(1);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4, extras: [6] })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 3, subzi: 4 })).hard).toBe(0);
+    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
   });
 });

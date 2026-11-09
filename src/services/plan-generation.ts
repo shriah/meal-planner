@@ -1,6 +1,6 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
-  bringsWith, broughtScore, buildModel, candidateWeight, chooseCandidate, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
+  bringsWith, broughtScore, buildModel, candidateWeight, chooseCandidate, explain, fromPlanSlots, mealBrings, planWeek, score, slotIndex, slotPairs,
   MEALS, type Brings, type Justification, type Meal, type ModelInput, type Pins, type Role,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
@@ -217,10 +217,10 @@ export function slotConflicts(
     slot.base = id;
     if (original.base !== undefined) {
       const stillBrought = (c: number) => {
-        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && candidatesOf(bringsWith(m, d, role, i)).includes(c);
+        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && candidatesOf(mealBrings(m, slot, i, d, role)).includes(c);
         return by(slot.base, 'base') || by(slot.curry, 'curry') || by(slot.subzi, 'subzi') || slot.extras.some((e) => by(e, 'extra'));
       };
-      for (const side of candidatesOf(bringsWith(m, original.base, 'base', i))) {
+      for (const side of candidatesOf(mealBrings(m, original, i, original.base, 'base'))) {
         const type = typeOf.get(side);
         if (type === 'extra') {
           if (slot.extras.includes(side) && !stillBrought(side)) slot.extras = slot.extras.filter((e) => e !== side);
@@ -242,7 +242,7 @@ export function slotConflicts(
       bringSide(side);
       const type = typeOf.get(side);
       if (type !== 'curry' && type !== 'subzi' && type !== 'extra') return;
-      for (const w of bringsWith(m, side, type, i).wants) {
+      for (const w of mealBrings(m, slot, i, side, type).wants) {
         const next = w.of[0];
         const role = typeOf.get(next);
         if (w.unit && !w.of.some(inMeal) && !((role === 'curry' || role === 'subzi') && slot[role] !== undefined)) bringSide(next);
@@ -256,7 +256,7 @@ export function slotConflicts(
       Object.assign(slot, before);
       return result;
     };
-    for (const w of bringsWith(m, id, 'base', i).wants) {
+    for (const w of mealBrings(m, slot, i, id, 'base').wants) {
       if (!w.unit || w.of.some(inMeal)) continue;
       bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned, undefined, candidateWeight(m, i)));
     }

@@ -385,7 +385,6 @@ function conditionalCases(): RuleCase[] {
       rules: papadOnSambar,
       given: () => [CURRY_AT_EVERY_MEAL],
       expect: [EVERY_RICE_SAMBAR_HAS_PAPAD, ...NO_OTHER_PAPAD, noHardProblems()],
-      known: 'the planner ignores the condition, so Papad comes with every Rice meal, not only Rice with Sambar — fixed in Task 6',
     },
     {
       kind: 'plan',
@@ -434,7 +433,6 @@ function conditionalCases(): RuleCase[] {
         mondayLunchHas('Papad', false, 'pinned Monday lunch of Rice, Rasam and Beans Poriyal'),
       ],
       pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Rasam').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
-      known: 'the planner ignores the condition, so Papad comes with every Rice meal, whatever its curry and subzi — fixed in Task 6',
     },
     {
       kind: 'plan',
@@ -485,7 +483,6 @@ function conditionalCases(): RuleCase[] {
         everyPicked('Every Rice meal with Sambar has Beans Poriyal', riceSambar, subziIs('Beans Poriyal')),
         mostPicked('Aloo Gobi is in most other Rice meals', allOf(baseIs('Rice'), not(curryIs('Sambar'))), subziIs('Aloo Gobi'), 1, 2),
       ],
-      known: 'the planner ignores the condition, so Beans Poriyal comes with every Rice meal and Aloo Gobi never does — fixed in Task 6',
     },
     {
       kind: 'plan',
@@ -541,7 +538,6 @@ function conditionalCases(): RuleCase[] {
       given: () => [CURRY_AT_EVERY_MEAL],
       pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Rasam').id } },
       expect: [mondayLunchHas('Papad', false), EVERY_RICE_SAMBAR_HAS_PAPAD],
-      known: 'the planner ignores the condition, so a locked Rice and Rasam meal has Papad — fixed in Task 6',
     },
   ];
 }
