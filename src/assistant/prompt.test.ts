@@ -67,6 +67,10 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toMatch(/touchedByRule/);
     expect(SYSTEM_PROMPT).toMatch(/reshuffled/);
   });
+  it('teaches comes_with owner first: a base brings its curry, never a curry its base', () => {
+    expect(SYSTEM_PROMPT).toContain('"Idiyappam comes with Kerala Stew"');
+    expect(SYSTEM_PROMPT).not.toMatch(/Kerala Stew comes with Idiyappam/);
+  });
   it('keeps day and meal out of match fields', () => {
     expect(SYSTEM_PROMPT).toMatch(/Match fields: [^.]*\./);
     expect(SYSTEM_PROMPT.match(/Match fields: ([^.]*)\./)![1]).not.toMatch(/\b(day|meal|role)\b/);
