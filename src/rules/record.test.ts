@@ -44,10 +44,21 @@ describe('compileRules', () => {
       for (const c of cs) expect(c).toMatchObject({ owner: 7, yieldsTo: 'unit' });
     });
 
-    it('marks default rules as yielding to a unit, except sides-only which yields to an ask', () => {
-      const [variety] = compile(withKey(rule(1, skip), { default_key: 'variety' }));
-      expect(variety).toMatchObject({ yieldsTo: 'unit' });
-      expect(variety).not.toHaveProperty('owner');
+    it('variety and spacing give way to asked-for sides', () => {
+      for (const key of ['variety', 'spacing']) {
+        const [c] = compile(withKey(rule(1, skip), { default_key: key }));
+        expect(c).toMatchObject({ yieldsTo: 'ask' });
+        expect(c).not.toHaveProperty('owner');
+      }
+    });
+
+    it('extras caps and prefer-frequent give way to a unit only', () => {
+      for (const key of ['extras-limit-breakfast', 'extras-limit-lunch', 'extras-limit-dinner', 'prefer-frequent']) {
+        expect(compile(withKey(rule(1, skip), { default_key: key }))[0]).toMatchObject({ yieldsTo: 'unit' });
+      }
+    });
+
+    it('sides-only-when-asked yields to an ask', () => {
       expect(compile(withKey(rule(2, skip), { default_key: 'sides-only-when-asked' }))[0]).toMatchObject({ yieldsTo: 'ask' });
     });
 

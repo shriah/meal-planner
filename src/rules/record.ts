@@ -48,7 +48,7 @@ export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
 /** What a rule's count and prefer constraints give way to inside a unit (a base with its pairings), if anything. */
 function givesWayTo(rule: RuleRecord): { owner?: number; yieldsTo?: 'unit' | 'ask' } {
   if (rule.owner_component_id !== undefined) return { owner: rule.owner_component_id, yieldsTo: 'unit' };
-  if (rule.default_key === 'sides-only-when-asked') return { yieldsTo: 'ask' };
+  if (rule.default_key === 'sides-only-when-asked' || rule.default_key === 'variety' || rule.default_key === 'spacing') return { yieldsTo: 'ask' };
   if (rule.default_key !== undefined) return { yieldsTo: 'unit' };
   return {};
 }

@@ -111,7 +111,6 @@ export const COMES_WITH_CASES: RuleCase[] = [
         highlights: (slot, lib) => idsOf(slot).includes(lib.dish('Idiyappam').id),
       },
     ],
-    known: 'A side brought by a softer pairing still counts toward the variety default, which holds Idiyappam back (fixed in Task 5).',
   },
   {
     kind: 'plan',
