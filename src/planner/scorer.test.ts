@@ -374,9 +374,11 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
   const slot = slotIndex('monday', 'lunch');
   const lunch = (s: Partial<SlotState>) => planWith([['monday', 'lunch', s]]);
 
+  // A missing conditional pair is a soft problem at the pair's cost, even for an Always link: it gives way to
+  // whatever kept its dish out of the meal.
   it('a conditional pair holds only when the meal has its curry', () => {
     const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2)] })]);
-    expect(score(m, lunch({ base: 1, curry: 2 })).hard).toBe(1);
+    expect(score(m, lunch({ base: 1, curry: 2 }))).toMatchObject({ hard: 0, soft: 10 });
     expect(score(m, lunch({ base: 1, curry: 2, extras: [6] })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 3 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1 })).hard).toBe(0);
@@ -385,7 +387,7 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
   it("a met conditional pair takes the subzi role from its dish's plain pair", () => {
     const m = compileModel(lib, [pair(5, { ruleId: 1 }), pair(4, { ruleId: 2, inMeal: [curryIs(2)] })]);
     expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 })).hard).toBe(0);
-    expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 })).hard).toBe(1);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 }))).toMatchObject({ hard: 0, soft: 10 });
     expect(score(m, lunch({ base: 1, curry: 3, subzi: 5 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 3, subzi: 4 })).hard).toBe(1);
     expect(slotPairs(m, lunch({ base: 1, curry: 2, subzi: 4 }), slot)).toEqual([
@@ -399,18 +401,59 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
 
   it('mealBrings adds the conditional want only when the curry is there', () => {
     const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2, 3)] })]);
-    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true }] });
-    expect(mealBrings(m, { base: 1, curry: 3, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true }] });
+    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
+    expect(mealBrings(m, { base: 1, curry: 3, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
     expect(mealBrings(m, { base: 1, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
     expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [] });
   });
 
   it('a curry-and-subzi pair needs both', () => {
     const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2), subziIs(4)] })]);
-    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 })).hard).toBe(1);
-    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4, extras: [6] })).hard).toBe(0);
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 }))).toMatchObject({ hard: 0, soft: 10 });
+    expect(score(m, lunch({ base: 1, curry: 2, subzi: 4, extras: [6] }))).toMatchObject({ hard: 0, soft: 0 });
     expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 3, subzi: 4 })).hard).toBe(0);
     expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
+  });
+  it('a missing conditional pair is reported as a soft problem naming its rule', () => {
+    const m = compileModel(lib, [pair(6, { ruleId: 7, inMeal: [curryIs(2)] })]);
+    const r = score(m, lunch({ base: 1, curry: 2 }), true);
+    expect(r).toMatchObject({ hard: 0, soft: 10 });
+    expect(r.justifications).toEqual([expect.objectContaining({ ruleId: 7, level: 'soft', cost: 10, group: { day: 'monday', meal: 'lunch', componentId: 6 } })]);
+  });
+
+  describe('ignoreConditional', () => {
+    const curd = component('extra', { id: 7, name: 'Curd' });
+    const libWithCurd = [...lib, curd];
+    const blind = { ignoreConditional: true };
+    const extrasCap = count({ id: 'cap', select: is('componentType', 'extra'), bounds: { hardMax: 1 } });
+    const noPapad = count({ id: 'no-papad', select: is('id', 6), groupBy: 'plan', bounds: { hardMax: 0 } });
+    const papadTriggers = count({ id: 'with-papad', select: is('componentType', 'curry'), when: { exists: is('id', 6) }, bounds: { hardMax: 0 } });
+    const avoidExtras: PreferConstraint = { kind: 'prefer', id: 'avoid-extras', label: 'Avoid extras', origin: 'rule', select: is('componentType', 'extra'), weight: 2 };
+    const subziAtLunch = count({ id: 'subzi', select: is('componentType', 'subzi'), scope: { days: ['monday'], meals: ['lunch'] }, bounds: { hardMin: 1 } });
+
+    it('ignoreConditional leaves a conditionally brought side out of every count', () => {
+      const m = compileModel(libWithCurd, [pair(6, { strength: 'prefer', inMeal: [curryIs(2)] }), extrasCap, noPapad, papadTriggers, avoidExtras]);
+      const withPapad = lunch({ base: 1, curry: 2, extras: [7, 6] });
+      const without = lunch({ base: 1, curry: 2, extras: [7] });
+      // Normally Papad breaks the cap, its own limit and the rule it triggers.
+      expect(score(m, withPapad).hard).toBe(3);
+      // Blind to the conditional pair, Papad is not there at all, and its absence costs nothing.
+      expect(score(m, withPapad, false, blind)).toEqual({ hard: 0, soft: 2, justifications: [] });
+      expect(score(m, without, false, blind)).toEqual({ hard: 0, soft: 2, justifications: [] });
+      expect(score(m, without)).toMatchObject({ hard: 0, soft: 12 });
+      // Where the condition is not met, Papad is an ordinary extra and counts.
+      expect(score(m, lunch({ base: 1, curry: 3, extras: [7, 6] }), false, blind).hard).toBe(3);
+    });
+
+    it('a side another pair also brings still counts', () => {
+      const m = compileModel(libWithCurd, [pair(6, { inMeal: [curryIs(2)] }), pair(6, { id: 'plain' }), extrasCap]);
+      expect(score(m, lunch({ base: 1, curry: 2, extras: [7, 6] }), false, blind).hard).toBe(1);
+    });
+
+    it('a conditionally brought subzi still meets a minimum and holds its role', () => {
+      const m = compileModel(lib, [pair(5, { ruleId: 1, strength: 'prefer' }), pair(4, { ruleId: 2, inMeal: [curryIs(2)] }), subziAtLunch]);
+      expect(score(m, lunch({ base: 1, curry: 2, subzi: 4 }), false, blind)).toMatchObject({ hard: 0, soft: 0 });
+    });
   });
 });

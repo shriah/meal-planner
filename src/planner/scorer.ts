@@ -95,8 +95,11 @@ interface CompiledPair {
   inMeal: Int32Array;
 }
 
-/** One pairing a placed dish brings: the meal should hold one of `of` (ids in library order). */
-export interface Want { of: readonly number[]; unit: boolean }
+/**
+ * One pairing a placed dish brings: the meal should hold one of `of` (ids in library order). `cond` marks a
+ * pairing that waits for a curry or subzi in the meal (met here).
+ */
+export interface Want { of: readonly number[]; unit: boolean; cond?: true }
 
 /** What placing one dish brings, after conflict resolution. */
 export interface Brings { wants: Want[] }
@@ -128,6 +131,8 @@ interface Memo {
 /** Flags of an assignment in its meal. Every unit member is also asked for. */
 const ASKED = 1;
 const UNIT = 2;
+/** With `ignoreConditional`: brought by a met conditional pair (such a pair sets this instead of ASKED and UNIT). */
+const COND = 4;
 const YIELD_UNIT = 1;
 const YIELD_ASK = 2;
 const ROLE_CURRY = 1;
@@ -397,7 +402,7 @@ const bringsOf = (m: CompiledModel, codes: Int32Array): Brings => {
   for (const code of codes) {
     if (code & 1) continue;
     const p = m.state.pairs[code >> 1];
-    wants.push({ of: candidateIds(m, p), unit: p.must });
+    wants.push({ of: candidateIds(m, p), unit: p.must, ...(p.inMeal.length > 0 && { cond: true as const }) });
   }
   return { wants };
 };
@@ -520,7 +525,13 @@ export interface ScoreOptions {
    * Used to rank a link's candidates.
    */
   freePick?: { id: number };
-  /** Declared for the conditional links of Task 7; it has no effect yet. */
+  /**
+   * Score as if no pair waiting for a curry or subzi existed: a dish in a meal only because such a pair
+   * brought it is left out of every count rule with an upper bound, of the `when` of every count rule and of
+   * every prefer rule (it still counts toward a minimum, such as "a subzi at every meal", and still holds
+   * its role, so the plain pairs it took the role from stay suppressed), and a missing conditional pair
+   * costs nothing. The search judges a curry with it, so what a conditional pair brings never moves the curry.
+   */
   ignoreConditional?: boolean;
 }
 
@@ -531,6 +542,7 @@ export interface ScoreOptions {
 export function score(m: CompiledModel, plan: PlanState, justify = false, opts: ScoreOptions = {}): ScoreResult {
   /** The free pick's library index, or -1. */
   const freeCi = opts.freePick ? (m.state.idIndex.get(opts.freePick.id) ?? -1) : -1;
+  const ignoreCond = !!opts.ignoreConditional;
   const st = m.state;
   const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
   const just: Justification[] = [];
@@ -597,7 +609,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       if (!p.must || pairState[pk] !== 2) continue;
       const k = present(p, start, end);
       if (k >= 0) {
-        bufFlag[k] |= ASKED | UNIT;
+        bufFlag[k] |= ignoreCond && p.inMeal.length ? COND : ASKED | UNIT;
         unitRoles |= p.roleBit;
         pairUnit[pk] = 1;
       }
@@ -634,15 +646,19 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       pairState[pk] = 0;
       const k = present(p, start, end);
       if (k >= 0) {
-        if (enforced) bufFlag[k] |= ASKED;
+        if (enforced) bufFlag[k] |= ignoreCond && p.inMeal.length ? COND : ASKED;
         continue;
       }
+      // A missing conditional pair is never hard: it gives way to whatever kept its dish out of the meal.
+      // Blind to conditional pairs, it costs nothing.
+      if (ignoreCond && p.inMeal.length) continue;
       if (yieldsToUnit(p)) enforced = false;
-      if (enforced && p.must) hard += 1;
+      const isHard = enforced && p.must && !p.inMeal.length;
+      if (isHard) hard += 1;
       else if (enforced) soft += p.cost;
       if (justify) {
-        const level = enforced && p.must ? 'hard' : 'soft';
-        const cost = enforced ? (p.must ? 1 : p.cost) : 0;
+        const level = isHard ? 'hard' : 'soft';
+        const cost = enforced ? (isHard ? 1 : p.cost) : 0;
         let suppressed: Justification['suppressed'];
         if (!enforced && p.roleBit) {
           const holder = holders![p.roleBit === ROLE_CURRY ? 0 : 1];
@@ -694,7 +710,9 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
   for (let i = 0; i < n; i++) {
     const memo = bufMemo[i];
     const flag = bufFlag[i];
-    soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
+    // Brought only by a met conditional pair, scored blind to such pairs: left out (see `ignoreConditional`).
+    const ignored = (flag & (COND | ASKED)) === COND;
+    if (!ignored) soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
     // The free pick is charged its frequency count rules (those that give way to asked sides). Its prefer
     // rules still give way: they rank a link's candidates through the solver's `candidateWeight`, which
     // charging them here would count twice. Its other rules (days, meals) give way as usual.
@@ -706,7 +724,10 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       const cc = counts[code >> 2];
       let selected = (code & 1) !== 0;
       let triggers = (code & 2) !== 0;
-      if (flag) {
+      if (ignored) {
+        if (!selected || cc.hardMax !== Infinity || cc.softMax !== Infinity) continue;
+        triggers = false;
+      } else if (flag) {
         // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
         // not trigger its own base's rules.
         if (selected && !(free && cc.yields === YIELD_ASK) && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;

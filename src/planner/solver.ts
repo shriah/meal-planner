@@ -169,7 +169,13 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const plateau = opts.plateauIterations ?? 3000;
   const sampleSize = opts.constructionSample ?? SAMPLE_SIZE;
   const temperature = opts.temperature ?? 1;
-  const evaluate = (p: PlanState): Score => score(m, p);
+  /** Whether some pair waits for a curry or subzi in the meal. */
+  const hasConditional = m.constraints.some((c) => c.kind === 'pair' && !!c.inMeal?.length);
+  // The search is blind to what a pair waiting for a curry or subzi brings or misses, so it never moves the
+  // curry; `bring` keeps such a side out where it would break a hard rule, and the result is scored normally.
+  const evaluate = hasConditional
+    ? (p: PlanState): Score => score(m, p, false, { ignoreConditional: true })
+    : (p: PlanState): Score => score(m, p);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
 
   const pool: Record<PickRole | 'extra', number[]> = { base: [], curry: [], subzi: [], extra: [] };
@@ -188,26 +194,54 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // ── Pairings ──
   const hasPairs = m.constraints.some((c) => c.kind === 'pair');
-  /** Whether some pair waits for a curry or subzi in the meal. */
-  const hasConditional = m.constraints.some((c) => c.kind === 'pair' && !!c.inMeal?.length);
-  /** Every candidate of a dish's wants (asked for), and of its unit wants only. Cached per memoised `Brings`. */
-  const unions = new WeakMap<Brings, { asked: readonly number[]; unit: readonly number[] }>();
+  /**
+   * Every candidate of a dish's wants (asked for), of its unit wants only, and of its wants that wait for a
+   * curry or subzi (`cond`) or not (`plain`). Cached per memoised `Brings`.
+   */
+  const unions = new WeakMap<Brings, Record<'asked' | 'unit' | 'cond' | 'plain', readonly number[]>>();
+  const unionsOf = (b: Brings) => {
+    let u = unions.get(b);
+    if (!u) {
+      const sets = { asked: new Set<number>(), unit: new Set<number>(), cond: new Set<number>(), plain: new Set<number>() };
+      for (const w of b.wants) {
+        for (const c of w.of) {
+          sets.asked.add(c);
+          if (w.unit) sets.unit.add(c);
+          (w.cond ? sets.cond : sets.plain).add(c);
+        }
+      }
+      const list = (x: Set<number>) => (x.size ? [...x] : NOTHING);
+      u = { asked: list(sets.asked), unit: list(sets.unit), cond: list(sets.cond), plain: list(sets.plain) };
+      unions.set(b, u);
+    }
+    return u;
+  };
   /**
    * What the dish in `role` may bring to meal `s` at slot `i`: the candidates of all its wants, or of its unit
    * wants only. A pair that waits for a curry or subzi counts only where `s` meets it.
    */
   const broughtBy = (s: SlotState, id: number | undefined, role: Role, i: number, unitOnly = false): readonly number[] => {
     if (!hasPairs || id === undefined) return NOTHING;
-    const b = mealBrings(m, s, i, id, role);
-    let u = unions.get(b);
-    if (!u) {
-      const asked = new Set<number>();
-      const unit = new Set<number>();
-      for (const w of b.wants) for (const c of w.of) { asked.add(c); if (w.unit) unit.add(c); }
-      u = { asked: asked.size ? [...asked] : NOTHING, unit: unit.size ? [...unit] : NOTHING };
-      unions.set(b, u);
-    }
+    const u = unionsOf(mealBrings(m, s, i, id, role));
     return unitOnly ? u.unit : u.asked;
+  };
+  /**
+   * Whether `id` is in slot `i` only because a pair waiting for a curry or subzi brought it: some dish there
+   * brings it by such a pair, and none by another pair.
+   */
+  const condOnly = (s: SlotState, i: number, id: number): boolean => {
+    if (!hasConditional) return false;
+    let cond = false;
+    const visit = (d: number | undefined, role: Role): boolean => {
+      if (d === undefined || d === id) return true;
+      const u = unionsOf(mealBrings(m, s, i, d, role));
+      if (u.plain.includes(id)) return false;
+      if (u.cond.includes(id)) cond = true;
+      return true;
+    };
+    if (!visit(s.base, 'base') || !visit(s.curry, 'curry') || !visit(s.subzi, 'subzi')) return false;
+    for (const e of s.extras) if (!visit(e, 'extra')) return false;
+    return cond;
   };
   /** Whether `id` is in slot `i` as a unit member: another dish there must be served with it. */
   const isUnit = (s: SlotState, i: number, id: number | undefined): boolean => {
@@ -276,16 +310,31 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       changed = was;
       return result;
     };
+    /**
+     * Whether placing `c` adds no hard violation to the normal score: a side brought by a pair waiting for a
+     * curry or subzi comes only then, and is otherwise left out (the final score reports the missing pair).
+     */
+    const addsNoHard = (c: number, unit: boolean): boolean => {
+      const before = snapshot(s);
+      const was = changed;
+      const hard = score(m, plan).hard;
+      place(c, unit);
+      const after = score(m, plan).hard;
+      restore(s, before);
+      changed = was;
+      return after <= hard;
+    };
     const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
     const visit = (id: number | undefined, role: Role, choose: boolean) => {
       if (id === undefined) return;
       for (const w of mealBrings(m, s, i, id, role).wants) {
         if (w.of.some(inMeal)) continue;
+        const allowed = (c: number) => fits(c, w.unit) && (!w.cond || addsNoHard(c, w.unit));
         if (w.of.length === 1) {
-          place(w.of[0], w.unit);
+          if (!w.cond || allowed(w.of[0])) place(w.of[0], w.unit);
           continue;
         }
-        const options = w.of.filter((c) => fits(c, w.unit));
+        const options = w.of.filter(allowed);
         if (!options.length) continue;
         place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf) : options[0], w.unit);
       }
@@ -476,7 +525,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       const old = s.extras;
       if (remove) {
         const k = Math.floor(rng() * old.length);
-        if (isUnit(s, i, old[k])) continue;
+        // Nor does a side a pair waiting for the meal's curry or subzi brought: the search does not see it.
+        if (isUnit(s, i, old[k]) || condOnly(s, i, old[k])) continue;
         s.extras = old.filter((_, j) => j !== k);
       } else {
         const e = pick(pool.extra);
@@ -569,6 +619,26 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
       }
     }
+  }
+  // A side a pair waiting for a curry or subzi brought is invisible to the search, so a later change to
+  // the meal (an extra added beside it) may have made it break a hard rule: such a side leaves the meal
+  // wherever that lowers the normal score's hard violations. The missing pair is reported as a soft problem.
+  if (hasConditional) {
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const s = plan[i];
+      for (const c of [s.subzi, ...s.extras]) {
+        if (c === undefined || !condOnly(s, i, c)) continue;
+        const type = m.byId.get(c)?.componentType;
+        if (!isFree(i, type === 'extra' ? 'extras' : 'subzi')) continue;
+        const before = snapshot(s);
+        const hard = score(m, plan).hard;
+        if (type === 'extra') s.extras = s.extras.filter((e) => e !== c);
+        else s.subzi = undefined;
+        if (score(m, plan).hard < hard) descended = true;
+        else restore(s, before);
+      }
+    }
+    if (descended) best = evaluate(plan);
   }
   if (descended) bestPlan = clonePlan(plan);
 

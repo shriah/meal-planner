@@ -22,6 +22,8 @@ export interface CaseWeeks {
   weeks: PlanSlotLike[][];
   /** The hard problems each week was left with. */
   hard: Justification[][];
+  /** The soft problems each week was left with. */
+  soft: Justification[][];
   /** The pairings each week left out of a meal because another pairing already held the curry or subzi. */
   suppressed: Justification[][];
   lib: CaseLibrary;

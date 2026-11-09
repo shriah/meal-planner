@@ -519,6 +519,27 @@ function conditionalCases(): RuleCase[] {
     },
     {
       kind: 'plan',
+      id: 'when-curry-extras-cap-full',
+      group: 'Pairings',
+      name: 'A conditional extra that would break the extras cap is left out',
+      why: `${PAPAD_RULE}Rice is a breakfast dish that usually comes with Pickle and Curd, which fill the breakfast cap of 2 extras, and usually with Papad when the meal has Sambar: Papad cannot fit, so it is left out and reported as a soft problem, never a third extra, and Rice and Sambar breakfasts are as many as without the link. The bug: the planner judged Sambar with the Papad it would bring, so a full extras cap moved the curry away.`,
+      rules: papadWhen({ curry: ['Sambar'] }, { strength: 'usually' }),
+      given: (lib) => [
+        mealRule(lib.dish('Rice'), ['breakfast']),
+        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [dishId(lib, 'Pickle')], strength: 'usually' }),
+        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [dishId(lib, 'Curd')], strength: 'usually' }),
+        CURRY_AT_EVERY_MEAL,
+        riceWithSambar(lib, 'sometimes'),
+      ],
+      expect: [
+        nearNoRulesRiceSambar,
+        nonePicked('No Rice and Sambar breakfast has more than 2 extras', riceSambar, (s) => s.extra_ids.length > 2),
+        noHardProblems(),
+        reportedWhereMissing('Every Rice and Sambar breakfast without Papad has a soft problem naming the link, and some has one', riceSambar, 'Papad'),
+      ],
+    },
+    {
+      kind: 'plan',
       id: 'when-curry-locked-curry',
       group: 'Locks and picks',
       name: 'A locked Sambar meets the condition',
@@ -540,6 +561,35 @@ function conditionalCases(): RuleCase[] {
       expect: [mondayLunchHas('Papad', false), EVERY_RICE_SAMBAR_HAS_PAPAD],
     },
   ];
+}
+
+/** `recordsOf` numbers a case's own rules first, so its first rule is stored with id 1. */
+const OWN_RULE_ID = 1;
+
+/**
+ * Every meal `where` picks that lacks `dish` has a soft problem from the case's first rule naming `dish` in
+ * that meal; at least one such meal exists, so the check is not empty.
+ */
+function reportedWhereMissing(says: string, where: Pick, dish: string): PlanExpectation {
+  const missing = (s: PlanSlotLike, lib: CaseLibrary) => where(s, lib) && !idsOf(s).includes(dishId(lib, dish));
+  return {
+    says,
+    check: (w) => {
+      const id = dishId(w.lib, dish);
+      let n = 0;
+      let reported = 0;
+      w.weeks.forEach((wk, k) => {
+        for (const s of wk) {
+          if (!missing(s, w.lib)) continue;
+          n++;
+          const named = w.soft[k].some((j) => j.ruleId === OWN_RULE_ID && j.group.componentId === id && j.group.day === s.day && j.group.meal === s.meal_slot);
+          if (named) reported++;
+        }
+      });
+      return { pass: n > 0 && reported === n, got: `${reported} of ${n} meals without ${dish} reported` };
+    },
+    highlights: missing,
+  };
 }
 
 /** The pinned Monday lunch has the dish in every week, or in none. */

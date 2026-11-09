@@ -37,6 +37,7 @@ function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: Pla
   return {
     weeks: results.map((r) => r.slots),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
+    soft: results.map((r) => r.justifications.filter((j) => j.level === 'soft')),
     suppressed: results.map((r) => r.justifications.filter((j) => j.suppressed !== undefined)),
     lib,
     issues,

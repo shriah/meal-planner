@@ -6,12 +6,12 @@ import { TEST_LIBRARY } from './library';
 import { failsWithoutSubject, recordsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks, PlanCase } from './types';
 
-const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], suppressed: [[]], lib });
+const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib });
 /** Weeks where Pongal is planned `n` times in total. */
 const withPongal = (n: number): CaseWeeks => {
   const id = TEST_LIBRARY.dish('Pongal').id;
   const slots = Array.from({ length: n }, () => ({ day: 'monday' as const, meal_slot: 'breakfast' as const, base_id: id, extra_ids: [] }));
-  return { weeks: [slots], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY };
+  return { weeks: [slots], hard: [[]], soft: [[]], suppressed: [[]], lib: TEST_LIBRARY };
 };
 
 describe('TEST_LIBRARY', () => {
@@ -112,7 +112,7 @@ describe('wording', () => {
   it('uses "or" for neverAt and singular meals', () => {
     expect(neverAt('Dal', { meals: ['breakfast', 'dinner'] }).says).toBe('Dal is never planned at breakfast or dinner');
     const slot = { day: 'monday' as const, meal_slot: 'breakfast' as const, base_id: TEST_LIBRARY.dish('Dal').id, extra_ids: [] };
-    const one: CaseWeeks = { weeks: [[slot]], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY };
+    const one: CaseWeeks = { weeks: [[slot]], hard: [[]], soft: [[]], suppressed: [[]], lib: TEST_LIBRARY };
     expect(neverAt('Dal', { meals: ['breakfast'] }).check(one, { baseline: () => one }).got).toBe('1 meal');
     expect(neverAt('Dal', { meals: ['lunch'] }).check(one, { baseline: () => one }).got).toBe('0 meals');
   });
@@ -126,7 +126,7 @@ describe('failing seed and highlights', () => {
     const dal = TEST_LIBRARY.dish('Dal').id;
     const ok = { day: 'monday' as const, meal_slot: 'lunch' as const, base_id: dal, extra_ids: [] };
     const bad = { ...ok, meal_slot: 'dinner' as const };
-    const w: CaseWeeks = { weeks: [[ok], [ok], [bad]], hard: [[], [], []], suppressed: [[], [], []], lib: TEST_LIBRARY };
+    const w: CaseWeeks = { weeks: [[ok], [ok], [bad]], hard: [[], [], []], soft: [[], [], []], suppressed: [[], [], []], lib: TEST_LIBRARY };
     expect(neverAt('Dal', { meals: ['dinner'] }).failingSeed?.(w, { baseline: () => w })).toBe(2);
     expect(neverAt('Dal', { meals: ['breakfast'] }).failingSeed?.(w, { baseline: () => w })).toBeUndefined();
   });
@@ -141,7 +141,7 @@ describe('failing seed and highlights', () => {
     const s = TEST_LIBRARY.dish('Sambar').id;
     const at = (meal_slot: 'breakfast' | 'lunch', curry?: number) => ({ day: 'monday' as const, meal_slot, base_id: p, curry_id: curry, extra_ids: [] });
     const e = someMealWith('Pongal', ['Sambar'], ['breakfast', 'dinner']);
-    const run = (slots: ReturnType<typeof at>[]) => e.check({ weeks: [slots], hard: [[]], suppressed: [[]], lib: TEST_LIBRARY }, { baseline: weeks }).pass;
+    const run = (slots: ReturnType<typeof at>[]) => e.check({ weeks: [slots], hard: [[]], soft: [[]], suppressed: [[]], lib: TEST_LIBRARY }, { baseline: weeks }).pass;
     expect(run([at('lunch', s)])).toBe(false);
     expect(run([at('breakfast', s)])).toBe(true);
   });

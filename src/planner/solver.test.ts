@@ -253,6 +253,38 @@ describe('solver', () => {
     });
   });
 
+  describe('a pair that waits for a curry', () => {
+    // Base 1 always comes with extras 31 and 32, filling a cap of 2 extras a meal; a curry is wanted at every
+    // meal. With curry 11, base 1 also comes with extra 33, which would break the cap.
+    const lib: ComponentLike[] = [
+      component('base', { id: 1 }), component('base', { id: 2 }),
+      ...[11, 12, 13].map((id) => component('curry', { id })),
+      ...[31, 32, 33].map((id) => component('extra', { id })),
+    ];
+    const comes = (of: number, inMeal?: Matcher[]): Constraint => ({
+      kind: 'pair', id: `pair-${of}`, label: `Base 1 with ${of}`, origin: 'rule', when: is('id', 1), of: is('id', of), strength: 'must', ...(inMeal && { inMeal }),
+    });
+    const given: Constraint[] = [
+      comes(31), comes(32),
+      { kind: 'count', id: 'cap', label: 'At most 2 extras', origin: 'rule', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 2 } },
+      { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } },
+    ];
+    const papad = comes(33, [all(is('role', 'curry'), is('id', 11))]);
+
+    it("a curry's chance is the same with and without a conditional link whose side breaks a limit", () => {
+      for (const seed of [1, 2, 3]) {
+        const without = solve(buildModel({ library: lib, constraints: given }), { ...quick, seed });
+        const withLink = solve(buildModel({ library: lib, constraints: [...given, papad] }), { ...quick, seed });
+        expect(withLink.plan.map((s) => [s.base, s.curry])).toEqual(without.plan.map((s) => [s.base, s.curry]));
+        expect(withLink.plan.some((s) => s.base === 1 && s.curry === 11)).toBe(true);
+        // The side that cannot fit is left out and reported as a soft problem, never a hard one.
+        expect(withLink.score.hard).toBe(0);
+        for (const s of withLink.plan) expect(s.extras.length).toBeLessThanOrEqual(2);
+        expect(withLink.score.justifications).toContainEqual(expect.objectContaining({ constraintId: 'pair-33', level: 'soft' }));
+      }
+    });
+  });
+
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);
