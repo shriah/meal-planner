@@ -94,7 +94,10 @@ const PairsWithParams = z
 
 const ComesWithParams = z
   .object({ match: MatcherSchema, of: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
-  .strict();
+  .strict()
+  // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
+  .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
+    { message: 'name one kind of dish first, then the dishes', path: ['of'] });
 
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
@@ -338,13 +341,16 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
   },
 };
 
+/** Templates a dish's own links write; not offered on the Rules page or to the assistant. */
+export const OWNED_ONLY_TEMPLATES: TemplateId[] = ['comes_with'];
+
 export const TEMPLATE_IDS = Object.keys(TEMPLATES) as TemplateId[];
 
 /** Rule types grouped by what they do, for the type picker. Every type appears exactly once. */
 export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [
   { label: 'Where and when', templates: ['allowed_meals', 'allowed_days', 'only_allow'] },
   { label: 'Keep out', templates: ['exclude', 'skip_when', 'avoid_with'] },
-  { label: 'Pair and require', templates: ['require', 'require_with', 'comes_with', 'pairs_with'] },
+  { label: 'Pair and require', templates: ['require', 'require_with', 'pairs_with'] },
   { label: 'Count and spread', templates: ['limit', 'no_repeat'] },
   { label: 'Preference', templates: ['prefer'] },
 ];

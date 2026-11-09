@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RuleSpecSchema, TEMPLATE_IDS } from '@/rules';
+import { OWNED_ONLY_TEMPLATES, RuleSpecSchema, TEMPLATE_IDS } from '@/rules';
 import { TOOL_DECLARATIONS } from './tools';
 import { looksOffTopic, REFUSAL, SYSTEM_PROMPT, wrapData } from './prompt';
 import type { Slice } from './retrieve';
@@ -46,7 +46,8 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('<data>');
     expect(SYSTEM_PROMPT).toContain(REFUSAL);
     for (const t of TOOL_DECLARATIONS) expect(SYSTEM_PROMPT).toContain(t.name);
-    for (const id of TEMPLATE_IDS) expect(SYSTEM_PROMPT).toContain(id);
+    for (const id of TEMPLATE_IDS.filter((t) => !OWNED_ONLY_TEMPLATES.includes(t))) expect(SYSTEM_PROMPT).toContain(id);
+    for (const id of OWNED_ONLY_TEMPLATES) expect(SYSTEM_PROMPT).not.toContain(id);
     expect(SYSTEM_PROMPT).toContain('Monday');
   });
   it('shows an exclude example that RuleSpecSchema accepts', () => {

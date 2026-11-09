@@ -1,6 +1,6 @@
 // Rule types (templates), stored rules, and their compilation into planner constraints.
 export {
-  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, TEMPLATE_GROUPS, PREFER_COST, compileSpec, describeSpec, specReferences,
+  RuleSpecSchema, ScopeSchema, TEMPLATES, TEMPLATE_IDS, TEMPLATE_GROUPS, OWNED_ONLY_TEMPLATES, PREFER_COST, compileSpec, describeSpec, specReferences,
   type RuleSpec, type RuleSpecInput, type TemplateId, type ParamsOf, type RuleTemplate, type Scope, type Strength,
   type ConstraintBody, type Refs,
 } from './templates';

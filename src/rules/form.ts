@@ -1,6 +1,6 @@
 // Form metadata for rule templates, draft validation, and match previews. Lets any UI render
 // an editor for every template without template-specific code.
-import { compileMatcher, is, TRUE, type ComponentLike, type Matcher } from '@/planner';
+import { all, compileMatcher, is, TRUE, type ComponentLike, type Matcher } from '@/planner';
 import { fromMatcher, groupProblems } from './conditions';
 import { RuleSpecSchema, type RuleSpec, type RuleSpecInput, type TemplateId } from './templates';
 
@@ -128,7 +128,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       scope, strength, cost,
     ],
     // The dishes brought along must pin one kind of dish, so the default does.
-    defaults: () => ({ match: TRUE, of: is('componentType', 'curry'), strength: 'must' }),
+    defaults: () => ({ match: TRUE, of: all(is('componentType', 'curry')), strength: 'must' }),
   },
   allowed_days: {
     fields: [
