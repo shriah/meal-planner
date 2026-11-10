@@ -25,6 +25,23 @@ describe('solver', () => {
     expect(a).not.toEqual(c);
   });
 
+  it('gives the same plan for a seed whatever was solved before, even on a reused model', () => {
+    // Rice (1) comes with extra 31 when the curry is 11: the conditional pair fills the per-meal caches.
+    const pairs: Constraint[] = [{
+      kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31),
+      strength: 'must', inMeal: [all(is('role', 'curry'), is('id', 11))],
+    }];
+    const fresh = solve(buildModel({ library, constraints: pairs }), { ...quick, seed: 5 });
+    solve(buildModel({ library }), { ...quick, seed: 2 });
+    const reused = buildModel({ library, constraints: pairs });
+    solve(reused, { ...quick, seed: 9 });
+    const again = solve(reused, { ...quick, seed: 5 });
+    const after = solve(buildModel({ library, constraints: pairs }), { ...quick, seed: 5 });
+    expect(again.plan).toEqual(fresh.plan);
+    expect(after.plan).toEqual(fresh.plan);
+    expect(again.score).toEqual(fresh.score);
+  });
+
   it('always returns structurally valid slots', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 3 });
     expect(r.score.hard).toBe(0);
