@@ -2,10 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
-import { compareScore, score, type CompiledModel, type Score } from './scorer';
+import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
 import { broughtScore, chooseCandidate, clonePlan, solve } from './solver';
 import { component } from './test-utils';
-import { DAYS, MEALS, SLOT_COUNT, slotIndex, type ComponentLike, type PlanState } from './types';
+import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type PlanState, type SlotState } from './types';
 
 const library: ComponentLike[] = [
   ...[1, 2, 3, 4].map((id) => component('base', { id, base_category_id: 10 })),
@@ -288,6 +288,60 @@ describe('solver', () => {
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);
+  });
+});
+
+describe('lockNudge', () => {
+  // Rice (1) comes with Papad (6) when the curry is Sambar (2); with `both`, also when the subzi is Beans (4).
+  const lib: ComponentLike[] = [
+    component('base', { id: 1 }), component('base', { id: 7 }),
+    component('curry', { id: 2 }), component('curry', { id: 3 }),
+    component('subzi', { id: 4 }), component('subzi', { id: 5 }),
+    component('extra', { id: 6 }),
+  ];
+  const curryIs = (id: number) => all(is('role', 'curry'), is('id', id));
+  const subziIs = (id: number) => all(is('role', 'subzi'), is('id', id));
+  const papad = (inMeal: Matcher[], p: Partial<Constraint> = {}): Constraint =>
+    ({ kind: 'pair', id: 'papad', label: 'Rice with Papad', origin: 'rule', when: is('id', 1), of: is('id', 6), strength: 'must', inMeal, ...p }) as Constraint;
+  const slot = slotIndex('monday', 'lunch');
+  const lunch = (s: Partial<SlotState>): PlanState => {
+    const plan = emptyPlan();
+    plan[slot] = { extras: [], ...s };
+    return plan;
+  };
+
+  it('lockNudge charges a locked Papad meal whose curry is not Sambar', () => {
+    const m = compileModel(lib, [papad([curryIs(2)])]);
+    expect(lockNudge(m, lunch({ base: 1, curry: 3, extras: [6] }), slot, [6])).toBe(10);
+    expect(lockNudge(m, lunch({ base: 1, extras: [6] }), slot, [6])).toBe(10);
+    expect(lockNudge(m, lunch({ base: 1, curry: 2, extras: [6] }), slot, [6])).toBe(0);
+    // Only a locked candidate pulls, and only where the meal's base triggers the link.
+    expect(lockNudge(m, lunch({ base: 1, curry: 3, extras: [6] }), slot, [])).toBe(0);
+    expect(lockNudge(m, lunch({ base: 7, curry: 3, extras: [6] }), slot, [6])).toBe(0);
+  });
+
+  it("charges a softer link's cost", () => {
+    const m = compileModel(lib, [papad([curryIs(2)], { strength: 'prefer', cost: 6 })]);
+    expect(lockNudge(m, lunch({ base: 1, curry: 3, extras: [6] }), slot, [6])).toBe(6);
+  });
+
+  it('with a curry and a subzi part, one cost until both are met', () => {
+    const m = compileModel(lib, [papad([curryIs(2), subziIs(4)])]);
+    expect(lockNudge(m, lunch({ base: 1, curry: 3, subzi: 5, extras: [6] }), slot, [6])).toBe(10);
+    expect(lockNudge(m, lunch({ base: 1, curry: 2, subzi: 5, extras: [6] }), slot, [6])).toBe(10);
+    expect(lockNudge(m, lunch({ base: 1, curry: 3, subzi: 4, extras: [6] }), slot, [6])).toBe(10);
+    expect(lockNudge(m, lunch({ base: 1, curry: 2, subzi: 4, extras: [6] }), slot, [6])).toBe(0);
+  });
+
+  it('a locked Papad makes Sambar win the locked meal over a softer pull away from it', () => {
+    const avoidSambar: Constraint = { kind: 'prefer', id: 'avoid', label: 'Avoid Sambar', origin: 'rule', select: is('id', 2), weight: 4 };
+    const curryEveryMeal: Constraint = { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } };
+    const pins = { 'monday-lunch': { base_id: 1, extra_ids: [6] } };
+    for (const seed of [1, 2, 3]) {
+      const r = solve(buildModel({ library: lib, constraints: [papad([curryIs(2)]), avoidSambar, curryEveryMeal] }), { ...quick, seed, pins });
+      expect(r.plan[slot]).toMatchObject({ base: 1, curry: 2 });
+      expect(r.score.hard).toBe(0);
+    }
   });
 });
 

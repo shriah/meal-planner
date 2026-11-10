@@ -560,7 +560,39 @@ function conditionalCases(): RuleCase[] {
       pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: TEST_LIBRARY.dish('Rasam').id } },
       expect: [mondayLunchHas('Papad', false), EVERY_RICE_SAMBAR_HAS_PAPAD],
     },
+    {
+      kind: 'plan',
+      id: 'when-curry-lock-nudge',
+      group: 'Locks and picks',
+      name: 'Locking Papad with Rice makes Sambar more likely',
+      why: `${PAPAD_RULE}Monday lunch is locked to Rice with Papad: the user locked the dish the link brings, so the planner nudges that meal toward Sambar, the curry the link waits for. Monday lunch has Sambar in at least 6 of 8 weeks, and in more weeks than with the same locks and no link, though Sambar is strongly avoided. The bug: the search never let the link move the curry; the only pull toward Sambar was that a Papad the link would bring stops paying "Curries, subzis and extras only when a rule asks", too weak to beat a Strongly avoided curry.`,
+      rules: papadOnSambar,
+      given: (lib) => [CURRY_AT_EVERY_MEAL, avoidSambarStrongly(lib)],
+      pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, extra_ids: [TEST_LIBRARY.dish('Papad').id] } },
+      expect: [mondayLunchSambarNudged()],
+    },
   ];
+}
+
+/** Avoid Sambar, Strongly: a push on the curry firmer than "only when a rule asks" and softer than an Always link. */
+const avoidSambarStrongly = (lib: CaseLibrary): CaseRule => ({
+  name: 'Avoid Sambar',
+  spec: { template: 'prefer', params: { match: is('id', dishId(lib, 'Sambar')), direction: 'avoid', weight: 4 } },
+});
+
+/** Monday lunch has Sambar in at least 6 of 8 weeks, and in more weeks than with the same pins and no case rules. */
+function mondayLunchSambarNudged(): PlanExpectation {
+  const isMondayLunch = (s: PlanSlotLike) => s.day === 'monday' && s.meal_slot === 'lunch';
+  const weeksWithSambar = (w: CaseWeeks) => w.weeks.filter((wk) => wk.some((s) => isMondayLunch(s) && curryIs('Sambar')(s, w.lib))).length;
+  return {
+    says: 'Monday lunch has Sambar in at least 6 of 8 weeks, and in more weeks than without the link',
+    check: (w, ctx) => {
+      const k = weeksWithSambar(w);
+      const base = weeksWithSambar(ctx.baseline());
+      return { pass: k >= (w.weeks.length * 3) / 4 && k > base, got: `${k} of ${w.weeks.length} weeks (${base} without the link)` };
+    },
+    highlights: (slot) => isMondayLunch(slot),
+  };
 }
 
 /** `recordsOf` numbers a case's own rules first, so its first rule is stored with id 1. */

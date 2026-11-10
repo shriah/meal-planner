@@ -478,6 +478,31 @@ export function yieldedPreferWeight(m: CompiledModel, id: number, role: Role, sl
   return memo.preferUnit + memo.preferAsk;
 }
 
+/**
+ * The pull of a lock toward a conditional link's curry or subzi in meal `slot`: for each pair waiting for a
+ * curry or subzi that the meal's base triggers and that brings one of `locked` (the meal's locked extras and
+ * locked subzi), the pair's cost when any part of its condition is unmet by the meal's other dishes, else 0.
+ * With several parts the cost is charged once, so it pulls toward a meal meeting every part. The only path by
+ * which a conditional link moves the curry; the solver adds it to the search's score, never the reported one.
+ */
+export function lockNudge(m: CompiledModel, plan: PlanState, slot: number, locked: readonly number[]): number {
+  const s = plan[slot];
+  if (s.base === undefined || !locked.length) return 0;
+  const st = m.state;
+  const ci = st.idIndex.get(s.base);
+  if (ci === undefined) return 0;
+  const { cond } = memoFor(m, ci, ROLE_INDEX.base, slot);
+  if (!cond.length) return 0;
+  const others = mealMemos(m, s, slot).filter((d) => d.role !== 'base');
+  let cost = 0;
+  for (const pk of cond) {
+    const p = st.pairs[pk];
+    if (!locked.some((id) => p.isCandidate[st.idIndex.get(id) ?? -1])) continue;
+    if (!p.inMeal.every((mk) => others.some((o) => o.memo.meets.includes(mk)))) cost += p.cost;
+  }
+  return cost;
+}
+
 export interface SlotPair {
   /** The dishes that meet the pairing, in library order. */
   candidates: number[];

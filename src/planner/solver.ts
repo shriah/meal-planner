@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { compareScore, mealBrings, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { compareScore, lockNudge, mealBrings, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -171,11 +171,6 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const temperature = opts.temperature ?? 1;
   /** Whether some pair waits for a curry or subzi in the meal. */
   const hasConditional = m.constraints.some((c) => c.kind === 'pair' && !!c.inMeal?.length);
-  // The search is blind to what a pair waiting for a curry or subzi brings or misses, so it never moves the
-  // curry; `bring` keeps such a side out where it would break a hard rule, and the result is scored normally.
-  const evaluate = hasConditional
-    ? (p: PlanState): Score => score(m, p, false, { ignoreConditional: true })
-    : (p: PlanState): Score => score(m, p);
   const pick = <T>(xs: readonly T[]): T => xs[Math.floor(rng() * xs.length)];
 
   const pool: Record<PickRole | 'extra', number[]> = { base: [], curry: [], subzi: [], extra: [] };
@@ -186,6 +181,26 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     { length: SLOT_COUNT },
     (_, i) => opts.pins?.[`${DAYS[Math.floor(i / MEALS.length)]}-${MEALS[i % MEALS.length]}`] ?? {},
   );
+  // Meals whose extras or subzi the user locked, with the locked dishes: there a link waiting for a curry or
+  // subzi that brings a locked dish pulls the meal toward that curry or subzi (`lockNudge`).
+  const locks: { slot: number; ids: readonly number[] }[] = [];
+  if (hasConditional) {
+    pins.forEach((p, slot) => {
+      const ids = [...(p.extra_ids ?? []), ...(p.subzi_id != null ? [p.subzi_id] : [])];
+      if (ids.length) locks.push({ slot, ids });
+    });
+  }
+  // The search is blind to what a pair waiting for a curry or subzi brings or misses, so it never moves the
+  // curry, except toward the curry or subzi a locked side waits for; `bring` keeps such a side out where it
+  // would break a hard rule, and the result is scored normally.
+  const evaluate = hasConditional
+    ? (p: PlanState): Score => {
+      const s = score(m, p, false, { ignoreConditional: true });
+      let nudge = 0;
+      for (const l of locks) nudge += lockNudge(m, p, l.slot, l.ids);
+      return nudge ? { hard: s.hard, soft: s.soft + nudge } : s;
+    }
+    : (p: PlanState): Score => score(m, p);
   const plan: PlanState = emptyPlan().map((s, i) => {
     const p = pins[i];
     return { base: p.base_id, curry: p.curry_id ?? undefined, subzi: p.subzi_id ?? undefined, extras: p.extra_ids ? [...p.extra_ids] : s.extras };
