@@ -626,7 +626,11 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   // Once, meals in order, each met want of several candidates is picked again from the week as it now is:
   // its candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless
   // the score is worse.
-  for (let i = 0; i < SLOT_COUNT; i++) {
+  /**
+   * Picks again, in meal `i` as it now is, each want of several candidates not yet in `picked` (which it
+   * extends), until a change is kept. Whether one was.
+   */
+  const repickOne = (i: number, picked: Set<string>): boolean => {
     const s = plan[i];
     const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
     const dishes: [number | undefined, Role][] = [[s.base, 'base'], [s.curry, 'curry'], [s.subzi, 'subzi'], ...s.extras.map((e): [number, Role] => [e, 'extra'])];
@@ -634,6 +638,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       if (id === undefined || !inMeal(id)) continue;
       for (const w of mealBrings(m, s, i, id, role).wants) {
         if (w.of.length < 2) continue;
+        const key = `${id}:${role}:${w.of.join(',')}`;
+        if (picked.has(key)) continue;
+        picked.add(key);
         const c = w.of.find(inMeal);
         const type = c === undefined ? undefined : m.byId.get(c)?.componentType;
         if (c === undefined || (type !== 'curry' && type !== 'subzi' && type !== 'extra')) continue;
@@ -649,11 +656,18 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         if (compareScore(next, best) <= 0) {
           best = next;
           descended = true;
-        } else {
-          restore(s, before);
+          return true;
         }
+        restore(s, before);
       }
     }
+    return false;
+  };
+  // After a kept change the meal's dishes and wants are read again (a new curry can meet a condition, a
+  // brought side can bring its own); each want is still picked at most once, so the pass ends.
+  for (let i = 0; i < SLOT_COUNT; i++) {
+    const picked = new Set<string>();
+    while (repickOne(i, picked));
   }
   // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
   // rule, and a later change elsewhere (an extra or another meal's dish leaving) can make room for it, but
