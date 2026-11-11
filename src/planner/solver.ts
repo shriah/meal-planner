@@ -4,7 +4,7 @@
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
 import { mulberry32 } from './rng';
-import { compareScore, lockNudge, mealBrings, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
+import { compareScore, freePickLimited, lockNudge, mealBrings, mealHasConditional, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 export interface SolveOptions {
@@ -133,7 +133,8 @@ export function candidateWeight(m: CompiledModel, slot: number): (id: number) =>
  */
 export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number, blind = false): Score {
   const s = score(m, plan, false, { ignoreConditional: blind });
-  const f = score(m, plan, false, { freePick: { id }, ignoreConditional: blind });
+  // Only a hard limit that gives way to the pick can make the free pick's hard score differ.
+  const f = freePickLimited(m, id) ? score(m, plan, false, { freePick: { id }, ignoreConditional: blind }) : s;
   const type = m.byId.get(id)?.componentType;
   const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
   // At least 0: charging the frequency rules can only add hard units, but a net figure is never a credit.
@@ -246,7 +247,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
    * brings it by such a pair, and none by another pair.
    */
   const condOnly = (s: SlotState, i: number, id: number): boolean => {
-    if (!hasConditional) return false;
+    if (!hasConditional || !mealHasConditional(m, s, i)) return false;
     let cond = false;
     const visit = (d: number | undefined, role: Role): boolean => {
       if (d === undefined || d === id) return true;
@@ -272,11 +273,11 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   /**
    * Every side the dishes of meal `s` bring, read before a change for `bring`'s `gone`: a change to the
    * curry or subzi can take a side away from a dish that stays, when the side came by a pair waiting for
-   * that curry or subzi (or a met condition took the side's role from a plain pair). Nothing when no pair has
-   * a condition, since then only the replaced dish's sides (`prev`) can stop being brought.
+   * that curry or subzi (or a met condition took the side's role from a plain pair). Nothing when no dish of
+   * the meal has a pair with a condition, since then only the replaced dish's sides (`prev`) can stop being brought.
    */
   const conditionalSides = (s: SlotState, i: number): readonly number[] => {
-    if (!hasConditional) return NOTHING;
+    if (!hasConditional || !mealHasConditional(m, s, i)) return NOTHING;
     const out = new Set<number>();
     const add = (id: number | undefined, role: Role) => { for (const c of broughtBy(s, id, role, i)) out.add(c); };
     add(s.base, 'base');
@@ -298,6 +299,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     if (!hasPairs) return;
     const s = plan[i];
     let changed = false;
+    /** The plan's hard score with meal `i` as these fields hold, for `addsNoHard`. */
+    let hardBefore: (Snapshot & { hard: number }) | undefined;
     /** Whether `place(c, unit)` would put `c` in the meal. */
     const fits = (c: number, unit: boolean): boolean => {
       const type = m.byId.get(c)?.componentType;
@@ -334,7 +337,12 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     const addsNoHard = (c: number, unit: boolean): boolean => {
       const before = snapshot(s);
       const was = changed;
-      const hard = score(m, plan).hard;
+      // Only this meal changes during a bring, and its extras array is replaced on every change, so the
+      // meal's four fields name the plan's state: the hard score before placing is reused while they hold.
+      if (!hardBefore || hardBefore.base !== s.base || hardBefore.curry !== s.curry || hardBefore.subzi !== s.subzi || hardBefore.extras !== s.extras) {
+        hardBefore = { ...before, hard: score(m, plan).hard };
+      }
+      const hard = hardBefore.hard;
       place(c, unit);
       const after = score(m, plan).hard;
       restore(s, before);

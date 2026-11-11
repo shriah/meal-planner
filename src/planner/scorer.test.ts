@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
 import { all, is, oneOf } from './matcher';
-import { bringsWith, compareScore, compileModel, explain, mealBrings, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
+import { bringsWith, compareScore, compileModel, explain, freePickLimited, mealBrings, mealHasConditional, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
 import { component } from './test-utils';
 import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
 
@@ -154,6 +154,15 @@ describe('pairings', () => {
     const plan = at('lunch', { base: 1, curry: 2 });
     expect(score(m, plan).hard).toBe(0);
     expect(score(m, plan, false, { freePick: { id: 2 } }).hard).toBe(1);
+  });
+
+  it('a free pick can be charged only where a hard limit gives way to asked sides', () => {
+    const limit = (p: Partial<CountConstraint>) => count({ id: 'sambar-limit', select: is('id', 2), groupBy: 'plan', ...p });
+    expect(freePickLimited(compileModel(lib, [limit({ bounds: { hardMax: 1 }, yieldsTo: 'ask' })]), 2)).toBe(true);
+    expect(freePickLimited(compileModel(lib, [limit({ bounds: { hardMax: 1 }, yieldsTo: 'ask' })]), 5)).toBe(false);
+    expect(freePickLimited(compileModel(lib, [limit({ bounds: { softMax: 1 }, yieldsTo: 'ask' })]), 2)).toBe(false);
+    expect(freePickLimited(compileModel(lib, [limit({ bounds: { hardMax: 1 }, yieldsTo: 'unit' })]), 2)).toBe(false);
+    expect(freePickLimited(compileModel(lib, [limit({ bounds: { hardMax: 1 } })]), 2)).toBe(false);
   });
 
   it("a free pick's weekly limit counts the dish's other brought meals", () => {
@@ -382,6 +391,14 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
     expect(score(m, lunch({ base: 1, curry: 2, extras: [6] })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 3 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1 })).hard).toBe(0);
+  });
+
+  it('tells whether a dish of the meal has a conditional pair, met or not', () => {
+    const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2)] })]);
+    expect(mealHasConditional(m, { base: 1, curry: 3, extras: [] }, slot)).toBe(true);
+    expect(mealHasConditional(m, { base: 1, curry: 2, extras: [] }, slot)).toBe(true);
+    expect(mealHasConditional(m, { curry: 2, extras: [6] }, slot)).toBe(false);
+    expect(mealHasConditional(compileModel(lib, [pair(6)]), { base: 1, curry: 2, extras: [] }, slot)).toBe(false);
   });
 
   it("a met conditional pair takes the subzi role from its dish's plain pair", () => {

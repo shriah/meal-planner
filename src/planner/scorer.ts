@@ -170,6 +170,8 @@ interface ScoringState {
   condMatchers: Int32Array;
   /** Per matcher, while one slot is scored: how many of its assignments meet it (condition matchers only). */
   condCount: Int32Array;
+  /** Per library index: 1 if a free pick of the dish can be charged a hard limit (`freePickLimited`), 0 if not, -1 not yet known. */
+  freeLimited: Int8Array;
 }
 
 const NO_PAIRS = new Int32Array(0);
@@ -285,6 +287,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       pairUnit: new Uint8Array(pairs.length),
       condMatchers: Int32Array.from(new Set(pairs.flatMap((p) => Array.from(p.inMeal)))),
       condCount: new Int32Array(matchers.length),
+      freeLimited: new Int8Array(N).fill(-1),
     },
   };
 }
@@ -441,6 +444,18 @@ export function bringsWith(m: CompiledModel, id: number, role: Role, slot: numbe
 }
 
 /**
+ * Whether some dish of meal `s` at `slot` has a pair that waits for a curry or subzi (met or not). Where none
+ * does, what each dish brings does not depend on the rest of the meal. Memoised per dish.
+ */
+export function mealHasConditional(m: CompiledModel, s: SlotState, slot: number): boolean {
+  const has = (id: number | undefined, role: Role) => {
+    const ci = id === undefined ? undefined : m.state.idIndex.get(id);
+    return ci !== undefined && memoFor(m, ci, ROLE_INDEX[role], slot).cond.length > 0;
+  };
+  return has(s.base, 'base') || has(s.curry, 'curry') || has(s.subzi, 'subzi') || s.extras.some((e) => has(e, 'extra'));
+}
+
+/**
  * What `id` in `role` brings to meal `s` at `slot`: as `bringsWith`, but a pair that waits for a curry or
  * subzi is a want where every part of its condition is met by another dish of `s`, and there it takes its
  * role from the dish's other pairs (see `resolvePairs`). The same object for the same met conditions.
@@ -454,6 +469,30 @@ export function mealBrings(m: CompiledModel, s: SlotState, slot: number, id: num
   const self = meal.findIndex((d) => d.id === id && d.role === role);
   const r = resolveIn(m.state, memo, self < 0 ? meal : meal.filter((_, k) => k !== self));
   return (r.brings ??= bringsOf(m, r.codes));
+}
+
+/**
+ * Whether scoring `id` as a free pick (`ScoreOptions.freePick`) can add hard violations: some count rule that
+ * gives way to asked sides and has a hard maximum selects the dish in some role and slot. When none does, the
+ * free pick's hard score equals the plain one. Memoised per dish.
+ */
+export function freePickLimited(m: CompiledModel, id: number): boolean {
+  const st = m.state;
+  const ci = st.idIndex.get(id);
+  if (ci === undefined) return false;
+  if (st.freeLimited[ci] < 0) {
+    const c = m.library[ci];
+    const limits = st.counts.filter((cc) => cc.yields === YIELD_ASK && cc.hardMax !== Infinity);
+    let hit = false;
+    for (let r = 0; r < ROLES.length && !hit; r++) {
+      for (let slot = 0; slot < SLOT_COUNT && !hit; slot++) {
+        const a: Assignment = { c, role: ROLES[r], day: slotDay(slot), meal: slotMeal(slot) };
+        hit = limits.some((cc) => st.matchers[cc.sel](a));
+      }
+    }
+    st.freeLimited[ci] = +hit;
+  }
+  return st.freeLimited[ci] === 1;
 }
 
 /**
