@@ -210,6 +210,7 @@ export function slotConflicts(
     else slot[part] = id;
   };
   const i = slotIndex(day, meal);
+  const hasConditional = m.constraints.some((c) => c.kind === 'pair' && !!c.inMeal?.length);
   // A base is planned with the sides it brings; there are no pins here, so every role is free. The sides
   // the replaced base brought leave with it, unless a dish still in the meal brings them too (as the
   // solver's `bring` does).
@@ -248,17 +249,30 @@ export function slotConflicts(
         if (w.unit && !w.of.some(inMeal) && !((role === 'curry' || role === 'subzi') && slot[role] !== undefined)) bringSide(next);
       }
     };
-    // A side is judged with what it brings, so its own pairings do not count against it.
-    const scoreWith = (side: number) => {
+    // A side is judged with what it brings, so its own pairings do not count against it; a plain link's
+    // pick is judged blind to what a link waiting for a curry or subzi brings, as the solver does.
+    const scoreWith = (blind: boolean) => (side: number) => {
       const before = { curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
       bringWithOwn(side);
-      const result = broughtScore(m, state, i, side);
+      const result = broughtScore(m, state, i, side, blind);
       Object.assign(slot, before);
       return result;
     };
+    // As the solver's `bring`: a side a link waiting for a curry or subzi brings comes only where it adds
+    // no hard problem, and is otherwise left out (its missing pair is a soft problem).
+    const addsNoHard = (side: number) => {
+      const before = { curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
+      const was = score(m, state).hard;
+      bringSide(side);
+      const after = score(m, state).hard;
+      Object.assign(slot, before);
+      return after <= was;
+    };
     for (const w of mealBrings(m, slot, i, id, 'base').wants) {
       if (!w.unit || w.of.some(inMeal)) continue;
-      bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned, undefined, candidateWeight(m, i)));
+      const options = w.cond ? w.of.filter(addsNoHard) : w.of;
+      if (!options.length) continue;
+      bringWithOwn(chooseCandidate(options, i, scoreWith(hasConditional && !w.cond), timesPlanned, undefined, candidateWeight(m, i)));
     }
   };
   const timesPlanned = (id: number) =>
