@@ -260,6 +260,14 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     for (const e of s.extras) if (!visit(e, 'extra')) return false;
     return cond;
   };
+  /** Whether a dish of meal `s` at slot `i` has a met pair waiting for a curry or subzi with no candidate in the meal. */
+  const missesConditional = (s: SlotState, i: number): boolean => {
+    if (!mealHasConditional(m, s, i)) return false;
+    const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
+    const misses = (d: number | undefined, role: Role) =>
+      d !== undefined && mealBrings(m, s, i, d, role).wants.some((w) => w.cond && !w.of.some(inMeal));
+    return misses(s.base, 'base') || misses(s.curry, 'curry') || misses(s.subzi, 'subzi') || s.extras.some((e) => misses(e, 'extra'));
+  };
   /** Whether `id` is in slot `i` as a unit member: another dish there must be served with it. */
   const isUnit = (s: SlotState, i: number, id: number | undefined): boolean => {
     if (!hasPairs || id === undefined) return false;
@@ -644,6 +652,26 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         } else {
           restore(s, before);
         }
+      }
+    }
+  }
+  // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
+  // rule, and a later change elsewhere (an extra or another meal's dish leaving) can make room for it, but
+  // nothing brings it again. Once, meals in order, a meal missing such a side brings its sides again; the
+  // result is kept unless the score is worse.
+  if (hasConditional) {
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const s = plan[i];
+      if (!missesConditional(s, i)) continue;
+      const before = snapshot(s);
+      bring(i, NOTHING);
+      if (s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras === before.extras) continue;
+      const next = evaluate(plan);
+      if (compareScore(next, best) <= 0) {
+        best = next;
+        descended = true;
+      } else {
+        restore(s, before);
       }
     }
   }

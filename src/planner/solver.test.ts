@@ -302,6 +302,39 @@ describe('solver', () => {
     });
   });
 
+  describe('a conditional side refused for a hard rule that later stops applying', () => {
+    // Base 1 comes with extra 33 when the curry is 11, but 33 is never on a day with 34, which base 2 (avoided,
+    // so the search replaces it) always brings. 33 is refused while a base 2 meal shares the day; once that
+    // meal changes, 33 fits again.
+    const lib: ComponentLike[] = [
+      ...[1, 2, 3, 4, 5, 6].map((id) => component('base', { id })),
+      ...[11, 12, 13].map((id) => component('curry', { id })),
+      ...[33, 34, 35].map((id) => component('extra', { id })),
+    ];
+    const constraints: Constraint[] = [
+      { kind: 'pair', id: 'pair-33', label: 'Base 1 with 33 when 11', origin: 'rule', when: is('id', 1), of: is('id', 33), strength: 'must', inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'pair-34', label: 'Base 2 with 34', origin: 'rule', when: is('id', 2), of: is('id', 34), strength: 'must' },
+      { kind: 'count', id: 'apart', label: '33 never on a day with 34', origin: 'rule', select: is('id', 33), when: { exists: is('id', 34) }, groupBy: 'day', bounds: { hardMax: 0 } },
+      { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } },
+      { kind: 'prefer', id: 'avoid-2', label: 'Avoid base 2', origin: 'rule', select: is('id', 2), weight: 1 },
+      { kind: 'prefer', id: 'sides', label: 'Extras only when asked', origin: 'rule', select: is('componentType', 'extra'), weight: 2, yieldsTo: 'ask' },
+    ];
+
+    it('is brought where it fits by the end', () => {
+      // Seeds where, without a retry, some base 1 and curry 11 meal ends without 33 although 33 fits.
+      for (const seed of [16, 17, 20, 25]) {
+        const m = buildModel({ library: lib, constraints });
+        const { plan } = solve(m, { ...quick, seed });
+        plan.forEach((s, i) => {
+          if (s.base !== 1 || s.curry !== 11 || s.extras.includes(33)) return;
+          const withSide = clonePlan(plan);
+          withSide[i].extras.push(33);
+          expect(score(m, withSide).hard, `seed ${seed}, slot ${i}`).toBeGreaterThan(score(m, plan).hard);
+        });
+      }
+    });
+  });
+
   it('fills every slot', () => {
     const r = solve(buildModel({ library }), { ...quick, seed: 4 });
     expect(r.plan.filter((s) => s.base !== undefined)).toHaveLength(SLOT_COUNT);
