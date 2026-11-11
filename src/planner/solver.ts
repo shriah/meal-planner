@@ -128,11 +128,12 @@ export function candidateWeight(m: CompiledModel, slot: number): (id: number) =>
  * stop a link still rank its pick. Only hard limits rank: the soft score is the plan's own, not the free
  * pick's, since charging soft limits ("Vary dishes across the week") ranked a link away from a frequent dish
  * whenever the search had it elsewhere for a moment, and the frequency prefers already rank the pick
- * through `candidateWeight`.
+ * through `candidateWeight`. With `blind`, both scores leave out what pairs waiting for a curry or subzi bring
+ * or miss (`ignoreConditional`), so such a pair cannot rank the pick of a plain link (Sambar or Rasam).
  */
-export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number): Score {
-  const s = score(m, plan);
-  const f = score(m, plan, false, { freePick: { id } });
+export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number, blind = false): Score {
+  const s = score(m, plan, false, { ignoreConditional: blind });
+  const f = score(m, plan, false, { freePick: { id }, ignoreConditional: blind });
   const type = m.byId.get(id)?.componentType;
   const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
   // At least 0: charging the frequency rules can only add hard units, but a net figure is never a credit.
@@ -314,13 +315,14 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       changed = true;
     };
     // A candidate is judged with what it brings in turn (each want's first candidate that fits), so its
-    // own pairings do not count against it.
-    const scoreWith = (unit: boolean) => (c: number): Score => {
+    // own pairings do not count against it. With `blind`, it is judged as the search judges a curry: blind
+    // to what pairs waiting for a curry or subzi bring or miss.
+    const scoreWith = (unit: boolean, blind: boolean) => (c: number): Score => {
       const before = snapshot(s);
       const was = changed;
       place(c, unit);
       fill(false);
-      const result = broughtScore(m, plan, i, c);
+      const result = broughtScore(m, plan, i, c, blind);
       restore(s, before);
       changed = was;
       return result;
@@ -351,7 +353,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         }
         const options = w.of.filter(allowed);
         if (!options.length) continue;
-        place(choose ? chooseCandidate(options, i, scoreWith(w.unit), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf) : options[0], w.unit);
+        // A plain link's pick (Sambar or Rasam) must not see what a conditional link would bring with it;
+        // a conditional link's own candidates (Papad or Murukku) are ranked on the whole meal.
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit, hasConditional && !w.cond), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf) : options[0], w.unit);
       }
     };
     /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */

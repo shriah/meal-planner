@@ -577,7 +577,6 @@ function conditionalCases(): RuleCase[] {
       group: 'Pairings',
       name: "A conditional link does not steer another link's curry",
       why: `${PAPAD_RULE}Rice always comes with Sambar or Rasam, Papad is never at dinner, and Rice comes with Papad when the curry is Sambar: Rice and Sambar dinners stay within x1.5 of the count without the Papad link, and every Rice and Sambar lunch has Papad. The bug: the pick between Sambar and Rasam was scored with the Papad the conditional link would bring, so at dinner the missing Papad ranked Sambar down and Rice dinners never had Sambar.`,
-      known: 'fixed by the next commit: the pick among a link\'s curries is scored blind to conditional links',
       rules: papadOnSambar,
       given: (lib) => [
         linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar'), dishId(lib, 'Rasam')] }),
