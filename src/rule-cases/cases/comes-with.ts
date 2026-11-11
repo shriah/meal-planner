@@ -592,7 +592,6 @@ function conditionalCases(): RuleCase[] {
       kind: 'plan',
       id: 'when-curry-retried-after-polish',
       group: 'Pairings',
-      known: 'fixed by the next commit: the retry of a refused conditional side runs after the final clean-up',
       name: 'A conditional side kept out by an extra comes once the extra goes',
       why: `${PAPAD_RULE}Rice always comes with Sambar, Papad is never with Pickle, Pickle is slightly preferred, and Rice comes with Papad when the curry is Sambar: every Rice and Sambar meal has Papad, or the Pickle that keeps it out. The bug: Papad was refused while a passing Pickle sat in the meal, and when the final clean-up then dropped the Pickle nothing brought Papad again, leaving a Rice and Sambar meal with neither.`,
       rules: papadOnSambar,

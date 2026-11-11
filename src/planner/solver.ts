@@ -669,26 +669,6 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     const picked = new Set<string>();
     while (repickOne(i, picked));
   }
-  // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
-  // rule, and a later change elsewhere (an extra or another meal's dish leaving) can make room for it, but
-  // nothing brings it again. Once, meals in order, a meal missing such a side brings its sides again; the
-  // result is kept unless the score is worse.
-  if (hasConditional) {
-    for (let i = 0; i < SLOT_COUNT; i++) {
-      const s = plan[i];
-      if (!missesConditional(s, i)) continue;
-      const before = snapshot(s);
-      bring(i, NOTHING);
-      if (s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras === before.extras) continue;
-      const next = evaluate(plan);
-      if (compareScore(next, best) <= 0) {
-        best = next;
-        descended = true;
-      } else {
-        restore(s, before);
-      }
-    }
-  }
   // A side a pair waiting for a curry or subzi brought is invisible to the search, so a later change to
   // the meal (an extra added beside it) may have made it break a hard rule: such a side leaves the meal
   // wherever that lowers the normal score's hard violations. The missing pair is reported as a soft problem.
@@ -733,6 +713,30 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       if (compareScore(s, best) < 0) best = s;
       else bestPlan[i].extras = old;
     }
+  }
+
+  // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
+  // rule, and a later change (an extra leaving, here or in the polish above, or another meal's dish
+  // leaving) can make room for it, but nothing brings it again. Last, once, meals in order, a meal missing
+  // such a side brings its sides again; the result is kept unless the score is worse.
+  if (hasConditional) {
+    for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
+    let retried = false;
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const s = plan[i];
+      if (!missesConditional(s, i)) continue;
+      const before = snapshot(s);
+      bring(i, NOTHING);
+      if (s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras === before.extras) continue;
+      const next = evaluate(plan);
+      if (compareScore(next, best) <= 0) {
+        best = next;
+        retried = true;
+      } else {
+        restore(s, before);
+      }
+    }
+    if (retried) bestPlan = clonePlan(plan);
   }
 
   return {
