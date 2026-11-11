@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { addableSlots, describeLink, dishTypeOf, isDishTarget, isSideTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersComes, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue, type LinkWhen } from '@/rules'
+import { addableSlots, cleanWhen, describeLink, dishTypeOf, isDishTarget, isSideTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersComes, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
@@ -47,14 +47,6 @@ const WAITING_TARGETS: readonly LinkTarget[] = ['extra_dish', 'extra_category', 
 export function waitsFor(componentType: ComponentType, mode: LinkMode, target: LinkTarget, part: 'curry' | 'subzi'): boolean {
   if (componentType !== 'base' || mode !== 'comes' || !WAITING_TARGETS.includes(target)) return false
   return part === 'curry' || target !== 'subzi_dish'
-}
-
-/** The stored form of a condition: empty parts dropped, and nothing when nothing is left. */
-export function cleanWhen(when: LinkWhen | undefined): LinkWhen | undefined {
-  const out: LinkWhen = {}
-  if (when?.curry?.length) out.curry = [...when.curry]
-  if (when?.subzi?.length) out.subzi = [...when.subzi]
-  return out.curry || out.subzi ? out : undefined
 }
 
 interface LinkEditorProps {

@@ -3,7 +3,7 @@ import { all, is, oneOf } from '@/planner';
 import {
   addableSlots, isSideTarget, LINK_TARGETS, offersComes, clashCurryCategories, curryClashRule, dayModeOf, daysOfMode, dayRule, describeDays, exclusionRule, ownedChanges,
   mealRule, offersLink, ownedSlot, linkRule, linkSlotOf, readLink, pairingCategories, pairingRule, readOwned, ruleDays, describeMeals,
-  linkChanges, offersServe, sameLink,
+  linkChanges, offersServe, sameLink, cleanWhen,
   type DishLink,
 } from './owned';
 
@@ -272,6 +272,16 @@ describe('comes with', () => {
     expect(() => linkRule(rice, { ...link('comes', 'curry_category', ['soup']), when: { subzi: [12] } })).toThrow();
     expect(() => linkRule(rice, { ...link('comes', 'subzi_dish', [12]), when: { subzi: [13] } })).toThrow();
     expect(() => linkRule(rice, { ...link('comes', 'subzi_dish', [12]), when: { curry: [8] } })).not.toThrow();
+  });
+
+  it('stores no condition for an empty one, and drops empty parts', () => {
+    const rice = { id: 4, name: 'Rice' };
+    expect(linkRule(rice, { ...link('comes', 'extra_dish', [16]), when: {} }).spec.params).not.toHaveProperty('when');
+    expect(linkRule(rice, { ...link('comes', 'extra_dish', [16]), when: { curry: [], subzi: [] } }).spec.params).not.toHaveProperty('when');
+    expect(linkRule(rice, { ...link('comes', 'extra_dish', [16]), when: { curry: [8], subzi: [] } }).spec.params).toHaveProperty('when', { curry: [8] });
+    expect(() => linkRule(rice, { ...link('comes', 'curry_dish', [11]), when: { curry: [] } })).not.toThrow();
+    expect(cleanWhen({ subzi: [12] })).toEqual({ subzi: [12] });
+    expect(cleanWhen(undefined)).toBeUndefined();
   });
 
   it('a change of condition is a change of link', () => {

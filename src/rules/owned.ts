@@ -143,6 +143,14 @@ export function pairingCategories(rule: Pick<RuleRecord, 'spec'>): number[] | un
   return rule.spec.template === 'pairs_with' ? [...(rule.spec.params.baseCategories ?? [])] : undefined;
 }
 
+/** The stored form of a condition: empty parts dropped, and nothing when nothing is left. */
+export function cleanWhen(when: LinkWhen | undefined): LinkWhen | undefined {
+  const out: LinkWhen = {};
+  if (when?.curry?.length) out.curry = [...when.curry];
+  if (when?.subzi?.length) out.subzi = [...when.subzi];
+  return out.curry || out.subzi ? out : undefined;
+}
+
 /** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
 export function linkRule(component: { id: number; name: string }, link: LinkInput): OwnedRule {
   const { mode, target, values, strength = 'always', scope } = link;
@@ -156,13 +164,14 @@ export function linkRule(component: { id: number; name: string }, link: LinkInpu
   }
   if (mode === 'comes') {
     if (!isSideTarget(target)) throw new Error(`a dish cannot come with ${target}`);
-    if (link.when && (target === 'curry_dish' || target === 'curry_category' || (target === 'subzi_dish' && link.when.subzi))) {
+    const when = cleanWhen(link.when);
+    if (when && (target === 'curry_dish' || target === 'curry_category' || (target === 'subzi_dish' && when.subzi))) {
       throw new Error('a link cannot bring a dish into a part it waits for');
     }
     const of = all(is('componentType', LINK_DISH_TYPE[target]), oneOf(LINK_FIELD[target], [...values] as never));
     return {
       name: ownedRuleName(`comes:${target}`, component.name),
-      spec: { template: 'comes_with', params: { match: is('id', component.id), of, ...(link.when && { when: link.when }), ...scopeParams(scope), ...strengthParams(strength) } },
+      spec: { template: 'comes_with', params: { match: is('id', component.id), of, ...(when && { when }), ...scopeParams(scope), ...strengthParams(strength) } },
       owner_component_id: component.id,
     };
   }
