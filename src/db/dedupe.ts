@@ -31,6 +31,11 @@ const remapIds = (value: unknown, map: Map<number, number>): unknown => {
 const LEAF_MAP = { id: 'component', base_category_id: 'baseCategory', extra_category_id: 'extraCategory' } as const;
 const LIST_MAP = { components: 'component', baseCategories: 'baseCategory', extraCategories: 'extraCategory' } as const;
 
+/** A "comes with" link's condition (the curries and subzis the meal must hold), as opposed to a matcher named `when`. */
+const isCondition = (v: unknown): v is Record<'curry' | 'subzi', number[]> =>
+  !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length > 0
+  && Object.entries(v).every(([k, ids]) => (k === 'curry' || k === 'subzi') && Array.isArray(ids));
+
 /** A copy of a rule spec with every dish and category id it names mapped through `maps`. */
 export function remapSpec<T>(spec: T, maps: IdMaps): T {
   const walk = (node: unknown): unknown => {
@@ -42,6 +47,7 @@ export function remapSpec<T>(spec: T, maps: IdMaps): T {
     for (const [k, v] of Object.entries(obj)) {
       const listKind = LIST_MAP[k as keyof typeof LIST_MAP];
       if (leafKind && k === 'value') out[k] = remapIds(v, maps[leafKind]);
+      else if (k === 'when' && isCondition(v)) out[k] = Object.fromEntries(Object.entries(v).map(([part, ids]) => [part, remapIds(ids, maps.component)]));
       else if (listKind) out[k] = remapIds(v, maps[listKind]);
       else out[k] = walk(v);
     }

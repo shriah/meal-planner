@@ -921,6 +921,76 @@ describe('ComponentForm links: comes with', () => {
   });
 });
 
+describe('ComponentForm links: comes with when the meal has a curry', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  /** Rice comes with Papad when the curry is Sambar or Rasam and the subzi is Beans Poriyal. */
+  async function setup() {
+    const papad = await saveComponent(undefined, { name: 'Papad', componentType: 'extra', ...tags });
+    const pickle = await saveComponent(undefined, { name: 'Pickle', componentType: 'extra', ...tags });
+    const sambar = await saveComponent(undefined, { name: 'Sambar', componentType: 'curry', ...tags });
+    const rasam = await saveComponent(undefined, { name: 'Rasam', componentType: 'curry', ...tags });
+    const beans = await saveComponent(undefined, { name: 'Beans Poriyal', componentType: 'subzi', ...tags });
+    const plates = await addCategory({ kind: 'base', name: 'Rice Plates' });
+    const rice = await saveComponent(undefined, { name: 'Rice', componentType: 'base', base_category_id: plates, ...tags }, {}, [
+      { kind: 'add', link: { mode: 'comes', target: 'extra_dish', values: [papad], strength: 'always', when: { curry: [sambar, rasam], subzi: [beans] } } },
+    ]);
+    return { rice, papad, pickle, sambar, before: await foodDb.getOwnedRules(rice) };
+  }
+
+  const loadOrders = [
+    ['before the library loads', (id: number) => render(<LiveEditForm componentId={id} />)],
+    ['once the library has loaded', (id: number) => {
+      function OpenWhenLoaded() {
+        return useLibraryLookup().loaded ? <LiveEditForm componentId={id} /> : null;
+      }
+      return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
+    }],
+  ] as const;
+  const sentence = 'Rice always comes with Papad when the curry is Sambar or Rasam and the subzi is Beans Poriyal';
+
+  it.each(loadOrders)('shows the stored condition and a save with no edits writes no link rule, opened %s', async (_, open) => {
+    const { rice, before } = await setup();
+    open(rice);
+    expect(await screen.findByText(sentence)).toBeInTheDocument();
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
+    expect(await foodDb.getOwnedRules(rice)).toEqual(before);
+  });
+
+  it.each(loadOrders)('opening the link and pressing Done changes nothing stored, opened %s', async (_, open) => {
+    const { rice, before } = await setup();
+    open(rice);
+    await userEvent.click(await readyButton('Edit', (await screen.findByText(sentence)).closest('li')!));
+    expect(within(screen.getByRole('group', { name: 'When the curry is' })).getByRole('checkbox', { name: 'Sambar' })).toBeChecked();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    const save = vi.spyOn(foodDb, 'saveComponent');
+    await userEvent.click(await readyButton('Save Base'));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0][3] ?? []).toEqual([]);
+    expect(await foodDb.getOwnedRules(rice)).toEqual(before);
+  });
+
+  it.each(loadOrders)('a new link waiting for a curry is stored with its condition, opened %s', async (_, open) => {
+    const { rice, before, pickle, sambar } = await setup();
+    open(rice);
+    await userEvent.click(await readyButton('Add link'));
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Pickle' }));
+    await userEvent.click(within(screen.getByRole('group', { name: 'When the curry is' })).getByRole('checkbox', { name: 'Sambar' }));
+    expect(screen.getByText('Rice always comes with Pickle when the curry is Sambar')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save Base' }));
+
+    await waitFor(async () => expect(await foodDb.getOwnedRules(rice)).toHaveLength(before.length + 1));
+    const after = await foodDb.getOwnedRules(rice);
+    expect(after.slice(0, before.length)).toEqual(before);
+    expect(readLink(after[before.length])).toEqual({ mode: 'comes', target: 'extra_dish', values: [pickle], strength: 'always', when: { curry: [sambar] } });
+  });
+});
+
 describe('ComponentForm draft prefill', () => {
   it('saves a drafted served-with link together with the new dish', async () => {
     await addCategory({ kind: 'extra', name: 'Condiment' });

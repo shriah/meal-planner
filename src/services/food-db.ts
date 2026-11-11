@@ -34,17 +34,24 @@ export async function updateComponent(id: number, changes: Partial<ComponentReco
   });
 }
 
+const WHEN_PARTS = ['curry', 'subzi'] as const;
+
 /** Deleting a component also deletes the rules it owns. */
 export async function deleteComponent(id: number): Promise<void> {
   await db.transaction('rw', db.components, db.rules, async () => {
     await db.rules.where('owner_component_id').equals(id).delete();
-    // Other dishes' links to this one lose it; a link left with no dish is removed.
+    // Other dishes' links to this one lose it; a link left with no dish is removed. A link waiting for this dish loses
+    // it from that part of its condition, and is removed when the part is left empty, so its condition never widens.
     await db.rules.where('owner_component_id').above(0).modify((rule, ref) => {
       const link = readLink(rule);
-      if (!link || !isDishTarget(link.target) || !link.values.includes(id)) return;
-      const rest = link.values.filter((v) => v !== id);
-      if (rest.length === 0) delete (ref as { value?: unknown }).value;
-      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest }).spec;
+      if (!link) return;
+      const named = isDishTarget(link.target) && link.values.includes(id);
+      const waits = WHEN_PARTS.some((part) => link.when?.[part]?.includes(id));
+      if (!named && !waits) return;
+      const rest = link.values.filter((v) => !named || v !== id);
+      const when = link.when && Object.fromEntries(WHEN_PARTS.filter((part) => link.when![part]).map((part) => [part, link.when![part]!.filter((v) => v !== id)]));
+      if (rest.length === 0 || (when && Object.values(when).some((ids) => ids.length === 0))) delete (ref as { value?: unknown }).value;
+      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest, ...(when && { when }) }).spec;
     });
     await db.components.delete(id);
   });
