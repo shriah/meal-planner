@@ -588,6 +588,25 @@ function conditionalCases(): RuleCase[] {
         everyPicked('Every Rice lunch with Sambar has Papad', allOf(riceSambar, (s) => s.meal_slot === 'lunch'), papad),
       ],
     },
+    {
+      kind: 'plan',
+      id: 'when-curry-retried-after-polish',
+      group: 'Pairings',
+      known: 'fixed by the next commit: the retry of a refused conditional side runs after the final clean-up',
+      name: 'A conditional side kept out by an extra comes once the extra goes',
+      why: `${PAPAD_RULE}Rice always comes with Sambar, Papad is never with Pickle, Pickle is slightly preferred, and Rice comes with Papad when the curry is Sambar: every Rice and Sambar meal has Papad, or the Pickle that keeps it out. The bug: Papad was refused while a passing Pickle sat in the meal, and when the final clean-up then dropped the Pickle nothing brought Papad again, leaving a Rice and Sambar meal with neither.`,
+      rules: papadOnSambar,
+      given: (lib) => [
+        CURRY_AT_EVERY_MEAL,
+        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')] }),
+        {
+          name: 'Papad never with Pickle',
+          spec: { template: 'avoid_with', params: { match: is('id', dishId(lib, 'Papad')), with: is('id', dishId(lib, 'Pickle')), strength: 'must' } },
+        },
+        { name: 'Prefer Pickle', spec: { template: 'prefer', params: { match: is('id', dishId(lib, 'Pickle')), direction: 'prefer', weight: 1 } } },
+      ],
+      expect: [everyPicked('Every Rice meal with Sambar has Papad or Pickle', riceSambar, (s, lib) => papad(s, lib) || hasDish('Pickle')(s, lib))],
+    },
   ];
 }
 
