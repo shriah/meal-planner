@@ -797,6 +797,36 @@ describe('comes-with drafts', () => {
     expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules: [{ ...rules[0], enabled: false }] }))).ok).toBe(true);
   });
 
+  describe('a base with a conditional comes-with link', () => {
+    const lib = [
+      dish(10, 'Rice', { componentType: 'base' }), dish(11, 'Sambar'), dish(12, 'Papad', { componentType: 'extra' }), dish(13, 'Beans Poriyal', { componentType: 'subzi' }),
+    ];
+    const conditional = linkRule({ id: 10, name: 'Rice' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always', when: { curry: [11] } });
+    const stored = { id: 5, name: conditional.name, spec: conditional.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
+
+    it('propose_pairing drafts only the new link and leaves the stored conditional one alone', async () => {
+      const r = await runTool('propose_pairing', { dish: 'Rice', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctxOf({ library: lib, rules: [stored] }));
+      expect(r.ok).toBe(true);
+      expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'comes', target: 'subzi_dish', values: [13], strength: 'always' }]);
+      expect(stored.spec).toEqual(conditional.spec);
+    });
+
+    it('takes no when parameter', () => {
+      const comes = (JSON.stringify(TOOL_DECLARATIONS.find((t) => t.name === 'propose_pairing')) ?? '');
+      expect(comes).not.toMatch(/"when"/);
+    });
+
+    it('explain_plan_slot says Rice comes with Papad when the curry is Sambar', async () => {
+      const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctxOf({
+        library: lib, rules: [stored],
+        plan: { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 10, curry_id: 11, extra_ids: [12] }] },
+      }));
+      expect((r as { data: { pairedWith: unknown } }).data.pairedWith).toEqual([
+        { dish: 'Papad', by: 'Rice', how: 'Rice comes with Papad when the curry is Sambar' },
+      ]);
+    });
+  });
+
   it('explain_plan_slot says Idiyappam comes with Kerala Stew (Veg)', async () => {
     const lib = [dish(10, 'Idiyappam', { componentType: 'base' }), dish(11, 'Kerala Stew (Veg)')];
     const owned = linkRule({ id: 10, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [11], strength: 'always' });
