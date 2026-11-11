@@ -571,8 +571,50 @@ function conditionalCases(): RuleCase[] {
       pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, extra_ids: [TEST_LIBRARY.dish('Papad').id] } },
       expect: [mondayLunchSambarNudged()],
     },
+    {
+      kind: 'plan',
+      id: 'when-curry-blind-link-pick',
+      group: 'Pairings',
+      name: "A conditional link does not steer another link's curry",
+      why: `${PAPAD_RULE}Rice always comes with Sambar or Rasam, Papad is never at dinner, and Rice comes with Papad when the curry is Sambar: Rice and Sambar dinners stay within x1.5 of the count without the Papad link, and every Rice and Sambar lunch has Papad. The bug: the pick between Sambar and Rasam was scored with the Papad the conditional link would bring, so at dinner the missing Papad ranked Sambar down and Rice dinners never had Sambar.`,
+      known: 'fixed by the next commit: the pick among a link\'s curries is scored blind to conditional links',
+      rules: papadOnSambar,
+      given: (lib) => [
+        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar'), dishId(lib, 'Rasam')] }),
+        papadNotAtDinner(lib),
+        preferRiceStrongly(lib),
+      ],
+      expect: [
+        nearNoRules('Rice with Sambar at dinner', allOf(riceSambar, (s) => s.meal_slot === 'dinner')),
+        everyPicked('Every Rice lunch with Sambar has Papad', allOf(riceSambar, (s) => s.meal_slot === 'lunch'), papad),
+      ],
+    },
   ];
 }
+
+/** A hand-written "Never include Papad at dinner", as the Rules page stores it (not an owned rule). */
+const papadNotAtDinner = (lib: CaseLibrary): CaseRule => ({
+  name: 'Never include Papad at dinner',
+  spec: { template: 'exclude', params: { match: is('id', dishId(lib, 'Papad')), scope: { meals: ['dinner'] }, strength: 'must' } },
+});
+
+/** Prefer Rice, Strongly: makes Rice common enough at each meal to count its curries. */
+const preferRiceStrongly = (lib: CaseLibrary): CaseRule => ({
+  name: 'Prefer Rice',
+  spec: { template: 'prefer', params: { match: is('id', dishId(lib, 'Rice')), direction: 'prefer', weight: 4 } },
+});
+
+/** The meals `where` picks stay within x1.5 of the count without the case's rules, which must itself be at least MIN_BASELINE. */
+const nearNoRules = (what: string, where: Pick): PlanExpectation => ({
+  says: `${what} is planned about as often as without the case's rules (which has at least ${MIN_BASELINE} such meals)`,
+  check: (w, ctx) => {
+    const total = mealsPicked(w, where).length;
+    const base = mealsPicked(ctx.baseline(), where).length;
+    const pass = base >= MIN_BASELINE && total >= base / 1.5 && total <= base * 1.5;
+    return { pass, got: `${total} (${base} without the rules)` };
+  },
+  highlights: (slot, lib) => where(slot, lib),
+});
 
 /** Avoid Sambar, Strongly: a push on the curry firmer than "only when a rule asks" and softer than an Always link. */
 const avoidSambarStrongly = (lib: CaseLibrary): CaseRule => ({
