@@ -28,13 +28,14 @@ export function recordsOf(c: PlanCase, own: CaseRule[], given: CaseRule[] = [], 
   return all.map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
 }
 
+export const knownIds = (lib: CaseLibrary): KnownIds => ({
+  components: new Set(lib.dishes.map((d) => d.id)),
+  baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
+  extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
+});
+
 function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins'], budget: CaseBudget = BUDGET): CaseWeeks & { issues: RuleIssue[] } {
-  const known: KnownIds = {
-    components: new Set(lib.dishes.map((d) => d.id)),
-    baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
-    extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
-  };
-  const { constraints, issues } = compileRules(rules, known);
+  const { constraints, issues } = compileRules(rules, knownIds(lib));
   const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins }));
   return {
     weeks: results.map((r) => r.slots),
@@ -46,7 +47,7 @@ function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: Pla
   };
 }
 
-const libraryFor = (c: PlanCase): CaseLibrary =>
+export const libraryFor = (c: PlanCase): CaseLibrary =>
   c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
 
 /**

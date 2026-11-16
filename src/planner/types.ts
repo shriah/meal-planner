@@ -69,4 +69,37 @@ export interface SlotPins {
 }
 export type Pins = Partial<Record<`${Day}-${Meal}`, SlotPins>>;
 
+/** One part of a meal: the role its dishes fill, whether it holds many dishes, and its pin. */
+export interface PartDef { role: Role; many: boolean; pin: keyof SlotPins }
+/** The parts of a meal, in order. The first is the meal's base, which is never left empty. */
+export const PARTS: readonly PartDef[] = [
+  { role: 'base', many: false, pin: 'base_id' },
+  { role: 'curry', many: false, pin: 'curry_id' },
+  { role: 'subzi', many: false, pin: 'subzi_id' },
+  { role: 'extra', many: true, pin: 'extra_ids' },
+];
+/** The part a dish of type `role` fills. */
+export const partOf = (role: Role | undefined): PartDef | undefined => PARTS.find((p) => p.role === role);
+
+type SingleRole = Exclude<keyof SlotState, 'extras'>;
+// Until meal parts are user-defined, a many part is the extras list and a single part is the field of its role.
+const single = (p: PartDef) => p.role as SingleRole;
+
+/** The dishes meal `s` holds in part `p`, in order. A many part returns the meal's own array: do not change it. */
+export const dishesIn = (s: Readonly<SlotState>, p: PartDef): readonly number[] => {
+  if (p.many) return s.extras;
+  const id = s[single(p)];
+  return id === undefined ? [] : [id];
+};
+/** Puts `id` in part `p` of `s`: appended to a many part (as a new array), replacing a single part's dish. */
+export const withDish = (s: SlotState, p: PartDef, id: number): void => {
+  if (p.many) s.extras = [...s.extras, id];
+  else s[single(p)] = id;
+};
+/** Takes `id` out of part `p` of `s`: a many part gets a new array without it; a single part holding it is emptied. */
+export const withoutDish = (s: SlotState, p: PartDef, id: number): void => {
+  if (p.many) s.extras = s.extras.filter((e) => e !== id);
+  else if (s[single(p)] === id) s[single(p)] = undefined;
+};
+
 export const titleCase = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);

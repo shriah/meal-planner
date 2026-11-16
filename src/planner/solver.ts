@@ -6,7 +6,7 @@
 import { searchBudget } from './budget';
 import { mulberry32 } from './rng';
 import { compareScore, freePickLimited, lockNudge, mealBrings, mealHasConditional, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
-import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
+import { DAYS, MEALS, PARTS, SLOT_COUNT, dishesIn, emptyPlan, partOf, withDish, withoutDish, type PartDef, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
 /** The wall-clock cap on a solve when none is given. It only guards against a stuck search; the step budget normally ends it first. */
 export const SAFETY_CAP_MS = 10_000;
@@ -26,6 +26,8 @@ export interface SolveOptions {
   constructionSample?: number;
   /** Softmax temperature over soft score when choosing construction candidates; higher = more variety. Default 1. */
   temperature?: number;
+  /** Most rounds of the repair loop after the search. Default `REPAIR_ROUNDS`; tests only. */
+  repairRounds?: number;
 }
 
 export type StopReason = 'plateau' | 'time' | 'iterations';
@@ -33,7 +35,7 @@ export type StopReason = 'plateau' | 'time' | 'iterations';
 export interface SolveResult {
   plan: PlanState;
   score: ScoreResult;
-  stats: { iterations: number; improvements: number; constructionMs: number; totalMs: number; stopReason: StopReason };
+  stats: { iterations: number; improvements: number; constructionMs: number; totalMs: number; stopReason: StopReason; repairRounds: number };
 }
 
 type PickRole = 'base' | 'curry' | 'subzi';
@@ -43,8 +45,8 @@ const now = (): number => globalThis.performance?.now() ?? Date.now();
 const NOTHING: readonly number[] = [];
 /** Rounds of `bring`: a brought side may bring its own sides. */
 const BRING_ROUNDS = 3;
-/** Most passes of the final descent; it stops sooner once a pass changes nothing. */
-const DESCENT_PASSES = 10;
+/** Most rounds of the repair loop after the search; it stops sooner once a round keeps nothing. */
+export const REPAIR_ROUNDS = 10;
 /** Default `constructionSample`. */
 const SAMPLE_SIZE = 10;
 /** Bound on `w` in `chooseCandidate`'s weighted use: one candidate is weighted at most 2 × this past another. */
@@ -619,75 +621,105 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     history[h] = current;
   }
 
+  // ── Repair after the search ──
+  // One loop of move kinds (`repair` below). A move kind's `runMeal(i)` tries its changes in meal `i`, keeps
+  // those its `accept` allows, and says whether any was kept; a pass over the week runs it on meals in order.
+  // A kind with its own order over the week (polish) gives `runWeek` instead. `better`: strictly improves the
+  // search score (`evaluate`); `notWorse`: the search score is not worse; `fewerHard`: the normal score's hard
+  // count drops. `on` is the plan the kind changes: `plan`, or `bestPlan` (polish); `repair` copies it to the
+  // other after the kind kept something, so every kind starts from the same week.
+  type Accept = 'better' | 'notWorse' | 'fewerHard';
+  type MoveKind = { name: 'descent' | 'repick' | 'sweep' | 'polish' | 'retry'; accept: Accept; on: 'plan' | 'best' }
+    & ({ runMeal(i: number): boolean; runWeek?: never } | { runWeek(): boolean; runMeal?: never });
+  /** One pass of `kind` over the week. Whether it kept a change. */
+  const runWeek = (kind: MoveKind): boolean => {
+    if (kind.runWeek) return kind.runWeek();
+    let kept = false;
+    for (let i = 0; i < SLOT_COUNT; i++) if (kind.runMeal(i)) kept = true;
+    return kept;
+  };
+  // The move kinds read the meal's parts from `PARTS`; the first part is the base, which is never left empty.
+  const [firstPart] = PARTS;
+  /** Whether part `p` of meal `i` is not pinned. */
+  const isFreePart = (i: number, p: PartDef) => pins[i][p.pin] === undefined;
+  /** Meals whose part `p` is not pinned, in order. */
+  const freeMeals = new Map(PARTS.map((p) => [p, Array.from({ length: SLOT_COUNT }, (_, i) => i).filter((i) => isFreePart(i, p))]));
+  /** Every dish of meal `s` with the part it sits in, parts in order. */
+  const dishesOf = (s: Readonly<SlotState>): [number, PartDef][] => PARTS.flatMap((p) => dishesIn(s, p).map((id): [number, PartDef] => [id, p]));
+  /** Whether meals `a` and `b` hold the same dishes in every part, in the same order. */
+  const sameDishes = (a: Readonly<SlotState>, b: Readonly<SlotState>) =>
+    PARTS.every((p) => { const x = dishesIn(a, p); const y = dishesIn(b, p); return x.length === y.length && x.every((e, k) => e === y[k]); });
   // Final descent: the random moves can stop on a plateau one change away from a better week. Try every
   // single change of a free base, curry or subzi (meals in order, roles base, curry, subzi, candidates in
-  // library order, no side first) and keep each one that strictly improves the score, until a full pass
-  // finds none or DESCENT_PASSES are done (the time limit does not apply here). Unit members stay while their
-  // dish does; a changed dish brings its sides, as in the moves.
-  for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
-  let descended = false;
-  for (let pass = 0; pass < DESCENT_PASSES; pass++) {
-    let improved = false;
-    for (let i = 0; i < SLOT_COUNT; i++) {
+  // library order, no side first) and keep each one that strictly improves the score. One pass per round of
+  // the repair loop; further passes are further rounds. Unit members stay while their dish does; a changed
+  // dish brings its sides, as in the moves.
+  const descent: MoveKind = {
+    name: 'descent', accept: 'better', on: 'plan',
+    runMeal(i) {
       const s = plan[i];
-      for (const r of PICK_ROLES) {
-        if (!isFree(i, r) || !pool[r].length) continue;
-        const options: readonly (number | undefined)[] = r === 'base' ? pool.base : [undefined, ...pool[r]];
+      let improved = false;
+      for (const p of PARTS) {
+        if (p.many || !isFreePart(i, p) || !pool[p.role].length) continue;
+        const options: readonly (number | undefined)[] = p === firstPart ? pool[p.role] : [undefined, ...pool[p.role]];
         for (const v of options) {
-          if (isUnit(s, i, s[r])) break;
-          if (v === s[r]) continue;
+          const cur = dishesIn(s, p)[0];
+          if (isUnit(s, i, cur)) break;
+          if (v === cur) continue;
           const before = snapshot(s);
-          const prev = broughtBy(s, s[r], r, i);
+          const prev = broughtBy(s, cur, p.role, i);
           const gone = conditionalSides(s, i);
-          s[r] = v;
+          if (v === undefined) withoutDish(s, p, cur!);
+          else withDish(s, p, v);
           bring(i, prev, gone);
           const next = evaluate(plan);
           if (compareScore(next, best) < 0) {
             best = next;
-            improved = descended = true;
+            improved = true;
           } else {
             restore(s, before);
           }
         }
       }
-    }
-    if (!improved) break;
-  }
+      return improved;
+    },
+  };
+
   // Re-pick: a link's pick is made when its dish comes into the meal and is not revisited after, so a pick
   // made while the search briefly had one candidate elsewhere (where a limit ranked it down) would stand.
-  // Once, meals in order, each met want of several candidates is picked again from the week as it now is:
-  // its candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless
-  // the score is worse.
+  // Meals in order, each met want of several candidates is picked again from the week as it now is: its
+  // candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless the
+  // score is worse. A kept change need not improve, so each want is picked again at most once per meal over
+  // the whole repair loop (`picked` lasts across rounds): otherwise two not-worse picks could take turns
+  // round after round.
   /**
    * Picks again, in meal `i` as it now is, each want of several candidates not yet in `picked` (which it
    * extends), until a change is kept. Whether one was.
    */
   const repickOne = (i: number, picked: Set<string>): boolean => {
     const s = plan[i];
-    const inMeal = (c: number) => s.base === c || s.curry === c || s.subzi === c || s.extras.includes(c);
-    const dishes: [number | undefined, Role][] = [[s.base, 'base'], [s.curry, 'curry'], [s.subzi, 'subzi'], ...s.extras.map((e): [number, Role] => [e, 'extra'])];
-    for (const [id, role] of dishes) {
-      if (id === undefined || !inMeal(id)) continue;
+    const inMeal = (c: number) => PARTS.some((p) => dishesIn(s, p).includes(c));
+    for (const [id, { role }] of dishesOf(s)) {
+      if (!inMeal(id)) continue;
       for (const w of mealBrings(m, s, i, id, role).wants) {
         if (w.of.length < 2) continue;
         const key = `${id}:${role}:${w.of.join(',')}`;
         if (picked.has(key)) continue;
         picked.add(key);
         const c = w.of.find(inMeal);
-        const type = c === undefined ? undefined : m.byId.get(c)?.componentType;
-        if (c === undefined || (type !== 'curry' && type !== 'subzi' && type !== 'extra')) continue;
-        if (!isFree(i, type === 'extra' ? 'extras' : type)) continue;
+        // The candidate's part, from its dish type: the base is never picked again.
+        const part = c === undefined ? undefined : partOf(m.byId.get(c)?.componentType);
+        if (c === undefined || !part || part === firstPart) continue;
+        if (!isFreePart(i, part)) continue;
         const before = snapshot(s);
-        const prev = broughtBy(s, c, type, i);
+        const prev = broughtBy(s, c, part.role, i);
         const gone = conditionalSides(s, i);
-        if (type === 'extra') s.extras = s.extras.filter((e) => e !== c);
-        else s[type] = undefined;
+        withoutDish(s, part, c);
         bring(i, prev, gone);
-        if (inMeal(c) && s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras.length === before.extras.length && s.extras.every((e, k) => e === before.extras[k])) continue;
+        if (inMeal(c) && sameDishes(s, before)) continue;
         const next = evaluate(plan);
         if (compareScore(next, best) <= 0) {
           best = next;
-          descended = true;
           return true;
         }
         restore(s, before);
@@ -695,85 +727,134 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     return false;
   };
-  // After a kept change the meal's dishes and wants are read again (a new curry can meet a condition, a
-  // brought side can bring its own); each want is still picked at most once, so the pass ends.
-  for (let i = 0; i < SLOT_COUNT; i++) {
-    const picked = new Set<string>();
-    while (repickOne(i, picked));
-  }
+  /** Per meal, the wants already picked again, over all rounds. */
+  const picked = Array.from({ length: SLOT_COUNT }, () => new Set<string>());
+  const repick: MoveKind = {
+    name: 'repick', accept: 'notWorse', on: 'plan',
+    // After a kept change the meal's dishes and wants are read again (a new curry can meet a condition, a
+    // brought side can bring its own); each want is still picked at most once, so the pass ends.
+    runMeal(i) {
+      let kept = false;
+      while (repickOne(i, picked[i])) kept = true;
+      return kept;
+    },
+  };
+
   // A side a pair waiting for a curry or subzi brought is invisible to the search, so a later change to
   // the meal (an extra added beside it) may have made it break a hard rule: such a side leaves the meal
   // wherever that lowers the normal score's hard violations. The missing pair is reported as a soft problem.
-  if (hasConditional) {
-    for (let i = 0; i < SLOT_COUNT; i++) {
+  // No cross-round memory: sweep only removes, keeping a removal only when it lowers the hard count, and it runs
+  // after descent in every round; REPAIR_ROUNDS bounds any descent <-> sweep alternation.
+  const sweep: MoveKind = {
+    name: 'sweep', accept: 'fewerHard', on: 'plan',
+    runMeal(i) {
       const s = plan[i];
-      for (const c of [s.subzi, ...s.extras]) {
-        if (c === undefined || !condOnly(s, i, c)) continue;
-        const type = m.byId.get(c)?.componentType;
-        if (!isFree(i, type === 'extra' ? 'extras' : 'subzi')) continue;
+      let kept = false;
+      // Every part but the first, except the curry: sweep has never removed a curry, even one a pair waiting
+      // for a subzi brought. Kept by name so this refactor changes no week; the meal-parts project decides.
+      for (const [c, p] of dishesOf(s)) {
+        if (p === firstPart || p.role === 'curry' || !condOnly(s, i, c)) continue;
+        if (!isFreePart(i, p)) continue;
         const before = snapshot(s);
         const hard = score(m, plan).hard;
-        if (type === 'extra') s.extras = s.extras.filter((e) => e !== c);
-        else s.subzi = undefined;
-        if (score(m, plan).hard < hard) descended = true;
+        withoutDish(s, p, c);
+        if (score(m, plan).hard < hard) kept = true;
         else restore(s, before);
       }
-    }
-    if (descended) best = evaluate(plan);
-  }
-  if (descended) bestPlan = clonePlan(plan);
+      // Sweep keeps by the normal score, so the search score is taken again.
+      if (kept) best = evaluate(plan);
+      return kept;
+    },
+  };
 
   // Polish: drop any free curry, subzi or extra whose removal strictly improves the best plan. Sides
   // cost something unless a rule asks for them, and random search does not always find every removal.
   // Unit members stay; asked-for sides may go.
-  for (const r of ['curry', 'subzi'] as const) {
-    for (const i of free[r]) {
-      const old = bestPlan[i][r];
-      if (old === undefined || isUnit(bestPlan[i], i, old)) continue;
-      bestPlan[i][r] = undefined;
+  /** Polishes part `p` of meal `i`; its dishes are tried last to first. Whether a removal was kept. */
+  const polishRole = (p: PartDef, i: number): boolean => {
+    const meal = bestPlan[i];
+    let kept = false;
+    for (let k = dishesIn(meal, p).length - 1; k >= 0; k--) {
+      const d = dishesIn(meal, p)[k];
+      if (isUnit(meal, i, d)) continue;
+      const before = snapshot(meal);
+      withoutDish(meal, p, d);
       const s = evaluate(bestPlan);
-      if (compareScore(s, best) < 0) best = s;
-      else bestPlan[i][r] = old;
+      if (compareScore(s, best) < 0) { best = s; kept = true; }
+      else restore(meal, before);
     }
-  }
-  for (const i of free.extras) {
-    for (let k = bestPlan[i].extras.length - 1; k >= 0; k--) {
-      const old = bestPlan[i].extras;
-      if (isUnit(bestPlan[i], i, old[k])) continue;
-      bestPlan[i].extras = old.filter((_, j) => j !== k);
-      const s = evaluate(bestPlan);
-      if (compareScore(s, best) < 0) best = s;
-      else bestPlan[i].extras = old;
-    }
-  }
+    return kept;
+  };
+  // Polish has its own order over the week: role by role (every free curry, then every free subzi, then
+  // every free meal's extras), meals in order within a role. Removals are kept against a moving `best`, so
+  // the order can change the week.
+  const polish: MoveKind = {
+    name: 'polish', accept: 'better', on: 'best',
+    runWeek() {
+      let kept = false;
+      for (const p of PARTS) {
+        if (p === firstPart) continue;
+        for (const i of freeMeals.get(p)!) if (polishRole(p, i)) kept = true;
+      }
+      return kept;
+    },
+  };
 
   // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
   // rule, and a later change (an extra leaving, here or in the polish above, or another meal's dish
-  // leaving) can make room for it, but nothing brings it again. Last, once, meals in order, a meal missing
-  // such a side brings its sides again; the result is kept unless the score is worse.
-  if (hasConditional) {
-    for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
-    let retried = false;
-    for (let i = 0; i < SLOT_COUNT; i++) {
+  // leaving) can make room for it, but nothing brings it again. Meals in order, a meal missing such a side
+  // brings its sides again; the result is kept unless the score is worse. A kept retry need not improve, so
+  // each meal is retried at most once over the whole repair loop (`retried` lasts across rounds): otherwise a
+  // side brought back and removed again could take turns round after round.
+  /** Meals already retried, over all rounds. */
+  const retried = new Set<number>();
+  const retry: MoveKind = {
+    name: 'retry', accept: 'notWorse', on: 'plan',
+    runMeal(i) {
       const s = plan[i];
-      if (!missesConditional(s, i)) continue;
+      if (retried.has(i) || !missesConditional(s, i)) return false;
       const before = snapshot(s);
       bring(i, NOTHING);
-      if (s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras === before.extras) continue;
+      // With nothing to remove, `bring` only adds: the meal is unchanged exactly when it holds the same dishes.
+      if (sameDishes(s, before)) return false;
+      retried.add(i);
       const next = evaluate(plan);
       if (compareScore(next, best) <= 0) {
         best = next;
-        retried = true;
-      } else {
-        restore(s, before);
+        return true;
       }
+      restore(s, before);
+      return false;
+    },
+  };
+
+  /** Rounds the repair loop ran. */
+  let repairRounds = 0;
+  /**
+   * The repair loop: a round runs `kinds` in order, each over the whole week; rounds repeat until one keeps
+   * nothing or `rounds` are done. The time limit does not apply. `plan` and `bestPlan` hold the same week
+   * before each kind, and `best` is its search score.
+   */
+  function repair(kinds: readonly MoveKind[], rounds: number): void {
+    for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
+    for (let round = 0; round < rounds; round++) {
+      repairRounds++;
+      let kept = false;
+      for (const kind of kinds) {
+        if (!runWeek(kind)) continue;
+        kept = true;
+        if (kind.on === 'plan') bestPlan = clonePlan(plan);
+        else for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
+      }
+      if (!kept) break;
     }
-    if (retried) bestPlan = clonePlan(plan);
   }
+  // Sweep and retry only matter when a pair waits for a curry or subzi.
+  repair(hasConditional ? [descent, repick, sweep, polish, retry] : [descent, repick, polish], opts.repairRounds ?? REPAIR_ROUNDS);
 
   return {
     plan: bestPlan,
     score: score(m, bestPlan, true),
-    stats: { iterations, improvements, constructionMs, totalMs: now() - t0, stopReason },
+    stats: { iterations, improvements, constructionMs, totalMs: now() - t0, stopReason, repairRounds },
   };
 }

@@ -6,7 +6,7 @@ import { compareScore, compileModel, lockNudge, score, type CompiledModel, type 
 import { searchBudget } from './budget';
 import { SAFETY_CAP_MS, broughtScore, chooseCandidate, compareBrought, type BroughtScore, clonePlan, solve } from './solver';
 import { component } from './test-utils';
-import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type PlanState, type SlotState } from './types';
+import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type Pins, type PlanState, type SlotState } from './types';
 
 const library: ComponentLike[] = [
   ...[1, 2, 3, 4].map((id) => component('base', { id, base_category_id: 10 })),
@@ -74,6 +74,16 @@ describe('solver', () => {
     });
     expect(r.plan[slotIndex('friday', 'lunch')]).toMatchObject({ base: 2, curry: undefined });
     expect(r.plan[slotIndex('friday', 'dinner')].curry).toBeDefined();
+  });
+
+  it('a locked meal is left alone', () => {
+    // Every role of meal 0 is pinned, to a fish curry no rule allows and two extras that only cost: each
+    // clean-up after the search (descent, re-pick, sweep, polish, retry) would change something if it could.
+    const noFish = { kind: 'count' as const, id: 'no-fish', label: 'No fish', origin: 'rule' as const, select: is('protein_tag', 'fish'), groupBy: 'slot' as const, bounds: { hardMax: 0 } };
+    const r = solve(buildModel({ library, constraints: [noFish] }), {
+      ...quick, seed: 1, pins: { [`${DAYS[0]}-${MEALS[0]}`]: { base_id: 1, curry_id: 15, subzi_id: 21, extra_ids: [31, 32] } },
+    });
+    expect(r.plan[0]).toEqual({ base: 1, curry: 15, subzi: 21, extras: [31, 32] });
   });
 
   it('satisfies a weekly minimum the greedy generator could not express', () => {
@@ -436,7 +446,7 @@ describe('chooseCandidate', () => {
   });
 });
 
-describe('final descent', () => {
+describe('repair loop', () => {
   // Mirrors TEST_LIBRARY in src/rule-cases/library.ts (ids, roles, order).
   // The rule-case test library and the default rules, written out here because planner files may not import
   // the rules module. Their levels are fixtures, not compileRules' exactly (variety and spacing are `dish`
@@ -520,12 +530,98 @@ describe('final descent', () => {
     }
   });
 
-  it('runs the final descent in full even once the time limit has passed; only the pass count bounds it', () => {
+  it('a second round can improve: a side polish drops makes room for a base descent could not take', () => {
+    // Monday breakfast's base is locked and its extras are free; Monday lunch's base is free; every other meal
+    // is locked. Extra 31 is slightly liked, base 2 is liked most, base 3 next. 31 and base 3 together cost a
+    // little, 31 and base 2 together a lot. Construction adds 31 at breakfast, then takes base 3 at lunch;
+    // by then 31 costs more than it gives. Round 1: descent cannot take base 2 while 31 stays; polish drops
+    // 31. Only round 2's descent can then take base 2.
+    const lunch = slotIndex('monday', 'lunch');
+    const breakfast = slotIndex('monday', 'breakfast');
+    const pins: Pins = {};
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      if (i === breakfast) pins[mealName(i) as keyof Pins] = { base_id: 1, curry_id: null, subzi_id: null };
+      else if (i === lunch) pins[mealName(i) as keyof Pins] = { curry_id: null, subzi_id: null, extra_ids: [] };
+      else pins[mealName(i) as keyof Pins] = { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+    }
+    const together = (id: string, other: number, cost: number) => rule({
+      id, label: id, select: oneOf('id', [31, other]), groupBy: 'plan', bounds: { softMax: 1 }, costs: { min: cost, max: cost }, level: 'dish',
+    });
+    const constraints: Constraint[] = [
+      prefer('like-31', is('id', 31), -1, 'dish'),
+      prefer('like-2', is('id', 2), -12, 'dish'),
+      prefer('like-3', is('id', 3), -10, 'dish'),
+      together('31-with-3', 3, 3),
+      together('31-with-2', 2, 100),
+    ];
+    const run = (repairRounds: number) => solve(buildModel({ library, constraints }), { seed: 1, pins, timeLimitMs: Infinity, maxIterations: 0, temperature: 0.1, repairRounds });
+    const one = run(1);
+    const two = run(2);
+    expect(one.stats.repairRounds).toBe(1);
+    expect(one.plan[breakfast].extras).toEqual([]);
+    expect(one.plan[lunch].base).toBe(3);
+    expect(two.plan[lunch].base).toBe(2);
+    expect(compareScore(two.score, one.score)).toBeLessThan(0);
+  });
+
+  it('a side retry brings back and sweep drops again is retried once, so the rounds end', () => {
+    // Monday breakfast: base 1 and curry 11 locked, extras free; every other meal locked. Base 1 brings extra 31
+    // when the curry is 11, and 31 brings extra 32; a meal holds at most one extra. The search is blind to 31
+    // (brought only by the conditional pair), so 31 and 32 look fine to it; the normal score sees two extras.
+    // Each round sweep drops 31, polish drops 32 (no longer asked for), and retry brings both back at no cost
+    // to the search score. Retry remembers the meal, so the loop ends; without that it would run every round.
+    const breakfast = slotIndex('monday', 'breakfast');
+    const pins: Pins = {};
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      pins[mealName(i) as keyof Pins] = i === breakfast
+        ? { base_id: 1, curry_id: 11, subzi_id: null }
+        : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+    }
+    const constraints: Constraint[] = [
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
+      rule({ id: 'one-extra', label: 'one-extra', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 1 }, level: 'rule' }),
+      prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),
+    ];
+    const r = solve(buildModel({ library, constraints }), { seed: 1, pins, timeLimitMs: Infinity, maxIterations: 0 });
+    expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
+    expect(r.score.hard).toBe(0);
+  });
+
+  it('a want re-pick picks again brings back a swept side once, so the rounds end', () => {
+    // As above, with extras 33 and 34 and a link from base 1 to either, and room for two extras. Retry brings
+    // 31 and 32 back once; after that, re-picking the link's extra also brings them back (the same week to the
+    // search) and sweep and polish drop them again. Re-pick remembers the want, so the loop ends.
+    const lib = [...library, component('extra', { id: 33 }), component('extra', { id: 34 })];
+    const breakfast = slotIndex('monday', 'breakfast');
+    const pins: Pins = {};
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      pins[mealName(i) as keyof Pins] = i === breakfast
+        ? { base_id: 1, curry_id: 11, subzi_id: null }
+        : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+    }
+    const constraints: Constraint[] = [
+      { kind: 'pair', id: 'either', label: 'Base 1 with 33 or 34', origin: 'rule', when: is('id', 1), of: oneOf('id', [33, 34]), strength: 'prefer', cost: 1 },
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
+      rule({ id: 'two-extras', label: 'two-extras', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 2 }, level: 'rule' }),
+      prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),
+    ];
+    const r = solve(buildModel({ library: lib, constraints }), { seed: 1, pins, timeLimitMs: Infinity, maxIterations: 0 });
+    expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
+    expect(r.score.hard).toBe(0);
+  });
+
+  it('runs the repair loop in full even once the time limit has passed; only the round count bounds it', () => {
     const run = (o: { timeLimitMs: number; maxIterations?: number }) => SEEDS.map((seed) => solve(buildModel({ library: lib, constraints: defaults }), { seed, ...o }));
     const late = run({ timeLimitMs: 0 });
     const unhurried = run({ timeLimitMs: Infinity, maxIterations: 0 });
-    // Both skip the search; the descent then runs the same either way.
-    late.forEach((l, k) => expect(l.plan).toEqual(unhurried[k].plan));
+    // Both skip the search; the repair loop then runs the same rounds either way.
+    late.forEach((l, k) => {
+      expect(l.plan).toEqual(unhurried[k].plan);
+      expect(l.stats.repairRounds).toBe(unhurried[k].stats.repairRounds);
+      expect(l.stats.repairRounds).toBeGreaterThan(1);
+    });
   });
 
   describe('search budget', () => {
