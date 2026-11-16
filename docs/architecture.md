@@ -165,7 +165,7 @@ flowchart TD
     A["Constraints: built-ins + compiled rules"] --> B["compileModel: matchers to closures, groups"]
     B --> C["Construction: fill 21 slots, pins first, softmax over candidates"]
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
-    D --> E{"No hard violations and no improvement for N iterations, or time cap?"}
+    D --> E{"No hard violations and no improvement for N iterations, or the step budget (or time cap) reached?"}
     E -->|no| D
     E -->|yes| H["Final descent: every single change of a free base, curry or subzi; keep strict improvements"]
     H --> F["Polish: drop curries, subzis and extras that do not help"]
@@ -186,7 +186,14 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
 - The **final descent** runs after the random search: it tries every single change of a free base, curry or subzi in a
   fixed order and keeps each strict improvement, for at most `DESCENT_PASSES` (10) passes or until a pass changes nothing.
-  The time limit (300 ms by default) does not cut it short.
+  The safety cap does not cut it short.
+- **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
+  `clamp(36000 + 150 * dishes + 400 * pairs, 36000, 200000)`, and stops earlier on a plateau (3000 iterations with no
+  improvement and no hard violation). Steps, not time, decide the result, so a plan for a given seed does not depend on machine
+  speed. Derivation: `docs/superpowers/plans/2026-11-16-planner-search-budget-measurements.md`.
+- **Safety cap**: `timeLimitMs` is only a cap (`SAFETY_CAP_MS`, 10 s). When it cuts the search short, Generate or Regenerate
+  shows "Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again." in
+  `PlanProblemsBanner`. The note is not stored, and the meal picker and previews ignore it.
 
 ### Pairings as units
 
@@ -235,7 +242,7 @@ expectations checked over 8 planned weeks (seeds 1–8). Groups: Pairings, Days 
 (`src/rule-cases/cases`). It covers the rule engine and planner only, no UI.
 
 - Cases use their own test library (`library.ts`), never the seed library or user data.
-- Runs use a fixed iteration budget (`run.ts`: 20 000 iterations, no time limit), so results do not depend on machine speed.
+- Runs use a fixed iteration budget (`run.ts`: the same `searchBudget` as the app, with no time limit), so results do not depend on machine speed.
 - A case's `rules`, `pins` and `without` (default rules by `default_key`) are what it is about; supporting rules go in
   `given`. `rule-cases.test.ts` plans every case without its subject (`failsWithoutSubject` in `run.ts`) and fails it if all
   its expectations still pass, since such a case proves nothing.

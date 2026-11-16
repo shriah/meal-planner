@@ -88,7 +88,7 @@ Seeded libraries: the 87 seed dishes (plus Poori, ids from 100, frequency as in 
 ## Chosen formula
 
 `searchBudget = clamp(BASE + PER_DISH * dishes + PER_PAIR * pairs, MIN, MAX)` with
-BASE = 36000, PER_DISH = 150, PER_PAIR = 400, MIN = 30000, MAX = 200000. Plateau stays 3000.
+BASE = 36000, PER_DISH = 150, PER_PAIR = 400, MIN = 36000 (equal to BASE, so the floor never binds), MAX = 200000. Plateau stays 3000.
 
 Margin (budget / worst measured iterations over 60 seeds, 1.5x required):
 
@@ -99,10 +99,16 @@ Margin (budget / worst measured iterations over 60 seeds, 1.5x required):
 | seeded, cut | 60, 3 | 46 200 | 27 544 | 1.68x |
 | seeded, full | 87, 3 | 50 250 | 25 901 | 1.94x |
 | seeded, full, heavy links | 87, 18 | 56 250 | 29 808 | 1.89x |
-| rule cases (worst: 18 dishes, 0 pairs) | 18, 0 | 38 700 (MIN gives at least 30 000) | 1000 | 38x |
+| rule cases (worst: 18 dishes, 0 pairs) | 18, 0 | 38 700 (floor 36 000 never binds) | 1000 | 38x |
+
+The 45-dish set is the tightest margin (1.60x), still above the 1.5x required.
 
 The rule cases now run at about 39 000 instead of today's fixed 20 000. The plateau stops most searches long before the cap, so the cases cost little more, but a case that today passes only because its search ends at 20 000 would now see more search; Task 3 must confirm `npm run rule-cases` outcomes are unchanged.
 
 ## Projected Generate time (seeded library)
 
-Typical: plateau stop at 10-30k iterations, about 0.06-0.2 ms x 1000, i.e. 60-200 ms. Worst case the cap is hit: 87 dishes, 18 links gives 56 250 x 0.0066 ms = about 0.37 s; 87 dishes, 3 links gives 50 250 x 0.0055 = about 0.28 s. Both are under the ~1 s target, with about 2.7x headroom on the heavy case. Headroom: per-iteration cost would have to reach about 0.018 ms (nearly 3x the 18-link cost) before the capped search passes 1 s. Libraries much larger than 87 dishes or with far more than 18 links were not measured.
+Typical: the plateau stop comes at 10-30k iterations, at about 0.0055 ms each, so about 55-165 ms. Worst case the cap is hit: 87 dishes, 18 links gives 56 250 x 0.0066 ms = about 0.37 s; 87 dishes, 3 links gives 50 250 x 0.0055 = about 0.28 s. Both are under the ~1 s target, with about 2.7x headroom on the heavy case. Headroom: per-iteration cost would have to reach about 0.018 ms (nearly 3x the 18-link cost) before the capped search passes 1 s. Libraries much larger than 87 dishes or with far more than 18 links were not measured.
+
+## Measured Generate time (default budget)
+
+`planWeek` with no explicit budget, seeded library (87 dishes plus Poori), 3 links, seeds 1-8, same machine, under `caffeinate -i`. All eight stopped on the plateau (10 092 to 25 901 iterations). Median 91 ms, max 118 ms (seed 6, 25 901 iterations). Far under the 1 s target. Test: `generate time at the default budget` in `src/rule-cases/measure-budget.test.ts`.
