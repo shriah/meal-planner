@@ -109,6 +109,14 @@ describe('PlanBoard', () => {
     expect(screen.getByText(note)).toBeTruthy()
   })
 
+  it('labels the dismiss button "Dismiss notice" when only the stopped-early note shows', () => {
+    mockPlan = buildFullPlan()
+    mockStoppedEarly = true
+    render(<PlanBoard />)
+    expect(screen.getByLabelText('Dismiss notice')).toBeTruthy()
+    expect(screen.queryByLabelText('Dismiss plan problems')).toBeNull()
+  })
+
   it('renders empty state with "No plan yet" when plan is null', () => {
     mockPlan = null
     render(<PlanBoard />)

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { X, AlertTriangle } from 'lucide-react'
+import { SAFETY_CAP_MS } from '@/planner'
 import { usePlanStore } from '@/stores/plan-store'
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -21,7 +22,7 @@ export function PlanProblemsBanner() {
     broken.length > 0 && `${plural(broken.length, 'rule could not be met', 'rules could not be met')} — see highlighted meals`,
     ruleIssues.length > 0 && `${plural(ruleIssues.length, 'rule was skipped', 'rules were skipped')}`,
   ].filter(Boolean).join('; ')
-  const note = 'Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again.'
+  const note = `Planning took too long on this device, so this is the best week found in ${SAFETY_CAP_MS / 1000} seconds. Regenerate to try again.`
 
   return (
     <div role="status" className="flex items-start gap-3 rounded-md border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm dark:bg-amber-950/20">
@@ -45,7 +46,7 @@ export function PlanProblemsBanner() {
           </details>
         )}
       </div>
-      <button onClick={dismiss} className="shrink-0 p-1 hover:bg-amber-100 rounded" aria-label="Dismiss plan problems">
+      <button onClick={dismiss} className="shrink-0 p-1 hover:bg-amber-100 rounded" aria-label={summary ? 'Dismiss plan problems' : 'Dismiss notice'}>
         <X className="h-4 w-4" />
       </button>
     </div>
