@@ -1,6 +1,6 @@
 // Pure plan generation: data in, plan and its problems out. Runs in a Web Worker or in-thread.
 import {
-  bringsWith, broughtScore, buildModel, candidateWeight, chooseCandidate, explain, fromPlanSlots, planWeek, score, slotIndex, slotPairs,
+  bringsWith, broughtScore, buildModel, candidateWeight, chooseCandidate, explain, fromPlanSlots, mealBrings, planWeek, score, slotIndex, slotPairs,
   MEALS, type Brings, type Justification, type Meal, type ModelInput, type Pins, type Role,
 } from '@/planner';
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
@@ -18,6 +18,8 @@ export interface PlanningInput {
 export interface PlanningOptions {
   pins?: Pins;
   seed?: number;
+  /** Safety cap on the search, in ms. For tests; the default is the planner's own cap. */
+  timeLimitMs?: number;
 }
 
 /** A rule the plan could not satisfy, located where possible. */
@@ -45,6 +47,8 @@ export interface PlanningOutcome {
   ruleIssues: RuleIssue[];
   /** Sides in the plan that a pairing brought, unit or asked. */
   paired: PairedSide[];
+  /** The safety cap on search time cut the search short, so the plan is the best found by then. */
+  stoppedEarly: boolean;
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -126,7 +130,7 @@ function modelFromData(input: PlanningInput) {
 
 export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): PlanningOutcome {
   const { model, issues, problemOf, problemsOf, ruleById } = modelFromData(input);
-  const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31) });
+  const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31), timeLimitMs: opts.timeLimitMs });
   const typeOf = new Map(input.library.map((c) => [c.id, c.componentType]));
   /** Whether the caller fixed (or held empty) the role the paired dish would fill in this meal. */
   const pinnedRole = (j: Justification): boolean => {
@@ -151,6 +155,7 @@ export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): 
     problems,
     ruleIssues: issues,
     paired: pairedSides(input, { slots: result.slots }),
+    stoppedEarly: result.stats.stopReason === 'time',
   };
 }
 
@@ -210,6 +215,7 @@ export function slotConflicts(
     else slot[part] = id;
   };
   const i = slotIndex(day, meal);
+  const hasConditional = m.constraints.some((c) => c.kind === 'pair' && !!c.inMeal?.length);
   // A base is planned with the sides it brings; there are no pins here, so every role is free. The sides
   // the replaced base brought leave with it, unless a dish still in the meal brings them too (as the
   // solver's `bring` does).
@@ -217,10 +223,10 @@ export function slotConflicts(
     slot.base = id;
     if (original.base !== undefined) {
       const stillBrought = (c: number) => {
-        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && candidatesOf(bringsWith(m, d, role, i)).includes(c);
+        const by = (d: number | undefined, role: Role) => d !== undefined && d !== c && candidatesOf(mealBrings(m, slot, i, d, role)).includes(c);
         return by(slot.base, 'base') || by(slot.curry, 'curry') || by(slot.subzi, 'subzi') || slot.extras.some((e) => by(e, 'extra'));
       };
-      for (const side of candidatesOf(bringsWith(m, original.base, 'base', i))) {
+      for (const side of candidatesOf(mealBrings(m, original, i, original.base, 'base'))) {
         const type = typeOf.get(side);
         if (type === 'extra') {
           if (slot.extras.includes(side) && !stillBrought(side)) slot.extras = slot.extras.filter((e) => e !== side);
@@ -242,23 +248,36 @@ export function slotConflicts(
       bringSide(side);
       const type = typeOf.get(side);
       if (type !== 'curry' && type !== 'subzi' && type !== 'extra') return;
-      for (const w of bringsWith(m, side, type, i).wants) {
+      for (const w of mealBrings(m, slot, i, side, type).wants) {
         const next = w.of[0];
         const role = typeOf.get(next);
         if (w.unit && !w.of.some(inMeal) && !((role === 'curry' || role === 'subzi') && slot[role] !== undefined)) bringSide(next);
       }
     };
-    // A side is judged with what it brings, so its own pairings do not count against it.
-    const scoreWith = (side: number) => {
+    // A side is judged with what it brings, so its own pairings do not count against it; a plain link's
+    // pick is judged blind to what a link waiting for a curry or subzi brings, as the solver does.
+    const scoreWith = (blind: boolean) => (side: number) => {
       const before = { curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
       bringWithOwn(side);
-      const result = broughtScore(m, state, i, side);
+      const result = broughtScore(m, state, i, side, blind);
       Object.assign(slot, before);
       return result;
     };
-    for (const w of bringsWith(m, id, 'base', i).wants) {
+    // As the solver's `bring`: a side a link waiting for a curry or subzi brings comes only where it adds
+    // no hard problem, and is otherwise left out (its missing pair is a soft problem).
+    const addsNoHard = (side: number) => {
+      const before = { curry: slot.curry, subzi: slot.subzi, extras: slot.extras };
+      const was = score(m, state).hard;
+      bringSide(side);
+      const after = score(m, state).hard;
+      Object.assign(slot, before);
+      return after <= was;
+    };
+    for (const w of mealBrings(m, slot, i, id, 'base').wants) {
       if (!w.unit || w.of.some(inMeal)) continue;
-      bringWithOwn(chooseCandidate(w.of, i, scoreWith, timesPlanned, undefined, candidateWeight(m, i)));
+      const options = w.cond ? w.of.filter(addsNoHard) : w.of;
+      if (!options.length) continue;
+      bringWithOwn(chooseCandidate(options, i, scoreWith(hasConditional && !w.cond), timesPlanned, undefined, candidateWeight(m, i)));
     }
   };
   const timesPlanned = (id: number) =>

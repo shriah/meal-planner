@@ -96,6 +96,12 @@ In these examples Rasam is the **extra** (liquid category), which the seed libra
   toward the existing design goal that a softer pairing never makes its base less likely to be planned, not a change to
   what any stored rule says; the existing rule cases must still pass.
 - Update the "What gives way to a unit" table in `2026-11-08-pairing-units-design.md` and `docs/architecture.md`.
+- *Note, 2026-11-09 (`2026-11-09-comes-with-when-curry-design.md`, "Frequency rules follow the hierarchy"):* extended to
+  every frequency rule. A brought dish's frequency rules (count limits across days, the week or per dish, "Vary dishes
+  across the week", "No dish on the same or next day", "Prefer frequent" / "Avoid rare" and any prefer / avoid), owned,
+  hand-written or default, now give way to every brought dish at every link strength, so they never decide whether the
+  dish above it is planned. A minimum still counts the brought dish. The per-meal extras cap is not a frequency rule and
+  keeps working as before.
 
 **Clashes.**
 - Two Always links that need the same curry (or subzi) role with no dish in common cannot both hold. At save time the

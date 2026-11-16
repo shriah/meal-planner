@@ -6,7 +6,7 @@ import { byComponent, timeOf, type Constraint, type CountConstraint, type Origin
 import { compileMatcher, type MatchFn } from './matcher';
 import {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
-  type Assignment, type ComponentLike, type Day, type Meal, type PlanState, type Role,
+  type Assignment, type ComponentLike, type Day, type Meal, type PlanState, type Role, type SlotState,
 } from './types';
 
 export type BoundKind = 'hardMin' | 'softMin' | 'softMax' | 'hardMax';
@@ -91,13 +91,21 @@ interface CompiledPair {
   must: boolean;
   cost: number;
   inScope: Uint8Array;
+  /** Matcher indices of the meal-level condition: each must be met by another dish in the meal. Empty: unconditional. */
+  inMeal: Int32Array;
 }
 
-/** One pairing a placed dish brings: the meal should hold one of `of` (ids in library order). */
-export interface Want { of: readonly number[]; unit: boolean }
+/**
+ * One pairing a placed dish brings: the meal should hold one of `of` (ids in library order). `cond` marks a
+ * pairing that waits for a curry or subzi in the meal (met here).
+ */
+export interface Want { of: readonly number[]; unit: boolean; cond?: true }
 
 /** What placing one dish brings, after conflict resolution. */
 export interface Brings { wants: Want[] }
+
+/** One dish's pairs as resolved in a meal (codes like `Memo.pairs`), and what they bring. */
+interface Resolved { codes: Int32Array; brings?: Brings }
 
 /** Cached matcher results for one (component, role, slot). */
 interface Memo {
@@ -107,8 +115,14 @@ interface Memo {
   preferAsk: number;
   /** Count constraints this assignment touches: (index << 2) | 1 if selected | 2 if it triggers `when`. */
   hits: Int32Array;
-  /** Pairs this assignment triggers, in constraint order: (index << 1) | 1 if suppressed by a conflict. */
+  /** Unconditional pairs this assignment triggers, in constraint order: (index << 1) | 1 if suppressed by a conflict. */
   pairs: Int32Array;
+  /** Conditional pairs this assignment triggers (indices, constraint order); they hold only where the meal meets them. */
+  cond: Int32Array;
+  /** Matcher indices of pair conditions that this assignment meets for another dish in its meal. */
+  meets: Int32Array;
+  /** Per set of met conditional pairs (bit k for `cond[k]`): the pairs as resolved in such a meal, and what they bring. */
+  byMet?: Map<number, Resolved>;
   /** The dish's own rules that forbid this assignment and give way only to a unit member (days, meals, never-auto). */
   overrides: number;
   brings?: Brings;
@@ -117,6 +131,8 @@ interface Memo {
 /** Flags of an assignment in its meal. Every unit member is also asked for. */
 const ASKED = 1;
 const UNIT = 2;
+/** With `ignoreConditional`: brought by a met conditional pair (such a pair sets this instead of ASKED and UNIT). */
+const COND = 4;
 const YIELD_UNIT = 1;
 const YIELD_ASK = 2;
 const ROLE_CURRY = 1;
@@ -150,9 +166,17 @@ interface ScoringState {
   pairBy: Int32Array;
   /** Per pair, while one slot is scored: 1 if a candidate of this enforced `must` pair is in the meal (it holds a unit member). */
   pairUnit: Uint8Array;
+  /** Every matcher index used by a pair's meal-level condition. */
+  condMatchers: Int32Array;
+  /** Per matcher, while one slot is scored: how many of its assignments meet it (condition matchers only). */
+  condCount: Int32Array;
+  /** Per library index: 1 if a free pick of the dish can be charged a hard limit (`freePickLimited`), 0 if not, -1 not yet known. */
+  freeLimited: Int8Array;
 }
 
 const NO_PAIRS = new Int32Array(0);
+/** Most conditional pairs of one dish whose resolutions are cached by met set (a bit mask); beyond, uncached. */
+const MAX_COND = 30;
 
 /** Built-in id reported for plan entries that reference a component missing from the library. */
 export const UNKNOWN_COMPONENT = 'builtin:unknown-component';
@@ -191,6 +215,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
         def: c, when: addMatcher(compileMatcher(c.when)), cis: Int32Array.from(cis), isCandidate,
         roleBit: cis.length ? roleBitOf(library[cis[0]].componentType) : 0,
         must: c.strength === 'must', cost: c.cost ?? 10, inScope,
+        inMeal: Int32Array.from((c.inMeal ?? []).map((mt) => addMatcher(compileMatcher(mt)))),
       });
       continue;
     }
@@ -260,6 +285,9 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       bufPairs: new Int32Array(pairs.length),
       pairBy: new Int32Array(pairs.length),
       pairUnit: new Uint8Array(pairs.length),
+      condMatchers: Int32Array.from(new Set(pairs.flatMap((p) => Array.from(p.inMeal)))),
+      condCount: new Int32Array(matchers.length),
+      freeLimited: new Int8Array(N).fill(-1),
     },
   };
 }
@@ -290,29 +318,23 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
       if (v) hits.push((ck << 2) | v);
       if (bits[cc.sel] && cc.owner === a.c.id && cc.hardMax === 0 && cc.when < 0 && cc.yields === YIELD_UNIT && groupInScope(cc, slot)) overrides++;
     });
-    // Pairs this dish triggers (not those it is a candidate of). A meal holds one curry and one subzi, so
-    // the first pair to claim either role wins, `must` pairs before `prefer` ones, each in constraint
-    // order; a later pair for the same role is suppressed when it shares no candidate with the first.
-    // Extras never conflict.
+    // Pairs this dish triggers (not those it is a candidate of). Conditional pairs depend on the rest of
+    // the meal, so they are resolved where the meal is known (`resolvePairs`). For the others: a meal holds
+    // one curry and one subzi, so the first pair to claim either role wins, `must` pairs before `prefer`
+    // ones, each in constraint order; a later pair for the same role is suppressed when it shares no
+    // candidate with the first. Extras never conflict.
     const triggered: number[] = [];
+    const cond: number[] = [];
     st.pairs.forEach((p, pk) => {
-      if (p.cis.length && p.inScope[slot] && bits[p.when] && !p.isCandidate[ci]) triggered.push(pk);
+      if (p.cis.length && p.inScope[slot] && bits[p.when] && !p.isCandidate[ci]) (p.inMeal.length ? cond : triggered).push(pk);
     });
-    const claimedBy = new Map<number, CompiledPair>();
-    const suppressed = new Set<number>();
-    for (const must of [true, false]) {
-      for (const pk of triggered) {
-        const p = st.pairs[pk];
-        if (p.must !== must || !p.roleBit) continue;
-        const first = claimedBy.get(p.roleBit);
-        if (first === undefined) claimedBy.set(p.roleBit, p);
-        else if (!sharesCandidate(first, p)) suppressed.add(pk);
-      }
-    }
+    const suppressed = claimRoles(st.pairs, triggered);
     const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
+    const meets = Array.from(st.condMatchers).filter((mk) => bits[mk]);
     e = st.memo[key] = {
       prefer: prefer[0], preferUnit: prefer[YIELD_UNIT], preferAsk: prefer[YIELD_ASK],
       hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS, overrides,
+      cond: cond.length ? Int32Array.from(cond) : NO_PAIRS, meets: meets.length ? Int32Array.from(meets) : NO_PAIRS,
     };
   }
   return e;
@@ -323,26 +345,154 @@ const sharesCandidate = (a: CompiledPair, b: CompiledPair): boolean => {
   return false;
 };
 
+/**
+ * Which of one dish's pairs (`pks`, constraint order) lose their role: the first pair to claim the curry
+ * or subzi role wins, `must` pairs before `prefer` ones; a later pair for the same role is suppressed when it
+ * shares no candidate with the first. Returns the suppressed pairs and, in `claimedBy`, each role's first.
+ */
+function claimRoles(pairs: readonly CompiledPair[], pks: Iterable<number>, claimedBy = new Map<number, CompiledPair>()): Set<number> {
+  const suppressed = new Set<number>();
+  for (const must of [true, false]) {
+    for (const pk of pks) {
+      const p = pairs[pk];
+      if (p.must !== must || !p.roleBit) continue;
+      const first = claimedBy.get(p.roleBit);
+      if (first === undefined) claimedBy.set(p.roleBit, p);
+      else if (!sharesCandidate(first, p)) suppressed.add(pk);
+    }
+  }
+  return suppressed;
+}
+
+/**
+ * One dish's pairs in its meal, as codes like `Memo.pairs`: the unconditional pairs, then the conditional
+ * pairs whose condition the meal meets (every matcher met by another dish; `met(mk)` says whether one meets
+ * matcher `mk`). A met conditional pair claims its role first (conditional pairs among themselves as in
+ * `claimRoles`) and suppresses the dish's unconditional pairs for that role that share no candidate with it,
+ * whatever their rule ids or strengths. Unmet conditional pairs are left out. Cached per set of met pairs.
+ */
+function resolvePairs(st: ScoringState, memo: Memo, met: (mk: number) => boolean): Resolved {
+  const n = memo.cond.length;
+  const condMet = (k: number) => st.pairs[memo.cond[k]].inMeal.every(met);
+  if (n > MAX_COND) return resolveWith(st, memo, condMet);
+  let mask = 0;
+  for (let k = 0; k < n; k++) if (condMet(k)) mask |= 1 << k;
+  const byMet = (memo.byMet ??= new Map());
+  let r = byMet.get(mask);
+  if (!r) byMet.set(mask, (r = mask ? resolveWith(st, memo, (k) => (mask & (1 << k)) !== 0) : { codes: memo.pairs }));
+  return r;
+}
+
+function resolveWith(st: ScoringState, memo: Memo, condMet: (k: number) => boolean): Resolved {
+  const met: number[] = [];
+  for (let k = 0; k < memo.cond.length; k++) if (condMet(k)) met.push(memo.cond[k]);
+  if (!met.length) return { codes: memo.pairs };
+  const claimedBy = new Map<number, CompiledPair>();
+  const condSuppressed = claimRoles(st.pairs, met, claimedBy);
+  const codes: number[] = [];
+  for (const code of memo.pairs) {
+    const p = st.pairs[code >> 1];
+    const holder = p.roleBit ? claimedBy.get(p.roleBit) : undefined;
+    codes.push(holder && !sharesCandidate(holder, p) ? code | 1 : code);
+  }
+  for (const pk of met) codes.push((pk << 1) | +condSuppressed.has(pk));
+  return { codes: Int32Array.from(codes) };
+}
+
+/** What pair codes bring: one want per enforced pair, `unit` for `must` pairs. */
+const bringsOf = (m: CompiledModel, codes: Int32Array): Brings => {
+  const wants: Want[] = [];
+  for (const code of codes) {
+    if (code & 1) continue;
+    const p = m.state.pairs[code >> 1];
+    wants.push({ of: candidateIds(m, p), unit: p.must, ...(p.inMeal.length > 0 && { cond: true as const }) });
+  }
+  return { wants };
+};
+
+/** The memo of each dish in meal `s` at `slot`, with its role; dishes missing from the library are left out. */
+function mealMemos(m: CompiledModel, s: SlotState, slot: number): { id: number; role: Role; memo: Memo }[] {
+  const out: { id: number; role: Role; memo: Memo }[] = [];
+  const add = (id: number | undefined, role: Role) => {
+    if (id === undefined) return;
+    const ci = m.state.idIndex.get(id);
+    if (ci !== undefined) out.push({ id, role, memo: memoFor(m, ci, ROLE_INDEX[role], slot) });
+  };
+  add(s.base, 'base');
+  add(s.curry, 'curry');
+  add(s.subzi, 'subzi');
+  for (const id of s.extras) add(id, 'extra');
+  return out;
+}
+
+/** `memo`'s pairs resolved in a meal of `others` (the meal's other dishes). */
+const resolveIn = (st: ScoringState, memo: Memo, others: readonly { memo: Memo }[]): Resolved =>
+  memo.cond.length ? resolvePairs(st, memo, (mk) => others.some((o) => o.memo.meets.includes(mk))) : { codes: memo.pairs };
+
 const candidateIds = (m: CompiledModel, p: CompiledPair): number[] => Array.from(p.cis, (ci) => m.library[ci].id);
 
 /**
  * What placing `id` in `role` at `slot` brings, after conflict resolution: one want per enforced pair,
- * `unit` for `must` pairs. Memoised.
+ * `unit` for `must` pairs. Pairs that wait for a curry or subzi in the meal are left out (see `mealBrings`).
+ * Memoised.
  */
 export function bringsWith(m: CompiledModel, id: number, role: Role, slot: number): Brings {
   const ci = m.state.idIndex.get(id);
   if (ci === undefined) return { wants: [] };
   const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
-  if (!memo.brings) {
-    const wants: Want[] = [];
-    for (const code of memo.pairs) {
-      if (code & 1) continue;
-      const p = m.state.pairs[code >> 1];
-      wants.push({ of: candidateIds(m, p), unit: p.must });
+  return (memo.brings ??= bringsOf(m, memo.pairs));
+}
+
+/**
+ * Whether some dish of meal `s` at `slot` has a pair that waits for a curry or subzi (met or not). Where none
+ * does, what each dish brings does not depend on the rest of the meal. Memoised per dish.
+ */
+export function mealHasConditional(m: CompiledModel, s: SlotState, slot: number): boolean {
+  const has = (id: number | undefined, role: Role) => {
+    const ci = id === undefined ? undefined : m.state.idIndex.get(id);
+    return ci !== undefined && memoFor(m, ci, ROLE_INDEX[role], slot).cond.length > 0;
+  };
+  return has(s.base, 'base') || has(s.curry, 'curry') || has(s.subzi, 'subzi') || s.extras.some((e) => has(e, 'extra'));
+}
+
+/**
+ * What `id` in `role` brings to meal `s` at `slot`: as `bringsWith`, but a pair that waits for a curry or
+ * subzi is a want where every part of its condition is met by another dish of `s`, and there it takes its
+ * role from the dish's other pairs (see `resolvePairs`). The same object for the same met conditions.
+ */
+export function mealBrings(m: CompiledModel, s: SlotState, slot: number, id: number, role: Role): Brings {
+  const ci = m.state.idIndex.get(id);
+  if (ci === undefined) return { wants: [] };
+  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  if (!memo.cond.length) return (memo.brings ??= bringsOf(m, memo.pairs));
+  const meal = mealMemos(m, s, slot);
+  const self = meal.findIndex((d) => d.id === id && d.role === role);
+  const r = resolveIn(m.state, memo, self < 0 ? meal : meal.filter((_, k) => k !== self));
+  return (r.brings ??= bringsOf(m, r.codes));
+}
+
+/**
+ * Whether scoring `id` as a free pick (`ScoreOptions.freePick`) can add hard violations: some count rule that
+ * gives way to asked sides and has a hard maximum selects the dish in some role and slot. When none does, the
+ * free pick's hard score equals the plain one. Memoised per dish.
+ */
+export function freePickLimited(m: CompiledModel, id: number): boolean {
+  const st = m.state;
+  const ci = st.idIndex.get(id);
+  if (ci === undefined) return false;
+  if (st.freeLimited[ci] < 0) {
+    const c = m.library[ci];
+    const limits = st.counts.filter((cc) => cc.yields === YIELD_ASK && cc.hardMax !== Infinity);
+    let hit = false;
+    for (let r = 0; r < ROLES.length && !hit; r++) {
+      for (let slot = 0; slot < SLOT_COUNT && !hit; slot++) {
+        const a: Assignment = { c, role: ROLES[r], day: slotDay(slot), meal: slotMeal(slot) };
+        hit = limits.some((cc) => st.matchers[cc.sel](a));
+      }
     }
-    memo.brings = { wants };
+    st.freeLimited[ci] = +hit;
   }
-  return memo.brings;
+  return st.freeLimited[ci] === 1;
 }
 
 /**
@@ -356,13 +506,40 @@ export function ownRulesOverridden(m: CompiledModel, id: number, role: Role, slo
 }
 
 /**
- * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a unit member
- * (by default "Prefer frequent dishes" and "Avoid rare dishes"): what the score leaves out when the dish is
- * brought as one. Memoised.
+ * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a brought dish
+ * (a unit member or an asked-for side): what the score leaves out when the dish is brought. By default
+ * "Prefer frequent dishes", "Avoid rare dishes" and "Curries, subzis and extras only when a rule asks". Memoised.
  */
-export function unitPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
+export function yieldedPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
   const ci = m.state.idIndex.get(id);
-  return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).preferUnit;
+  if (ci === undefined) return 0;
+  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  return memo.preferUnit + memo.preferAsk;
+}
+
+/**
+ * The pull of a lock toward a conditional link's curry or subzi in meal `slot`: for each pair waiting for a
+ * curry or subzi that the meal's base triggers and that brings one of `locked` (the meal's locked extras and
+ * locked subzi), the pair's cost when any part of its condition is unmet by the meal's other dishes, else 0.
+ * With several parts the cost is charged once, so it pulls toward a meal meeting every part. The only path by
+ * which a conditional link moves the curry; the solver adds it to the search's score, never the reported one.
+ */
+export function lockNudge(m: CompiledModel, plan: PlanState, slot: number, locked: readonly number[]): number {
+  const s = plan[slot];
+  if (s.base === undefined || !locked.length) return 0;
+  const st = m.state;
+  const ci = st.idIndex.get(s.base);
+  if (ci === undefined) return 0;
+  const { cond } = memoFor(m, ci, ROLE_INDEX.base, slot);
+  if (!cond.length) return 0;
+  const others = mealMemos(m, s, slot).filter((d) => d.role !== 'base');
+  let cost = 0;
+  for (const pk of cond) {
+    const p = st.pairs[pk];
+    if (!locked.some((id) => p.isCandidate[st.idIndex.get(id) ?? -1])) continue;
+    if (!p.inMeal.every((mk) => others.some((o) => o.memo.meets.includes(mk)))) cost += p.cost;
+  }
+  return cost;
 }
 
 export interface SlotPair {
@@ -385,11 +562,9 @@ export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): Slot
   const out: SlotPair[] = [];
   const s = plan[slot];
   const inMeal = [s.base, s.curry, s.subzi, ...s.extras].filter((d): d is number => d !== undefined);
-  const visit = (id: number | undefined, role: Role) => {
-    if (id === undefined) return;
-    const ci = m.state.idIndex.get(id);
-    if (ci === undefined) return;
-    for (const code of memoFor(m, ci, ROLE_INDEX[role], slot).pairs) {
+  const meal = mealMemos(m, s, slot);
+  meal.forEach(({ id, memo }, k) => {
+    for (const code of resolveIn(m.state, memo, meal.filter((_, j) => j !== k)).codes) {
       const p = m.state.pairs[code >> 1];
       const component = inMeal.find((d) => p.isCandidate[m.state.idIndex.get(d) ?? -1]);
       out.push({
@@ -400,21 +575,38 @@ export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): Slot
         ...(code & 1 ? { unit: false, suppressed: true } : { unit: p.must }),
       });
     }
-  };
-  visit(s.base, 'base');
-  visit(s.curry, 'curry');
-  visit(s.subzi, 'subzi');
-  for (const id of s.extras) visit(id, 'extra');
+  });
   return out;
 }
 
 const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => [r, i])) as Record<Role, number>;
 
+export interface ScoreOptions {
+  /**
+   * Score every assignment of `id` in the plan as a free pick for its frequency count rules (the count
+   * rules that give way to asked sides): they are charged to it, and a weekly limit sees the dish's other
+   * brought meals too. Its prefer rules and its other count rules (its days and meals) still give way.
+   * Used to rank a link's candidates.
+   */
+  freePick?: { id: number };
+  /**
+   * Score as if no pair waiting for a curry or subzi existed: a dish in a meal only because such a pair
+   * brought it is left out of every count rule with an upper bound, of the `when` of every count rule and of
+   * every prefer rule (it still counts toward a minimum, such as "a subzi at every meal", and still holds
+   * its role, so the plain pairs it took the role from stay suppressed), and a missing conditional pair
+   * costs nothing. The search judges a curry with it, so what a conditional pair brings never moves the curry.
+   */
+  ignoreConditional?: boolean;
+}
+
 /**
  * Score a plan. With `justify`, also explain every hard and soft violation (slower; used for
  * reporting, not inside the search loop).
  */
-export function score(m: CompiledModel, plan: PlanState, justify = false): ScoreResult {
+export function score(m: CompiledModel, plan: PlanState, justify = false, opts: ScoreOptions = {}): ScoreResult {
+  /** The free pick's library index, or -1. */
+  const freeCi = opts.freePick ? (m.state.idIndex.get(opts.freePick.id) ?? -1) : -1;
+  const ignoreCond = !!opts.ignoreConditional;
   const st = m.state;
   const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
   const just: Justification[] = [];
@@ -453,8 +645,16 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
   // missing ones. A pair triggered by several dishes is enforced if any of them enforces it.
   const pairSlot = (slot: number, start: number, end: number) => {
     let np = 0;
+    // Conditional pairs: how many of the meal's assignments meet each condition matcher.
+    const { condCount } = st;
+    if (st.condMatchers.length) for (let i = start; i < end; i++) for (const mk of bufMemo[i].meets) condCount[mk]++;
     for (let i = start; i < end; i++) {
-      for (const code of bufMemo[i].pairs) {
+      const memo = bufMemo[i];
+      // Met by a dish other than assignment i.
+      const codes = memo.cond.length
+        ? resolvePairs(st, memo, (mk) => condCount[mk] - +memo.meets.includes(mk) > 0).codes
+        : memo.pairs;
+      for (const code of codes) {
         const pk = code >> 1;
         if (!pairState[pk]) {
           bufPairs[np++] = pk;
@@ -473,7 +673,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       if (!p.must || pairState[pk] !== 2) continue;
       const k = present(p, start, end);
       if (k >= 0) {
-        bufFlag[k] |= ASKED | UNIT;
+        bufFlag[k] |= ignoreCond && p.inMeal.length ? COND : ASKED | UNIT;
         unitRoles |= p.roleBit;
         pairUnit[pk] = 1;
       }
@@ -510,15 +710,19 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       pairState[pk] = 0;
       const k = present(p, start, end);
       if (k >= 0) {
-        if (enforced) bufFlag[k] |= ASKED;
+        if (enforced) bufFlag[k] |= ignoreCond && p.inMeal.length ? COND : ASKED;
         continue;
       }
+      // A missing conditional pair is never hard: it gives way to whatever kept its dish out of the meal.
+      // Blind to conditional pairs, it costs nothing.
+      if (ignoreCond && p.inMeal.length) continue;
       if (yieldsToUnit(p)) enforced = false;
-      if (enforced && p.must) hard += 1;
+      const isHard = enforced && p.must && !p.inMeal.length;
+      if (isHard) hard += 1;
       else if (enforced) soft += p.cost;
       if (justify) {
-        const level = enforced && p.must ? 'hard' : 'soft';
-        const cost = enforced ? (p.must ? 1 : p.cost) : 0;
+        const level = isHard ? 'hard' : 'soft';
+        const cost = enforced ? (isHard ? 1 : p.cost) : 0;
         let suppressed: Justification['suppressed'];
         if (!enforced && p.roleBit) {
           const holder = holders![p.roleBit === ROLE_CURRY ? 0 : 1];
@@ -542,6 +746,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       }
     }
     for (let q = 0; q < np; q++) pairUnit[bufPairs[q]] = 0;
+    if (st.condMatchers.length) for (let i = start; i < end; i++) for (const mk of bufMemo[i].meets) condCount[mk] = 0;
   };
 
   for (let slot = 0; slot < plan.length; slot++) {
@@ -569,7 +774,13 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
   for (let i = 0; i < n; i++) {
     const memo = bufMemo[i];
     const flag = bufFlag[i];
-    soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
+    // Brought only by a met conditional pair, scored blind to such pairs: left out (see `ignoreConditional`).
+    const ignored = (flag & (COND | ASKED)) === COND;
+    if (!ignored) soft += memo.prefer + (flag & UNIT ? 0 : memo.preferUnit) + (flag & ASKED ? 0 : memo.preferAsk);
+    // The free pick is charged its frequency count rules (those that give way to asked sides). Its prefer
+    // rules still give way: they rank a link's candidates through the solver's `candidateWeight`, which
+    // charging them here would count twice. Its other rules (days, meals) give way as usual.
+    const free = bufCi[i] === freeCi;
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
     const base = flag & UNIT ? plan[slot].base : undefined;
@@ -577,10 +788,13 @@ export function score(m: CompiledModel, plan: PlanState, justify = false): Score
       const cc = counts[code >> 2];
       let selected = (code & 1) !== 0;
       let triggers = (code & 2) !== 0;
-      if (flag) {
+      if (ignored) {
+        if (!selected || cc.hardMax !== Infinity || cc.softMax !== Infinity) continue;
+        triggers = false;
+      } else if (flag) {
         // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
         // not trigger its own base's rules.
-        if (selected && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
+        if (selected && !(free && cc.yields === YIELD_ASK) && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
         if (triggers && cc.owner === base) triggers = false;
         if (!selected && !triggers) continue;
       }

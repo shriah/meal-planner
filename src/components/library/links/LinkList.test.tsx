@@ -272,6 +272,100 @@ describe('LinkList', () => {
     expect(screen.getByRole('listitem')).toHaveTextContent('Sambar is always kept away from soup');
   });
 
+  describe('a base comes with a side when the meal has a chosen curry or subzi', () => {
+    async function library() {
+      return { papad: await dish('Papad', 'extra'), sambar: await dish('Sambar', 'curry'), rasam: await dish('Rasam', 'curry'),
+        beans: await dish('Beans Poriyal', 'subzi'), aloo: await dish('Aloo Gobi', 'subzi') };
+    }
+    const curryPicker = () => screen.queryByRole('group', { name: 'When the curry is' });
+    const subziPicker = () => screen.queryByRole('group', { name: 'When the subzi is' });
+
+    it('offers both pickers on a base comes-with to extras and stores only the parts ticked', async () => {
+      const { papad, sambar, rasam, beans } = await library();
+      const onChange = vi.fn();
+      render(<Harness initial={[]} componentType="base" onChange={onChange} />);
+
+      await userEvent.click(await readyButton('Add link'));
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
+      expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+      await userEvent.click(await screen.findByRole('checkbox', { name: 'Papad' }));
+      expect(curryPicker()).toBeInTheDocument();
+      expect(subziPicker()).toBeInTheDocument();
+      await userEvent.click(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' }));
+      await userEvent.click(within(curryPicker()!).getByRole('checkbox', { name: 'Rasam' }));
+      await userEvent.click(within(subziPicker()!).getByRole('checkbox', { name: 'Beans Poriyal' }));
+      expect(screen.getByText('Sambar always comes with Papad when the curry is Sambar or Rasam and the subzi is Beans Poriyal')).toBeInTheDocument();
+      // Clearing a part leaves it out of the link.
+      await userEvent.click(within(subziPicker()!).getByRole('checkbox', { name: 'Beans Poriyal' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+
+      expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: 'extra_dish', values: [papad], strength: 'always', when: { curry: [sambar, rasam] } }]);
+      expect(screen.getByRole('listitem')).toHaveTextContent('Sambar always comes with Papad when the curry is Sambar or Rasam');
+      expect(beans).toBeGreaterThan(0);
+    });
+
+    it('stores no condition when both pickers are left empty', async () => {
+      const { papad } = await library();
+      const onChange = vi.fn();
+      render(<Harness initial={[]} componentType="base" onChange={onChange} />);
+      await userEvent.click(await readyButton('Add link'));
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
+      await userEvent.click(await screen.findByRole('checkbox', { name: 'Papad' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: 'extra_dish', values: [papad], strength: 'always' }]);
+    });
+
+    it('offers only the curry picker for a subzi target, and none for a curry target or a never-with link', async () => {
+      const { sambar, aloo } = await library();
+      const onChange = vi.fn();
+      render(<Harness initial={[]} componentType="base" onChange={onChange} />);
+      await userEvent.click(await readyButton('Add link'));
+      const linkTo = screen.getByRole('combobox', { name: 'Link to' });
+
+      await userEvent.selectOptions(linkTo, 'Specific subzis');
+      expect(curryPicker()).toBeInTheDocument();
+      expect(subziPicker()).not.toBeInTheDocument();
+      await userEvent.click(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' }));
+
+      // A target without the picker clears it, so coming back starts empty.
+      await userEvent.selectOptions(linkTo, 'Specific curries');
+      expect(curryPicker()).not.toBeInTheDocument();
+      expect(subziPicker()).not.toBeInTheDocument();
+      await userEvent.selectOptions(linkTo, 'Specific subzis');
+      expect(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' })).not.toBeChecked();
+
+      await userEvent.click(screen.getByRole('button', { name: 'Never with' }));
+      expect(curryPicker()).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Comes with' }));
+      await userEvent.click(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' }));
+      await userEvent.click(screen.getByRole('checkbox', { name: 'Aloo Gobi' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: 'subzi_dish', values: [aloo], strength: 'always', when: { curry: [sambar] } }]);
+    });
+
+    it('offers no picker on a curry\'s form', async () => {
+      await library();
+      render(<Harness initial={[]} componentType="curry" />);
+      await userEvent.click(await readyButton('Add link'));
+      await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
+      expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+      expect(curryPicker()).not.toBeInTheDocument();
+      expect(subziPicker()).not.toBeInTheDocument();
+    });
+
+    it('opens a stored conditional link with its parts ticked, and keeps them on Done', async () => {
+      const { papad, sambar, beans } = await library();
+      const stored: DishLink = { mode: 'comes', target: 'extra_dish', values: [papad], strength: 'usually', when: { curry: [sambar], subzi: [beans] }, ruleId: 4 };
+      const onChange = vi.fn();
+      render(<Harness initial={[stored]} componentType="base" onChange={onChange} />);
+      await userEvent.click(await readyButton('Edit'));
+      expect(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' })).toBeChecked();
+      expect(within(subziPicker()!).getByRole('checkbox', { name: 'Beans Poriyal' })).toBeChecked();
+      await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(onChange).toHaveBeenLastCalledWith([stored]);
+    });
+  });
+
   it('edits and marks off each of two links of one kind on its own', async () => {
     const coconut = await dish('Coconut Chutney', 'extra');
     const tomato = await dish('Tomato Chutney', 'extra');

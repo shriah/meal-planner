@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
-import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, OWNED_ONLY_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
+import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, specReferences, OWNED_ONLY_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
 
 // ─── Library: two base categories, several curries/subzis, extras in two categories ──────────
 const RICE = 10;
@@ -214,6 +214,48 @@ describe('comes_with compilation', () => {
     expect(compileSpec(spec)).toEqual([{ kind: 'pair', when: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 }]);
     expect(describeSpec(spec, { component: (id) => ({ 1: 'Idiyappam', 11: 'Stew A', 12: 'Stew B' } as Record<number, string>)[id] }))
       .toBe('With Idiyappam, also one of Stew A or Stew B at lunch (preferred)');
+  });
+});
+
+describe('comes_with when', () => {
+  const of = all(is('componentType', 'extra'), oneOf('id', [16]));
+  const base = { match: is('id', 4), of, strength: 'must' as const };
+  const parse = (params: object) => RuleSpecSchema.safeParse({ template: 'comes_with', params });
+  const both = { curry: [8, 9], subzi: [12] };
+  const names = { component: (id: number) => ({ 4: 'Rice', 16: 'Papad', 8: 'Sambar', 9: 'Rasam', 12: 'Beans Poriyal' } as Record<number, string>)[id] };
+
+  it('compiles the condition to one matcher per part, curry first', () => {
+    const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: both } });
+    expect(compileSpec(spec)).toEqual([{
+      kind: 'pair', when: is('id', 4), of, strength: 'must',
+      inMeal: [all(is('role', 'curry'), oneOf('id', [8, 9])), all(is('role', 'subzi'), oneOf('id', [12]))],
+    }]);
+    const subziOnly = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: { subzi: [12] } } });
+    expect(compileSpec(subziOnly)[0]).toMatchObject({ inMeal: [all(is('role', 'subzi'), oneOf('id', [12]))] });
+  });
+
+  it('emits no inMeal without a condition', () => {
+    expect(compileSpec(RuleSpecSchema.parse({ template: 'comes_with', params: base }))[0]).not.toHaveProperty('inMeal');
+  });
+
+  it('refuses an empty condition or an empty part', () => {
+    expect(parse({ ...base, when: {} }).success).toBe(false);
+    expect(parse({ ...base, when: { curry: [] } }).success).toBe(false);
+    expect(parse({ ...base, when: { curry: [8] } }).success).toBe(true);
+  });
+
+  it('refuses a link that brings a dish into a part it waits for', () => {
+    const curries = all(is('componentType', 'curry'), oneOf('id', [11]));
+    const subzis = all(is('componentType', 'subzi'), oneOf('id', [12]));
+    expect(parse({ ...base, of: curries, when: { subzi: [12] } }).success).toBe(false);
+    expect(parse({ ...base, of: subzis, when: { subzi: [12] } }).success).toBe(false);
+    expect(parse({ ...base, of: subzis, when: { curry: [8] } }).success).toBe(true);
+  });
+
+  it('lists the condition ids as references and describes the condition', () => {
+    const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: both } });
+    expect(specReferences(spec).components.sort((a, b) => a - b)).toEqual([4, 8, 9, 12, 16]);
+    expect(describeSpec(spec, names)).toBe('With Rice, also Papad when the curry is Sambar or Rasam and the subzi is Beans Poriyal');
   });
 });
 

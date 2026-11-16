@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { addableSlots, describeLink, dishTypeOf, isDishTarget, isSideTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersComes, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
+import { addableSlots, cleanWhen, describeLink, dishTypeOf, isDishTarget, isSideTarget, LINK_LABEL, LINK_STRENGTHS, LINK_TARGETS, linkSlotOf, offersComes, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget, type LinkValue } from '@/rules'
 import { CURRY_CATEGORIES, type ComponentType } from '@/types/component'
 import { linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
@@ -40,6 +40,15 @@ export function cleanScope(scope: LinkScope | undefined): LinkScope | undefined 
   return out.days || out.meals ? out : undefined
 }
 
+/** Targets a base's "comes with" link may wait on a curry and subzi for; a link that brings a subzi waits on a curry only. */
+const WAITING_TARGETS: readonly LinkTarget[] = ['extra_dish', 'extra_category', 'subzi_dish']
+
+/** Whether a link may wait for the meal's curry (or subzi) before it brings its side. */
+export function waitsFor(componentType: ComponentType, mode: LinkMode, target: LinkTarget, part: 'curry' | 'subzi'): boolean {
+  if (componentType !== 'base' || mode !== 'comes' || !WAITING_TARGETS.includes(target)) return false
+  return part === 'curry' || target !== 'subzi_dish'
+}
+
 interface LinkEditorProps {
   componentType: ComponentType
   selfId?: number
@@ -70,6 +79,8 @@ export function LinkEditor({ componentType, selfId, dishName, initial, links, on
   const [days, setDays] = useState<Day[]>(initial?.scope?.days ?? [])
   const [meals, setMeals] = useState<Meal[]>(initial?.scope?.meals ?? [])
   const [showScope, setShowScope] = useState(Boolean(cleanScope(initial?.scope)))
+  const [whenCurry, setWhenCurry] = useState<number[]>(initial?.when?.curry ?? [])
+  const [whenSubzi, setWhenSubzi] = useState<number[]>(initial?.when?.subzi ?? [])
 
   if (!target) {
     return (
@@ -81,12 +92,24 @@ export function LinkEditor({ componentType, selfId, dishName, initial, links, on
   }
 
   const scope = cleanScope({ days, meals })
-  const link: DishLink = { mode, target, values, strength, ...(scope ? { scope } : {}) }
+  const asksCurry = waitsFor(componentType, mode, target, 'curry')
+  const asksSubzi = waitsFor(componentType, mode, target, 'subzi')
+  const when = cleanWhen({ curry: asksCurry ? whenCurry : [], subzi: asksSubzi ? whenSubzi : [] })
+  const link: DishLink = { mode, target, values, strength, ...(scope ? { scope } : {}), ...(when ? { when } : {}) }
   const pickTarget = (next: LinkTarget) => {
     setTarget(next)
-    if (!modesFor(next).includes(mode)) setMode(firstMode(next))
+    const nextMode = modesFor(next).includes(mode) ? mode : firstMode(next)
+    if (nextMode !== mode) setMode(nextMode)
     // Values of one target mean nothing for another.
     if (next !== target) setValues([])
+    // A target that does not wait for a curry or subzi drops what was picked for it.
+    if (!waitsFor(componentType, nextMode, next, 'curry')) setWhenCurry([])
+    if (!waitsFor(componentType, nextMode, next, 'subzi')) setWhenSubzi([])
+  }
+  const pickMode = (next: LinkMode) => {
+    setMode(next)
+    if (!waitsFor(componentType, next, target, 'curry')) setWhenCurry([])
+    if (!waitsFor(componentType, next, target, 'subzi')) setWhenSubzi([])
   }
   const toggle = <T,>(list: T[], value: T) => (list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
 
@@ -107,7 +130,7 @@ export function LinkEditor({ componentType, selfId, dishName, initial, links, on
       <div className="flex flex-wrap gap-1" role="group" aria-label="Mode">
         {modesFor(target).map((m) => (
           <Button key={m} type="button" size="sm" variant={mode === m ? 'secondary' : 'outline'} aria-pressed={mode === m}
-            onClick={() => setMode(m)}>
+            onClick={() => pickMode(m)}>
             {MODE_LABEL[m]}
           </Button>
         ))}
@@ -126,6 +149,21 @@ export function LinkEditor({ componentType, selfId, dishName, initial, links, on
       </div>
 
       <OptionPicker key={target} options={linkOptions(lookup, target, selfId)} selected={values} onChange={setValues} />
+
+      {asksCurry && (
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-semibold">When the curry is</legend>
+          <p className="text-xs text-muted-foreground">Leave empty for any curry.</p>
+          <OptionPicker options={linkOptions(lookup, 'curry_dish', selfId)} selected={whenCurry} onChange={(v) => setWhenCurry(v as number[])} />
+        </fieldset>
+      )}
+      {asksSubzi && (
+        <fieldset className="space-y-1">
+          <legend className="text-xs font-semibold">When the subzi is</legend>
+          <p className="text-xs text-muted-foreground">Leave empty for any subzi.</p>
+          <OptionPicker options={linkOptions(lookup, 'subzi_dish', selfId)} selected={whenSubzi} onChange={(v) => setWhenSubzi(v as number[])} />
+        </fieldset>
+      )}
 
       {showScope ? (
         <fieldset className="space-y-2">

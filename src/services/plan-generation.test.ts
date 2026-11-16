@@ -231,3 +231,41 @@ describe('pairings', () => {
     });
   });
 });
+
+describe('the meal picker and a link waiting for a curry', () => {
+  const pongal = dish(10, 'Pongal', 'base');
+  const rice = dish(30, 'Rice', 'base');
+  const sambar = dish(11, 'Sambar', 'curry');
+  const papad = dish(31, 'Papad', 'extra');
+  const owned = linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [31], when: { curry: [11] } });
+  const papadLink: RuleRecord = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 30 } as RuleRecord;
+  const noPapadAtDinner: RuleRecord = {
+    id: 6, name: 'Never include Papad at dinner', enabled: true, created_at: '',
+    spec: { template: 'exclude', params: { match: is('id', 31), scope: { meals: ['dinner'] }, strength: 'must' } },
+  } as RuleRecord;
+  const picker = (link: RuleRecord) => slotConflicts(
+    { library: [pongal, rice, sambar, papad], categories: [], rules: [link, noPapadAtDinner] },
+    planOf({ day: 'monday', meal_slot: 'dinner', base_id: 10, curry_id: 11 }),
+    'monday', 'dinner', 'base', [30],
+  );
+
+  it('leaves out a side the link would bring where it breaks a hard rule, so the base is not marked', () => {
+    expect(picker(papadLink).get(30)).toBeUndefined();
+  });
+
+  it('a plain link still brings its side and marks the base', () => {
+    const plain = linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [31] });
+    const plainLink = { ...papadLink, name: plain.name, spec: plain.spec } as RuleRecord;
+    expect(picker(plainLink).get(30)?.map((p) => p.ruleId)).toEqual([6]);
+  });
+});
+
+describe('stoppedEarly', () => {
+  it('is true when the safety cap cut the search short', () => {
+    expect(planFromData(input(), { seed: 1, timeLimitMs: 0 }).stoppedEarly).toBe(true);
+  });
+
+  it('is false for a search that finished on its own', () => {
+    expect(planFromData(input(), { seed: 1 }).stoppedEarly).toBe(false);
+  });
+});

@@ -241,3 +241,71 @@ describe('meal-level comes-with clashes', () => {
     });
   });
 });
+
+describe('conditional comes-with clashes', () => {
+  const nm = {
+    component: (id: number) => ({ 900: 'Rice', 901: 'Sambar', 902: 'Rasam', 905: 'Beans Poriyal', 906: 'Aloo Gobi', 907: 'Cabbage' } as Record<number, string>)[id],
+  };
+  const lib = [
+    dish(900, 'base', { name: 'Rice' }), dish(901, 'curry', { name: 'Sambar' }), dish(902, 'curry', { name: 'Rasam' }),
+    dish(905, 'subzi', { name: 'Beans Poriyal' }), dish(906, 'subzi', { name: 'Aloo Gobi' }), dish(907, 'subzi', { name: 'Cabbage' }),
+  ];
+  const rice = { id: 900, name: 'Rice', componentType: 'base' as ComponentType };
+  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'subzi_dish', values, strength: 'always', ...over });
+  const when = (curry: number[]) => ({ when: { curry } });
+  const blocking = (w: ReturnType<typeof linkWarnings>) => w.filter((x) => x.blocking);
+  const servedWithRice = (id: number, name: string) =>
+    rec(linkRule({ id, name }, { mode: 'serve', target: 'base_dish', values: [900], strength: 'always' }), 70 + id);
+
+  it("blocks an Always conditional subzi link against the base's own unconditional Always subzi link", () => {
+    const message = 'Rice already always comes with Aloo Gobi, and a meal holds one subzi.';
+    expect(linkWarnings(rice, [subzi([906]), subzi([905], when([901]))], { dishes: lib, rules: [] }, nm)).toEqual([{ link: 1, blocking: true, message }]);
+    // The conditional link carries it, whichever comes first.
+    expect(linkWarnings(rice, [subzi([905], when([901])), subzi([906])], { dishes: lib, rules: [] }, nm)).toEqual([{ link: 0, blocking: true, message }]);
+    // Sharing a dish, a softer or a scoped link: no clash.
+    expect(blocking(linkWarnings(rice, [subzi([906]), subzi([905, 906], when([901]))], { dishes: lib, rules: [] }, nm))).toEqual([]);
+    expect(blocking(linkWarnings(rice, [subzi([906], { strength: 'usually' }), subzi([905], when([901]))], { dishes: lib, rules: [] }, nm))).toEqual([]);
+    expect(blocking(linkWarnings(rice, [subzi([906]), subzi([905], { ...when([901]), strength: 'usually' })], { dishes: lib, rules: [] }, nm))).toEqual([]);
+    expect(blocking(linkWarnings(rice, [subzi([906], { scope: { meals: ['lunch'] } }), subzi([905], when([901]))], { dishes: lib, rules: [] }, nm))).toEqual([]);
+  });
+
+  it('blocks an Always conditional subzi link against an Always subzi served with this base', () => {
+    const rules = [servedWithRice(906, 'Aloo Gobi')];
+    expect(linkWarnings(rice, [subzi([905], when([901]))], { dishes: lib, rules }, nm)).toEqual([
+      { link: 0, blocking: true, message: 'Aloo Gobi is always served with Rice, which leaves no room for Beans Poriyal, and a meal holds one subzi.' },
+    ]);
+    expect(blocking(linkWarnings(rice, [subzi([905, 906], when([901]))], { dishes: lib, rules }, nm))).toEqual([]);
+  });
+
+  it('blocks two Always conditional subzi links whose curries overlap, and not ones waiting for different curries', () => {
+    const message = 'Rice already always comes with Aloo Gobi, and a meal holds one subzi.';
+    expect(linkWarnings(rice, [subzi([906], when([901, 902])), subzi([905], when([901]))], { dishes: lib, rules: [] }, nm)).toEqual([{ link: 1, blocking: true, message }]);
+    // Different curries never meet in one meal.
+    expect(linkWarnings(rice, [subzi([906], when([902])), subzi([905], when([901]))], { dishes: lib, rules: [] }, nm)).toEqual([]);
+    expect(blocking(linkWarnings(rice, [subzi([906], when([901])), subzi([905, 906], when([901]))], { dishes: lib, rules: [] }, nm))).toEqual([]);
+  });
+
+  it('a conditional extra link never clashes, and a conditional link does not count as bringing in every meal', () => {
+    const papad: DishLink = { mode: 'comes', target: 'extra_dish', values: [907], strength: 'always', when: { curry: [901] } };
+    expect(blocking(linkWarnings(rice, [papad, subzi([905])], { dishes: lib, rules: [] }, nm))).toEqual([]);
+    // From Beans Poriyal's form: served with Rice, which only brings Aloo Gobi with Sambar.
+    const rules = [rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([901]))), 80)];
+    const beans = { id: 905, name: 'Beans Poriyal', componentType: 'subzi' as ComponentType };
+    expect(blocking(linkWarnings(beans, [link({ mode: 'serve', values: [900] })], { dishes: lib, rules }, nm))).toEqual([]);
+  });
+
+  it('counts a conditional subzi link on the curry it waits for, from that curry\'s form', () => {
+    // Rice always comes with Sambar, and with Aloo Gobi when the curry is Sambar; Sambar always comes with Beans Poriyal.
+    const rules = [
+      rec(linkRule({ id: 900, name: 'Rice' }, { mode: 'comes', target: 'curry_dish', values: [901], strength: 'always' }), 80),
+      rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([901]))), 81),
+    ];
+    const sambar = { id: 901, name: 'Sambar', componentType: 'curry' as ComponentType };
+    expect(blocking(linkWarnings(sambar, [subzi([905])], { dishes: lib, rules }, nm))).toEqual([
+      { link: 0, blocking: true, message: 'Rice always comes with Sambar and with Aloo Gobi, which leaves no room for Beans Poriyal, and a meal holds one subzi.' },
+    ]);
+    // Waiting for another curry, it never meets Sambar.
+    const other = [rules[0], rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([902]))), 81)];
+    expect(blocking(linkWarnings(sambar, [subzi([905])], { dishes: lib, rules: other }, nm))).toEqual([]);
+  });
+});

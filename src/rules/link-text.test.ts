@@ -78,6 +78,25 @@ describe('served with', () => {
   });
 });
 
+describe('comes with a condition', () => {
+  const dishes = { component: (id: number) => ({ 16: 'Papad', 8: 'Sambar', 9: 'Rasam', 12: 'Beans Poriyal' } as Record<number, string>)[id] };
+  const papad = (over: Partial<DishLink>) => link({ mode: 'comes', target: 'extra_dish', values: [16], ...over });
+
+  it('words the condition', () => {
+    expect(describeLink('Rice', papad({ when: { curry: [8] } }), dishes)).toBe('Rice always comes with Papad when the curry is Sambar');
+    expect(describeLink('Rice', papad({ when: { curry: [8], subzi: [12] } }), dishes))
+      .toBe('Rice always comes with Papad when the curry is Sambar and the subzi is Beans Poriyal');
+    expect(describeLink('Rice', papad({ when: { curry: [8] }, scope: { meals: ['lunch'] } }), dishes))
+      .toBe('Rice always comes with Papad when the curry is Sambar, at lunch');
+  });
+
+  it('shortens the condition', () => {
+    expect(shortLink(papad({ when: { curry: [8] } }), dishes)).toBe('Comes with Papad (with Sambar)');
+    expect(shortLink(papad({ strength: 'usually', when: { curry: [8, 9] } }), dishes)).toBe('Usually comes with Papad (with Sambar or Rasam)');
+    expect(shortLink(papad({ when: { curry: [8, 9], subzi: [12] } }), dishes)).toBe('Comes with Papad (with Sambar or Rasam, and Beans Poriyal)');
+  });
+});
+
 describe('comes with', () => {
   const stew = { component: (id: number) => ({ 11: 'Kerala Stew (Veg)', 12: 'Kerala Stew (Non-Veg)', 13: 'Rasam' } as Record<number, string>)[id] };
   it('words a comes link', () => {

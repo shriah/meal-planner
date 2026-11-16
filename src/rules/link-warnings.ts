@@ -9,9 +9,18 @@ import type { RuleRecord } from './record';
 export interface LinkWarning { link: number; message: string; blocking?: boolean }
 
 const unscoped = (l: DishLink) => !l.scope?.days?.length && !l.scope?.meals?.length;
-/** An unscoped Always "comes with" link that brings a dish of `role`: one that must hold in every meal. */
-const alwaysBrings = (l: DishLink | undefined, role: ComponentType): l is DishLink =>
+/** An unscoped Always "comes with" link that brings a dish of `role`, waiting or not for the meal's curry or subzi. */
+const alwaysComes = (l: DishLink | undefined, role: ComponentType): l is DishLink =>
   l !== undefined && l.mode === 'comes' && l.strength === 'always' && unscoped(l) && l.values.length > 0 && isSideTarget(l.target) && dishTypeOf(l.target) === role;
+/** An unscoped Always "comes with" link that brings a dish of `role` with no condition: one that must hold in every meal. */
+const alwaysBrings = (l: DishLink | undefined, role: ComponentType): l is DishLink => alwaysComes(l, role) && !l.when;
+/** Whether a link brings its dish in every meal with this curry: it waits for nothing, or only for curries that include it. */
+const bringsWithCurry = (l: DishLink, curry: number) => !l.when || (!l.when.subzi?.length && (l.when.curry ?? []).includes(curry));
+/** Whether two conditional links can hold in one meal: every part both name shares a dish. */
+const canMeet = (a: DishLink, b: DishLink) => (['curry', 'subzi'] as const).every((part) => {
+  const x = a.when?.[part], y = b.when?.[part];
+  return !x?.length || !y?.length || x.some((id) => y.includes(id));
+});
 const OTHER_ROLE: Partial<Record<ComponentType, ComponentType>> = { curry: 'subzi', subzi: 'curry' };
 
 type Lookup = { dishes: readonly ComponentRecord[]; rules: readonly RuleRecord[] };
@@ -58,9 +67,12 @@ export function linkWarnings(
       const role = dishTypeOf(link.target);
       const mineIds = comesIds(link);
       if (role === 'curry' || role === 'subzi') {
-        // A meal holds one curry and one subzi, so these always-comes links must share a dish to both hold.
-        const earlier = links.slice(0, i).find((o) => {
-          if (o.mode !== 'comes' || o.strength !== 'always' || !unscoped(o) || o.values.length === 0 || !isSideTarget(o.target) || dishTypeOf(o.target) !== role) return false;
+        // A meal holds one curry and one subzi, so these always-comes links must share a dish to both hold. A link that
+        // waits for a curry meets the plain ones in every meal with that curry, and another waiting one where both can
+        // hold; it carries the clash, and two plain links or two waiting ones leave it to the later one.
+        const earlier = links.find((o, j) => {
+          if (j === i || !alwaysComes(o, role)) return false;
+          if (link.when ? (o.when && (j > i || !canMeet(link, o))) : (o.when || j > i)) return false;
           const theirs = comesIds(o);
           return theirs.size > 0 && mineIds.size > 0 && ![...theirs].some((id) => mineIds.has(id));
         });
@@ -69,7 +81,7 @@ export function linkWarnings(
         const other = mineIds.size === 0 ? undefined : servedOnMe.find((d) => d.componentType === role && !mineIds.has(d.id));
         if (other) out.push({ link: i, blocking: true, message: `${other.name} is always served with ${mine}, which leaves no room for ${listValues(link, names)}, and a meal holds one ${role}.` });
         // A dish among the chosen ones that is always served with it makes the others unreachable.
-        const narrowing = servedOnMe.find((d) => d.componentType === role && mineIds.has(d.id));
+        const narrowing = link.when ? undefined : servedOnMe.find((d) => d.componentType === role && mineIds.has(d.id));
         if (narrowing && mineIds.size > 1) {
           const rest = lookup.dishes.filter((d) => mineIds.has(d.id) && d.id !== narrowing.id).map((d) => d.name);
           out.push({ link: i, message: `${narrowing.name} is always served with ${mine}, so ${rest.length > 1 ? `${rest.slice(0, -1).join(', ')} and ${rest[rest.length - 1]}` : rest[0]} will never be picked. Remove that link on ${narrowing.name} to let ${rest.length > 1 ? 'any' : 'either'} come.` });
@@ -105,7 +117,7 @@ export function linkWarnings(
       const taken = chosenDishes(link, self.id, lookup.dishes).filter((b) => b.componentType === 'base').flatMap((b) =>
         ownedBy(b.id).flatMap((r) => {
           const theirs = readLink(r);
-          if (theirs?.mode !== 'comes' || theirs.strength !== 'always' || !unscoped(theirs) || !isSideTarget(theirs.target) || dishTypeOf(theirs.target) !== self.componentType) return [];
+          if (theirs?.mode !== 'comes' || theirs.strength !== 'always' || theirs.when || !unscoped(theirs) || !isSideTarget(theirs.target) || dishTypeOf(theirs.target) !== self.componentType) return [];
           const ids = chosenDishes(theirs, b.id, lookup.dishes);
           return ids.length > 0 && !ids.some((d) => d.id === self.id) ? [{ b, theirs }] : [];
         }));
@@ -114,7 +126,8 @@ export function linkWarnings(
       }
     }
 
-    if ((link.mode !== 'with' && link.mode !== 'comes') || link.strength !== 'always') return;
+    // A link that waits for a curry or subzi leaves the dish free in every other meal.
+    if ((link.mode !== 'with' && link.mode !== 'comes') || link.strength !== 'always' || link.when) return;
     const usable = chosenDishes(link, self.id, lookup.dishes).filter((d) => !ownedBy(d.id).some((r) => r.spec.template === 'exclude'));
     if (usable.length === 0) {
       const listed = listValues(link, names);
@@ -195,12 +208,16 @@ function mealClashes(
     const t = ids(l, d.id);
     return t.size === 1 && t.has(self.id!);
   }));
+  // Such a dish's meals all hold this curry, so its links waiting for this curry bring their dish there too.
+  const bringsHere = (owner: number) => self.componentType !== 'curry' ? brings(owner, other) : rules
+    .filter((r) => r.owner_component_id === owner).map(readLink)
+    .filter((l): l is DishLink => alwaysComes(l, other) && bringsWithCurry(l, self.id!));
   links.forEach((link, i) => {
     if (!alwaysBrings(link, other)) return;
     const room = ids(link, self.id);
     if (room.size === 0) return;
     for (const owner of owners) {
-      const theirs = brings(owner.id, other).find((l) => crowds(l, owner.id, room));
+      const theirs = bringsHere(owner.id).find((l) => crowds(l, owner.id, room));
       if (!theirs) continue;
       out.push({ link: i, blocking: true, message: `${owner.name} always comes with ${mine} and with ${listValues(theirs, names)}, which leaves no room for ${listValues(link, names)}, and a meal holds one ${other}.` });
       break;

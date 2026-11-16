@@ -165,7 +165,7 @@ flowchart TD
     A["Constraints: built-ins + compiled rules"] --> B["compileModel: matchers to closures, groups"]
     B --> C["Construction: fill 21 slots, pins first, softmax over candidates"]
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
-    D --> E{"No hard violations and no improvement for N iterations, or time cap?"}
+    D --> E{"No hard violations and no improvement for N iterations, or the step budget (or time cap) reached?"}
     E -->|no| D
     E -->|yes| H["Final descent: every single change of a free base, curry or subzi; keep strict improvements"]
     H --> F["Polish: drop curries, subzis and extras that do not help"]
@@ -186,7 +186,15 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
 - The **final descent** runs after the random search: it tries every single change of a free base, curry or subzi in a
   fixed order and keeps each strict improvement, for at most `DESCENT_PASSES` (10) passes or until a pass changes nothing.
-  The time limit (300 ms by default) does not cut it short.
+  The safety cap does not cut it short.
+- **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
+  `clamp(36000 + 150 * dishes + 400 * pairs, 36000, 200000)`, and stops earlier on a plateau (3000 iterations with no
+  improvement and no hard violation). Steps, not time, decide the result, so a plan for a given seed does not depend on machine
+  speed, unless the safety cap fires. Derivation: `docs/superpowers/plans/2026-11-16-planner-search-budget-measurements.md`.
+- **Safety cap**: `timeLimitMs` is only a cap (`SAFETY_CAP_MS`, 10 s). When it cuts the search short, Generate or Regenerate
+  shows "Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again." in
+  `PlanProblemsBanner`. The note is not stored, and the meal picker and previews ignore it.
+  The cap stops only the random search; the final descent after it is bounded by its pass count, so a capped Generate can run a little past 10 s.
 
 ### Pairings as units
 
@@ -197,12 +205,16 @@ side along when it fits and give way otherwise. Either way, a pairing never make
 - **Compiling.** An enabled `require_with` that names specific dishes, and a `comes_with` rule (one pair whose `of` is all
   the dishes it names), compile to `pair` constraints (`must` makes units, `prefer` makes asked-for sides); `require_with`'s
   `extraCategories` stay ordinary counts. Any one candidate meets a pair, and a pair with no candidate in the library is ignored. A pairing's scope limits where it applies.
-  `compileRules` marks owned rules with `owner` and `yieldsTo: 'unit'`, other default rules with `yieldsTo: 'unit'`, and
-  "sides only when a rule asks", variety and spacing with `yieldsTo: 'ask'` (`givesWayTo` in `src/rules/record.ts`).
+  `compileRules` marks every **frequency** constraint (`isFrequencyBody` in `src/rules/record.ts`: a count across days, the
+  week or per dish with an upper bound, or a prefer) with `yieldsTo: 'ask'`, whoever owns the rule: a brought dish sits below
+  the dish that brought it, so its frequency rules never make that dish rarer. A frequency count with a minimum too is split
+  into two constraints (`rule:<id>:<i>` keeps the minimum and does not give way, `rule:<id>:<i>:max` the maximum). Other
+  constraints: owned rules get `owner` and `yieldsTo: 'unit'`, other default rules (the per-meal extras caps) `yieldsTo:
+  'unit'`, "sides only when a rule asks" `yieldsTo: 'ask'`, hand-written ones nothing (`givesWayTo`).
 - **Scoring.** Each score works out every meal's unit members and asked-for sides from the `pair` constraints whose trigger is
   present. A unit member is not counted by constraints that give way (its own days, meals, links, never-auto, the defaults);
-  an asked-for side is not counted by `yieldsTo: 'ask'`, so the variety and spacing defaults yield to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
-  Hand-written rules and built-ins never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
+  an asked-for side is not counted by `yieldsTo: 'ask'`, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
+  Hand-written rules other than frequency rules, and built-ins, never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
@@ -210,7 +222,8 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
   the candidate's own rules it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
   then soft score; ties go to the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that
-  give way to a unit (by default frequent −1, rare +1; clamped to ±2) and `o` a per-candidate offset in [0, 1) drawn from a separate
+  give way to a brought dish (`yieldedPreferWeight`; by default frequent −1, rare +1, and "sides only when a rule asks" +2 on every
+  side) less the lowest such weight among the candidates, so a weight they all share changes nothing (at most 4), and `o` a per-candidate offset in [0, 1) drawn from a separate
   stream seeded by the solve's seed (0.5 in the meal picker), then rotation (each meal starts from a different candidate, which in
   practice only matters in the meal picker). Unit members stay while their base does; asked-for sides
   are free, and polish may drop one.
@@ -230,7 +243,7 @@ expectations checked over 8 planned weeks (seeds 1–8). Groups: Pairings, Days 
 (`src/rule-cases/cases`). It covers the rule engine and planner only, no UI.
 
 - Cases use their own test library (`library.ts`), never the seed library or user data.
-- Runs use a fixed iteration budget (`run.ts`: 20 000 iterations, no time limit), so results do not depend on machine speed.
+- Runs use a fixed iteration budget (`run.ts`: the same `searchBudget` as the app, with no time limit), so results do not depend on machine speed.
 - A case's `rules`, `pins` and `without` (default rules by `default_key`) are what it is about; supporting rules go in
   `given`. `rule-cases.test.ts` plans every case without its subject (`failsWithoutSubject` in `run.ts`) and fails it if all
   its expectations still pass, since such a case proves nothing.

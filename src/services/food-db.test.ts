@@ -297,6 +297,33 @@ describe('Phase 14 category services', () => {
     expect(await getOwnedRule(sambar, 'with:base_dish')).toBeUndefined();
   });
 
+  it('drops a deleted curry or subzi from the conditions of comes-with links, and a link left with an empty part', async () => {
+    const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
+    const papad = await saveComponent(undefined, { ...tags, name: 'Papad', componentType: 'extra' });
+    const sambar = await saveComponent(undefined, { ...tags, name: 'Sambar', componentType: 'curry' });
+    const rasam = await saveComponent(undefined, { ...tags, name: 'Rasam', componentType: 'curry' });
+    const beans = await saveComponent(undefined, { ...tags, name: 'Beans Poriyal', componentType: 'subzi' });
+    const comes = (when: DishLink['when']): DishLink => ({ mode: 'comes', target: 'extra_dish', values: [papad], strength: 'usually', scope: { meals: ['lunch'] }, when });
+    const rice = await saveComponent(undefined, { ...tags, name: 'Rice', componentType: 'base' }, {}, [
+      { kind: 'add', link: comes({ curry: [sambar, rasam] }) },
+      { kind: 'add', link: comes({ curry: [sambar], subzi: [beans] }) },
+      { kind: 'add', link: comes({ curry: [rasam], subzi: [beans] }) },
+    ]);
+    const [either, both, rasamBeans] = await getOwnedRules(rice);
+
+    await deleteComponent(sambar);
+    expect(readLink((await db.rules.get(either.id))!)).toEqual(comes({ curry: [rasam] }));
+    // Losing Sambar must not widen "Sambar and Beans Poriyal" to "Beans Poriyal": the link goes.
+    expect(await db.rules.get(both.id)).toBeUndefined();
+    expect(await db.rules.get(rasamBeans.id)).toEqual(rasamBeans);
+
+    await deleteComponent(beans);
+    expect(await db.rules.get(rasamBeans.id)).toBeUndefined();
+    expect(readLink((await db.rules.get(either.id))!)).toEqual(comes({ curry: [rasam] }));
+    await deleteComponent(rasam);
+    expect(await getOwnedRules(rice)).toEqual([]);
+  });
+
   it('two comes-with links are saved, edited and removed on their own', async () => {
     const tags = { dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '' };
     const coconut = await saveComponent(undefined, { ...tags, name: 'Coconut Chutney', componentType: 'extra' });

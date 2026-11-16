@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, offersComes, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleSpec } from '@/rules';
+import { describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, offersComes, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -442,17 +442,24 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
   };
 }
 
+/** How a pairing brought a side; a comes-with link that waits for a curry or subzi says which. */
+function howBrought(rule: RuleRecord | undefined, by: string, side: string, name: (id: number) => string): string {
+  if (rule?.spec.template !== 'comes_with') return `${side} is served with ${by}`;
+  const when = readLink(rule)?.when;
+  return `${by} comes with ${side}${when ? ` when ${describeWhen(when, name)}` : ''}`;
+}
+
 /** The dishes in one slot that a pairing brought, named with the dish that brought each. */
 function pairedWith(data: AssistantData, plan: WeeklyPlan, day: DayOfWeek, meal: Meal): { dish: string; by: string; how: string }[] {
   const name = (id: number) => data.library.find((c) => c.id === id)?.name ?? `dish ${id}`;
   // The rule that brought the side says how: a served-with rule belongs to the side, a comes-with rule to the dish named in `by`.
-  const templateOf = (ruleId: number | undefined) => data.rules.find((r) => r.id === ruleId)?.spec.template;
+  const ruleOf = (ruleId: number | undefined) => data.rules.find((r) => r.id === ruleId);
   return pairedSides(data, knownOnly(plan, data))
     .filter((p) => p.day === day && p.meal === meal)
     .map((p) => ({
       dish: name(p.component),
       by: name(p.by),
-      how: templateOf(p.ruleId) === 'comes_with' ? `${name(p.by)} comes with ${name(p.component)}` : `${name(p.component)} is served with ${name(p.by)}`,
+      how: howBrought(ruleOf(p.ruleId), name(p.by), name(p.component), name),
     }));
 }
 

@@ -1,5 +1,5 @@
 // Runs a case through the real rule pipeline: compileRules, then planWeek on seeds 1-8.
-import { DAYS, MEALS, planWeek } from '@/planner';
+import { DAYS, MEALS, planWeek, type SolveOptions } from '@/planner';
 import {
   compileRules, defaultRules, describeSpec, parseSpec, specReferences,
   type KnownIds, type Names, type RuleIssue, type RuleRecord,
@@ -8,7 +8,9 @@ import { libraryOf, TEST_LIBRARY } from './library';
 import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseWeeks, PlanCase } from './types';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
-const BUDGET = { timeLimitMs: Infinity, maxIterations: 20_000, plateauIterations: 3000 };
+export type CaseBudget = Pick<SolveOptions, 'maxIterations' | 'plateauIterations' | 'timeLimitMs'>;
+// Iterations come from `searchBudget` for each case's model; time never ends a case's search.
+const BUDGET: CaseBudget = { timeLimitMs: Infinity };
 const CREATED = '2026-01-01T00:00:00.000Z';
 
 export function statusOf(allPass: boolean, known?: string): CaseStatus {
@@ -26,17 +28,18 @@ export function recordsOf(c: PlanCase, own: CaseRule[], given: CaseRule[] = [], 
   return all.map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
 }
 
-function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins']): CaseWeeks & { issues: RuleIssue[] } {
+function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins'], budget: CaseBudget = BUDGET): CaseWeeks & { issues: RuleIssue[] } {
   const known: KnownIds = {
     components: new Set(lib.dishes.map((d) => d.id)),
     baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
     extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
   };
   const { constraints, issues } = compileRules(rules, known);
-  const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...BUDGET, seed, pins }));
+  const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins }));
   return {
     weeks: results.map((r) => r.slots),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
+    soft: results.map((r) => r.justifications.filter((j) => j.level === 'soft')),
     suppressed: results.map((r) => r.justifications.filter((j) => j.suppressed !== undefined)),
     lib,
     issues,
@@ -50,23 +53,23 @@ const libraryFor = (c: PlanCase): CaseLibrary =>
  * The case planned without what it is about (its own rules, its pins and the defaults it names), the given
  * rules and other defaults kept. A case whose expectations all still pass here proves nothing.
  */
-export function failsWithoutSubject(c: PlanCase): { fails: boolean; passing: string[] } {
+export function failsWithoutSubject(c: PlanCase, budget: CaseBudget = BUDGET): { fails: boolean; passing: string[] } {
   const lib = libraryFor(c);
   const given = c.given?.(lib) ?? [];
-  const weeks = planWeeks(c, lib, recordsOf(c, [], given, c.without), {});
+  const weeks = planWeeks(c, lib, recordsOf(c, [], given, c.without), {}, budget);
   let base: CaseWeeks | undefined;
-  const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, [], given), c.pins)) };
+  const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, [], given), c.pins, budget)) };
   const passing = c.expect.filter((e) => e.check(weeks, ctx).pass).map((e) => e.says);
   return { fails: passing.length < c.expect.length, passing };
 }
 
-export function runPlanCase(c: PlanCase): CaseResult {
+export function runPlanCase(c: PlanCase, budget: CaseBudget = BUDGET): CaseResult {
   const lib = libraryFor(c);
   const own = c.rules(lib);
   const given = c.given?.(lib) ?? [];
-  const weeks = planWeeks(c, lib, recordsOf(c, own, given), c.pins);
+  const weeks = planWeeks(c, lib, recordsOf(c, own, given), c.pins, budget);
   let base: CaseWeeks | undefined;
-  const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, [], given), c.pins)) };
+  const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, [], given), c.pins, budget)) };
 
   // A rule that was left out of the plan would let a case pass for the wrong reason.
   const unapplied = weeks.issues.map((i) => ({ says: `Rule could not be applied: ${i.name}`, pass: false, got: i.message }));
