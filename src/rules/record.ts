@@ -1,5 +1,5 @@
 // Stored rules and their compilation into planner constraints.
-import type { Bounds, Constraint, Level } from '@/planner';
+import type { Bounds, Constraint, RuleLevel } from '@/planner';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -46,30 +46,55 @@ export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
 }
 
 /** The level a rule's bodies sit on unless a template says `frequency`. */
-export function levelOf(rule: RuleRecord): Level {
+export function levelOf(rule: RuleRecord): RuleLevel {
   if (rule.owner_component_id !== undefined) return 'dish';
   if (rule.default_key === 'sides-only-when-asked' || rule.default_key === 'variety' || rule.default_key === 'spacing') return 'frequency';
   if (rule.default_key !== undefined) return 'dish';
   return 'rule';
 }
 
-/**
- * What a rule gives way to, for display: `bring` when it brings a dish into the meal (a pair),
- * `frequency` when any of its bodies is a frequency cost, otherwise the level it sits on.
- * Undefined for a rule that cannot be read.
- */
-export function ruleLevel(rule: RuleRecord): Level | 'bring' | undefined {
-  const parsed = parseSpec(rule.spec);
-  if (!parsed.ok) return undefined;
-  const bodies = compileSpec(parsed.spec);
-  if (bodies.some((b) => b.kind === 'pair')) return 'bring';
-  if (bodies.some((b) => 'level' in b && b.level === 'frequency')) return 'frequency';
-  return levelOf(rule);
-}
-
 /** The bounds of `bounds` named in `keys` that are set. */
 function pickBounds(bounds: Bounds, keys: readonly (keyof Bounds)[]): Bounds {
   return Object.fromEntries(keys.filter((k) => bounds[k] !== undefined).map((k) => [k, bounds[k]]));
+}
+
+/** One compiled piece of a rule body: the body as compiled, its level (none for a pair) and the id suffix. */
+export interface BodyPart {
+  body: ConstraintBody;
+  level?: RuleLevel;
+  suffix: string;
+}
+
+/**
+ * The compiled pieces of one body of `rule`. A pair carries no level. A frequency count with a minimum splits:
+ * a brought dish still counts toward the minimum (level `rule`), only the maximum gives way (`frequency`, id
+ * suffix `:max`). Shared by `compileRules` and `ruleLevel`, so what the Rules page shows is what compiles.
+ */
+export function bodyLevels(rule: RuleRecord, body: ConstraintBody): BodyPart[] {
+  if (body.kind === 'pair') return [{ body, suffix: '' }];
+  if (body.level !== 'frequency') return [{ body, level: levelOf(rule), suffix: '' }];
+  if (body.kind === 'count' && (body.bounds.hardMin !== undefined || body.bounds.softMin !== undefined)) {
+    return [
+      { body: { ...body, bounds: pickBounds(body.bounds, ['hardMin', 'softMin']) }, level: 'rule', suffix: '' },
+      { body: { ...body, bounds: pickBounds(body.bounds, ['softMax', 'hardMax']) }, level: 'frequency', suffix: ':max' },
+    ];
+  }
+  return [{ body, level: 'frequency', suffix: '' }];
+}
+
+const STRENGTH: Record<RuleLevel, number> = { rule: 0, dish: 1, frequency: 2 };
+
+/**
+ * What a rule gives way to, for display: `bring` when it brings a dish into the meal (a pair), otherwise the
+ * strongest level of its compiled bodies (`frequency` over `dish` over `rule`).
+ * Undefined for a rule that cannot be read.
+ */
+export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
+  const parsed = parseSpec(rule.spec);
+  if (!parsed.ok) return undefined;
+  const levels = compileSpec(parsed.spec).flatMap((b) => bodyLevels(rule, b)).map((p) => p.level);
+  if (levels.includes(undefined)) return 'bring';
+  return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
 /**
@@ -93,19 +118,12 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { c
       continue;
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
-    const asked = { ...owner, level: 'frequency' as const };
-    const push = (body: ConstraintBody, marks: object, id: string) =>
-      constraints.push({ ...body, ...marks, id, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
-    compileSpec(parsed.spec).forEach((body, i) => {
-      const id = `rule:${rule.id}:${i}`;
-      // Pairs are what the others give way to, so they carry no level and no owner.
-      if (body.kind === 'pair') push(body, {}, id);
-      else if (body.level !== 'frequency') push(body, { ...owner, level: levelOf(rule) }, id);
-      else if (body.kind === 'count' && (body.bounds.hardMin !== undefined || body.bounds.softMin !== undefined)) {
-        // A brought dish still counts toward a minimum; only the maximum gives way.
-        push({ ...body, bounds: pickBounds(body.bounds, ['hardMin', 'softMin']) }, { ...owner, level: 'rule' }, id);
-        push({ ...body, bounds: pickBounds(body.bounds, ['softMax', 'hardMax']) }, asked, `${id}:max`);
-      } else push(body, asked, id);
+    compileSpec(parsed.spec).forEach((spec, i) => {
+      for (const { body, level, suffix } of bodyLevels(rule, spec)) {
+        // Pairs are what the others give way to, so they carry no level and no owner.
+        const marks = level === undefined ? {} : { ...owner, level };
+        constraints.push({ ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
+      }
     });
   }
   return { constraints, issues };

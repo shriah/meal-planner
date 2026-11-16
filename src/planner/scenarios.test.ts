@@ -50,7 +50,8 @@ const run = (constraints: CountConstraint[], seed: number, pins?: Pins) =>
 const hardOf = (r: PlanResult) => r.justifications.filter((j) => j.level === 'hard').map((j) => explain(j, { component: nameOf }));
 const ids = (r: PlanResult, pick: (s: PlanSlotLike) => (number | undefined)[]) => r.slots.flatMap(pick).filter((x): x is number => x !== undefined);
 
-// The current defaults, marked as compileRules marks them: default rules give way to unit members,
+// The current defaults as planner-level fixtures. Their levels are not compileRules' exactly (compileRules
+// puts variety and spacing on `frequency`; here they are `dish`): default rules give way to unit members,
 // "sides only when asked" also to asked-for sides.
 const CURRENT_DEFAULTS: Constraint[] = [
   ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({

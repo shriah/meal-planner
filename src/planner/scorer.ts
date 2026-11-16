@@ -2,7 +2,7 @@
 // any hard violation outweighs every soft cost. Each violated group can be justified.
 // Sides a meal's dishes bring by PAIR constraints (unit members and asked-for sides) are worked out
 // per meal first; rules on the `dish` or `frequency` level give way to them.
-import { byComponent, timeOf, type Constraint, type CountConstraint, type Level, type Origin, type PairConstraint } from './constraints';
+import { byComponent, timeOf, type Constraint, type CountConstraint, type RuleLevel, type Origin, type PairConstraint } from './constraints';
 import { compileMatcher, type MatchFn } from './matcher';
 import {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
@@ -139,7 +139,7 @@ const GIVES_TO_ANY = 2;
 const ROLE_CURRY = 1;
 const ROLE_SUBZI = 2;
 const roleBitOf = (r: Role): number => (r === 'curry' ? ROLE_CURRY : r === 'subzi' ? ROLE_SUBZI : 0);
-const givesWay = (l: Level | undefined): number => (l === 'dish' ? GIVES_TO_ALWAYS : l === 'frequency' ? GIVES_TO_ANY : 0);
+const givesWay = (l: RuleLevel | undefined): number => (l === 'dish' ? GIVES_TO_ALWAYS : l === 'frequency' ? GIVES_TO_ANY : 0);
 
 export interface CompiledModel {
   readonly library: readonly ComponentLike[];

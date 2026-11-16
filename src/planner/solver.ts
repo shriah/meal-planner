@@ -63,7 +63,28 @@ const OFFSET_SEED_MIX = 0x9e3779b9;
  * `candidates[(slot + k) % n]`, so meals in turn start from a different candidate. At most `limit`
  * candidates (0 = all) are scored, taken in that order. Deterministic.
  */
-export function chooseCandidate<S = Score>(
+/** Plain `Score`s compare with `compareScore`; a `BroughtScore` does not fit here, so it must use the overload below. */
+export function chooseCandidate(
+  candidates: readonly number[],
+  slot: number,
+  scoreWith: (id: number) => Score & { overrides?: never },
+  timesPlanned: (id: number) => number,
+  limit?: number,
+  weightOf?: (id: number) => number,
+  offsetOf?: (id: number) => number,
+): number;
+/** Any other kind of score (a `BroughtScore`, say) has to say how to compare it. */
+export function chooseCandidate<S>(
+  candidates: readonly number[],
+  slot: number,
+  scoreWith: (id: number) => S,
+  timesPlanned: (id: number) => number,
+  limit: number | undefined,
+  weightOf: ((id: number) => number) | undefined,
+  offsetOf: ((id: number) => number) | undefined,
+  compare: (a: S, b: S) => number,
+): number;
+export function chooseCandidate<S>(
   candidates: readonly number[],
   slot: number,
   scoreWith: (id: number) => S,
@@ -71,7 +92,7 @@ export function chooseCandidate<S = Score>(
   limit = SAMPLE_SIZE,
   weightOf: (id: number) => number = () => 0,
   offsetOf: (id: number) => number = () => 0.5,
-  compare: (a: S, b: S) => number = compareScore as never,
+  compare: (a: S, b: S) => number = compareScore as (a: S, b: S) => number,
 ): number {
   const n = candidates.length;
   if (n <= 1) return candidates[0];

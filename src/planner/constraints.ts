@@ -23,7 +23,7 @@ export type Origin = 'builtin' | 'rule';
  * dishes away. `'dish'`: gives way to what a dish brings. `'frequency'`: how often a dish appears; gives way to every
  * brought dish.
  */
-export type Level = 'rule' | 'dish' | 'frequency';
+export type RuleLevel = 'rule' | 'dish' | 'frequency';
 
 interface Common {
   id: string;
@@ -50,7 +50,7 @@ export interface CountConstraint extends Common {
   severity?: number;
   costs?: { min?: number; max?: number };
   /** Absent means `rule`. */
-  level?: Level;
+  level?: RuleLevel;
   /** Dish that owns the rule. A unit member does not trigger `when` when its meal's base is the owner. */
   owner?: number;
 }
@@ -60,7 +60,7 @@ export interface PreferConstraint extends Common {
   select: Matcher;
   /** Soft cost per matching assignment; negative is a reward. */
   weight: number;
-  level?: Level;
+  level?: RuleLevel;
   owner?: number;
 }
 

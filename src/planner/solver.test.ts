@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Constraint, CountConstraint, Level } from './constraints';
+import type { Constraint, CountConstraint, RuleLevel } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
@@ -438,8 +438,9 @@ describe('chooseCandidate', () => {
 
 describe('final descent', () => {
   // Mirrors TEST_LIBRARY in src/rule-cases/library.ts (ids, roles, order).
-  // The rule-case test library and the default rules as compileRules
-  // compiles them, written out here because planner files may not import the rules module. On seed 4
+  // The rule-case test library and the default rules, written out here because planner files may not import
+  // the rules module. Their levels are fixtures, not compileRules' exactly (variety and spacing are `dish`
+  // here, `frequency` in compileRules). On seed 4
   // the search used to stop on a plateau with Pongal (1) on Wednesday and Thursday, one change from
   // the best week.
   const lib: ComponentLike[] = [
@@ -451,7 +452,7 @@ describe('final descent', () => {
   const BASES = lib.filter((c) => c.componentType === 'base').map((c) => c.id);
   const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('role', ['base', 'curry', 'subzi']));
   const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
-  const prefer = (id: string, select: Matcher, weight: number, level: Level): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, level });
+  const prefer = (id: string, select: Matcher, weight: number, level: RuleLevel): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, level });
   const defaults: Constraint[] = [
     ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
       id: `extras-${meal}`, label: `extras-${meal}`, select: is('componentType', 'extra'), groupBy: 'slot',
