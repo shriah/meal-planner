@@ -167,7 +167,7 @@ flowchart TD
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
     D --> E{"No hard violations and no improvement for N iterations, or the step budget (or time cap) reached?"}
     E -->|no| D
-    E -->|yes| H["Repair loop, rounds until one keeps nothing (at most REPAIR_ROUNDS): X
+    E -->|yes| H["Repair loop, rounds until one keeps nothing (at most REPAIR_ROUNDS): descent, re-pick, polish; sweep and retry only with a conditional link"]
     H --> F["Best plan found"]
     F --> G["Best plan + score (hard, soft) + justification per violated group"]
 ```
