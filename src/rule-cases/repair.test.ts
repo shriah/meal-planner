@@ -33,23 +33,25 @@ describe('repair loop', () => {
       for (const seed of SEEDS) {
         const r = planWeek({ library, constraints }, { seed, timeLimitMs: Infinity });
         expect(r.stats.repairRounds).toBeGreaterThan(0);
-        expect(r.stats.repairRounds).toBeLessThan(REPAIR_ROUNDS);
+        expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
       }
     }
     for (const id of ['when-curry-brings', 'when-curry-retried-after-polish', 'when-curry-lock-nudge']) {
       const { library: lib, constraints, pins } = caseModel(id);
       for (const seed of SEEDS) {
         const r = planWeek({ library: lib, constraints }, { seed, pins, timeLimitMs: Infinity });
-        expect(r.stats.repairRounds).toBeLessThan(REPAIR_ROUNDS);
+        expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
       }
     }
   });
 
-  it('re-pick does not cycle: a not-worse re-pick every round still ends the loop early', LONG, () => {
+  // Whether re-pick and retry's memory stops a cycle is shown in solver.test.ts on built models; here the loop
+  // simply ends early.
+  it('ends early on limit-ranks-a-links-dishes', LONG, () => {
     const { library: lib, constraints, pins } = caseModel('limit-ranks-a-links-dishes');
     for (const seed of SEEDS) {
       const r = planWeek({ library: lib, constraints }, { seed, pins, timeLimitMs: Infinity });
-      expect(r.stats.repairRounds).toBeLessThan(REPAIR_ROUNDS);
+      expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
     }
   });
 });

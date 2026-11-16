@@ -564,6 +564,54 @@ describe('repair loop', () => {
     expect(compareScore(two.score, one.score)).toBeLessThan(0);
   });
 
+  it('a side retry brings back and sweep drops again is retried once, so the rounds end', () => {
+    // Monday breakfast: base 1 and curry 11 locked, extras free; every other meal locked. Base 1 brings extra 31
+    // when the curry is 11, and 31 brings extra 32; a meal holds at most one extra. The search is blind to 31
+    // (brought only by the conditional pair), so 31 and 32 look fine to it; the normal score sees two extras.
+    // Each round sweep drops 31, polish drops 32 (no longer asked for), and retry brings both back at no cost
+    // to the search score. Retry remembers the meal, so the loop ends; without that it would run every round.
+    const breakfast = slotIndex('monday', 'breakfast');
+    const pins: Pins = {};
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      pins[mealName(i) as keyof Pins] = i === breakfast
+        ? { base_id: 1, curry_id: 11, subzi_id: null }
+        : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+    }
+    const constraints: Constraint[] = [
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
+      rule({ id: 'one-extra', label: 'one-extra', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 1 }, level: 'rule' }),
+      prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),
+    ];
+    const r = solve(buildModel({ library, constraints }), { seed: 1, pins, timeLimitMs: Infinity, maxIterations: 0 });
+    expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
+    expect(r.score.hard).toBe(0);
+  });
+
+  it('a want re-pick picks again brings back a swept side once, so the rounds end', () => {
+    // As above, with extras 33 and 34 and a link from base 1 to either, and room for two extras. Retry brings
+    // 31 and 32 back once; after that, re-picking the link's extra also brings them back (the same week to the
+    // search) and sweep and polish drop them again. Re-pick remembers the want, so the loop ends.
+    const lib = [...library, component('extra', { id: 33 }), component('extra', { id: 34 })];
+    const breakfast = slotIndex('monday', 'breakfast');
+    const pins: Pins = {};
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      pins[mealName(i) as keyof Pins] = i === breakfast
+        ? { base_id: 1, curry_id: 11, subzi_id: null }
+        : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+    }
+    const constraints: Constraint[] = [
+      { kind: 'pair', id: 'either', label: 'Base 1 with 33 or 34', origin: 'rule', when: is('id', 1), of: oneOf('id', [33, 34]), strength: 'prefer', cost: 1 },
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
+      rule({ id: 'two-extras', label: 'two-extras', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 2 }, level: 'rule' }),
+      prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),
+    ];
+    const r = solve(buildModel({ library: lib, constraints }), { seed: 1, pins, timeLimitMs: Infinity, maxIterations: 0 });
+    expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
+    expect(r.score.hard).toBe(0);
+  });
+
   it('runs the repair loop in full even once the time limit has passed; only the round count bounds it', () => {
     const run = (o: { timeLimitMs: number; maxIterations?: number }) => SEEDS.map((seed) => solve(buildModel({ library: lib, constraints: defaults }), { seed, ...o }));
     const late = run({ timeLimitMs: 0 });
