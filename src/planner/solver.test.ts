@@ -4,7 +4,7 @@ import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
 import { searchBudget } from './budget';
-import { SAFETY_CAP_MS, broughtScore, chooseCandidate, clonePlan, solve } from './solver';
+import { SAFETY_CAP_MS, broughtScore, chooseCandidate, compareBrought, type BroughtScore, clonePlan, solve } from './solver';
 import { component } from './test-utils';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type PlanState, type SlotState } from './types';
 
@@ -156,11 +156,13 @@ describe('solver', () => {
         return broughtScore(m, p, slot, curry);
       };
       expect(withCurry(11).hard).toBe(withCurry(12).hard);
-      expect(compareScore(withCurry(12), withCurry(11))).toBeLessThan(0);
+      expect(compareBrought(withCurry(12), withCurry(11))).toBeLessThan(0);
+      expect(withCurry(11).limits).toBe(1);
+      expect(withCurry(12).limits).toBe(0);
     });
 
     it("broughtScore ranks a candidate over its limit ahead of one outside its own meals", () => {
-      // A dish's days and meals (OVERRIDE_WEIGHT) outrank its limits (LIMIT_WEIGHT): curry 11 is over its
+      // A dish's days and meals (overrides) outrank its limits: curry 11 is over its
       // once-a-week limit, curry 12 is kept to lunch and dinner and this is breakfast.
       const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, level: 'frequency' };
       const meals12: Constraint = { kind: 'count', id: 'meals-12', label: 'Curry 12 at lunch and dinner', origin: 'rule', select: is('id', 12), groupBy: 'slot', scope: { meals: ['breakfast'] }, bounds: { hardMax: 0 }, level: 'dish', owner: 12 };
@@ -173,7 +175,8 @@ describe('solver', () => {
         p[slot] = { base: 1, curry, extras: [] };
         return broughtScore(m, p, slot, curry);
       };
-      expect(compareScore(withCurry(11), withCurry(12))).toBeLessThan(0);
+      expect(compareBrought(withCurry(11), withCurry(12))).toBeLessThan(0);
+      expect(withCurry(12).overrides).toBe(1);
     });
 
     it('a candidate with its own Always pairing is chosen too, and brings its side', () => {
@@ -393,6 +396,18 @@ describe('lockNudge', () => {
       expect(r.plan[slot]).toMatchObject({ base: 1, curry: 2 });
       expect(r.score.hard).toBe(0);
     }
+  });
+});
+
+describe('compareBrought', () => {
+  const b = (hard: number, overrides: number, limits: number, soft: number): BroughtScore => ({ hard, overrides, limits, soft });
+  it('orders tiers', () => {
+    expect(compareBrought(b(0, 1, 0, 0), b(0, 0, 5, 9))).toBeGreaterThan(0);
+    expect(compareBrought(b(0, 0, 1, 0), b(0, 0, 0, 999))).toBeGreaterThan(0);
+    expect(compareBrought(b(1, 0, 0, 0), b(0, 9, 9, 9))).toBeGreaterThan(0);
+  });
+  it('soft breaks ties as before', () => {
+    expect(compareBrought(b(0, 1, 1, 3), b(0, 1, 1, 5))).toBeLessThan(0);
   });
 });
 

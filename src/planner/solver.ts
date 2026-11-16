@@ -47,14 +47,6 @@ const BRING_ROUNDS = 3;
 const DESCENT_PASSES = 10;
 /** Default `constructionSample`. */
 const SAMPLE_SIZE = 10;
-/** Puts a brought dish's broken own rules ahead of every soft cost when choosing among a want's candidates. */
-const OVERRIDE_WEIGHT = 1e6;
-/**
- * Puts each unit of a brought dish's hard frequency limits (which give way to it, so the score does not
- * charge them) ahead of every soft cost when choosing among a want's candidates; below OVERRIDE_WEIGHT, so a dish's
- * days and meals outrank its limits.
- */
-const LIMIT_WEIGHT = 1e3;
 /** Bound on `w` in `chooseCandidate`'s weighted use: one candidate is weighted at most 2 × this past another. */
 const MAX_WEIGHT = 2;
 /** Mixed into the seed for the stream of candidate offsets, kept apart from the search's own `rng`. */
@@ -71,14 +63,15 @@ const OFFSET_SEED_MIX = 0x9e3779b9;
  * `candidates[(slot + k) % n]`, so meals in turn start from a different candidate. At most `limit`
  * candidates (0 = all) are scored, taken in that order. Deterministic.
  */
-export function chooseCandidate(
+export function chooseCandidate<S = Score>(
   candidates: readonly number[],
   slot: number,
-  scoreWith: (id: number) => Score,
+  scoreWith: (id: number) => S,
   timesPlanned: (id: number) => number,
   limit = SAMPLE_SIZE,
   weightOf: (id: number) => number = () => 0,
   offsetOf: (id: number) => number = () => 0.5,
+  compare: (a: S, b: S) => number = compareScore as never,
 ): number {
   const n = candidates.length;
   if (n <= 1) return candidates[0];
@@ -92,7 +85,7 @@ export function chooseCandidate(
   for (let j = 1; j < k; j++) {
     const id = candidates[(slot + j) % n];
     const s = scoreWith(id);
-    const c = compareScore(s, bestScore);
+    const c = compare(s, bestScore);
     if (c > 0) continue;
     if (c === 0) {
       bestUse ??= weightedUse(best);
@@ -107,6 +100,19 @@ export function chooseCandidate(
   }
   return best;
 }
+
+/**
+ * A link candidate's score in tiers: `overrides` (units of the dish's own rules it breaks) outrank `limits`
+ * (hard frequency limits that give way to it), which outrank `soft`.
+ */
+export interface BroughtScore extends Score {
+  overrides: number;
+  limits: number;
+}
+
+/** Orders brought scores by hard, then overrides, then limits, then soft; negative when `a` is better. */
+export const compareBrought = (a: BroughtScore, b: BroughtScore): number =>
+  a.hard !== b.hard ? a.hard - b.hard : a.overrides !== b.overrides ? a.overrides - b.overrides : a.limits !== b.limits ? a.limits - b.limits : a.soft - b.soft;
 
 /**
  * The weight for `chooseCandidate` at slot `slot`: the prefer rules that match a candidate there but give way
@@ -135,7 +141,7 @@ export function candidateWeight(m: CompiledModel, slot: number): (id: number) =>
  * through `candidateWeight`. With `blind`, both scores leave out what pairs waiting for a curry or subzi bring
  * or miss (`ignoreConditional`), so such a pair cannot rank the pick of a plain link (Sambar or Rasam).
  */
-export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number, blind = false): Score {
+export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id: number, blind = false): BroughtScore {
   const s = score(m, plan, false, { ignoreConditional: blind });
   // Only a hard limit that gives way to the pick can make the free pick's hard score differ.
   const f = freePickLimited(m, id) ? score(m, plan, false, { freePick: { id }, ignoreConditional: blind }) : s;
@@ -143,7 +149,7 @@ export function broughtScore(m: CompiledModel, plan: PlanState, slot: number, id
   const overrides = type ? ownRulesOverridden(m, id, type, slot) : 0;
   // At least 0: charging the frequency rules can only add hard units, but a net figure is never a credit.
   const limits = Math.max(0, f.hard - s.hard);
-  return { hard: s.hard, soft: overrides * OVERRIDE_WEIGHT + limits * LIMIT_WEIGHT + s.soft };
+  return { hard: s.hard, overrides, limits, soft: s.soft };
 }
 
 type Snapshot = Readonly<SlotState>;
@@ -333,7 +339,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     // A candidate is judged with what it brings in turn (each want's first candidate that fits), so its
     // own pairings do not count against it. With `blind`, it is judged as the search judges a curry: blind
     // to what pairs waiting for a curry or subzi bring or miss.
-    const scoreWith = (unit: boolean, blind: boolean) => (c: number): Score => {
+    const scoreWith = (unit: boolean, blind: boolean) => (c: number): BroughtScore => {
       const before = snapshot(s);
       const was = changed;
       place(c, unit);
@@ -376,7 +382,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         if (!options.length) continue;
         // A plain link's pick (Sambar or Rasam) must not see what a conditional link would bring with it;
         // a conditional link's own candidates (Papad or Murukku) are ranked on the whole meal.
-        place(choose ? chooseCandidate(options, i, scoreWith(w.unit, hasConditional && !w.cond), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf) : options[0], w.unit);
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit, hasConditional && !w.cond), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf, compareBrought) : options[0], w.unit);
       }
     };
     /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */
