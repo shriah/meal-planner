@@ -49,6 +49,17 @@ describe('RuleList', () => {
     expect(screen.getByText('4 rules · 4 active')).toBeInTheDocument();
   });
 
+  it('labels each rule with what it gives way to', async () => {
+    await db.rules.add(stored({ name: 'Lean on dal', spec: { template: 'prefer', params: { match: is('protein_tag', 'dal'), direction: 'prefer', weight: 2 } } }));
+    render(<RuleList />);
+    const row = (await screen.findByText('Lean on dal')).closest('[id^="rule-"]') as HTMLElement;
+
+    const badge = within(row).getByText('Frequency');
+    await userEvent.hover(badge);
+    expect((await screen.findAllByText('Gives way to any link')).length).toBeGreaterThan(0);
+    expect(within(screen.getByText('No paneer on weekdays').closest('[id^="rule-"]') as HTMLElement).getByText('Your rule')).toBeInTheDocument();
+  });
+
   it('filters every section by name or description and opens the sections that have matches', async () => {
     render(<RuleList />);
     await screen.findByRole('heading', { name: 'Your rules' });

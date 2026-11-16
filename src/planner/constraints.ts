@@ -19,10 +19,11 @@ export interface Bounds { hardMin?: number; softMin?: number; softMax?: number; 
 export type Origin = 'builtin' | 'rule';
 
 /**
- * Whom a rule gives way to. `'unit'`: sides brought by a `must` pair in that meal (unit members) are not
- * counted as selected. `'ask'`: sides brought by any pair (asked for) are not counted either.
+ * Where a rule sits in what gives way to what. `'rule'` (absent): the rule's own count, never counting brought
+ * dishes away. `'dish'`: gives way to what a dish brings. `'frequency'`: how often a dish appears; gives way to every
+ * brought dish.
  */
-export type Yield = 'unit' | 'ask';
+export type RuleLevel = 'rule' | 'dish' | 'frequency';
 
 interface Common {
   id: string;
@@ -48,7 +49,8 @@ export interface CountConstraint extends Common {
   /** Hard penalty per unit outside a hard bound, for choosing which rule to break when rules conflict. Default 1. */
   severity?: number;
   costs?: { min?: number; max?: number };
-  yieldsTo?: Yield;
+  /** Absent means `rule`. */
+  level?: RuleLevel;
   /** Dish that owns the rule. A unit member does not trigger `when` when its meal's base is the owner. */
   owner?: number;
 }
@@ -58,7 +60,7 @@ export interface PreferConstraint extends Common {
   select: Matcher;
   /** Soft cost per matching assignment; negative is a reward. */
   weight: number;
-  yieldsTo?: Yield;
+  level?: RuleLevel;
   owner?: number;
 }
 
@@ -99,7 +101,7 @@ const CommonShape = {
 };
 
 const YieldShape = {
-  yieldsTo: z.enum(['unit', 'ask']).optional(),
+  level: z.enum(['rule', 'dish', 'frequency']).optional(),
   owner: z.number().int().optional(),
 };
 

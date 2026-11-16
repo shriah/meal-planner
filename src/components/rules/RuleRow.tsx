@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import type { RuleRecord } from '@/db/client'
-import { describeSpec, missingReferences, parseSpec, TEMPLATES, type KnownIds, type Names } from '@/rules'
+import { describeSpec, missingReferences, parseSpec, ruleLevel, TEMPLATES, type KnownIds, type Names } from '@/rules'
 import { toast } from 'sonner'
 import { updateRule, deleteRule } from '@/services/food-db'
 import { Badge } from '@/components/ui/badge'
@@ -27,6 +27,13 @@ interface RuleRowProps {
   highlighted?: boolean
 }
 
+const LEVEL_BADGE = {
+  rule: { label: 'Your rule', tip: 'Gives way to nothing' },
+  dish: { label: 'Dish limit', tip: 'Gives way to Always links' },
+  frequency: { label: 'Frequency', tip: 'Gives way to any link' },
+  bring: { label: 'Brings a dish', tip: 'Brings a dish into the meal' },
+} as const
+
 /** Why a stored rule would be skipped when planning, or null when it applies. */
 function problemOf(rule: RuleRecord, known: KnownIds): string | null {
   const parsed = parseSpec(rule.spec)
@@ -41,6 +48,7 @@ export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProp
   const parsed = parseSpec(rule.spec)
   const summary = parsed.ok ? describeSpec(parsed.spec, names) : 'This rule cannot be read'
   const problem = problemOf(rule, known)
+  const level = ruleLevel(rule)
   const owned = rule.owner_component_id !== undefined
   // A deep link to this rule opens its editor once; closing it leaves the row highlighted.
   const [openedForLink, setOpenedForLink] = useState(false)
@@ -74,7 +82,19 @@ export function RuleRow({ rule, names, known, highlighted = false }: RuleRowProp
         )}
       >
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">{rule.name}</p>
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-medium truncate">{rule.name}</p>
+            {level && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="text-xs shrink-0">{LEVEL_BADGE[level].label}</Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>{LEVEL_BADGE[level].tip}</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
           <p className="text-sm text-muted-foreground truncate">{summary}</p>
         </div>
         {problem ? (

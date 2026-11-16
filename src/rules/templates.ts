@@ -234,7 +234,8 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       const groupBy: GroupBy = p.per === 'day' ? 'day' : 'plan';
       const daysAsGroups = p.per === 'day' && p.scope?.days;
       const select = all(p.match, ...scopeConditions(daysAsGroups ? { meals: p.scope?.meals } : p.scope));
-      return [{ kind: 'count', select, groupBy, ...(daysAsGroups && { scope: { days: p.scope!.days } }), ...bounds(p.strength, p.min, p.max) }];
+      // An upper bound counted over days or the week is how often a dish appears.
+      return [{ kind: 'count', select, groupBy, ...(daysAsGroups && { scope: { days: p.scope!.days } }), ...bounds(p.strength, p.min, p.max), ...(p.max !== undefined && { level: 'frequency' as const }) }];
     },
     describe: (p, n) => {
       const range = p.min !== undefined && p.max !== undefined ? (p.min === p.max ? `exactly ${p.min}` : `${p.min}–${p.max}`)
@@ -252,6 +253,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
       select: all(p.match, oneOf('role', p.roles), ...scopeConditions(p.scope)),
       groupBy: p.within === 'week' ? 'component' : ['component', { days: p.within }],
       ...bounds(p.strength, undefined, 1),
+      level: 'frequency',
     }],
     describe: (p, n) => `Don't repeat ${describeMatcher(p.match, n)} ${p.within === 'week' ? 'in the week' : `within ${p.within} days`}${describeScope(p.scope)}${strengthWord(p.strength)}`,
     references: (p) => refsOf(p.match),
@@ -350,7 +352,7 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
   prefer: {
     label: 'Prefer or avoid',
     summary: 'Nudge the planner towards or away from matching components without forbidding anything.',
-    compile: (p) => [{ kind: 'prefer', select: p.match, weight: p.direction === 'prefer' ? -p.weight : p.weight }],
+    compile: (p) => [{ kind: 'prefer', select: p.match, weight: p.direction === 'prefer' ? -p.weight : p.weight, level: 'frequency' }],
     describe: (p, n) => `${p.direction === 'prefer' ? 'Prefer' : 'Avoid'} ${describeMatcher(p.match, n)} (${nearestLevel(p.weight).label.toLowerCase()})`,
     references: (p) => refsOf(p.match),
   },

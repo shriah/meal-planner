@@ -56,8 +56,8 @@ describe('constraint schema', () => {
   });
 
   it('accepts giving way on count and prefer constraints', () => {
-    expect(valid({ yieldsTo: 'unit', owner: 3 })).toBe(true);
-    expect(valid({ yieldsTo: 'ask' })).toBe(true);
-    expect(valid({ yieldsTo: 'always' })).toBe(false);
+    expect(valid({ level: 'dish', owner: 3 })).toBe(true);
+    expect(valid({ level: 'frequency' })).toBe(true);
+    expect(valid({ level: 'always' })).toBe(false);
   });
 });

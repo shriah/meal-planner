@@ -10,7 +10,7 @@ export {
 } from './matcher';
 export {
   ConstraintSchema, timeOf, byComponent,
-  type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type Yield, type GroupBy, type TimeGroup, type Bounds, type Origin,
+  type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type RuleLevel, type GroupBy, type TimeGroup, type Bounds, type Origin,
 } from './constraints';
 export {
   compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, slotPairs, UNKNOWN_COMPONENT,
@@ -20,7 +20,7 @@ export { builtinConstraints } from './builtins';
 export {
   searchBudget, BUDGET_BASE, BUDGET_PER_DISH, BUDGET_PER_PAIR, BUDGET_MIN, BUDGET_MAX, BUDGET_PLATEAU, type SearchBudget,
 } from './budget';
-export { solve, SAFETY_CAP_MS, clonePlan, chooseCandidate, candidateWeight, broughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
+export { solve, SAFETY_CAP_MS, clonePlan, chooseCandidate, candidateWeight, broughtScore, compareBrought, type BroughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
 export { mulberry32 } from './rng';
 export {
   buildModel, planWeek, toPlanSlots, fromPlanSlots, InvalidConstraintError,
