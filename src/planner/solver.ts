@@ -494,8 +494,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   let stopReason: StopReason = 'iterations';
 
   while (iterations < maxIterations) {
-    if ((iterations & 63) === 0 && now() >= deadline) { stopReason = 'time'; break; }
     if (best.hard === 0 && sinceImprovement >= plateau) { stopReason = 'plateau'; break; }
+    if ((iterations & 63) === 0 && now() >= deadline) { stopReason = 'time'; break; }
     iterations++;
     sinceImprovement++;
 

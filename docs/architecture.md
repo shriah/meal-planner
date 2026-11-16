@@ -190,10 +190,11 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
   `clamp(36000 + 150 * dishes + 400 * pairs, 36000, 200000)`, and stops earlier on a plateau (3000 iterations with no
   improvement and no hard violation). Steps, not time, decide the result, so a plan for a given seed does not depend on machine
-  speed. Derivation: `docs/superpowers/plans/2026-11-16-planner-search-budget-measurements.md`.
+  speed, unless the safety cap fires. Derivation: `docs/superpowers/plans/2026-11-16-planner-search-budget-measurements.md`.
 - **Safety cap**: `timeLimitMs` is only a cap (`SAFETY_CAP_MS`, 10 s). When it cuts the search short, Generate or Regenerate
   shows "Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again." in
   `PlanProblemsBanner`. The note is not stored, and the meal picker and previews ignore it.
+  The cap stops only the random search; the final descent after it is bounded by its pass count, so a capped Generate can run a little past 10 s.
 
 ### Pairings as units
 

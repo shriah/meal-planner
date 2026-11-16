@@ -535,6 +535,11 @@ describe('final descent', () => {
       expect(a.stats.iterations).toBe(b.stats.iterations);
     });
 
+    it('a search that has converged when the deadline passes reports plateau, not time', () => {
+      const r = solve(buildModel({ library }), { seed: 1, timeLimitMs: 0, plateauIterations: 0 });
+      expect(r.stats.stopReason).toBe('plateau');
+    });
+
     it('the cap stops the search', () => {
       expect(SAFETY_CAP_MS).toBe(10_000);
       expect(solve(buildModel({ library }), { seed: 1, timeLimitMs: 0 }).stats.stopReason).toBe('time');
