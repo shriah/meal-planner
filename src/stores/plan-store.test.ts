@@ -36,6 +36,7 @@ beforeEach(async () => {
     problems: [],
     ruleIssues: [],
     paired: [],
+    stoppedEarly: false,
     isGenerating: false,
     hydrated: false,
     problemsDismissed: false,
@@ -244,6 +245,7 @@ describe('plan-store', () => {
       problems: [],
       ruleIssues: [],
       paired: [],
+      stoppedEarly: false,
     });
 
     usePlanStore.setState({
@@ -279,6 +281,7 @@ describe('plan-store', () => {
       problems: [],
       ruleIssues: [],
       paired: [],
+      stoppedEarly: false,
     });
 
     usePlanStore.setState({
@@ -399,5 +402,37 @@ describe('week navigation', () => {
     expect(state.currentWeekStart).toBe(futureWeek);
     expect(state.plan).toBeNull();
     expect(state.isReadOnly).toBe(false);
+  });
+});
+
+describe('stoppedEarly', () => {
+  const outcome = (stoppedEarly: boolean) => ({ plan: makePlan(), problems: [], ruleIssues: [], paired: [], stoppedEarly }) as never;
+
+  it('is set by Generate and cleared by a following Regenerate', async () => {
+    const spy = vi.spyOn(planningService, 'generatePlan').mockResolvedValueOnce(outcome(true));
+    await usePlanStore.getState().generateFresh();
+    expect(usePlanStore.getState().stoppedEarly).toBe(true);
+    spy.mockResolvedValueOnce(outcome(false));
+    await usePlanStore.getState().regenerate();
+    expect(usePlanStore.getState().stoppedEarly).toBe(false);
+  });
+
+  it('is not set by a base picked by hand', async () => {
+    const planned = makePlan();
+    planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
+    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [], paired: [], stoppedEarly: true } as never);
+    usePlanStore.setState({ plan: makePlan() });
+    usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
+    await vi.waitFor(() => expect(usePlanStore.getState().plan!.slots[0]).toMatchObject({ base_id: 2, curry_id: 30 }));
+    expect(usePlanStore.getState().stoppedEarly).toBe(false);
+  });
+
+  it('is reset by week navigation', async () => {
+    usePlanStore.setState({ stoppedEarly: true });
+    await usePlanStore.getState().navigateToWeek(addWeeks(getISOWeekStart(new Date()), -1));
+    expect(usePlanStore.getState().stoppedEarly).toBe(false);
+    usePlanStore.setState({ stoppedEarly: true });
+    await usePlanStore.getState().navigateToWeek(getISOWeekStart(new Date()));
+    expect(usePlanStore.getState().stoppedEarly).toBe(false);
   });
 });

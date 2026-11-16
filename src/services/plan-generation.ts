@@ -18,6 +18,8 @@ export interface PlanningInput {
 export interface PlanningOptions {
   pins?: Pins;
   seed?: number;
+  /** Safety cap on the search, in ms. For tests; the default is the planner's own cap. */
+  timeLimitMs?: number;
 }
 
 /** A rule the plan could not satisfy, located where possible. */
@@ -45,6 +47,8 @@ export interface PlanningOutcome {
   ruleIssues: RuleIssue[];
   /** Sides in the plan that a pairing brought, unit or asked. */
   paired: PairedSide[];
+  /** The safety cap on search time cut the search short, so the plan is the best found by then. */
+  stoppedEarly: boolean;
 }
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -126,7 +130,7 @@ function modelFromData(input: PlanningInput) {
 
 export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): PlanningOutcome {
   const { model, issues, problemOf, problemsOf, ruleById } = modelFromData(input);
-  const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31) });
+  const result = planWeek(model, { pins: opts.pins, seed: opts.seed ?? Math.floor(Math.random() * 2 ** 31), timeLimitMs: opts.timeLimitMs });
   const typeOf = new Map(input.library.map((c) => [c.id, c.componentType]));
   /** Whether the caller fixed (or held empty) the role the paired dish would fill in this meal. */
   const pinnedRole = (j: Justification): boolean => {
@@ -151,6 +155,7 @@ export function planFromData(input: PlanningInput, opts: PlanningOptions = {}): 
     problems,
     ruleIssues: issues,
     paired: pairedSides(input, { slots: result.slots }),
+    stoppedEarly: result.stats.stopReason === 'time',
   };
 }
 

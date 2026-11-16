@@ -10,21 +10,26 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function PlanProblemsBanner() {
   const problems = usePlanStore(s => s.problems)
   const ruleIssues = usePlanStore(s => s.ruleIssues)
+  const stoppedEarly = usePlanStore(s => s.stoppedEarly)
   const dismissed = usePlanStore(s => s.problemsDismissed)
   const dismiss = usePlanStore(s => s.dismissProblems)
 
   const broken = problems.filter(p => p.level === 'hard')
-  if (dismissed || (broken.length === 0 && ruleIssues.length === 0)) return null
+  if (dismissed || (broken.length === 0 && ruleIssues.length === 0 && !stoppedEarly)) return null
 
   const summary = [
     broken.length > 0 && `${plural(broken.length, 'rule could not be met', 'rules could not be met')} — see highlighted meals`,
     ruleIssues.length > 0 && `${plural(ruleIssues.length, 'rule was skipped', 'rules were skipped')}`,
   ].filter(Boolean).join('; ')
+  const note = 'Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again.'
 
   return (
     <div role="status" className="flex items-start gap-3 rounded-md border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm dark:bg-amber-950/20">
       <AlertTriangle className="mt-0.5 h-4 w-4 text-amber-600 shrink-0" />
-      <details className="flex-1">
+      <div className="flex-1">
+        {stoppedEarly && <p>{note}</p>}
+        {summary && (
+      <details>
         <summary className="cursor-pointer">{summary}</summary>
         <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
           {broken.map((p, i) => (
@@ -38,6 +43,8 @@ export function PlanProblemsBanner() {
           {ruleIssues.map((issue) => <li key={`r${issue.ruleId}`}>Skipped “{issue.name}”: {issue.message}</li>)}
         </ul>
       </details>
+        )}
+      </div>
       <button onClick={dismiss} className="shrink-0 p-1 hover:bg-amber-100 rounded" aria-label="Dismiss plan problems">
         <X className="h-4 w-4" />
       </button>

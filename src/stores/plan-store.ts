@@ -23,6 +23,8 @@ interface PlanStore {
   ruleIssues: RuleIssue[]
   /** Sides in the current plan that a pairing brought, with the base that brought them. */
   paired: PairedSide[]
+  /** The last Generate or Regenerate hit the safety cap on search time. Not saved with the plan. */
+  stoppedEarly: boolean
   isGenerating: boolean
   hydrated: boolean
   problemsDismissed: boolean
@@ -48,7 +50,7 @@ const ALL_LOCKABLE: LockableComponent[] = ['base', 'curry', 'subzi', 'extras']
 
 export const usePlanStore = create<PlanStore>((set, get) => {
   function applyOutcome(outcome: PlanningOutcome, weekStart: string) {
-    set({ plan: outcome.plan, problems: outcome.problems, ruleIssues: outcome.ruleIssues, paired: outcome.paired, isGenerating: false })
+    set({ plan: outcome.plan, problems: outcome.problems, ruleIssues: outcome.ruleIssues, paired: outcome.paired, stoppedEarly: outcome.stoppedEarly, isGenerating: false })
     saveWeekPlan(weekStart, outcome.plan, get().locks)
   }
 
@@ -101,6 +103,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     problems: [],
     ruleIssues: [],
     paired: [],
+    stoppedEarly: false,
     isGenerating: false,
     hydrated: false,
     problemsDismissed: false,
@@ -215,6 +218,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           problems: [],
           ruleIssues: [],
           paired: [],
+          stoppedEarly: false,
           problemsDismissed: false,
         })
         await loadPaired(plan, weekStart)
@@ -230,6 +234,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
           problems: [],
           ruleIssues: [],
           paired: [],
+          stoppedEarly: false,
           problemsDismissed: false,
         })
         await loadPaired(plan, weekStart)

@@ -38,6 +38,7 @@ let mockAllComponents: ComponentRecord[] = []
 let mockProblems: PlanProblem[] = []
 let mockRuleIssues: RuleIssue[] = []
 let mockPaired: PairedSide[] = []
+let mockStoppedEarly = false
 const mockInitFromDB = vi.fn()
 const mockGenerateFresh = vi.fn()
 const mockRegenerate = vi.fn()
@@ -50,6 +51,7 @@ vi.mock('@/stores/plan-store', () => ({
       problems: mockProblems,
       ruleIssues: mockRuleIssues,
       paired: mockPaired,
+      stoppedEarly: mockStoppedEarly,
       hydrated: true,
       isGenerating: false,
       isReadOnly: false,
@@ -86,6 +88,7 @@ describe('PlanBoard', () => {
     mockProblems = []
     mockRuleIssues = []
     mockPaired = []
+    mockStoppedEarly = false
     mockInitFromDB.mockClear()
     mockGenerateFresh.mockClear()
     mockMealPickerSheet.mockClear()
@@ -93,6 +96,17 @@ describe('PlanBoard', () => {
 
   afterEach(() => {
     cleanup()
+  })
+
+  it('says the week was cut short only when the safety cap stopped the search', () => {
+    const note = 'Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again.'
+    mockPlan = buildFullPlan()
+    render(<PlanBoard />)
+    expect(screen.queryByText(note)).toBeNull()
+    cleanup()
+    mockStoppedEarly = true
+    render(<PlanBoard />)
+    expect(screen.getByText(note)).toBeTruthy()
   })
 
   it('renders empty state with "No plan yet" when plan is null', () => {
