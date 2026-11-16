@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
 import { compileRules, type RuleRecord } from './record';
+import { defaultRules } from './defaults';
 
 const known = { components: new Set([1, 2]), baseCategories: new Set([10]), extraCategories: new Set([30]) };
 const rule = (id: number, spec: unknown, enabled = true): RuleRecord =>
@@ -110,5 +111,53 @@ describe('compileRules', () => {
       const { constraints } = compileRules([rule(9, pairSpec), rule(3, pairSpec), rule(5, pairSpec)], known);
       expect(constraints.map((c) => c.ruleId)).toEqual([3, 5, 9]);
     });
+  });
+});
+
+describe('the level each compiled rule sits on', () => {
+  const lib = { ...known, components: new Set([1, 2, 3, 7]) };
+  const compile = (r: RuleRecord) => compileRules([r], lib).constraints;
+  const levelsOf = (r: RuleRecord) => compile(r).map((c) => [c.id, 'level' in c ? c.level : undefined]);
+
+  it('a hand-written per-meal limit is on the rule level', () => {
+    expect(levelsOf(rule(1, { template: 'limit', params: { match: is('id', 1), per: 'meal', max: 2 } }))).toEqual([['rule:1:0', 'rule']]);
+  });
+
+  it('a per-week limit with both bounds splits: the minimum is a rule, the maximum is frequency', () => {
+    const cs = compile(rule(1, { template: 'limit', params: { match: is('id', 1), per: 'week', min: 1, max: 3 } }));
+    expect(cs.map((c) => [c.id, 'level' in c ? c.level : undefined])).toEqual([['rule:1:0', 'rule'], ['rule:1:0:max', 'frequency']]);
+    expect(cs[0]).toMatchObject({ bounds: { hardMin: 1 } });
+    expect(cs[1]).toMatchObject({ bounds: { hardMax: 3 } });
+  });
+
+  it('a per-week limit with only a minimum stays one rule-level body', () => {
+    expect(levelsOf(rule(1, { template: 'limit', params: { match: is('id', 1), per: 'week', min: 1 } }))).toEqual([['rule:1:0', 'rule']]);
+  });
+
+  it('an owned rule is on the dish level and keeps its owner; an owned prefer is frequency', () => {
+    const allowed = { ...rule(1, { template: 'allowed_days', params: { match: is('id', 1), days: ['monday'] } }), owner_component_id: 7 };
+    expect(compile(allowed)).toMatchObject([{ level: 'dish', owner: 7 }]);
+    const prefer = { ...rule(2, { template: 'prefer', params: { match: is('id', 1), direction: 'prefer' } }), owner_component_id: 7 };
+    expect(compile(prefer)).toMatchObject([{ level: 'frequency', owner: 7 }]);
+  });
+
+  it('default rules sit where the design puts them', () => {
+    const level = (key: string) => {
+      const d = defaultRules().find((r) => r.default_key === key)!;
+      const [c] = compile({ ...d, id: 1, enabled: true, created_at: '' });
+      return 'level' in c ? c.level : undefined;
+    };
+    expect(level('extras-limit-lunch')).toBe('dish');
+    for (const key of ['variety', 'spacing', 'sides-only-when-asked', 'prefer-frequent', 'avoid-rare']) expect(level(key)).toBe('frequency');
+    const want = { ...rule(1, { template: 'require', params: { match: is('componentType', 'curry') } }), default_key: 'want-curry' };
+    expect(compile(want)).toMatchObject([{ level: 'dish' }]);
+  });
+
+  it('pairs carry no level', () => {
+    const [c] = compile(rule(1, { template: 'comes_with', params: { match: is('id', 1), of: { all: [is('componentType', 'curry'), is('id', 2)] } } }));
+    expect(c.kind).toBe('pair');
+    expect(c).not.toHaveProperty('level');
+    const [d] = compile(rule(2, { template: 'require_with', params: { when: is('id', 1), components: [2] } }));
+    expect(d).not.toHaveProperty('level');
   });
 });

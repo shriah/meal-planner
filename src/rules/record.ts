@@ -1,5 +1,5 @@
 // Stored rules and their compilation into planner constraints.
-import type { Bounds, Constraint } from '@/planner';
+import type { Bounds, Constraint, Level } from '@/planner';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -53,6 +53,14 @@ function givesWayTo(rule: RuleRecord): { owner?: number; yieldsTo?: 'unit' | 'as
   return {};
 }
 
+/** The level a rule's bodies sit on unless a template says `frequency`. */
+export function levelOf(rule: RuleRecord): Level {
+  if (rule.owner_component_id !== undefined) return 'dish';
+  if (rule.default_key === 'sides-only-when-asked' || rule.default_key === 'variety' || rule.default_key === 'spacing') return 'frequency';
+  if (rule.default_key !== undefined) return 'dish';
+  return 'rule';
+}
+
 /**
  * A frequency rule: how often a dish appears across the week (an upper bound counted over days, the week or
  * per dish), or a preference for or against it. A brought dish sits below the dish that brought it, so its
@@ -99,10 +107,10 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { c
       const id = `rule:${rule.id}:${i}`;
       // Pairs are what the others give way to, so they carry neither mark.
       if (body.kind === 'pair') push(body, {}, id);
-      else if (!isFrequencyBody(body)) push(body, gives, id);
+      else if (!isFrequencyBody(body)) push(body, { ...gives, level: levelOf(rule) }, id);
       else if (body.kind === 'count' && (body.bounds.hardMin !== undefined || body.bounds.softMin !== undefined)) {
         // A brought dish still counts toward a minimum; only the maximum gives way.
-        push({ ...body, bounds: pickBounds(body.bounds, ['hardMin', 'softMin']) }, owner, id);
+        push({ ...body, bounds: pickBounds(body.bounds, ['hardMin', 'softMin']) }, { ...owner, level: 'rule' }, id);
         push({ ...body, bounds: pickBounds(body.bounds, ['softMax', 'hardMax']) }, asked, `${id}:max`);
       } else push(body, asked, id);
     });
