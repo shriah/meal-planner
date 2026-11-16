@@ -76,6 +76,16 @@ describe('solver', () => {
     expect(r.plan[slotIndex('friday', 'dinner')].curry).toBeDefined();
   });
 
+  it('a locked meal is left alone', () => {
+    // Every role of meal 0 is pinned, to a fish curry no rule allows and two extras that only cost: each
+    // clean-up after the search (descent, re-pick, sweep, polish, retry) would change something if it could.
+    const noFish = { kind: 'count' as const, id: 'no-fish', label: 'No fish', origin: 'rule' as const, select: is('protein_tag', 'fish'), groupBy: 'slot' as const, bounds: { hardMax: 0 } };
+    const r = solve(buildModel({ library, constraints: [noFish] }), {
+      ...quick, seed: 1, pins: { [`${DAYS[0]}-${MEALS[0]}`]: { base_id: 1, curry_id: 15, subzi_id: 21, extra_ids: [31, 32] } },
+    });
+    expect(r.plan[0]).toEqual({ base: 1, curry: 15, subzi: 21, extras: [31, 32] });
+  });
+
   it('satisfies a weekly minimum the greedy generator could not express', () => {
     const fishTwice = { kind: 'count' as const, id: 'fish-2', label: 'Fish twice a week', origin: 'rule' as const, select: is('protein_tag', 'fish'), groupBy: 'plan' as const, bounds: { hardMin: 2 } };
     const r = solve(buildModel({ library, constraints: [fishTwice] }), { ...quick, seed: 5 });
