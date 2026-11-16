@@ -621,11 +621,21 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // ── Clean-up after the search ──
   // Each pass is a move kind: `runMeal(i)` tries the kind's changes in meal `i`, keeps those its `accept`
-  // allows, and says whether any was kept. `better`: strictly improves the search score (`evaluate`);
-  // `notWorse`: the search score is not worse; `fewerHard`: the normal score's hard count drops. `on` is
-  // the plan the kind changes: `plan`, or `bestPlan` (polish).
+  // allows, and says whether any was kept; a pass over the week runs it on meals in order. A kind with its
+  // own order over the week (polish) gives `runWeek` instead. `better`: strictly improves the search score
+  // (`evaluate`); `notWorse`: the search score is not worse; `fewerHard`: the normal score's hard count
+  // drops. `on` is the plan the kind changes: `plan`, or `bestPlan` (polish); the repair loop reads it to
+  // sync the two, which the call site below still does by hand.
   type Accept = 'better' | 'notWorse' | 'fewerHard';
-  interface MoveKind { name: 'descent' | 'repick' | 'sweep' | 'polish' | 'retry'; accept: Accept; on: 'plan' | 'best'; runMeal(i: number): boolean }
+  type MoveKind = { name: 'descent' | 'repick' | 'sweep' | 'polish' | 'retry'; accept: Accept; on: 'plan' | 'best' }
+    & ({ runMeal(i: number): boolean; runWeek?: never } | { runWeek(): boolean; runMeal?: never });
+  /** One pass of `kind` over the week. Whether it kept a change. */
+  const runWeek = (kind: MoveKind): boolean => {
+    if (kind.runWeek) return kind.runWeek();
+    let kept = false;
+    for (let i = 0; i < SLOT_COUNT; i++) if (kind.runMeal(i)) kept = true;
+    return kept;
+  };
   // Whether descent, re-pick or sweep kept a change, so `best` and `bestPlan` are taken from `plan` after.
   let descended = false;
 
@@ -765,14 +775,15 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     return kept;
   };
-  // Not called yet: below, polish keeps today's role-major order; the repair loop will call it per meal.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // Polish has its own order over the week: role by role (every free curry, then every free subzi, then
+  // every free meal's extras), meals in order within a role. Removals are kept against a moving `best`, so
+  // the order can change the week.
   const polish: MoveKind = {
     name: 'polish', accept: 'better', on: 'best',
-    runMeal(i) {
+    runWeek() {
       let kept = false;
       for (const r of ['curry', 'subzi', 'extras'] as const) {
-        if (isFree(i, r) && polishRole(r, i)) kept = true;
+        for (const i of free[r]) if (polishRole(r, i)) kept = true;
       }
       return kept;
     },
@@ -804,26 +815,18 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   // each; sweep and retry only when a conditional link exists.
   for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
   for (let pass = 0; pass < DESCENT_PASSES; pass++) {
-    let improved = false;
-    for (let i = 0; i < SLOT_COUNT; i++) if (descent.runMeal(i)) improved = true;
-    if (!improved) break;
+    if (!runWeek(descent)) break;
   }
-  for (let i = 0; i < SLOT_COUNT; i++) repick.runMeal(i);
+  runWeek(repick);
   if (hasConditional) {
-    for (let i = 0; i < SLOT_COUNT; i++) sweep.runMeal(i);
+    runWeek(sweep);
     if (descended) best = evaluate(plan);
   }
   if (descended) bestPlan = clonePlan(plan);
-  // Polish keeps today's role-major order (every curry, then every subzi, then every meal's extras), not
-  // `polish.runMeal`'s meal-major one: that order can change the week, so it waits for the repair loop.
-  for (const r of ['curry', 'subzi', 'extras'] as const) {
-    for (const i of free[r]) polishRole(r, i);
-  }
+  runWeek(polish);
   if (hasConditional) {
     for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
-    let retried = false;
-    for (let i = 0; i < SLOT_COUNT; i++) if (retry.runMeal(i)) retried = true;
-    if (retried) bestPlan = clonePlan(plan);
+    if (runWeek(retry)) bestPlan = clonePlan(plan);
   }
 
   return {
