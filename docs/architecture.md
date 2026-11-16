@@ -167,7 +167,7 @@ flowchart TD
     C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
     D --> E{"No hard violations and no improvement for N iterations, or the step budget (or time cap) reached?"}
     E -->|no| D
-    E -->|yes| H["Repair loop, rounds until one keeps nothing (at most REPAIR_ROUNDS): descent, re-pick, sweep, polish, retry"]
+    E -->|yes| H["Repair loop, rounds until one keeps nothing (at most REPAIR_ROUNDS): X
     H --> F["Best plan found"]
     F --> G["Best plan + score (hard, soft) + justification per violated group"]
 ```
@@ -187,7 +187,9 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - The **repair loop** runs after the random search: a round runs the move kinds in a fixed order, each over the whole week
   (descent: every single change of a free base, curry or subzi, kept if it strictly improves; re-pick of a link's dish;
   sweep of conditional sides that break a hard rule; polish: drop a side whose removal improves; retry of a refused
-  conditional side). Rounds repeat until one keeps nothing, for at most `REPAIR_ROUNDS` (10). Re-pick and retry keep
+  conditional side). Polish keeps its own role-major order over the week: every free curry, then every free subzi, then
+  every free meal's extras, extras last to first. Sweep and retry run only when a link waits for a curry or subzi (a
+  conditional link); without one the kinds are descent, re-pick and polish. Rounds repeat until one keeps nothing, for at most `REPAIR_ROUNDS` (10). Re-pick and retry keep
   not-worse changes, so each remembers across rounds what it already tried. The safety cap does not cut it short.
 - **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
   `clamp(36000 + 150 * dishes + 400 * pairs, 36000, 200000)`, and stops earlier on a plateau (3000 iterations with no

@@ -743,6 +743,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   // A side a pair waiting for a curry or subzi brought is invisible to the search, so a later change to
   // the meal (an extra added beside it) may have made it break a hard rule: such a side leaves the meal
   // wherever that lowers the normal score's hard violations. The missing pair is reported as a soft problem.
+  // No cross-round memory: sweep only removes, keeping a removal only when it lowers the hard count, and it runs
+  // after descent in every round; REPAIR_ROUNDS bounds any descent <-> sweep alternation.
   const sweep: MoveKind = {
     name: 'sweep', accept: 'fewerHard', on: 'plan',
     runMeal(i) {
