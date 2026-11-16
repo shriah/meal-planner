@@ -3,18 +3,22 @@
 // slots: one base, at most one curry and subzi, each from its own component type, no duplicate extras.
 // Placing a dish brings what it is paired with in the same step (`bring`), so a base is always judged
 // together with its sides; the sides it must be served with (unit members) are not moved on their own.
+import { searchBudget } from './budget';
 import { mulberry32 } from './rng';
 import { compareScore, freePickLimited, lockNudge, mealBrings, mealHasConditional, ownRulesOverridden, score, yieldedPreferWeight, type Brings, type CompiledModel, type Score, type ScoreResult } from './scorer';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, type PlanState, type Pins, type Role, type SlotPins, type SlotState } from './types';
 
+/** The wall-clock cap on a solve when none is given. It only guards against a stuck search; the step budget normally ends it first. */
+export const SAFETY_CAP_MS = 10_000;
+
 export interface SolveOptions {
   seed?: number;
   pins?: Pins;
-  /** Wall-clock cap for the whole solve, in ms. Default 300. */
+  /** Safety cap on wall-clock time for the whole solve, in ms. Default `SAFETY_CAP_MS`. Not a tuning knob: the step budget decides the result. */
   timeLimitMs?: number;
-  /** Cap on local-search iterations. Default 200 000. */
+  /** Cap on local-search iterations. Default `searchBudget(model).maxIterations`. */
   maxIterations?: number;
-  /** Stop once no hard violations remain and the best score has not improved for this many iterations. Default 3000. */
+  /** Stop once no hard violations remain and the best score has not improved for this many iterations. Default `searchBudget(model).plateauIterations`. */
   plateauIterations?: number;
   /** Late-acceptance history length. Default 40. */
   lateAcceptance?: number;
@@ -166,9 +170,10 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     if (o === undefined) offsets.set(id, (o = offsetRng()));
     return o;
   };
-  const deadline = t0 + (opts.timeLimitMs ?? 300);
-  const maxIterations = opts.maxIterations ?? 200_000;
-  const plateau = opts.plateauIterations ?? 3000;
+  const deadline = t0 + (opts.timeLimitMs ?? SAFETY_CAP_MS);
+  const budget = opts.maxIterations === undefined || opts.plateauIterations === undefined ? searchBudget(m) : undefined;
+  const maxIterations = opts.maxIterations ?? budget!.maxIterations;
+  const plateau = opts.plateauIterations ?? budget!.plateauIterations;
   const sampleSize = opts.constructionSample ?? SAMPLE_SIZE;
   const temperature = opts.temperature ?? 1;
   /** Whether some pair waits for a curry or subzi in the meal. */
@@ -489,8 +494,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   let stopReason: StopReason = 'iterations';
 
   while (iterations < maxIterations) {
-    if ((iterations & 63) === 0 && now() >= deadline) { stopReason = 'time'; break; }
     if (best.hard === 0 && sinceImprovement >= plateau) { stopReason = 'plateau'; break; }
+    if ((iterations & 63) === 0 && now() >= deadline) { stopReason = 'time'; break; }
     iterations++;
     sinceImprovement++;
 

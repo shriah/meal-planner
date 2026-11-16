@@ -17,7 +17,10 @@ export {
   type CompiledModel, type SlotPair, type Brings, type Want, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';
-export { solve, clonePlan, chooseCandidate, candidateWeight, broughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
+export {
+  searchBudget, BUDGET_BASE, BUDGET_PER_DISH, BUDGET_PER_PAIR, BUDGET_MIN, BUDGET_MAX, BUDGET_PLATEAU, type SearchBudget,
+} from './budget';
+export { solve, SAFETY_CAP_MS, clonePlan, chooseCandidate, candidateWeight, broughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
 export { mulberry32 } from './rng';
 export {
   buildModel, planWeek, toPlanSlots, fromPlanSlots, InvalidConstraintError,

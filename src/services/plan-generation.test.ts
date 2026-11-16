@@ -259,3 +259,13 @@ describe('the meal picker and a link waiting for a curry', () => {
     expect(picker(plainLink).get(30)?.map((p) => p.ruleId)).toEqual([6]);
   });
 });
+
+describe('stoppedEarly', () => {
+  it('is true when the safety cap cut the search short', () => {
+    expect(planFromData(input(), { seed: 1, timeLimitMs: 0 }).stoppedEarly).toBe(true);
+  });
+
+  it('is false for a search that finished on its own', () => {
+    expect(planFromData(input(), { seed: 1 }).stoppedEarly).toBe(false);
+  });
+});

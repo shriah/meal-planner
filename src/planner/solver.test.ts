@@ -3,7 +3,8 @@ import type { Constraint, CountConstraint } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
-import { broughtScore, chooseCandidate, clonePlan, solve } from './solver';
+import { searchBudget } from './budget';
+import { SAFETY_CAP_MS, broughtScore, chooseCandidate, clonePlan, solve } from './solver';
 import { component } from './test-utils';
 import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type PlanState, type SlotState } from './types';
 
@@ -509,5 +510,40 @@ describe('final descent', () => {
     const unhurried = run({ timeLimitMs: Infinity, maxIterations: 0 });
     // Both skip the search; the descent then runs the same either way.
     late.forEach((l, k) => expect(l.plan).toEqual(unhurried[k].plan));
+  });
+
+  describe('search budget', () => {
+    it('uses the search budget by default', () => {
+      const m = buildModel({ library });
+      const budget = searchBudget(m);
+      expect(solve(m, { seed: 1 }).stats.iterations).toBeLessThanOrEqual(budget.maxIterations);
+      // A hard rule no library can meet: the plateau stop never applies, so the budget is what ends the search.
+      const impossible: Constraint = {
+        kind: 'count', id: 'impossible', label: 'Fifty fish a week', origin: 'rule', select: is('protein_tag', 'fish'),
+        groupBy: 'plan', bounds: { hardMin: 50 },
+      };
+      const hard = buildModel({ library, constraints: [impossible] });
+      const r = solve(hard, { seed: 1 });
+      expect(r.stats.stopReason).toBe('iterations');
+      expect(r.stats.iterations).toBe(searchBudget(hard).maxIterations);
+    });
+
+    it('gives the same week whatever the time limit', () => {
+      const a = solve(buildModel({ library }), { seed: 3 });
+      const b = solve(buildModel({ library }), { seed: 3, timeLimitMs: 60_000 });
+      expect(a.plan).toEqual(b.plan);
+      expect(a.stats.iterations).toBe(b.stats.iterations);
+    });
+
+    it('a search that has converged when the deadline passes reports plateau, not time', () => {
+      const r = solve(buildModel({ library }), { seed: 1, timeLimitMs: 0, plateauIterations: 0 });
+      expect(r.stats.stopReason).toBe('plateau');
+    });
+
+    it('the cap stops the search', () => {
+      expect(SAFETY_CAP_MS).toBe(10_000);
+      expect(solve(buildModel({ library }), { seed: 1, timeLimitMs: 0 }).stats.stopReason).toBe('time');
+      expect(solve(buildModel({ library }), { seed: 1 }).stats.stopReason).not.toBe('time');
+    });
   });
 });
