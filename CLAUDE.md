@@ -42,7 +42,7 @@ Work is done when tests, typecheck and lint all pass. Planner or rule changes mu
 - Every rule case must fail without its subject (its `rules`, `pins` and `without` defaults); supporting rules go in
   `given`. `rule-cases.test.ts` enforces this.
 - Keep the planner deterministic for a given seed; tests rely on it.
-- Bounds on the search are deliberate (e.g. the final descent pass is bounded by `DESCENT_PASSES`, not the time limit).
+- Bounds on the search are deliberate (e.g. the repair loop is bounded by `REPAIR_ROUNDS`, not the time limit).
   Don't change a bound without a test for both sides of it.
 
 ## Forms over stored data
