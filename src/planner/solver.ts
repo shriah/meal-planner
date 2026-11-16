@@ -26,6 +26,8 @@ export interface SolveOptions {
   constructionSample?: number;
   /** Softmax temperature over soft score when choosing construction candidates; higher = more variety. Default 1. */
   temperature?: number;
+  /** Most rounds of the repair loop after the search. Default `REPAIR_ROUNDS`; tests only. */
+  repairRounds?: number;
 }
 
 export type StopReason = 'plateau' | 'time' | 'iterations';
@@ -33,7 +35,7 @@ export type StopReason = 'plateau' | 'time' | 'iterations';
 export interface SolveResult {
   plan: PlanState;
   score: ScoreResult;
-  stats: { iterations: number; improvements: number; constructionMs: number; totalMs: number; stopReason: StopReason };
+  stats: { iterations: number; improvements: number; constructionMs: number; totalMs: number; stopReason: StopReason; repairRounds: number };
 }
 
 type PickRole = 'base' | 'curry' | 'subzi';
@@ -43,8 +45,8 @@ const now = (): number => globalThis.performance?.now() ?? Date.now();
 const NOTHING: readonly number[] = [];
 /** Rounds of `bring`: a brought side may bring its own sides. */
 const BRING_ROUNDS = 3;
-/** Most passes of the final descent; it stops sooner once a pass changes nothing. */
-const DESCENT_PASSES = 10;
+/** Most rounds of the repair loop after the search; it stops sooner once a round keeps nothing. */
+export const REPAIR_ROUNDS = 10;
 /** Default `constructionSample`. */
 const SAMPLE_SIZE = 10;
 /** Bound on `w` in `chooseCandidate`'s weighted use: one candidate is weighted at most 2 × this past another. */
@@ -619,13 +621,13 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     history[h] = current;
   }
 
-  // ── Clean-up after the search ──
-  // Each pass is a move kind: `runMeal(i)` tries the kind's changes in meal `i`, keeps those its `accept`
-  // allows, and says whether any was kept; a pass over the week runs it on meals in order. A kind with its
-  // own order over the week (polish) gives `runWeek` instead. `better`: strictly improves the search score
-  // (`evaluate`); `notWorse`: the search score is not worse; `fewerHard`: the normal score's hard count
-  // drops. `on` is the plan the kind changes: `plan`, or `bestPlan` (polish); the repair loop reads it to
-  // sync the two, which the call site below still does by hand.
+  // ── Repair after the search ──
+  // One loop of move kinds (`repair` below). A move kind's `runMeal(i)` tries its changes in meal `i`, keeps
+  // those its `accept` allows, and says whether any was kept; a pass over the week runs it on meals in order.
+  // A kind with its own order over the week (polish) gives `runWeek` instead. `better`: strictly improves the
+  // search score (`evaluate`); `notWorse`: the search score is not worse; `fewerHard`: the normal score's hard
+  // count drops. `on` is the plan the kind changes: `plan`, or `bestPlan` (polish); `repair` copies it to the
+  // other after the kind kept something, so every kind starts from the same week.
   type Accept = 'better' | 'notWorse' | 'fewerHard';
   type MoveKind = { name: 'descent' | 'repick' | 'sweep' | 'polish' | 'retry'; accept: Accept; on: 'plan' | 'best' }
     & ({ runMeal(i: number): boolean; runWeek?: never } | { runWeek(): boolean; runMeal?: never });
@@ -636,14 +638,11 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     for (let i = 0; i < SLOT_COUNT; i++) if (kind.runMeal(i)) kept = true;
     return kept;
   };
-  // Whether descent, re-pick or sweep kept a change, so `best` and `bestPlan` are taken from `plan` after.
-  let descended = false;
-
   // Final descent: the random moves can stop on a plateau one change away from a better week. Try every
   // single change of a free base, curry or subzi (meals in order, roles base, curry, subzi, candidates in
-  // library order, no side first) and keep each one that strictly improves the score, until a full pass
-  // finds none or DESCENT_PASSES are done (the time limit does not apply here). Unit members stay while their
-  // dish does; a changed dish brings its sides, as in the moves.
+  // library order, no side first) and keep each one that strictly improves the score. One pass per round of
+  // the repair loop; further passes are further rounds. Unit members stay while their dish does; a changed
+  // dish brings its sides, as in the moves.
   const descent: MoveKind = {
     name: 'descent', accept: 'better', on: 'plan',
     runMeal(i) {
@@ -663,7 +662,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
           const next = evaluate(plan);
           if (compareScore(next, best) < 0) {
             best = next;
-            improved = descended = true;
+            improved = true;
           } else {
             restore(s, before);
           }
@@ -675,9 +674,11 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // Re-pick: a link's pick is made when its dish comes into the meal and is not revisited after, so a pick
   // made while the search briefly had one candidate elsewhere (where a limit ranked it down) would stand.
-  // Once, meals in order, each met want of several candidates is picked again from the week as it now is:
-  // its candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless
-  // the score is worse.
+  // Meals in order, each met want of several candidates is picked again from the week as it now is: its
+  // candidate leaves with the sides it brought, `bring` chooses again, and the result is kept unless the
+  // score is worse. A kept change need not improve, so each want is picked again at most once per meal over
+  // the whole repair loop (`picked` lasts across rounds): otherwise two not-worse picks could take turns
+  // round after round.
   /**
    * Picks again, in meal `i` as it now is, each want of several candidates not yet in `picked` (which it
    * extends), until a change is kept. Whether one was.
@@ -707,7 +708,6 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         const next = evaluate(plan);
         if (compareScore(next, best) <= 0) {
           best = next;
-          descended = true;
           return true;
         }
         restore(s, before);
@@ -715,14 +715,15 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     return false;
   };
+  /** Per meal, the wants already picked again, over all rounds. */
+  const picked = Array.from({ length: SLOT_COUNT }, () => new Set<string>());
   const repick: MoveKind = {
     name: 'repick', accept: 'notWorse', on: 'plan',
     // After a kept change the meal's dishes and wants are read again (a new curry can meet a condition, a
     // brought side can bring its own); each want is still picked at most once, so the pass ends.
     runMeal(i) {
-      const picked = new Set<string>();
       let kept = false;
-      while (repickOne(i, picked)) kept = true;
+      while (repickOne(i, picked[i])) kept = true;
       return kept;
     },
   };
@@ -743,9 +744,11 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         const hard = score(m, plan).hard;
         if (type === 'extra') s.extras = s.extras.filter((e) => e !== c);
         else s.subzi = undefined;
-        if (score(m, plan).hard < hard) kept = descended = true;
+        if (score(m, plan).hard < hard) kept = true;
         else restore(s, before);
       }
+      // Sweep keeps by the normal score, so the search score is taken again.
+      if (kept) best = evaluate(plan);
       return kept;
     },
   };
@@ -791,16 +794,21 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
 
   // Retry: a side a pair waiting for a curry or subzi would bring is refused where it would break a hard
   // rule, and a later change (an extra leaving, here or in the polish above, or another meal's dish
-  // leaving) can make room for it, but nothing brings it again. Last, once, meals in order, a meal missing
-  // such a side brings its sides again; the result is kept unless the score is worse.
+  // leaving) can make room for it, but nothing brings it again. Meals in order, a meal missing such a side
+  // brings its sides again; the result is kept unless the score is worse. A kept retry need not improve, so
+  // each meal is retried at most once over the whole repair loop (`retried` lasts across rounds): otherwise a
+  // side brought back and removed again could take turns round after round.
+  /** Meals already retried, over all rounds. */
+  const retried = new Set<number>();
   const retry: MoveKind = {
     name: 'retry', accept: 'notWorse', on: 'plan',
     runMeal(i) {
       const s = plan[i];
-      if (!missesConditional(s, i)) return false;
+      if (retried.has(i) || !missesConditional(s, i)) return false;
       const before = snapshot(s);
       bring(i, NOTHING);
       if (s.base === before.base && s.curry === before.curry && s.subzi === before.subzi && s.extras === before.extras) return false;
+      retried.add(i);
       const next = evaluate(plan);
       if (compareScore(next, best) <= 0) {
         best = next;
@@ -811,27 +819,33 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     },
   };
 
-  // Today's order and count: descent up to DESCENT_PASSES passes, then re-pick, sweep, polish and retry once
-  // each; sweep and retry only when a conditional link exists.
-  for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
-  for (let pass = 0; pass < DESCENT_PASSES; pass++) {
-    if (!runWeek(descent)) break;
-  }
-  runWeek(repick);
-  if (hasConditional) {
-    runWeek(sweep);
-    if (descended) best = evaluate(plan);
-  }
-  if (descended) bestPlan = clonePlan(plan);
-  runWeek(polish);
-  if (hasConditional) {
+  /** Rounds the repair loop ran. */
+  let repairRounds = 0;
+  /**
+   * The repair loop: a round runs `kinds` in order, each over the whole week; rounds repeat until one keeps
+   * nothing or `rounds` are done. The time limit does not apply. `plan` and `bestPlan` hold the same week
+   * before each kind, and `best` is its search score.
+   */
+  function repair(kinds: readonly MoveKind[], rounds: number): void {
     for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
-    if (runWeek(retry)) bestPlan = clonePlan(plan);
+    for (let round = 0; round < rounds; round++) {
+      repairRounds++;
+      let kept = false;
+      for (const kind of kinds) {
+        if (!runWeek(kind)) continue;
+        kept = true;
+        if (kind.on === 'plan') bestPlan = clonePlan(plan);
+        else for (let i = 0; i < SLOT_COUNT; i++) restore(plan[i], bestPlan[i]);
+      }
+      if (!kept) break;
+    }
   }
+  // Sweep and retry only matter when a pair waits for a curry or subzi.
+  repair(hasConditional ? [descent, repick, sweep, polish, retry] : [descent, repick, polish], opts.repairRounds ?? REPAIR_ROUNDS);
 
   return {
     plan: bestPlan,
     score: score(m, bestPlan, true),
-    stats: { iterations, improvements, constructionMs, totalMs: now() - t0, stopReason },
+    stats: { iterations, improvements, constructionMs, totalMs: now() - t0, stopReason, repairRounds },
   };
 }

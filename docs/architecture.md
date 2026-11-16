@@ -184,9 +184,11 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - **Pair** constraint: when a meal holds a dish matching `when`, it should also hold a dish matching `of` (a set of candidates);
   missing it is a hard violation (`must`) or costs `cost` (`prefer`).
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
-- The **final descent** runs after the random search: it tries every single change of a free base, curry or subzi in a
-  fixed order and keeps each strict improvement, for at most `DESCENT_PASSES` (10) passes or until a pass changes nothing.
-  The safety cap does not cut it short.
+- The **repair loop** runs after the random search: a round runs the move kinds in a fixed order, each over the whole week
+  (descent: every single change of a free base, curry or subzi, kept if it strictly improves; re-pick of a link's dish;
+  sweep of conditional sides that break a hard rule; polish: drop a side whose removal improves; retry of a refused
+  conditional side). Rounds repeat until one keeps nothing, for at most `REPAIR_ROUNDS` (10). Re-pick and retry keep
+  not-worse changes, so each remembers across rounds what it already tried. The safety cap does not cut it short.
 - **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
   `clamp(36000 + 150 * dishes + 400 * pairs, 36000, 200000)`, and stops earlier on a plateau (3000 iterations with no
   improvement and no hard violation). Steps, not time, decide the result, so a plan for a given seed does not depend on machine
@@ -194,7 +196,7 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - **Safety cap**: `timeLimitMs` is only a cap (`SAFETY_CAP_MS`, 10 s). When it cuts the search short, Generate or Regenerate
   shows "Planning took too long on this device, so this is the best week found in 10 seconds. Regenerate to try again." in
   `PlanProblemsBanner`. The note is not stored, and the meal picker and previews ignore it.
-  The cap stops only the random search; the final descent after it is bounded by its pass count, so a capped Generate can run a little past 10 s.
+  The cap stops only the random search; the repair loop after it is bounded by its round count, so a capped Generate can run a little past 10 s.
 
 ### Pairings as units
 
