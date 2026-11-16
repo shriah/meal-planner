@@ -53,6 +53,20 @@ export function levelOf(rule: RuleRecord): Level {
   return 'rule';
 }
 
+/**
+ * What a rule gives way to, for display: `bring` when it brings a dish into the meal (a pair),
+ * `frequency` when any of its bodies is a frequency cost, otherwise the level it sits on.
+ * Undefined for a rule that cannot be read.
+ */
+export function ruleLevel(rule: RuleRecord): Level | 'bring' | undefined {
+  const parsed = parseSpec(rule.spec);
+  if (!parsed.ok) return undefined;
+  const bodies = compileSpec(parsed.spec);
+  if (bodies.some((b) => b.kind === 'pair')) return 'bring';
+  if (bodies.some((b) => 'level' in b && b.level === 'frequency')) return 'frequency';
+  return levelOf(rule);
+}
+
 /** The bounds of `bounds` named in `keys` that are set. */
 function pickBounds(bounds: Bounds, keys: readonly (keyof Bounds)[]): Bounds {
   return Object.fromEntries(keys.filter((k) => bounds[k] !== undefined).map((k) => [k, bounds[k]]));

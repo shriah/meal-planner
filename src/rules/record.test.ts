@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { compileRules, type RuleRecord } from './record';
+import { compileRules, ruleLevel, type RuleRecord } from './record';
 import { defaultRules } from './defaults';
 
 const known = { components: new Set([1, 2]), baseCategories: new Set([10]), extraCategories: new Set([30]) };
@@ -159,5 +159,16 @@ describe('the level each compiled rule sits on', () => {
     expect(c).not.toHaveProperty('level');
     const [d] = compile(rule(2, { template: 'require_with', params: { when: is('id', 1), components: [2] } }));
     expect(d).not.toHaveProperty('level');
+  });
+});
+
+describe('ruleLevel', () => {
+  it('names what a rule gives way to', () => {
+    expect(ruleLevel(rule(1, { template: 'exclude', params: { match: is('id', 1), strength: 'must' } }))).toBe('rule');
+    expect(ruleLevel(rule(2, { template: 'limit', params: { match: is('id', 1), per: 'week', min: 1, max: 3 } }))).toBe('frequency');
+    expect(ruleLevel(rule(3, { template: 'require_with', params: { when: is('id', 1), components: [2] } }))).toBe('bring');
+    const d = defaultRules().find((r) => r.default_key === 'extras-limit-lunch')!;
+    expect(ruleLevel({ ...d, id: 4, enabled: true, created_at: '' })).toBe('dish');
+    expect(ruleLevel(rule(5, { template: 'nope' }))).toBeUndefined();
   });
 });
