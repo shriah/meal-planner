@@ -121,4 +121,35 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
     const hl = heavy(full);
     console.log(`\nSEEDED LIBRARY, HEAVY LINKS\n${head}\n${row(measure(full, hl, SEEDS60), hl.length, 60)}\n`);
   });
+
+  // Generate time at the default budget (no explicit budget passed), seeded library, 3 links, seeds 1-8.
+  it('generate time at the default budget', { timeout: 10 * 60 * 1000 }, () => {
+    const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
+    const lib: ComponentLike[] = [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
+      ...c, id: 100 + i, frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
+    }));
+    const d = (name: string) => {
+      const x = lib.find((y) => y.name === name);
+      if (!x) throw new Error(`no seed dish ${name}`);
+      return x;
+    };
+    const links = [
+      linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
+      linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
+      linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
+    ];
+    const records: RuleRecord[] = [...links, ...defaultRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
+    const { constraints } = compileRules(records, {
+      components: new Set(lib.map((x) => x.id)),
+      baseCategories: new Set([1, 2, 3]),
+      extraCategories: new Set([11, 12, 13, 14, 15]),
+    });
+    const rows = SEEDS.map((seed) => {
+      const t = performance.now();
+      const r = planWeek({ library: lib, constraints }, { seed });
+      return { seed, ms: Math.round(performance.now() - t), it: r.stats.iterations, stop: r.stats.stopReason };
+    });
+    const ms = rows.map((r) => r.ms).sort((a, b) => a - b);
+    console.log(`\nGENERATE TIME (default budget)\n${rows.map((r) => `seed ${r.seed}: ${r.ms} ms, ${r.it} it, ${r.stop}`).join('\n')}\nmedian ${(ms[3] + ms[4]) / 2} ms, max ${ms[7]} ms\n`);
+  });
 });
