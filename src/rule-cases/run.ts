@@ -9,7 +9,8 @@ import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseWeeks, PlanCase
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 export type CaseBudget = Pick<SolveOptions, 'maxIterations' | 'plateauIterations' | 'timeLimitMs'>;
-const BUDGET: CaseBudget = { timeLimitMs: Infinity, maxIterations: 20_000, plateauIterations: 3000 };
+// Iterations come from `searchBudget` for each case's model; time never ends a case's search.
+const BUDGET: CaseBudget = { timeLimitMs: Infinity };
 const CREATED = '2026-01-01T00:00:00.000Z';
 
 export function statusOf(allPass: boolean, known?: string): CaseStatus {
