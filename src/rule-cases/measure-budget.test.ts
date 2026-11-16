@@ -1,27 +1,21 @@
 // Measurement only: how many search steps each rule case and the seeded library need. Skipped unless
 // MEASURE_BUDGET is set (it runs for a long time): MEASURE_BUDGET=1 npx vitest run src/rule-cases/measure-budget.test.ts --silent=false
 import { describe, it } from 'vitest';
-import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import { planWeek, type ComponentLike } from '@/planner';
-import { compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
+import { compileRules, linkRule } from '@/rules';
 import { ALL_CASES } from './cases';
-import { libraryOf, TEST_LIBRARY } from './library';
-import { failsWithoutSubject, recordsOf, runPlanCase, type CaseBudget } from './run';
+import { failsWithoutSubject, knownIds, libraryFor, recordsOf, runPlanCase, type CaseBudget } from './run';
+import { constraintsFor, seedDish, seededLibrary, seededLinks } from './seeded-library';
 import type { PlanCase } from './types';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 const BUDGETS = [50, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000, 64000];
 const at = (maxIterations: number): CaseBudget => ({ timeLimitMs: Infinity, maxIterations, plateauIterations: 3000 });
-const CREATED = '2026-01-01T00:00:00.000Z';
 
 function measureCase(c: PlanCase) {
-  const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
+  const lib = libraryFor(c);
   const records = recordsOf(c, c.rules(lib), c.given?.(lib) ?? []);
-  const { constraints } = compileRules(records, {
-    components: new Set(lib.dishes.map((d) => d.id)),
-    baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
-    extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
-  });
+  const { constraints } = compileRules(records, knownIds(lib));
   const pairs = constraints.filter((k) => k.kind === 'pair').length;
   let need: number | 'none' = 'none';
   let used = 0;
@@ -47,15 +41,8 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
   });
 
   it('seeded library', { timeout: 3 * 60 * 60 * 1000 }, () => {
-    const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
-    const full: ComponentLike[] = [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
-      ...c, id: 100 + i, frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
-    }));
-    const dishIn = (lib: ComponentLike[], name: string) => {
-      const d = lib.find((x) => x.name === name);
-      if (!d) throw new Error(`no seed dish ${name}`);
-      return d;
-    };
+    const full = seededLibrary();
+    const dishIn = seedDish;
     const REQUIRED = ['Plain Rice', 'Sambar', 'Papad', 'Idli', 'Coconut Chutney'];
     // The library cut to about n dishes: the dishes the links name stay, and each part keeps its share.
     const cut = (n: number): ComponentLike[] => {
@@ -70,14 +57,7 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
       }
       return full.filter((d) => keep.has(d.id));
     };
-    const light = (lib: ComponentLike[]) => {
-      const d = (name: string) => dishIn(lib, name);
-      return [
-        linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
-        linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
-        linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
-      ];
-    };
+    const light = seededLinks;
     // 15 more links: six other bases and six curries each bring an extra, three more bring a curry.
     const heavy = (lib: ComponentLike[]) => {
       const d = (name: string) => dishIn(lib, name);
@@ -92,12 +72,7 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
       ];
     };
     const measure = (lib: ComponentLike[], links: ReturnType<typeof light>, seeds: number[]) => {
-      const records: RuleRecord[] = [...links, ...defaultRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
-      const { constraints, issues } = compileRules(records, {
-        components: new Set(lib.map((x) => x.id)),
-        baseCategories: new Set([1, 2, 3]),
-        extraCategories: new Set([11, 12, 13, 14, 15]),
-      });
+      const { constraints, issues } = constraintsFor(lib, links);
       const runs = seeds.map((seed) => planWeek({ library: lib, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 200_000, plateauIterations: 3000 }));
       const its = runs.map((r) => r.stats.iterations).sort((a, b) => a - b);
       const ms = runs.reduce((t, r) => t + r.stats.totalMs, 0);
@@ -124,26 +99,8 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
 
   // Generate time at the default budget (no explicit budget passed), seeded library, 3 links, seeds 1-8.
   it('generate time at the default budget', { timeout: 10 * 60 * 1000 }, () => {
-    const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
-    const lib: ComponentLike[] = [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
-      ...c, id: 100 + i, frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
-    }));
-    const d = (name: string) => {
-      const x = lib.find((y) => y.name === name);
-      if (!x) throw new Error(`no seed dish ${name}`);
-      return x;
-    };
-    const links = [
-      linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
-      linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
-      linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
-    ];
-    const records: RuleRecord[] = [...links, ...defaultRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
-    const { constraints } = compileRules(records, {
-      components: new Set(lib.map((x) => x.id)),
-      baseCategories: new Set([1, 2, 3]),
-      extraCategories: new Set([11, 12, 13, 14, 15]),
-    });
+    const lib = seededLibrary();
+    const { constraints } = constraintsFor(lib, seededLinks(lib));
     const rows = SEEDS.map((seed) => {
       const t = performance.now();
       const r = planWeek({ library: lib, constraints }, { seed });

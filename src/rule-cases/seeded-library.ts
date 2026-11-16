@@ -13,24 +13,32 @@ export function seededLibrary(): ComponentLike[] {
   }));
 }
 
-/** The seeded library's constraints: the defaults, plus the three measurement links when `withLinks`. */
-export function seededConstraints(lib: ComponentLike[], withLinks: boolean) {
-  const d = (name: string) => {
-    const x = lib.find((y) => y.name === name);
-    if (!x) throw new Error(`no seed dish ${name}`);
-    return x;
-  };
-  const links = withLinks
-    ? [
-        linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
-        linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
-        linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
-      ]
-    : [];
+export function seedDish(lib: ComponentLike[], name: string): ComponentLike {
+  const x = lib.find((y) => y.name === name);
+  if (!x) throw new Error(`no seed dish ${name}`);
+  return x;
+}
+
+/** The three links of the search-budget measurements. */
+export function seededLinks(lib: ComponentLike[]) {
+  const d = (name: string) => seedDish(lib, name);
+  return [
+    linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
+    linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
+    linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
+  ];
+}
+
+/** Compiled constraints (and issues) for `links` ahead of the default rules, over a seeded-library cut. */
+export function constraintsFor(lib: ComponentLike[], links: ReturnType<typeof seededLinks>) {
   const records: RuleRecord[] = [...links, ...defaultRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
   return compileRules(records, {
     components: new Set(lib.map((x) => x.id)),
     baseCategories: new Set([1, 2, 3]),
     extraCategories: new Set([11, 12, 13, 14, 15]),
-  }).constraints;
+  });
 }
+
+/** The seeded library's constraints: the defaults, plus the three measurement links when `withLinks`. */
+export const seededConstraints = (lib: ComponentLike[], withLinks: boolean) =>
+  constraintsFor(lib, withLinks ? seededLinks(lib) : []).constraints;
