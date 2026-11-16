@@ -29,20 +29,20 @@ export function PlanProblemsBanner() {
       <div className="flex-1">
         {stoppedEarly && <p>{note}</p>}
         {summary && (
-      <details>
-        <summary className="cursor-pointer">{summary}</summary>
-        <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
-          {broken.map((p, i) => (
-            <li key={`p${i}`}>
-              {p.message}
-              {p.ruleId !== undefined && (
-                <>{' '}<Link href={`/rules#rule-${p.ruleId}`} className="underline">Open rule</Link></>
-              )}
-            </li>
-          ))}
-          {ruleIssues.map((issue) => <li key={`r${issue.ruleId}`}>Skipped “{issue.name}”: {issue.message}</li>)}
-        </ul>
-      </details>
+          <details>
+            <summary className="cursor-pointer">{summary}</summary>
+            <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">
+              {broken.map((p, i) => (
+                <li key={`p${i}`}>
+                  {p.message}
+                  {p.ruleId !== undefined && (
+                    <>{' '}<Link href={`/rules#rule-${p.ruleId}`} className="underline">Open rule</Link></>
+                  )}
+                </li>
+              ))}
+              {ruleIssues.map((issue) => <li key={`r${issue.ruleId}`}>Skipped “{issue.name}”: {issue.message}</li>)}
+            </ul>
+          </details>
         )}
       </div>
       <button onClick={dismiss} className="shrink-0 p-1 hover:bg-amber-100 rounded" aria-label="Dismiss plan problems">

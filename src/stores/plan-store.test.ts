@@ -417,14 +417,17 @@ describe('stoppedEarly', () => {
     expect(usePlanStore.getState().stoppedEarly).toBe(false);
   });
 
-  it('is not set by a base picked by hand', async () => {
+  it.each([
+    ['sets', false, true],
+    ['clears', true, false],
+  ])('a base picked by hand neither %s the note', async (_w, before, outcomeValue) => {
     const planned = makePlan();
     planned.slots[0] = { ...planned.slots[0], base_id: 2, curry_id: 30 };
-    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [], paired: [], stoppedEarly: true } as never);
-    usePlanStore.setState({ plan: makePlan() });
+    vi.spyOn(planningService, 'generatePlan').mockResolvedValue({ plan: planned, problems: [], ruleIssues: [], paired: [], stoppedEarly: outcomeValue } as never);
+    usePlanStore.setState({ plan: makePlan(), stoppedEarly: before });
     usePlanStore.getState().swapComponent('monday', 'breakfast', 'base', 2);
     await vi.waitFor(() => expect(usePlanStore.getState().plan!.slots[0]).toMatchObject({ base_id: 2, curry_id: 30 }));
-    expect(usePlanStore.getState().stoppedEarly).toBe(false);
+    expect(usePlanStore.getState().stoppedEarly).toBe(before);
   });
 
   it('is reset by week navigation', async () => {
