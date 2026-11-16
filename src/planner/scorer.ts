@@ -1,8 +1,8 @@
 // Scores a whole plan against COUNT, PREFER and PAIR constraints. The score is lexicographic:
 // any hard violation outweighs every soft cost. Each violated group can be justified.
 // Sides a meal's dishes bring by PAIR constraints (unit members and asked-for sides) are worked out
-// per meal first; rules flagged `yieldsTo` give way to them.
-import { byComponent, timeOf, type Constraint, type CountConstraint, type Origin, type PairConstraint } from './constraints';
+// per meal first; rules on the `dish` or `frequency` level give way to them.
+import { byComponent, timeOf, type Constraint, type CountConstraint, type Level, type Origin, type PairConstraint } from './constraints';
 import { compileMatcher, type MatchFn } from './matcher';
 import {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
@@ -73,7 +73,7 @@ interface CompiledCount {
   touched: number[];
   hardMin: number; softMin: number; softMax: number; hardMax: number;
   severity: number; minCost: number; maxCost: number;
-  /** 0 = never gives way, else YIELD_UNIT or YIELD_ASK. */
+  /** 0 = never gives way, else GIVES_TO_ALWAYS or GIVES_TO_ANY. */
   yields: number;
   /** Owning component id, or NaN. */
   owner: number;
@@ -133,12 +133,13 @@ const ASKED = 1;
 const UNIT = 2;
 /** With `ignoreConditional`: brought by a met conditional pair (such a pair sets this instead of ASKED and UNIT). */
 const COND = 4;
-const YIELD_UNIT = 1;
-const YIELD_ASK = 2;
+/** What a rule gives way to: sides brought by a `must` pair (a dish-level rule), or by any pair (a frequency rule). */
+const GIVES_TO_ALWAYS = 1;
+const GIVES_TO_ANY = 2;
 const ROLE_CURRY = 1;
 const ROLE_SUBZI = 2;
 const roleBitOf = (r: Role): number => (r === 'curry' ? ROLE_CURRY : r === 'subzi' ? ROLE_SUBZI : 0);
-const yieldCode = (y: 'unit' | 'ask' | undefined): number => (y === 'unit' ? YIELD_UNIT : y === 'ask' ? YIELD_ASK : 0);
+const givesWay = (l: Level | undefined): number => (l === 'dish' ? GIVES_TO_ALWAYS : l === 'frequency' ? GIVES_TO_ANY : 0);
 
 export interface CompiledModel {
   readonly library: readonly ComponentLike[];
@@ -193,7 +194,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
 
   for (const c of constraints) {
     if (c.kind === 'prefer') {
-      prefers.push({ idx: addMatcher(compileMatcher(c.select)), weight: c.weight, yields: yieldCode(c.yieldsTo) });
+      prefers.push({ idx: addMatcher(compileMatcher(c.select)), weight: c.weight, yields: givesWay(c.level) });
       continue;
     }
     if (c.kind === 'pair') {
@@ -245,7 +246,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       hardMin: b.hardMin ?? -Infinity, softMin: b.softMin ?? -Infinity,
       softMax: b.softMax ?? Infinity, hardMax: b.hardMax ?? Infinity,
       severity: c.severity ?? 1, minCost: c.costs?.min ?? 1, maxCost: c.costs?.max ?? 1,
-      yields: yieldCode(c.yieldsTo), owner: c.owner ?? NaN,
+      yields: givesWay(c.level), owner: c.owner ?? NaN,
     });
   }
 
@@ -256,7 +257,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     if (p.must || !p.cis.length) continue;
     const sides = Array.from(p.cis, (ci) => {
       const side = library[ci];
-      return { side, own: counts.filter((cc) => cc.owner === side.id && cc.hardMax === 0 && cc.when < 0 && cc.yields !== YIELD_ASK) };
+      return { side, own: counts.filter((cc) => cc.owner === side.id && cc.hardMax === 0 && cc.when < 0 && cc.yields !== GIVES_TO_ANY) };
     });
     if (sides.some((x) => !x.own.length)) continue;
     for (let t = 0; t < SLOT_COUNT; t++) {
@@ -316,7 +317,7 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
     st.counts.forEach((cc, ck) => {
       const v = (bits[cc.sel] ? 1 : 0) | (cc.when >= 0 && bits[cc.when] ? 2 : 0);
       if (v) hits.push((ck << 2) | v);
-      if (bits[cc.sel] && cc.owner === a.c.id && cc.hardMax === 0 && cc.when < 0 && cc.yields === YIELD_UNIT && groupInScope(cc, slot)) overrides++;
+      if (bits[cc.sel] && cc.owner === a.c.id && cc.hardMax === 0 && cc.when < 0 && cc.yields === GIVES_TO_ALWAYS && groupInScope(cc, slot)) overrides++;
     });
     // Pairs this dish triggers (not those it is a candidate of). Conditional pairs depend on the rest of
     // the meal, so they are resolved where the meal is known (`resolvePairs`). For the others: a meal holds
@@ -332,7 +333,7 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
     const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
     const meets = Array.from(st.condMatchers).filter((mk) => bits[mk]);
     e = st.memo[key] = {
-      prefer: prefer[0], preferUnit: prefer[YIELD_UNIT], preferAsk: prefer[YIELD_ASK],
+      prefer: prefer[0], preferUnit: prefer[GIVES_TO_ALWAYS], preferAsk: prefer[GIVES_TO_ANY],
       hits: Int32Array.from(hits), pairs: pairs.length ? Int32Array.from(pairs) : NO_PAIRS, overrides,
       cond: cond.length ? Int32Array.from(cond) : NO_PAIRS, meets: meets.length ? Int32Array.from(meets) : NO_PAIRS,
     };
@@ -482,7 +483,7 @@ export function freePickLimited(m: CompiledModel, id: number): boolean {
   if (ci === undefined) return false;
   if (st.freeLimited[ci] < 0) {
     const c = m.library[ci];
-    const limits = st.counts.filter((cc) => cc.yields === YIELD_ASK && cc.hardMax !== Infinity);
+    const limits = st.counts.filter((cc) => cc.yields === GIVES_TO_ANY && cc.hardMax !== Infinity);
     let hit = false;
     for (let r = 0; r < ROLES.length && !hit; r++) {
       for (let slot = 0; slot < SLOT_COUNT && !hit; slot++) {
@@ -794,7 +795,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       } else if (flag) {
         // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
         // not trigger its own base's rules.
-        if (selected && !(free && cc.yields === YIELD_ASK) && (flag & UNIT ? cc.yields : cc.yields === YIELD_ASK)) selected = false;
+        if (selected && !(free && cc.yields === GIVES_TO_ANY) && (flag & UNIT ? cc.yields : cc.yields === GIVES_TO_ANY)) selected = false;
         if (triggers && cc.owner === base) triggers = false;
         if (!selected && !triggers) continue;
       }

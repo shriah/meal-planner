@@ -10,7 +10,7 @@ export {
 } from './matcher';
 export {
   ConstraintSchema, timeOf, byComponent,
-  type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type Yield, type Level, type GroupBy, type TimeGroup, type Bounds, type Origin,
+  type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type Level, type GroupBy, type TimeGroup, type Bounds, type Origin,
 } from './constraints';
 export {
   compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, slotPairs, UNKNOWN_COMPONENT,

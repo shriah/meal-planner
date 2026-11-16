@@ -55,13 +55,13 @@ const ids = (r: PlanResult, pick: (s: PlanSlotLike) => (number | undefined)[]) =
 const CURRENT_DEFAULTS: Constraint[] = [
   ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
     id: `default:extras-${meal}`, label: `extras-${meal}`, select: all(is('componentType', 'extra')), groupBy: 'slot',
-    scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, yieldsTo: 'unit',
+    scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, level: 'dish',
   })),
-  rule({ id: 'default:variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, yieldsTo: 'unit' }),
-  rule({ id: 'default:spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, yieldsTo: 'unit' }),
-  { ...prefer('default:sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2), yieldsTo: 'ask' } as Constraint,
-  { ...prefer('default:prefer-frequent', is('frequency', 'frequent'), -1), yieldsTo: 'unit' } as Constraint,
-  { ...prefer('default:avoid-rare', is('frequency', 'rare'), 1), yieldsTo: 'unit' } as Constraint,
+  rule({ id: 'default:variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, level: 'dish' }),
+  rule({ id: 'default:spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, level: 'dish' }),
+  { ...prefer('default:sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2), level: 'frequency' } as Constraint,
+  { ...prefer('default:prefer-frequent', is('frequency', 'frequent'), -1), level: 'dish' } as Constraint,
+  { ...prefer('default:avoid-rare', is('frequency', 'rare'), 1), level: 'dish' } as Constraint,
 ];
 
 describe('planner scenarios (seed library)', () => {
@@ -157,12 +157,12 @@ describe('planner scenarios (seed library)', () => {
     // Sambar's own rule: lunch only. It gives way when Sambar comes with Pongal.
     const sambarLunchOnly = rule({
       id: 'owned:sambar-meals', label: 'Sambar only at lunch', select: all(is('id', sambar), not(oneOf('meal', ['lunch']))),
-      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, yieldsTo: 'unit',
+      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, level: 'dish',
     });
     // Sambar's "never planned automatically" (exclusionRule, as compileRules compiles it).
     const sambarNeverAuto = rule({
       id: 'owned:sambar-exclude', label: 'Sambar never planned automatically', select: is('id', sambar),
-      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, yieldsTo: 'unit',
+      groupBy: 'slot', bounds: { hardMax: 0 }, owner: sambar, level: 'dish',
     });
     const plan = (constraints: Constraint[], seed: number, opts: object = BUDGET) =>
       planWeek({ library, constraints: [...CURRENT_DEFAULTS, sambarLunchOnly, ...constraints] }, { ...opts, seed });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Constraint, CountConstraint } from './constraints';
+import type { Constraint, CountConstraint, Level } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
 import { buildModel } from './plan';
 import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
@@ -94,7 +94,7 @@ describe('solver', () => {
     // gives way when 11 comes with its base.
     const constraints = [
       { kind: 'pair' as const, id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule' as const, when: is('id', 1), of: is('id', 11), strength: 'must' as const },
-      { kind: 'count' as const, id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule' as const, select: is('id', 11), groupBy: 'slot' as const, bounds: { hardMax: 0 }, yieldsTo: 'unit' as const, owner: 11 },
+      { kind: 'count' as const, id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule' as const, select: is('id', 11), groupBy: 'slot' as const, bounds: { hardMax: 0 }, level: 'dish' as const, owner: 11 },
     ];
 
     it.each([1, 2, 3, 4, 5])('plans the base, always with its curry (seed %i)', (seed) => {
@@ -135,7 +135,7 @@ describe('solver', () => {
     it('a candidate the week forbids is passed over', () => {
       // Curry 12's own rule keeps it out of every meal; it gives way to a unit, as a dish's "never planned
       // automatically" does, so only the choice between the candidates keeps it out.
-      const never11: Constraint = { kind: 'count', id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 11 };
+      const never11: Constraint = { kind: 'count', id: 'exclude-11', label: 'Never plan curry 11', origin: 'rule', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, level: 'dish', owner: 11 };
       const r = solve(buildModel({ library: lib, constraints: [want, never11] }), { ...quick, seed: 1 });
       expect(r.score.hard).toBe(0);
       for (const s of r.plan) expect(s.curry).toBe(12);
@@ -145,7 +145,7 @@ describe('solver', () => {
       // Curry 11 is limited to once a week and already planned with base 2; the limit gives way to a
       // brought dish, so the hard score is the same for both candidates and only the limit's rank tells
       // them apart.
-      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, yieldsTo: 'ask' };
+      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, level: 'frequency' };
       const m = buildModel({ library, constraints: [want, once11] });
       const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
       plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
@@ -162,8 +162,8 @@ describe('solver', () => {
     it("broughtScore ranks a candidate over its limit ahead of one outside its own meals", () => {
       // A dish's days and meals (OVERRIDE_WEIGHT) outrank its limits (LIMIT_WEIGHT): curry 11 is over its
       // once-a-week limit, curry 12 is kept to lunch and dinner and this is breakfast.
-      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, yieldsTo: 'ask' };
-      const meals12: Constraint = { kind: 'count', id: 'meals-12', label: 'Curry 12 at lunch and dinner', origin: 'rule', select: is('id', 12), groupBy: 'slot', scope: { meals: ['breakfast'] }, bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 12 };
+      const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, level: 'frequency' };
+      const meals12: Constraint = { kind: 'count', id: 'meals-12', label: 'Curry 12 at lunch and dinner', origin: 'rule', select: is('id', 12), groupBy: 'slot', scope: { meals: ['breakfast'] }, bounds: { hardMax: 0 }, level: 'dish', owner: 12 };
       const m = buildModel({ library, constraints: [want, once11, meals12] });
       const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
       plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
@@ -189,8 +189,8 @@ describe('solver', () => {
     describe('frequent and rare candidates', () => {
       const libByFrequency = lib.map((c) => (c.id === 11 ? { ...c, frequency: 'frequent' as const } : c.id === 12 ? { ...c, frequency: 'rare' as const } : c));
       const frequencyRules: Constraint[] = [
-        { kind: 'prefer', id: 'prefer-frequent', label: 'Prefer frequent dishes', origin: 'rule', select: is('frequency', 'frequent'), weight: -1, yieldsTo: 'unit' },
-        { kind: 'prefer', id: 'avoid-rare', label: 'Avoid rare dishes', origin: 'rule', select: is('frequency', 'rare'), weight: 1, yieldsTo: 'unit' },
+        { kind: 'prefer', id: 'prefer-frequent', label: 'Prefer frequent dishes', origin: 'rule', select: is('frequency', 'frequent'), weight: -1, level: 'dish' },
+        { kind: 'prefer', id: 'avoid-rare', label: 'Avoid rare dishes', origin: 'rule', select: is('frequency', 'rare'), weight: 1, level: 'dish' },
       ];
       const curryCounts = (constraints: Constraint[]) => {
         const r = solve(buildModel({ library: libByFrequency, constraints }), { ...quick, seed: 1 });
@@ -208,8 +208,8 @@ describe('solver', () => {
       it('a frequent candidate is chosen more often than a rare one when the frequency prefers give way to asked sides', () => {
         // The defaults as compiled since frequency rules give way to every brought dish: all three on 'ask'.
         const askRules: Constraint[] = [
-          ...frequencyRules.map((c) => ({ ...c, yieldsTo: 'ask' as const })),
-          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 2, yieldsTo: 'ask' },
+          ...frequencyRules.map((c) => ({ ...c, level: 'frequency' as const })),
+          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 2, level: 'frequency' },
         ];
         const { frequent, rare } = curryCounts([want, ...askRules]);
         expect(rare).toBeGreaterThan(0);
@@ -226,7 +226,7 @@ describe('solver', () => {
         const constraints: Constraint[] = [
           want,
           ...frequencyRules,
-          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 20, yieldsTo: 'ask' },
+          { kind: 'prefer', id: 'sides-only-when-asked', label: 'sides', origin: 'rule', select: oneOf('componentType', ['curry', 'subzi', 'extra']), weight: 20, level: 'frequency' },
           notElsewhere('base-1-days', { days: DAYS.filter((d) => d !== 'tuesday' && d !== 'thursday') }),
           notElsewhere('base-1-meals', { meals: ['breakfast', 'dinner'] }),
         ];
@@ -318,7 +318,7 @@ describe('solver', () => {
       { kind: 'count', id: 'apart', label: '33 never on a day with 34', origin: 'rule', select: is('id', 33), when: { exists: is('id', 34) }, groupBy: 'day', bounds: { hardMax: 0 } },
       { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } },
       { kind: 'prefer', id: 'avoid-2', label: 'Avoid base 2', origin: 'rule', select: is('id', 2), weight: 1 },
-      { kind: 'prefer', id: 'sides', label: 'Extras only when asked', origin: 'rule', select: is('componentType', 'extra'), weight: 2, yieldsTo: 'ask' },
+      { kind: 'prefer', id: 'sides', label: 'Extras only when asked', origin: 'rule', select: is('componentType', 'extra'), weight: 2, level: 'frequency' },
     ];
 
     it('is brought where it fits by the end', () => {
@@ -436,17 +436,17 @@ describe('final descent', () => {
   const BASES = lib.filter((c) => c.componentType === 'base').map((c) => c.id);
   const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('role', ['base', 'curry', 'subzi']));
   const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
-  const prefer = (id: string, select: Matcher, weight: number, yieldsTo: 'unit' | 'ask'): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, yieldsTo });
+  const prefer = (id: string, select: Matcher, weight: number, level: Level): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, level });
   const defaults: Constraint[] = [
     ...(['breakfast', 'lunch', 'dinner'] as const).map((meal, i) => rule({
       id: `extras-${meal}`, label: `extras-${meal}`, select: is('componentType', 'extra'), groupBy: 'slot',
-      scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, yieldsTo: 'unit',
+      scope: { meals: [meal] }, bounds: { hardMax: [2, 3, 2][i] }, level: 'dish',
     })),
-    rule({ id: 'variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, yieldsTo: 'unit' }),
-    rule({ id: 'spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, yieldsTo: 'unit' }),
-    prefer('sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2, 'ask'),
-    prefer('prefer-frequent', is('frequency', 'frequent'), -1, 'unit'),
-    prefer('avoid-rare', is('frequency', 'rare'), 1, 'unit'),
+    rule({ id: 'variety', label: 'variety', select: dishes, groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 }, level: 'dish' }),
+    rule({ id: 'spacing', label: 'spacing', select: dishes, groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 }, level: 'dish' }),
+    prefer('sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2, 'frequency'),
+    prefer('prefer-frequent', is('frequency', 'frequent'), -1, 'dish'),
+    prefer('avoid-rare', is('frequency', 'rare'), 1, 'dish'),
   ];
   const budget = { timeLimitMs: Infinity, maxIterations: 20_000, plateauIterations: 3000 };
   const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -493,7 +493,7 @@ describe('final descent', () => {
     // behind when a base 1 was changed would break a hard rule.
     const pairing: Constraint[] = [
       { kind: 'pair', id: 'pair-1-11', label: 'Base 1 with curry 11', origin: 'rule', when: is('id', 1), of: is('id', 11), strength: 'must' },
-      rule({ id: 'exclude-11', label: 'Never plan curry 11', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, yieldsTo: 'unit', owner: 11 }),
+      rule({ id: 'exclude-11', label: 'Never plan curry 11', select: is('id', 11), groupBy: 'slot', bounds: { hardMax: 0 }, level: 'dish', owner: 11 }),
     ];
     const r = solve(buildModel({ library: lib, constraints: [...defaults, ...pairing] }), { ...budget, seed });
     expect(r.score.hard).toBe(0);
