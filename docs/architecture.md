@@ -205,23 +205,32 @@ side along when it fits and give way otherwise. Either way, a pairing never make
 - **Compiling.** An enabled `require_with` that names specific dishes, and a `comes_with` rule (one pair whose `of` is all
   the dishes it names), compile to `pair` constraints (`must` makes units, `prefer` makes asked-for sides); `require_with`'s
   `extraCategories` stay ordinary counts. Any one candidate meets a pair, and a pair with no candidate in the library is ignored. A pairing's scope limits where it applies.
-  `compileRules` marks every **frequency** constraint (`isFrequencyBody` in `src/rules/record.ts`: a count across days, the
-  week or per dish with an upper bound, or a prefer) with `yieldsTo: 'ask'`, whoever owns the rule: a brought dish sits below
-  the dish that brought it, so its frequency rules never make that dish rarer. A frequency count with a minimum too is split
-  into two constraints (`rule:<id>:<i>` keeps the minimum and does not give way, `rule:<id>:<i>:max` the maximum). Other
-  constraints: owned rules get `owner` and `yieldsTo: 'unit'`, other default rules (the per-meal extras caps) `yieldsTo:
-  'unit'`, "sides only when a rule asks" `yieldsTo: 'ask'`, hand-written ones nothing (`givesWayTo`).
+  **Levels.** `compileRules` gives every count and prefer constraint a `level` (`src/planner/constraints.ts`; pairs have none),
+  set by the template from the rule's params and origin and by `levelOf` in `src/rules/record.ts`. It is derived at compile
+  time, never stored. The Rules page shows it as a badge (`ruleLevel`), and the scorer reads "gives way to" from the level alone:
+
+  | Level | Rules | Gives way to |
+  |---|---|---|
+  | `rule` ("Your rule") | hand-written rules that are not frequency rules (never include, only allow, always include, meals or days, leave out when, never together, "how often" per meal), and the minimum half of a split count | nothing |
+  | pairs ("Brings a dish") | comes with, served with, "also include when" | nothing; they bring dishes |
+  | `dish` ("Dish limit") | a dish's own owned rules (days, meals, only/never with), the extras-per-meal default caps, retired defaults still stored | Always pairs (units) |
+  | `frequency` ("Frequency") | "how often" per day or week with a maximum, no repeats, prefer and avoid, hand-written or owned; the variety, spacing and sides-only-when-asked defaults | any pair (units and asked-for sides) |
+
+  A brought dish sits below the dish that brought it, so frequency rules never make that dish rarer. A frequency count with a
+  minimum too is split in two (`rule:<id>:<i>` keeps the minimum on the `rule` level, `rule:<id>:<i>:max` is `frequency`).
+  A hand-written rule that is not a frequency rule still beats a link: "never include Papad" stops Rice's link.
 - **Scoring.** Each score works out every meal's unit members and asked-for sides from the `pair` constraints whose trigger is
-  present. A unit member is not counted by constraints that give way (its own days, meals, links, never-auto, the defaults);
-  an asked-for side is not counted by `yieldsTo: 'ask'`, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
-  Hand-written rules other than frequency rules, and built-ins, never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
+  present. A unit member is not counted by `dish` and `frequency` constraints (its own days, meals, links, never-auto, the defaults);
+  an asked-for side is not counted by `frequency` ones, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
+  `rule`-level constraints and built-ins never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
   never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
-  the candidate's own rules it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
-  then soft score; ties go to the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that
+  the candidate's own `dish` limits it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
+  then the `frequency` limits it breaks as a freed pick, then soft score. `broughtScore` returns these as separate components
+  (`BroughtScore { hard, overrides, limits, soft }`), compared in that order by `compareBrought`, not folded into one weighted sum; ties go to the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that
   give way to a brought dish (`yieldedPreferWeight`; by default frequent −1, rare +1, and "sides only when a rule asks" +2 on every
   side) less the lowest such weight among the candidates, so a weight they all share changes nothing (at most 4), and `o` a per-candidate offset in [0, 1) drawn from a separate
   stream seeded by the solve's seed (0.5 in the meal picker), then rotation (each meal starts from a different candidate, which in
