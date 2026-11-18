@@ -1,4 +1,6 @@
 import { db, normalizeComponentCategoryRefs } from '@/db/client';
+import { CONVERTED_PARTS } from '@/db/parts';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { linkRule, readLink } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind, CategoryRecord } from '@/types/category';
@@ -10,10 +12,15 @@ export async function getCategoriesByKind(kind: CategoryKind): Promise<CategoryR
 export async function addCategory(
   category: Pick<CategoryRecord, 'kind' | 'name'>,
 ): Promise<number> {
-  return db.categories.add({
-    ...category,
-    created_at: new Date().toISOString(),
-  }) as Promise<number>;
+  return db.transaction('rw', db.categories, db.parts, db.tag_groups, async () => {
+    const { parts } = await ensurePartsAndTagGroups();
+    const partName = CONVERTED_PARTS[category.kind].name;
+    return (await db.categories.add({
+      ...category,
+      part_id: parts.find((p) => p.name === partName)!.id,
+      created_at: new Date().toISOString(),
+    })) as number;
+  });
 }
 
 export async function renameCategory(id: number, name: string): Promise<void> {
@@ -34,7 +41,10 @@ export async function deleteCategory(id: number): Promise<void> {
 
     const components = await db.components.toArray();
     for (const component of components) {
-      await db.components.put(normalizeComponentCategoryRefs(component, category) as ComponentRecord);
+      const cleared = normalizeComponentCategoryRefs(component, category) as ComponentRecord;
+      // `category_id` never points at a deleted category.
+      if (cleared.category_id === id) delete cleared.category_id;
+      await db.components.put(cleared);
     }
 
     // A link rule loses the deleted category; one left with none is removed (the dish is then unlimited).

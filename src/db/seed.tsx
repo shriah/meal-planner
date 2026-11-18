@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import { db, type RuleRecord } from '@/db/client';
 import { is, type Matcher, type Meal } from '@/planner';
 import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
-import type { ComponentRecord, CurryCategory } from '@/types/component';
+import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
+import { loadConvertLookup } from '@/services/parts-db';
 
 type SeedData = typeof import('@/db/seed-data');
 
@@ -69,14 +70,7 @@ async function seed(data: SeedData): Promise<void> {
   const toAdd = newCategories.filter((c) => !stored.has(c.name));
   const addedIds = await db.categories.bulkAdd(toAdd, { allKeys: true });
   toAdd.forEach((c, i) => stored.set(c.name, Number(addedIds[i])));
-  const lookup: ConvertLookup = {
-    parts,
-    curryCategory: new Map([...stored].map(([name, id]) => [name as CurryCategory, id])),
-    knownCategories: new Set([...existing.map((c) => c.id), ...addedIds.map(Number)]),
-    tagGroups: Object.fromEntries(
-      CONVERTED_TAG_GROUP_KEYS.map((k) => [k, { id: tagGroupIds[k], valueId: new Map(groupOf(k).values.map((v) => [v.name, v.id])) }]),
-    ) as ConvertLookup['tagGroups'],
-  };
+  const lookup = await loadConvertLookup();
   const pooriRecord = convertDish(seededPoori as ComponentRecord, lookup);
 
   // Insert Poori first to capture its auto-assigned ID
