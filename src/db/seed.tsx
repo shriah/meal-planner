@@ -6,7 +6,7 @@ import { is, type Matcher, type Meal } from '@/planner';
 import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord, CurryCategory } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
-import { convertDish, convertedValueIds, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
+import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
 
 type SeedData = typeof import('@/db/seed-data');
@@ -51,8 +51,9 @@ async function seed(data: SeedData): Promise<void> {
   } = data;
   const { parts: storedParts, tagGroups: storedGroups } = await ensurePartsAndTagGroups();
   const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
-  const parts = Object.fromEntries(partTypes.map((t, i) => [t, storedParts[i].id])) as ConvertLookup['parts'];
-  const tagGroupIds = Object.fromEntries(CONVERTED_TAG_GROUP_KEYS.map((k, i) => [k, storedGroups[i].id])) as Record<(typeof CONVERTED_TAG_GROUP_KEYS)[number], number>;
+  const parts = Object.fromEntries(partTypes.map((t) => [t, storedParts.find((p) => p.name === CONVERTED_PARTS[t].name)!.id])) as ConvertLookup['parts'];
+  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => storedGroups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name)!;
+  const tagGroupIds = Object.fromEntries(CONVERTED_TAG_GROUP_KEYS.map((k) => [k, groupOf(k).id])) as Record<(typeof CONVERTED_TAG_GROUP_KEYS)[number], number>;
 
   const categoryLookup = await ensureSeedCategories(data, { base: parts.base, extra: parts.extra });
   const seededPoori = materializePooriSeed(categoryLookup);
@@ -73,7 +74,7 @@ async function seed(data: SeedData): Promise<void> {
     curryCategory: new Map([...stored].map(([name, id]) => [name as CurryCategory, id])),
     knownCategories: new Set([...existing.map((c) => c.id), ...addedIds.map(Number)]),
     tagGroups: Object.fromEntries(
-      CONVERTED_TAG_GROUP_KEYS.map((k) => [k, { id: tagGroupIds[k], valueId: convertedValueIds(k) }]),
+      CONVERTED_TAG_GROUP_KEYS.map((k) => [k, { id: tagGroupIds[k], valueId: new Map(groupOf(k).values.map((v) => [v.name, v.id])) }]),
     ) as ConvertLookup['tagGroups'],
   };
   const pooriRecord = convertDish(seededPoori as ComponentRecord, lookup);

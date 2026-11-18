@@ -223,14 +223,48 @@ describe('runSeed', () => {
       const first = await ensurePartsAndTagGroups();
       expect(first.parts).toHaveLength(4);
       expect(first.tagGroups).toHaveLength(4);
-      await db.parts.update(first.parts[0].id, { name: 'Mains' });
+      await db.parts.update(first.parts[0].id, { varied: false });
 
       const again = await ensurePartsAndTagGroups();
 
-      expect(again.parts.map((p) => p.name)).toEqual(['Mains', 'Curry', 'Subzi', 'Extras']);
+      expect(again.parts.map((p) => [p.name, p.varied])).toEqual([['Base', false], ['Curry', true], ['Subzi', true], ['Extras', false]]);
       expect(await db.parts.count()).toBe(4);
       expect(await db.tag_groups.count()).toBe(4);
       expect(again.tagGroups.map((g) => g.id)).toEqual(first.tagGroups.map((g) => g.id));
+    });
+
+    it('matches stored parts by name: a short, reordered parts table gets the missing parts and every dish its own', async () => {
+      const at = new Date().toISOString();
+      const [curryId, baseId] = (await db.parts.bulkAdd([
+        { name: 'Curry', position: 0, varied: true, created_at: at },
+        { name: 'Base', position: 1, varied: true, created_at: at },
+      ] as never[], { allKeys: true })) as number[];
+
+      await runSeed();
+
+      const parts = await db.parts.toArray();
+      expect(parts.map((p) => p.name).sort()).toEqual(['Base', 'Curry', 'Extras', 'Subzi']);
+      expect(parts.find((p) => p.name === 'Curry')!.id).toBe(curryId);
+      expect(parts.find((p) => p.name === 'Base')!.id).toBe(baseId);
+      const idOf = Object.fromEntries(parts.map((p) => [p.name, p.id]));
+      const partName = { base: 'Base', curry: 'Curry', subzi: 'Subzi', extra: 'Extras' } as const;
+      for (const c of await db.components.toArray()) expect(c.part_id).toBe(idOf[partName[c.componentType]]);
+    });
+
+    it('creates a tag group that is missing and gives dishes its tags', async () => {
+      await ensurePartsAndTagGroups();
+      const region = (await db.tag_groups.toArray()).find((g) => g.name === 'Region')!;
+      await db.tag_groups.delete(region.id);
+
+      await runSeed();
+
+      const groups = await db.tag_groups.toArray();
+      expect(groups).toHaveLength(4);
+      const created = groups.find((g) => g.name === 'Region')!;
+      expect(created.id).not.toBe(region.id);
+      const tagged = (await db.components.toArray()).filter((c) => (c.regional_tags ?? []).length > 0);
+      expect(tagged.length).toBeGreaterThan(0);
+      for (const c of tagged) expect(c.tags![created.id]).toHaveLength(c.regional_tags!.length);
     });
   });
 });
