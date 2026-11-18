@@ -1127,9 +1127,11 @@ db.version(20).stores({
 });
 
 // v21: meal parts, part categories and tag groups become data, stored beside today's fields (which stay the
-// source of truth). Parts Base, Curry, Subzi and Extras and the four tag groups are created even in an empty
-// library (a fresh install opens here before it is seeded). Every category gets its part, each curry type in use
-// becomes a Curry category, and every dish gets `part_id`, `category_id` and `tags` derived from its old fields.
+// source of truth). This upgrade converts existing databases: parts Base, Curry, Subzi and Extras and the four
+// tag groups are created even when the library is empty. Dexie does not run an upgrade on a brand-new database,
+// so a new database gets its parts and tag groups from the seed instead. Every category gets its part, each
+// curry type in use becomes a Curry category, and every dish gets `part_id`, `category_id` and `tags` derived
+// from its old fields.
 db.version(21).stores({
   categories: '++id, kind, name, part_id',
   components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
