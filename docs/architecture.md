@@ -96,6 +96,24 @@ leaf, components all existing curries, subzis or extras) into dish-owned served-
 It merges into a dish's existing served-with link only when enabled, strength and scope match; otherwise the hand-written rule
 stays, trimmed.
 
+### Meal parts (Stage 1)
+
+Design: `docs/superpowers/specs`. Meal parts (user-defined: Base, Curry, Subzi, Extras today) are being built in stages. Stage 1 only
+stores them next to today's fields; nothing reads them yet, so nothing visible changed. The old fields (`componentType`,
+`base_category_id`, `curry_category`, `extra_category_id`, the tag arrays) stay the source of truth until Stage 4 and are removed in Stage 5.
+
+- **Tables (v21).** `parts` (`src/types/part.ts`: name, position, `varied`) and `tag_groups` (`src/types/tags.ts`). A dish gains `part_id`,
+  `category_id` and `tags` (group id to value ids). `CategoryKind` gains `'curry'`: one category of the Curry part per curry type in use,
+  named by the stored type value and hidden from the category UI.
+- **Conversion.** `src/db/parts.ts` is a pure converter (`convertLibrary`, `convertDish`; `CONVERTED_PARTS`, `CONVERTED_TAG_GROUPS` fix the
+  names and order: Base, Curry, Subzi, Extras; Dietary, Protein, Region, Occasion). The v21 upgrade runs it over stored rows, keeping every dish, rule and plan.
+- **New databases.** Dexie does not run upgrades on a new database, so the seed calls `ensurePartsAndTagGroups()` (`src/db/parts-store.ts`),
+  which matches stored parts and groups by converted name and creates any that is missing.
+- **Staying in step.** `src/services/parts-db.ts` derives the new fields from the old ones when a dish is added, updated or saved (an update
+  rewrites them only when a source field changed); `addCategory` sets `part_id`; `deleteCategory` clears `category_id` with the old reference.
+- **For Stage 4.** Renaming parts breaks the seed's match-by-name, and the save rewrites a dish's whole `tags` map; both must be revisited
+  when the new fields become the source of truth.
+
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
 
