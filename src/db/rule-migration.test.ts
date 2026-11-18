@@ -374,3 +374,105 @@ describe('v14 rule migration', () => {
     expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
   });
 });
+
+const V20_STORES = {
+  ...V13_STORES,
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  rules: '++id, owner_component_id',
+  notices: 'id',
+};
+
+describe('v21 parts and tag groups', () => {
+  afterAll(() => db.close());
+
+  it('gives an existing library its parts, categories and tags and leaves rules and plans alone', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+
+    const v20 = new Dexie('FoodPlannerDB');
+    v20.version(20).stores(V20_STORES);
+    await v20.open();
+    const now = '2026-01-01T00:00:00.000Z';
+    await v20.table('categories').bulkAdd([
+      { id: 1, kind: 'base', name: 'rice-based', created_at: now },
+      { id: 2, kind: 'base', name: 'bread-based', created_at: now },
+      { id: 3, kind: 'base', name: 'other', created_at: now },
+      { id: 4, kind: 'extra', name: 'liquid', created_at: now },
+      { id: 5, kind: 'extra', name: 'crunchy', created_at: now },
+    ]);
+    const dish = (id: number, name: string, componentType: string, extra: object = {}) =>
+      ({ id, name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now, ...extra });
+    await v20.table('components').bulkAdd([
+      dish(1, 'Rice', 'base', { base_category_id: 1, dietary_tags: ['veg', 'vegan'], regional_tags: ['south-indian'] }),
+      dish(2, 'Chapati', 'base', { base_category_id: 2 }),
+      dish(3, 'Sambar', 'curry', { curry_category: 'lentil', protein_tag: 'dal' }),
+      dish(4, 'Mystery curry', 'curry'),
+      dish(5, 'Aloo gobi', 'subzi', { occasion_tags: ['festive'] }),
+      dish(6, 'Papad', 'extra', { extra_category_id: 5 }),
+    ]);
+    const rules = [
+      { id: 1, name: 'No papad', enabled: true, created_at: now, spec: { template: 'exclude', params: { match: is('id', 6), strength: 'must' } } },
+      { id: 2, ...linkRule({ id: 3, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [1] }), enabled: true, created_at: now },
+    ];
+    await v20.table('rules').bulkAdd(rules);
+    const plan = { slots: [{ day: 'monday', meal_slot: 'lunch', base_id: 1, curry_id: 3, extra_ids: [6] }] };
+    await v20.table('active_plan').put({ id: 'current', updated_at: now, locks: { 'monday-lunch': true }, plan });
+    await v20.table('saved_plans').add({ week_start: '2026-01-05', slots: plan, locks: { 'monday-lunch': true }, created_at: now });
+    const before = {
+      rules: await v20.table('rules').toArray(),
+      active: await v20.table('active_plan').toArray(),
+      saved: await v20.table('saved_plans').toArray(),
+    };
+    v20.close();
+
+    await db.open();
+
+    const parts = await db.parts.toArray();
+    expect(parts.map((p) => [p.name, p.position, p.varied])).toEqual([['Base', 0, true], ['Curry', 1, true], ['Subzi', 2, true], ['Extras', 3, false]]);
+    expect(new Set([...parts.map((p) => p.created_at), ...(await db.tag_groups.toArray()).map((g) => g.created_at)]).size).toBe(1);
+    const [base, curry, subzi, extras] = parts.map((p) => p.id);
+    const groups = await db.tag_groups.toArray();
+    expect(groups.map((g) => [g.name, g.multiple, g.values.length > 0])).toEqual([
+      ['Dietary', true, true], ['Protein', false, true], ['Region', true, true], ['Occasion', true, true],
+    ]);
+
+    const categories = await db.categories.toArray();
+    expect(categories.filter((c) => c.id <= 5).map((c) => c.part_id)).toEqual([base, base, base, extras, extras]);
+    const curryCategories = categories.filter((c) => c.kind === 'curry');
+    expect(curryCategories.map((c) => [c.name, c.part_id])).toEqual([['lentil', curry]]);
+
+    const dishes = await db.components.orderBy('id').toArray();
+    expect(dishes.map((d) => [d.name, d.part_id, d.category_id])).toEqual([
+      ['Rice', base, 1], ['Chapati', base, 2], ['Sambar', curry, curryCategories[0].id],
+      ['Mystery curry', curry, undefined], ['Aloo gobi', subzi, undefined], ['Papad', extras, 5],
+    ]);
+    const [dietary, protein, region, occasion] = groups;
+    const valueId = (g: (typeof groups)[number], name: string) => g.values.find((v) => v.name === name)!.id;
+    expect(dishes[0].tags).toEqual({
+      [dietary.id]: [valueId(dietary, 'veg'), valueId(dietary, 'vegan')], [protein.id]: [],
+      [region.id]: [valueId(region, 'south-indian')], [occasion.id]: [],
+    });
+    expect(dishes[2].tags?.[protein.id]).toEqual([valueId(protein, 'dal')]);
+    expect(dishes[4].tags?.[occasion.id]).toEqual([valueId(occasion, 'festive')]);
+
+    expect(await db.rules.toArray()).toEqual(before.rules);
+    expect(await db.active_plan.toArray()).toEqual(before.active);
+    expect(await db.saved_plans.toArray()).toEqual(before.saved);
+  });
+
+  it('gives an empty library its parts and tag groups and nothing else', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v20 = new Dexie('FoodPlannerDB');
+    v20.version(20).stores(V20_STORES);
+    await v20.open();
+    v20.close();
+
+    await db.open();
+
+    expect((await db.parts.toArray()).map((p) => p.name)).toEqual(['Base', 'Curry', 'Subzi', 'Extras']);
+    expect((await db.tag_groups.toArray()).map((g) => g.name)).toEqual(['Dietary', 'Protein', 'Region', 'Occasion']);
+    expect(await db.categories.count()).toBe(0);
+    expect(await db.components.count()).toBe(0);
+  });
+});
