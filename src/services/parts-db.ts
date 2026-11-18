@@ -1,7 +1,7 @@
 import { db } from '@/db/client';
-import { CONVERTED_PARTS, CONVERTED_TAG_GROUP_KEYS, CONVERTED_TAG_GROUPS, convertDish, type ConvertLookup } from '@/db/parts';
-import { ensurePartsAndTagGroups } from '@/db/parts-store';
-import type { ComponentRecord, CurryCategory } from '@/types/component';
+import { convertDish } from '@/db/parts';
+import { loadConvertLookup } from '@/db/parts-store';
+import { CURRY_CATEGORIES, type ComponentRecord } from '@/types/component';
 import type { PartRecord } from '@/types/part';
 import type { TagGroupRecord } from '@/types/tags';
 
@@ -13,25 +13,6 @@ export async function getTagGroups(): Promise<TagGroupRecord[]> {
   return (await db.tag_groups.toArray()).sort((a, b) => a.position - b.position);
 }
 
-/**
- * The lookup `convertDish` needs, built from stored data. Parts and tag groups missing from the library are created
- * (so this runs inside a transaction that includes `db.parts`, `db.tag_groups` and `db.categories`).
- */
-export async function loadConvertLookup(): Promise<ConvertLookup> {
-  const { parts, tagGroups } = await ensurePartsAndTagGroups();
-  const categories = await db.categories.toArray();
-  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
-  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => tagGroups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name)!;
-  return {
-    parts: Object.fromEntries(partTypes.map((t) => [t, parts.find((p) => p.name === CONVERTED_PARTS[t].name)!.id])) as ConvertLookup['parts'],
-    curryCategory: new Map(categories.filter((c) => c.kind === 'curry').map((c) => [c.name as CurryCategory, c.id])),
-    knownCategories: new Set(categories.map((c) => c.id)),
-    tagGroups: Object.fromEntries(
-      CONVERTED_TAG_GROUP_KEYS.map((k) => [k, { id: groupOf(k).id, valueId: new Map(groupOf(k).values.map((v) => [v.name, v.id])) }]),
-    ) as ConvertLookup['tagGroups'],
-  };
-}
-
 const DERIVED = ['part_id', 'category_id', 'tags'] as const;
 
 /**
@@ -41,7 +22,7 @@ const DERIVED = ['part_id', 'category_id', 'tags'] as const;
  */
 export async function derivedChanges(dish: ComponentRecord): Promise<Partial<ComponentRecord>> {
   const lookup = await loadConvertLookup();
-  if (dish.componentType === 'curry' && dish.curry_category && !lookup.curryCategory.has(dish.curry_category)) {
+  if (dish.componentType === 'curry' && dish.curry_category && CURRY_CATEGORIES.includes(dish.curry_category) && !lookup.curryCategory.has(dish.curry_category)) {
     const id = (await db.categories.add({
       kind: 'curry',
       name: dish.curry_category,

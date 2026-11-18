@@ -7,8 +7,7 @@ import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
-import { ensurePartsAndTagGroups } from '@/db/parts-store';
-import { loadConvertLookup } from '@/services/parts-db';
+import { ensurePartsAndTagGroups, loadConvertLookup } from '@/db/parts-store';
 
 type SeedData = typeof import('@/db/seed-data');
 
@@ -66,10 +65,8 @@ async function seed(data: SeedData): Promise<void> {
     { categories: existing, components: [seededPoori, ...seededRest] as ComponentRecord[] },
     { parts, tagGroups: tagGroupIds },
   );
-  const stored = new Map(existing.filter((c) => c.kind === 'curry').map((c) => [c.name, c.id]));
-  const toAdd = newCategories.filter((c) => !stored.has(c.name));
-  const addedIds = await db.categories.bulkAdd(toAdd, { allKeys: true });
-  toAdd.forEach((c, i) => stored.set(c.name, Number(addedIds[i])));
+  const stored = new Set(existing.filter((c) => c.kind === 'curry').map((c) => c.name));
+  await db.categories.bulkAdd(newCategories.filter((c) => !stored.has(c.name)));
   const lookup = await loadConvertLookup();
   const pooriRecord = convertDish(seededPoori as ComponentRecord, lookup);
 

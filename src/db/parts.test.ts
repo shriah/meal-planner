@@ -148,6 +148,11 @@ describe('convertLibrary', () => {
     expect(out.components.map((c) => c.category_id)).toEqual([1, 12, undefined]);
   });
 
+  it('ignores curry_category on a dish that is not a curry', () => {
+    const out = convertLibrary({ categories, components: [dish({ id: 1, componentType: 'subzi', curry_category: 'paneer' })] }, ids);
+    expect(out.newCategories).toEqual([]);
+  });
+
   it('creates no curry categories for a library without curries', () => {
     const out = convertLibrary({ categories, components: [dish({ componentType: 'base' })] }, ids);
     expect(out.newCategories).toEqual([]);

@@ -409,6 +409,7 @@ describe('v21 parts and tag groups', () => {
       dish(4, 'Mystery curry', 'curry'),
       dish(5, 'Aloo gobi', 'subzi', { occasion_tags: ['festive'] }),
       dish(6, 'Papad', 'extra', { extra_category_id: 5 }),
+      dish(7, 'Palak paneer', 'curry', { curry_category: 'paneer' }),
     ]);
     const rules = [
       { id: 1, name: 'No papad', enabled: true, created_at: now, spec: { template: 'exclude', params: { match: is('id', 6), strength: 'must' } } },
@@ -439,12 +440,13 @@ describe('v21 parts and tag groups', () => {
     const categories = await db.categories.toArray();
     expect(categories.filter((c) => c.id <= 5).map((c) => c.part_id)).toEqual([base, base, base, extras, extras]);
     const curryCategories = categories.filter((c) => c.kind === 'curry');
-    expect(curryCategories.map((c) => [c.name, c.part_id])).toEqual([['lentil', curry]]);
+    expect(curryCategories.map((c) => [c.name, c.part_id])).toEqual([['lentil', curry], ['paneer', curry]]);
 
     const dishes = await db.components.orderBy('id').toArray();
     expect(dishes.map((d) => [d.name, d.part_id, d.category_id])).toEqual([
       ['Rice', base, 1], ['Chapati', base, 2], ['Sambar', curry, curryCategories[0].id],
       ['Mystery curry', curry, undefined], ['Aloo gobi', subzi, undefined], ['Papad', extras, 5],
+      ['Palak paneer', curry, curryCategories[1].id],
     ]);
     const [dietary, protein, region, occasion] = groups;
     const valueId = (g: (typeof groups)[number], name: string) => g.values.find((v) => v.name === name)!.id;

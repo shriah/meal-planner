@@ -442,6 +442,44 @@ describe('saving a dish keeps part, category and tags in step', () => {
     expect(after.tags).toEqual(before.tags);
   });
 
+  it('a form save with no edits leaves part_id, category_id and tags as stored', async () => {
+    const id = await addComponent({ ...curry('lentil'), protein_tag: 'dal', regional_tags: ['south-indian'] });
+    // A stored state the derivation would not produce: a save that changes nothing must not touch it.
+    await db.components.update(id, { part_id: 1234, category_id: 4321, tags: { 99: [1] } });
+    const stored = (await db.components.get(id))!;
+    // What ComponentForm sends for an unchanged curry: the form's fields over the stored record's id-free copy.
+    const payload: Omit<ComponentRecord, 'id'> = {
+      name: stored.name, componentType: 'curry', notes: stored.notes, dietary_tags: stored.dietary_tags,
+      protein_tag: stored.protein_tag, regional_tags: stored.regional_tags, occasion_tags: stored.occasion_tags,
+      frequency: stored.frequency, created_at: stored.created_at, curry_category: stored.curry_category,
+    };
+    await saveComponent(id, payload);
+    const after = (await db.components.get(id))!;
+    expect(after.part_id).toBe(1234);
+    expect(after.category_id).toBe(4321);
+    expect(after.tags).toEqual({ 99: [1] });
+  });
+
+  it('editing a tag field rewrites tags (updateComponent and saveComponent)', async () => {
+    const id = await addComponent(curry('lentil'));
+    const region = (await db.tag_groups.toArray()).find((g) => g.name === 'Region')!;
+    const valueId = (name: string) => region.values.find((v) => v.name === name)!.id;
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([]);
+
+    await updateComponent(id, { regional_tags: ['south-indian'] });
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([valueId('south-indian')]);
+
+    const stored = (await db.components.get(id))!;
+    await saveComponent(id, { ...stored, regional_tags: ['south-indian', 'pan-indian'] });
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([valueId('south-indian'), valueId('pan-indian')]);
+  });
+
+  it('a curry type outside the known list gets no Curry category', async () => {
+    const id = await addComponent({ ...curry('lentil'), curry_category: 'mystery' as never });
+    expect(await curryCategory('mystery')).toBeUndefined();
+    expect((await db.components.get(id))?.category_id).toBeUndefined();
+  });
+
   it('addCategory sets part_id from its kind', async () => {
     const extra = await db.categories.get(await addCategory({ kind: 'extra', name: 'pickle' }));
     const base = await db.categories.get(await addCategory({ kind: 'base', name: 'millet' }));

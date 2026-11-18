@@ -95,7 +95,7 @@ export function convertLibrary(
 ): { newCategories: Omit<CategoryRecord, 'id'>[]; categories: CategoryRecord[]; components: ComponentRecord[] } {
   const partOfKind = { base: ids.parts.base, extra: ids.parts.extra, curry: ids.parts.curry };
   const categories = input.categories.map((c) => ({ ...c, part_id: partOfKind[c.kind] }));
-  const used = new Set(input.components.flatMap((c) => (c.curry_category ? [c.curry_category] : [])));
+  const used = new Set(input.components.flatMap((c) => (c.componentType === 'curry' && c.curry_category ? [c.curry_category] : [])));
   const created_at = new Date().toISOString();
   const newCategories = CURRY_CATEGORIES.filter((name) => used.has(name)).map((name) => ({
     kind: 'curry' as const,
