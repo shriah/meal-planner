@@ -33,6 +33,19 @@ describe('buildSlice', () => {
     expect(buildSlice('too much bread-based', data({ library, categories })).dishes.map((d) => d.id)).toEqual([3]);
   });
 
+  it('does not offer curry types as categories', () => {
+    const categories: CategoryRecord[] = [
+      { id: 5, kind: 'base', name: 'bread-based', created_at: '' },
+      { id: 6, kind: 'extra', name: 'liquid', created_at: '' },
+      { id: 7, kind: 'curry', name: 'lentil', created_at: '' },
+    ];
+    const library = [dish(1, 'Sambar', { curry_category: 'lentil' })];
+    expect(buildSlice('anything', data({ library, categories })).summary.categories).toEqual(['bread-based', 'liquid']);
+    // Nor is a dish matched through a curry category's name.
+    const named = [dish(2, 'Rasam', { base_category_id: 7 })];
+    expect(buildSlice('too much lentil', data({ library: named, categories })).dishes).toEqual([]);
+  });
+
   it('matches one word of a Devanagari dish name', () => {
     const slice = buildSlice('आज पनीर क्यों नहीं', data({ library: [dish(1, 'पनीर मखनी'), dish(2, 'दाल')] }));
     expect(slice.dishes.map((d) => d.id)).toEqual([1]);

@@ -32,11 +32,14 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const contains = (text: string, phrase: string) =>
   phrase !== '' && new RegExp(`(^|[^\\p{L}\\p{M}\\p{N}])${escape(phrase)}($|[^\\p{L}\\p{M}\\p{N}])`, 'u').test(text);
 
+/** Base and extra categories only: curry types are stored as categories too, but are not categories to the user. */
+const userCategories = (data: AssistantData) => data.categories.filter((c) => c.kind !== 'curry');
+
 function matchLibrary(message: string, data: AssistantData) {
   const text = norm(message);
   const messageWords = new Set(words(message).filter((w) => w.length >= MIN_WORD && !STOP_WORDS.has(w)));
 
-  const categoryIds = new Set(data.categories.filter((c) => contains(text, norm(c.name))).map((c) => c.id));
+  const categoryIds = new Set(userCategories(data).filter((c) => contains(text, norm(c.name))).map((c) => c.id));
   const tags = TAG_VOCABULARY.filter((t) => contains(text, t));
 
   // 3 = whole name, 2 = a word of the name, 1 = tag or category. Higher scores are kept first when capped.
@@ -108,7 +111,7 @@ export function buildSlice(message: string, data: AssistantData): Slice {
     dishes,
     rules,
     summary: {
-      categories: data.categories.map((c) => c.name),
+      categories: userCategories(data).map((c) => c.name),
       dishCount: data.library.length,
       ruleCount: data.rules.length,
       templates: HAND_TEMPLATE_IDS,
