@@ -111,8 +111,9 @@ stores them next to today's fields; nothing reads them yet, so nothing visible c
   which matches stored parts and groups by converted name and creates any that is missing.
 - **Staying in step.** `src/services/parts-db.ts` derives the new fields from the old ones when a dish is added, updated or saved (an update
   rewrites them only when a source field changed); `addCategory` sets `part_id`; `deleteCategory` clears `category_id` with the old reference.
-- **For Stage 4.** Renaming parts breaks the seed's match-by-name, and the save rewrites a dish's whole `tags` map; both must be revisited
-  when the new fields become the source of truth.
+- **For Stage 4.** The seed and every dish save (not only the seed) match parts, tag groups, tag values and curry categories by name
+  (`loadConvertLookup` in `src/db/parts-store.ts`). Renaming a part would make the next save create a second one. A save also rewrites a
+  dish's whole `tags` map, but only when a source field changed. Both must be revisited when the new fields become the source of truth.
 
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
