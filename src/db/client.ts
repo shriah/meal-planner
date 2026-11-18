@@ -5,6 +5,9 @@ import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCatego
 import type { MealRecord, MealExtraRecord } from '@/types/meal';
 import type { LegacyPreferencesRecord } from '@/types/preferences';
 import type { WeeklyPlan } from '@/types/plan';
+import type { PartRecord } from '@/types/part';
+import type { TagGroupRecord } from '@/types/tags';
+import { CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertLibrary, convertedValueIds, type ConvertLookup } from './parts';
 import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
 import {
@@ -56,7 +59,7 @@ export interface LegacyCategoryMigrationFixture {
   components: LegacyComponent[];
 }
 
-type CategoryLookup = Record<CategoryKind, Map<string, number>>;
+type CategoryLookup = Record<Exclude<CategoryKind, 'curry'>, Map<string, number>>;
 
 const BUILT_IN_CATEGORY_SEEDS: CategorySeedInput[] = [
   { kind: 'base', name: 'rice-based' },
@@ -79,6 +82,8 @@ const db = new Dexie('FoodPlannerDB') as Dexie & {
   preferences: EntityTable<LegacyPreferencesRecord, 'id'>;
   active_plan: EntityTable<ActivePlanRecord, 'id'>;
   notices: EntityTable<NoticeRecord, 'id'>;
+  parts: EntityTable<PartRecord, 'id'>;
+  tag_groups: EntityTable<TagGroupRecord, 'id'>;
 };
 
 db.version(1).stores({
@@ -1119,6 +1124,64 @@ db.version(20).stores({
   const moved = extras.filter((e) => maps.component.has(e.component_id));
   await tx.table('meal_extras').bulkDelete(moved.map((e) => [e.meal_id, e.component_id]));
   await tx.table('meal_extras').bulkPut(moved.map((e) => ({ ...e, component_id: maps.component.get(e.component_id)! })));
+});
+
+// v21: meal parts, part categories and tag groups become data, stored beside today's fields (which stay the
+// source of truth). This upgrade converts existing databases: parts Base, Curry, Subzi and Extras and the four
+// tag groups are created even when the library is empty. Dexie does not run an upgrade on a brand-new database,
+// so a new database gets its parts and tag groups from the seed instead. Every category gets its part, each
+// curry type in use becomes a Curry category, and every dish gets `part_id`, `category_id` and `tags` derived
+// from its old fields.
+db.version(21).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  const created_at = new Date().toISOString();
+  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
+  const partIds = await tx.table('parts').bulkAdd(
+    partTypes.map((t) => ({ ...CONVERTED_PARTS[t], created_at })),
+    { allKeys: true },
+  ) as number[];
+  const parts = Object.fromEntries(partTypes.map((t, i) => [t, partIds[i]])) as ConvertLookup['parts'];
+  const groupIds = await tx.table('tag_groups').bulkAdd(
+    CONVERTED_TAG_GROUP_KEYS.map((k) => {
+      const { name, position, multiple, values } = CONVERTED_TAG_GROUPS[k];
+      return { name, position, multiple, values: values.map((v, i) => ({ id: i + 1, name: v })), created_at };
+    }),
+    { allKeys: true },
+  ) as number[];
+  const tagGroups = Object.fromEntries(CONVERTED_TAG_GROUP_KEYS.map((k, i) => [k, groupIds[i]])) as Record<(typeof CONVERTED_TAG_GROUP_KEYS)[number], number>;
+
+  const converted = convertLibrary(
+    {
+      categories: await tx.table('categories').toArray() as CategoryRecord[],
+      components: await tx.table('components').toArray() as ComponentRecord[],
+    },
+    { parts, tagGroups },
+  );
+  await tx.table('categories').bulkPut(converted.categories);
+  const newCategories = converted.newCategories.map((c) => ({ ...c, created_at }));
+  const newIds = await tx.table('categories').bulkAdd(newCategories, { allKeys: true }) as number[];
+
+  // Second pass: curries can only point at their Curry category now that it has an id.
+  const lookup: ConvertLookup = {
+    parts,
+    curryCategory: new Map(newCategories.map((c, i) => [c.name as CurryCategory, newIds[i]])),
+    knownCategories: new Set([...converted.categories.map((c) => c.id), ...newIds]),
+    tagGroups: Object.fromEntries(
+      CONVERTED_TAG_GROUP_KEYS.map((k) => [k, { id: tagGroups[k], valueId: convertedValueIds(k) }]),
+    ) as ConvertLookup['tagGroups'],
+  };
+  await tx.table('components').bulkPut(converted.components.map((c) => convertDish(c, lookup)));
 });
 
 export { db, normalizeComponentCategoryRefs };

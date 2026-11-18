@@ -1,9 +1,11 @@
-export type CategoryKind = 'base' | 'extra';
+export type CategoryKind = 'base' | 'extra' | 'curry';
 
 export interface CategoryRecord {
   id: number;
   kind: CategoryKind;
   name: string;
+  /** The part this category belongs to. Set by the Stage 1 conversion; unset on rows not yet converted. */
+  part_id?: number;
   created_at: string;
 }
 

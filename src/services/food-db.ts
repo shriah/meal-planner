@@ -1,6 +1,7 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
 import { defaultRules, isDishTarget, linkRule, ownedRuleName, PLAIN_OWNED_SLOTS, readLink, ownedSlot, type LinkChange, type OwnedRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { changesDerivationSources, derivedChanges } from '@/services/parts-db';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
@@ -15,16 +16,21 @@ export async function getComponentsByType(type: ComponentType): Promise<Componen
 }
 
 export async function addComponent(component: Omit<ComponentRecord, 'id'>): Promise<number> {
-  const record = {
-    ...component,
-    created_at: component.created_at || new Date().toISOString(),
-  };
-  return db.components.add(record as ComponentRecord) as Promise<number>;
+  return db.transaction('rw', db.components, db.parts, db.tag_groups, db.categories, async () => {
+    const record = {
+      ...component,
+      created_at: component.created_at || new Date().toISOString(),
+    } as ComponentRecord;
+    return (await db.components.add({ ...record, ...(await derivedChanges(record)) })) as number;
+  });
 }
 
 export async function updateComponent(id: number, changes: Partial<ComponentRecord>): Promise<void> {
-  await db.transaction('rw', db.components, db.rules, async () => {
-    await db.components.update(id, changes);
+  await db.transaction('rw', db.components, db.rules, db.parts, db.tag_groups, db.categories, async () => {
+    const stored = await db.components.get(id);
+    const after = stored && { ...stored, ...changes };
+    const derived = stored && after && changesDerivationSources(stored, after) ? await derivedChanges(after) : {};
+    await db.components.update(id, { ...changes, ...derived });
     if (changes.name !== undefined) {
       const name = changes.name;
       await db.rules.where('owner_component_id').equals(id).modify((rule) => {
@@ -81,9 +87,13 @@ export async function saveComponent(
   owned: OwnedRuleChanges = {},
   links: readonly LinkChange[] = [],
 ): Promise<number> {
-  return db.transaction('rw', db.components, db.rules, async () => {
-    const componentId = id ?? ((await db.components.add(component as ComponentRecord)) as number);
-    if (id !== undefined) await db.components.update(id, component);
+  return db.transaction('rw', db.components, db.rules, db.parts, db.tag_groups, db.categories, async () => {
+    const stored = id === undefined ? undefined : await db.components.get(id);
+    const after = { ...stored, ...component } as ComponentRecord;
+    const derived = !stored || changesDerivationSources(stored, after) ? await derivedChanges(after) : {};
+    const written = { ...component, ...derived };
+    const componentId = id ?? ((await db.components.add(written as ComponentRecord)) as number);
+    if (id !== undefined) await db.components.update(id, written);
     const existing = await getOwnedRules(componentId);
     const self = { id: componentId, name: component.name };
     const add = (rule: OwnedRule) => db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);

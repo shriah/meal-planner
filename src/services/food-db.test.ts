@@ -5,6 +5,7 @@ import {
   type DishLink,
 } from '@/rules';
 import { db } from '@/db/client';
+import type { ComponentRecord } from '@/types/component';
 import { runSeed } from '@/db/seed';
 import { buildCategoryMap, getBaseCategoryLabel, getExtraCategoryLabel } from '@/lib/category-labels';
 import {
@@ -391,5 +392,111 @@ describe('Phase 14 category services', () => {
 
     expect(await restoreDefaultRules()).toBe(0);
     expect(await getRules()).toHaveLength(before + 2);
+  });
+});
+
+describe('saving a dish keeps part, category and tags in step', () => {
+  const curry = (curry_category: 'lentil' | 'legume' | 'paneer'): Omit<ComponentRecord, 'id'> => ({
+    name: 'Dal', componentType: 'curry', curry_category, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '',
+  });
+  const partId = async (name: string) => (await db.parts.toArray()).find((p) => p.name === name)!.id;
+  const curryCategory = async (name: string) => (await db.categories.toArray()).find((c) => c.kind === 'curry' && c.name === name);
+
+  it('adding a curry creates its Curry category and sets part_id and category_id', async () => {
+    expect(await curryCategory('paneer')).toBeUndefined();
+    const id = await addComponent(curry('paneer'));
+    const category = await curryCategory('paneer');
+    const stored = await db.components.get(id);
+    expect(category?.part_id).toBe(await partId('Curry'));
+    expect(stored?.part_id).toBe(await partId('Curry'));
+    expect(stored?.category_id).toBe(category?.id);
+  });
+
+  it('editing a curry type moves its category_id (the dish was converted by the upgrade)', async () => {
+    const id = await addComponent(curry('lentil'));
+    const lentil = await curryCategory('lentil');
+    expect((await db.components.get(id))?.category_id).toBe(lentil?.id);
+    await updateComponent(id, { curry_category: 'legume' });
+    const legume = await curryCategory('legume');
+    expect(legume).toBeDefined();
+    expect((await db.components.get(id))?.category_id).toBe(legume?.id);
+  });
+
+  it('saveComponent moves category_id and ignores a stale one carried by the form', async () => {
+    const id = await saveComponent(undefined, curry('lentil'));
+    const stale = (await db.components.get(id))!;
+    await saveComponent(id, { ...stale, curry_category: 'legume' } as Omit<ComponentRecord, 'id'>);
+    expect((await db.components.get(id))?.category_id).toBe((await curryCategory('legume'))?.id);
+  });
+
+  it('updating only notes leaves part_id, category_id and tags exactly as stored', async () => {
+    const id = await addComponent(curry('lentil'));
+    // A stored state the derivation would not produce: a save that changes nothing derived must not touch it.
+    await db.components.update(id, { part_id: 1234, tags: { 99: [1] } });
+    const before = (await db.components.get(id))!;
+    await updateComponent(id, { notes: 'more garlic' });
+    const after = (await db.components.get(id))!;
+    expect(after.notes).toBe('more garlic');
+    expect(after.part_id).toBe(before.part_id);
+    expect(after.category_id).toBe(before.category_id);
+    expect(after.tags).toEqual(before.tags);
+  });
+
+  it('a form save with no edits leaves part_id, category_id and tags as stored', async () => {
+    const id = await addComponent({ ...curry('lentil'), protein_tag: 'dal', regional_tags: ['south-indian'] });
+    // A stored state the derivation would not produce: a save that changes nothing must not touch it.
+    await db.components.update(id, { part_id: 1234, category_id: 4321, tags: { 99: [1] } });
+    const stored = (await db.components.get(id))!;
+    // What ComponentForm sends for an unchanged curry: the form's fields over the stored record's id-free copy.
+    const payload: Omit<ComponentRecord, 'id'> = {
+      name: stored.name, componentType: 'curry', notes: stored.notes, dietary_tags: stored.dietary_tags,
+      protein_tag: stored.protein_tag, regional_tags: stored.regional_tags, occasion_tags: stored.occasion_tags,
+      frequency: stored.frequency, created_at: stored.created_at, curry_category: stored.curry_category,
+    };
+    await saveComponent(id, payload);
+    const after = (await db.components.get(id))!;
+    expect(after.part_id).toBe(1234);
+    expect(after.category_id).toBe(4321);
+    expect(after.tags).toEqual({ 99: [1] });
+  });
+
+  it('editing a tag field rewrites tags (updateComponent and saveComponent)', async () => {
+    const id = await addComponent(curry('lentil'));
+    const region = (await db.tag_groups.toArray()).find((g) => g.name === 'Region')!;
+    const valueId = (name: string) => region.values.find((v) => v.name === name)!.id;
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([]);
+
+    await updateComponent(id, { regional_tags: ['south-indian'] });
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([valueId('south-indian')]);
+
+    const stored = (await db.components.get(id))!;
+    await saveComponent(id, { ...stored, regional_tags: ['south-indian', 'pan-indian'] });
+    expect((await db.components.get(id))?.tags?.[region.id]).toEqual([valueId('south-indian'), valueId('pan-indian')]);
+  });
+
+  it('a curry type outside the known list gets no Curry category', async () => {
+    const id = await addComponent({ ...curry('lentil'), curry_category: 'mystery' as never });
+    expect(await curryCategory('mystery')).toBeUndefined();
+    expect((await db.components.get(id))?.category_id).toBeUndefined();
+  });
+
+  it('addCategory sets part_id from its kind', async () => {
+    const extra = await db.categories.get(await addCategory({ kind: 'extra', name: 'pickle' }));
+    const base = await db.categories.get(await addCategory({ kind: 'base', name: 'millet' }));
+    expect(extra?.part_id).toBe(await partId('Extras'));
+    expect(base?.part_id).toBe(await partId('Base'));
+  });
+
+  it('deleting a category clears category_id with the base reference', async () => {
+    const categoryId = await addCategory({ kind: 'base', name: 'rice-based' });
+    const id = await addComponent({
+      name: 'Rice', componentType: 'base', base_category_id: categoryId, base_type: 'rice-based',
+      dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '',
+    });
+    expect((await db.components.get(id))?.category_id).toBe(categoryId);
+    await deleteCategory(categoryId);
+    const stored = (await db.components.get(id))!;
+    expect(stored.base_category_id).toBeNull();
+    expect(stored.category_id ?? null).toBeNull();
   });
 });

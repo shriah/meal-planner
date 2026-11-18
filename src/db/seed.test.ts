@@ -3,6 +3,8 @@ import { is } from '@/planner';
 import { defaultRules, pairingCategories, ruleDays, RuleSpecSchema } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
+import { CONVERTED_TAG_GROUP_KEYS, CONVERTED_TAG_GROUPS } from '@/db/parts';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getOwnedRule, getOwnedRules } from '@/services/food-db';
@@ -14,6 +16,8 @@ describe('runSeed', () => {
     await db.components.clear();
     await db.preferences.clear();
     await db.rules.clear();
+    await db.parts.clear();
+    await db.tag_groups.clear();
   });
 
   it('seeds once when two calls overlap', async () => {
@@ -171,5 +175,96 @@ describe('runSeed', () => {
 
     expect(await db.categories.count()).toBe(categoryCountAfterFirst);
     expect(await db.components.count()).toBe(componentCountAfterFirst);
+  });
+
+  describe('parts and tag groups', () => {
+    it('gives a new library the four parts and four tag groups, and every dish its part, category and tags', async () => {
+      await runSeed();
+
+      const parts = (await db.parts.toArray()).sort((a, b) => a.position - b.position);
+      expect(parts.map((p) => [p.name, p.varied])).toEqual([['Base', true], ['Curry', true], ['Subzi', true], ['Extras', false]]);
+      const groups = (await db.tag_groups.toArray()).sort((a, b) => a.position - b.position);
+      expect(groups.map((g) => g.name)).toEqual(CONVERTED_TAG_GROUP_KEYS.map((k) => CONVERTED_TAG_GROUPS[k].name));
+
+      const [basePart, curryPart, subziPart, extraPart] = parts.map((p) => p.id);
+      const partOf = { base: basePart, curry: curryPart, subzi: subziPart, extra: extraPart };
+      const components = await db.components.toArray();
+      const categories = await db.categories.toArray();
+      expect(components.length).toBeGreaterThan(0);
+      for (const c of components) {
+        expect(c.part_id).toBe(partOf[c.componentType]);
+        expect(Object.keys(c.tags ?? {}).map(Number).sort()).toEqual(groups.map((g) => g.id).sort());
+        if (c.componentType === 'curry' && c.curry_category) {
+          const cat = categories.find((x) => x.id === c.category_id);
+          expect(cat).toMatchObject({ kind: 'curry', name: c.curry_category, part_id: curryPart });
+        }
+      }
+      expect(components.filter((c) => c.componentType === 'curry' && c.curry_category).length).toBeGreaterThan(0);
+      for (const cat of categories) {
+        expect(cat.part_id).toBe(cat.kind === 'base' ? basePart : cat.kind === 'extra' ? extraPart : curryPart);
+      }
+      expect(new Set(categories.filter((c) => c.kind === 'curry').map((c) => c.name)).size)
+        .toBe(categories.filter((c) => c.kind === 'curry').length);
+      expect(components.some((c) => (c.dietary_tags ?? []).length > 0 && Object.values(c.tags ?? {}).some((v) => v.length > 0))).toBe(true);
+    });
+
+    it('creates no duplicate parts, tag groups or curry categories when run twice', async () => {
+      await runSeed();
+      const once = { parts: await db.parts.count(), groups: await db.tag_groups.count(), categories: await db.categories.count() };
+      await db.components.clear();
+      await db.rules.clear();
+
+      await runSeed();
+
+      expect({ parts: await db.parts.count(), groups: await db.tag_groups.count(), categories: await db.categories.count() }).toEqual(once);
+    });
+
+    it('returns the parts and tag groups a database already has, unchanged', async () => {
+      const first = await ensurePartsAndTagGroups();
+      expect(first.parts).toHaveLength(4);
+      expect(first.tagGroups).toHaveLength(4);
+      await db.parts.update(first.parts[0].id, { varied: false });
+
+      const again = await ensurePartsAndTagGroups();
+
+      expect(again.parts.map((p) => [p.name, p.varied])).toEqual([['Base', false], ['Curry', true], ['Subzi', true], ['Extras', false]]);
+      expect(await db.parts.count()).toBe(4);
+      expect(await db.tag_groups.count()).toBe(4);
+      expect(again.tagGroups.map((g) => g.id)).toEqual(first.tagGroups.map((g) => g.id));
+    });
+
+    it('matches stored parts by name: a short, reordered parts table gets the missing parts and every dish its own', async () => {
+      const at = new Date().toISOString();
+      const [curryId, baseId] = (await db.parts.bulkAdd([
+        { name: 'Curry', position: 0, varied: true, created_at: at },
+        { name: 'Base', position: 1, varied: true, created_at: at },
+      ] as never[], { allKeys: true })) as number[];
+
+      await runSeed();
+
+      const parts = await db.parts.toArray();
+      expect(parts.map((p) => p.name).sort()).toEqual(['Base', 'Curry', 'Extras', 'Subzi']);
+      expect(parts.find((p) => p.name === 'Curry')!.id).toBe(curryId);
+      expect(parts.find((p) => p.name === 'Base')!.id).toBe(baseId);
+      const idOf = Object.fromEntries(parts.map((p) => [p.name, p.id]));
+      const partName = { base: 'Base', curry: 'Curry', subzi: 'Subzi', extra: 'Extras' } as const;
+      for (const c of await db.components.toArray()) expect(c.part_id).toBe(idOf[partName[c.componentType]]);
+    });
+
+    it('creates a tag group that is missing and gives dishes its tags', async () => {
+      await ensurePartsAndTagGroups();
+      const region = (await db.tag_groups.toArray()).find((g) => g.name === 'Region')!;
+      await db.tag_groups.delete(region.id);
+
+      await runSeed();
+
+      const groups = await db.tag_groups.toArray();
+      expect(groups).toHaveLength(4);
+      const created = groups.find((g) => g.name === 'Region')!;
+      expect(created.id).not.toBe(region.id);
+      const tagged = (await db.components.toArray()).filter((c) => (c.regional_tags ?? []).length > 0);
+      expect(tagged.length).toBeGreaterThan(0);
+      for (const c of tagged) expect(c.tags![created.id]).toHaveLength(c.regional_tags!.length);
+    });
   });
 });
