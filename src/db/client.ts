@@ -56,7 +56,7 @@ export interface LegacyCategoryMigrationFixture {
   components: LegacyComponent[];
 }
 
-type CategoryLookup = Record<CategoryKind, Map<string, number>>;
+type CategoryLookup = Record<Exclude<CategoryKind, 'curry'>, Map<string, number>>;
 
 const BUILT_IN_CATEGORY_SEEDS: CategorySeedInput[] = [
   { kind: 'base', name: 'rice-based' },

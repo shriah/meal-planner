@@ -35,7 +35,7 @@ type RenameState = {
   name: string;
 };
 
-const COPY: Record<CategoryKind, { title: string; description: string; inputLabel: string }> = {
+const COPY: Record<Exclude<CategoryKind, 'curry'>, { title: string; description: string; inputLabel: string }> = {
   base: {
     title: 'Base Categories',
     description: 'Use base categories to group staples for components, rules, and generator matching.',

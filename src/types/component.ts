@@ -77,4 +77,10 @@ export type ComponentRecord = BaseComponentFields & {
   extra_category_id?: number | null;
   extra_category?: ExtraCategory;
   frequency?: Frequency; // defaults to 'normal' in generator
+  // Stage 1 data, derived from the fields above (which stay the source of truth).
+  part_id?: number;
+  /** Category within the part. Absent when the dish has none or its old category reference points at a deleted category. */
+  category_id?: number | null;
+  /** Tag group id -> value ids. */
+  tags?: Record<number, number[]>;
 };
