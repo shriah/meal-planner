@@ -442,11 +442,12 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     fill(true);
   };
   /**
-   * Whether dish `id` in part `k` of meal `s` at slot `i` brings anything there: a dish of a many-dish part (a
-   * curry on a library with no cap on curries) can bring the dishes served with it. Only such a dish's add or
-   * removal runs `bring`, so a week whose many-dish parts bring nothing plans exactly as before.
+   * Whether dish `id` in part `k` of meal `s` at slot `i` brings something into another part there: a dish of a
+   * many-dish part (a curry on a library with no cap on curries) can bring the dishes served with it. Only such a
+   * dish's add or removal runs `bring`. A dish whose links all stay in its own part (an extra that comes with
+   * another extra) is added and removed alone, as before, so its weeks do not change.
    */
-  const bringsAny = (s: SlotState, id: number, k: number, i: number): boolean => broughtBy(s, id, k, i).length > 0;
+  const bringsAcross = (s: SlotState, id: number, k: number, i: number): boolean => broughtBy(s, id, k, i).some((c) => ownPart(c) !== k);
   /** Sides brought by the dishes in two parts, for `bring`'s `prev`. */
   const both = (a: readonly number[], b: readonly number[]): readonly number[] => (!a.length ? b : !b.length ? a : [...a, ...b]);
 
@@ -515,7 +516,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         const add = (id: number) => {
           restore(s, meal);
           s.parts[k] = [...before, id];
-          if (bringsAny(s, id, k, i)) bring(i, NOTHING);
+          if (bringsAcross(s, id, k, i)) bring(i, NOTHING);
         };
         const current = evaluate(plan);
         const improving = sample(pool[k].filter((e) => !before.includes(e))).filter((id) => {
@@ -629,7 +630,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         const x = Math.floor(rng() * old.length);
         // Nor does a side a pair waiting for the meal's curry or subzi brought: the search does not see it.
         if (isUnit(s, i, old[x]) || condOnly(s, i, old[x])) continue;
-        if (bringsAny(s, old[x], k, i)) {
+        if (bringsAcross(s, old[x], k, i)) {
           const prev = broughtBy(s, old[x], k, i);
           const gone = conditionalSides(s, i);
           then = () => bring(i, prev, gone);
@@ -639,7 +640,7 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
         const e = pick(pool[k]);
         if (old.includes(e)) continue;
         s.parts[k] = [...old, e];
-        if (bringsAny(s, e, k, i)) then = () => bring(i, NOTHING);
+        if (bringsAcross(s, e, k, i)) then = () => bring(i, NOTHING);
       }
       const snap = snapshot(s);
       snap.parts[k] = old;

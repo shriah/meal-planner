@@ -10,7 +10,7 @@ import {
 import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
 import { MAX_LIST_ITEMS } from './limits';
-import { legacyPartIds } from '@/db/parts';
+import { dishesWithParts, legacyPartIds } from '@/db/parts';
 import { namesFor, searchLibrary, type AssistantData } from './retrieve';
 import type { AssistantEffect, ToolContext } from './types';
 
@@ -211,7 +211,8 @@ const knownIds = ({ library, categories, parts }: AssistantData): KnownIds => ({
   components: new Set(library.map((c) => c.id)),
   categories: new Set(categories.map((c) => c.id)),
   parts: new Set(parts.map((p) => p.id)),
-  partOf: partsOfDishes(library),
+  // A dish saved without a part has the part planning gives it.
+  partOf: partsOfDishes(dishesWithParts(library, parts)),
 });
 
 const normName = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();

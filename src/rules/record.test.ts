@@ -383,6 +383,20 @@ describe('links that point the wrong way', () => {
     expect(compile(link(2, 'serve', 3)).issues.map((i) => i.message)).toEqual(['points to Subzi, which is no longer above Subzi']);
   });
 
+  it('skips and names an upward comes link that waits for another part, the shape the upgrade leaves as comes', () => {
+    // A "comes with" link to a higher part that waits for a dish of another part cannot become a serve link
+    // without losing its condition, so the upgrade keeps it as comes; it is named here instead of planned.
+    const waiting: RuleRecord = {
+      ...rule(1, linkRule({ id: 12, name: 'Beans' }, { mode: 'comes', target: { part: 2, kind: 'dish' }, values: [3], when: { 4: [2] } }, PARTS).spec),
+      owner_component_id: 12,
+    };
+    expect(waiting.spec.template).toBe('comes_with');
+    expect('when' in waiting.spec.params && waiting.spec.params.when).toBeTruthy();
+    const { constraints, issues } = compile(waiting);
+    expect(constraints).toEqual([]);
+    expect(issues.map((i) => i.message)).toEqual(['points to Curry, which is no longer below Subzi']);
+  });
+
   it('plans a comes link to the owner\'s own part: it brings a sibling, which is not the wrong way', () => {
     const { constraints, issues } = compile(link(1, 'comes', 3));
     expect(issues).toEqual([]);

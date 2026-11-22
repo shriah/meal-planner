@@ -7,6 +7,7 @@ import {
   convertDish,
   convertedValueIds,
   convertLibrary,
+  dishesWithParts,
   legacyPartIds,
   type ConvertIds,
   type ConvertLookup,
@@ -177,5 +178,22 @@ describe('legacyPartIds', () => {
 
   it('throws when a converted part is missing', () => {
     expect(() => legacyPartIds(parts.filter((p) => p.name !== 'Curry'))).toThrow(/Curry/);
+  });
+});
+
+describe('dishesWithParts', () => {
+  const parts = [
+    { id: 7, legacy: 'base' }, { id: 8, legacy: 'curry' }, { id: 9, legacy: 'subzi' }, { id: 10, legacy: 'extra' },
+  ] as const;
+
+  it('gives a dish saved without a part the part of its type, as planning does, and keeps a stored part', () => {
+    const out = dishesWithParts([dish({ id: 1, componentType: 'curry' }), dish({ id: 2, componentType: 'extra', part_id: 99 })], parts);
+    expect(out.map((d) => d.part_id)).toEqual([8, 99]);
+  });
+
+  it('leaves the dishes as they are until the converted parts are all there', () => {
+    const d = [dish({ componentType: 'curry' })];
+    expect(dishesWithParts(d, undefined)[0].part_id).toBeUndefined();
+    expect(dishesWithParts(d, parts.slice(0, 3))[0].part_id).toBeUndefined();
   });
 });

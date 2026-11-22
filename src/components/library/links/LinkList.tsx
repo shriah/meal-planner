@@ -100,7 +100,7 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
                 </div>
               )}
               {editing !== linkKey(link, i) && wrongWayOf(link) && (
-                <p role="alert" className="text-amber-700 dark:text-amber-400">Not planned: {wrongWayOf(link)}</p>
+                <p className="text-amber-700 dark:text-amber-400">Not planned: {wrongWayOf(link)}</p>
               )}
               {editing !== linkKey(link, i) && warnings.filter((w) => w.link === i).map((w) => (
                 <p key={w.message} role={w.blocking ? 'alert' : undefined}

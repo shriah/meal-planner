@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/client'
+import { dishesWithParts } from '@/db/parts'
 import { getRules, restoreDefaultRules } from '@/services/food-db'
 import { parseHash, useUrlHash } from '@/lib/hash-target'
 import { describeSpec, groupRules, libraryNames, partsOfDishes, parseSpec, type KnownIds, type Names } from '@/rules'
@@ -32,7 +33,8 @@ export function RuleList() {
       components: new Set(components.map((c) => c.id)),
       categories: new Set(categories.map((c) => c.id)),
       parts: new Set((parts ?? []).map((p) => p.id)),
-      partOf: partsOfDishes(components),
+      // A dish saved without a part has the part planning gives it.
+      partOf: partsOfDishes(dishesWithParts(components, parts)),
     }
     return { names, known }
   }, [components, categories, parts])

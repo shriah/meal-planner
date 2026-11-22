@@ -752,10 +752,8 @@ const PART_LINK_CASES: RuleCase[] = [
     name: 'A Main link to one Side also satisfies "every meal has a Side"',
     why: 'A general rule asks for a Side in every meal and Biryani comes with Raita: a Biryani meal gets Raita and no second Side, because the link already satisfies the general rule; every meal holds exactly one Side.',
     library: MEAL_LIBRARY,
-    rules: () => [
-      { name: 'Every meal has a Side', spec: { template: 'require', params: { match: is('part', SIDE), min: 1, strength: 'must' } } },
-      linkRule(mealOwner('Biryani'), { mode: 'comes', target: { part: SIDE, kind: 'dish' }, values: [11] }, MEAL_PARTS),
-    ],
+    given: () => [{ name: 'Every meal has a Side', spec: { template: 'require', params: { match: is('part', SIDE), min: 1, strength: 'must' } } }],
+    rules: () => [linkRule(mealOwner('Biryani'), { mode: 'comes', target: { part: SIDE, kind: 'dish' }, values: [11] }, MEAL_PARTS)],
     expect: [
       everyPartMeal('Every meal with Biryani has exactly Raita as its Side', holds(MAIN, 1), (s) => partDishes(s, SIDE).join() === '11'),
       everyPartMeal('Every meal has one Side', () => true, (s) => partDishes(s, SIDE).length === 1),
@@ -767,7 +765,7 @@ const PART_LINK_CASES: RuleCase[] = [
     id: 'upward-link-adds-the-extra-with-its-curry',
     group: 'Pairings',
     name: 'An extra that comes with a curry is in every meal with that curry',
-    why: 'Papad (an Extra) "comes with" Dal (a Curry): the link points up the parts, so it is stored as "when Dal is in the meal, Papad is added". Papad is in every meal that has Dal and in no other, though Kurma is the other curry in the library. With the default rules on, the planner never planned Dal: on a library with no cap on curries a curry is added like an extra, and it was added alone, so Dal without Papad broke the pair as surely as no Dal broke "Lunch has Dal", no single step improved, and every lunch went without. An added or removed dish now brings and takes what is served with it, as a base does.',
+    why: 'Papad (an Extra) "comes with" Dal (a Curry): the link points up the parts, so it is stored as "when Dal is in the meal, Papad is added". Papad is in every meal that has Dal and in no other, though Kurma is the other curry in the library. With the default rules on, the planner never planned Dal: on a library with no cap on curries a curry is added like an extra, and it was added alone, so Dal without Papad broke the pair as surely as no Dal broke "Lunch has Dal", no single step improved, and every lunch went without. An added or removed dish that brings something into another part now brings and takes it, as a base does.',
     library: SPREAD_LIBRARY,
     // Dal is for lunch and Kurma for dinner, so some meals have each curry.
     given: () => [
@@ -811,6 +809,7 @@ const PART_LINK_CASES: RuleCase[] = [
     rules: () => [linkRule(mealOwner('Raita'), { mode: 'comes', target: { part: MAIN, kind: 'dish' }, values: [1] }, MEAL_PARTS)],
     issues: ['points to Main, which is no longer below Side'],
     expect: [
+      // A skipped link plans as if absent, so only the named issue fails this case without its subject.
       ruleIssueNamed('points to Main, which is no longer below Side'),
       everyPartMeal('Every meal has no Side', () => true, (s) => partDishes(s, SIDE).length === 0),
       noHardProblems(),

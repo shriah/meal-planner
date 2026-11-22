@@ -213,9 +213,9 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
       issues.push({ ruleId: rule.id, name: rule.name, message: `waits for ${parts.list[0].name}, which every meal holds` });
       continue;
     }
-    const wrongWay = wrongWayLink(rule, known, parts);
-    if (wrongWay) {
-      issues.push({ ruleId: rule.id, name: rule.name, message: wrongWay });
+    const wrong = wrongWayLink(rule, known, parts);
+    if (wrong) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: wrong });
       continue;
     }
     const misplaced = known.categoryPart && misplacedCategories(parsed.spec, known.categoryPart, parts.list[0]?.id);

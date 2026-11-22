@@ -40,6 +40,17 @@ export type DishWithPart = ComponentRecord & { part_id: number };
 export const withPart = <C extends ComponentRecord>(c: C, legacy: LegacyParts): C & { part_id: number } =>
   ({ ...c, part_id: c.part_id ?? legacy[c.componentType] });
 
+/**
+ * The dishes with a missing part filled by type, as planning fills them (`withPart`), so a view that reads dishes' parts
+ * treats a dish saved without one as the planner does. Unchanged while the converted parts are not all there (not yet loaded).
+ */
+export function dishesWithParts<C extends ComponentRecord>(dishes: readonly C[], parts: readonly Pick<PartRecord, 'id' | 'legacy'>[] | undefined): C[] {
+  const types = Object.keys(CONVERTED_PARTS) as ComponentType[];
+  if (!parts || !types.every((t) => parts.some((p) => p.legacy === t))) return [...dishes];
+  const legacy = legacyPartIds(parts);
+  return dishes.map((c) => withPart(c, legacy));
+}
+
 type ConvertedTagGroup = Pick<TagGroupRecord, 'name' | 'position' | 'multiple'> & { values: readonly string[] };
 
 /** Today's tag arrays as groups. Value ids are 1..n within each group, in list order. */

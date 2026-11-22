@@ -91,19 +91,6 @@ describe('LinkList', () => {
     expect(screen.getByRole('button', { name: 'Edit' })).toBeEnabled();
   });
 
-  it('says beside a link that points the wrong way that it is not planned', async () => {
-    // A curry's "comes with" link to a base: the base is above the curry, so the planner skips it.
-    const idli = await dish('Idli', 'base');
-    render(<Harness initial={[
-      { mode: 'comes', target: to('base', 'dish'), values: [idli], strength: 'always' },
-      { mode: 'comes', target: to('extra', 'dish'), values: [await dish('Papad', 'extra')], strength: 'always' },
-    ]} />);
-    const notice = await screen.findByText('Not planned: points to Base, which is no longer below Curry');
-    expect(notice).toHaveClass('text-amber-700');
-    // The link brings a part below the curry, so it is not named.
-    expect(screen.getAllByText(/Not planned/)).toHaveLength(1);
-  });
-
   it('says a dish with no links goes with anything', async () => {
     render(<Harness initial={[]} />);
     expect(await screen.findByText('Goes with anything.')).toBeInTheDocument();
@@ -448,6 +435,22 @@ describe('LinkList', () => {
         return render(<LibraryLookupProvider><OpenWhenLoaded /></LibraryLookupProvider>);
       }],
     ] as const;
+
+    it.each(loadOrders)('says beside a link that points the wrong way that it is not planned, opened %s', async (_, open) => {
+      // A curry's "comes with" link to a base: the base is above the curry, so the planner skips it.
+      const idli = await dish('Idli', 'base');
+      const papad = await dish('Papad', 'extra');
+      open(<Harness initial={[
+        { mode: 'comes', target: to('base', 'dish'), values: [idli], strength: 'always' },
+        { mode: 'comes', target: to('extra', 'dish'), values: [papad], strength: 'always' },
+      ]} />);
+      const notice = await screen.findByText('Not planned: points to Base, which is no longer below Curry');
+      expect(notice).toHaveClass('text-amber-700');
+      // A note like the other amber warnings, not an alert.
+      expect(notice).not.toHaveAttribute('role');
+      // The link brings a part below the curry, so it is not named.
+      expect(screen.getAllByText(/Not planned/)).toHaveLength(1);
+    });
 
     it.each(loadOrders)('reads each stored link as today, and Edit then Done hands back the same links, opened %s', async (_, open) => {
       const rice = await addCategory({ kind: 'base', name: 'Rice Plates' });
