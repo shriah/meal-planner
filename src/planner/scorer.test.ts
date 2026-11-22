@@ -356,7 +356,7 @@ describe('parts that hold one dish', () => {
       cap({ select: all(is('part', 2), is('id', 2)) }),
       cap({ select: { not: is('part', 2) } }),
       cap({ select: { field: 'part', op: 'neq', value: 2 } as Matcher }),
-      cap({ select: placedIn('curry') }),
+      cap({ select: is('slot_part', 2) }),
     )).toEqual([]);
   });
 });

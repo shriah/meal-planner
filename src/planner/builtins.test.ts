@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { builtinConstraints } from './builtins';
+import type { CountConstraint } from './constraints';
 import { compileModel, score } from './scorer';
 import { component, slotOf, TEST_PARTS } from './test-utils';
 import { emptyPlan, slotIndex } from './types';
@@ -23,5 +24,7 @@ describe('built-in constraints', () => {
       'builtin:one-dish-first-part', 'builtin:wrong-part', 'builtin:dish-twice',
     ]);
     expect(builtins[0].label).toBe('Each meal needs exactly one base');
+    // A dish twice in a meal is only possible in a part that holds many: with Curry and Subzi capped, Extras.
+    expect((builtinConstraints(TEST_PARTS, new Set([2, 3]))[2] as CountConstraint).select).toEqual({ any: [{ field: 'slot_part', op: 'eq', value: 4 }] });
   });
 });

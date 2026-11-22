@@ -39,6 +39,14 @@ describe('planner over parts', () => {
     expect(() => buildModel({ library, parts: PARTS, constraints: [rolePair] })).toThrow(InvalidConstraintError);
   });
 
+  it('rejects slot_part in any constraint but a built-in one', () => {
+    const placed = (origin: 'rule' | 'builtin'): Constraint => ({
+      kind: 'count', id: `placed-${origin}`, label: 'Sides', origin, select: is('slot_part', SIDE), groupBy: 'slot', bounds: { hardMax: 3 },
+    });
+    expect(() => buildModel({ library, parts: PARTS, constraints: [placed('rule')] })).toThrow(InvalidConstraintError);
+    expect(() => buildModel({ library, parts: PARTS, constraints: [placed('builtin')] })).not.toThrow();
+  });
+
   it('returns every meal with every part, the first part holding exactly one dish', () => {
     const r = planWeek({ library, parts: PARTS }, { ...quick, seed: 1 });
     expect(r.slots).toHaveLength(DAYS.length * MEALS.length);

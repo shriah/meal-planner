@@ -241,12 +241,13 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const pinOf = (i: number, k: number): readonly number[] | undefined => pins[i][m.parts[k].id];
   /** Whether the part at position `k` of meal `i` is not pinned. */
   const isFree = (i: number, k: number) => pinOf(i, k) === undefined;
-  // Meals where the user locked a part after the first, with the locked dishes: there a link waiting for a
-  // curry or subzi that brings a locked dish pulls the meal toward that curry or subzi (`lockNudge`).
+  // Meals where the user locked a part after the first, other than the joint part (the curry), with the locked
+  // dishes: there a link waiting for a curry or subzi that brings a locked dish pulls the meal toward that curry
+  // or subzi (`lockNudge`). A locked curry has never pulled; on a converted library these are the subzi and extras.
   const locks: { slot: number; ids: readonly number[] }[] = [];
   if (hasConditional) {
     pins.forEach((_, slot) => {
-      const ids = range(P).flatMap((k) => (k === FIRST ? [] : (pinOf(slot, k) ?? [])));
+      const ids = range(P).flatMap((k) => (k === FIRST || k === jointPart ? [] : (pinOf(slot, k) ?? [])));
       if (ids.length) locks.push({ slot, ids });
     });
   }

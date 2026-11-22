@@ -198,7 +198,7 @@ const MAX_ASSIGNMENTS = SLOT_COUNT * 16;
  * meal (no scope, no trigger), over exactly one part (`is('part', id)` or `oneOf` of one id, alone or as the
  * only member of an `all`, as a per-meal `limit` rule compiles).
  */
-function cappedPart(c: CountConstraint): number | undefined {
+export function cappedPart(c: CountConstraint): number | undefined {
   if (c.groupBy !== 'slot' || c.scope || c.when || c.bounds.hardMax !== 1) return undefined;
   const m = 'all' in c.select && c.select.all.length === 1 ? c.select.all[0] : c.select;
   if (!isLeaf(m) || m.field !== 'part') return undefined;
@@ -574,8 +574,9 @@ export function yieldedPreferWeight(m: CompiledModel, id: number, partId: number
 
 /**
  * The pull of a lock toward a conditional link's curry or subzi in meal `slot`: for each pair waiting for a
- * curry or subzi that the meal's base triggers and that brings one of `locked` (the meal's locked extras and
- * locked subzi), the pair's cost when any part of its condition is unmet by the meal's other dishes, else 0.
+ * curry or subzi that the meal's base triggers and that brings one of `locked` (the meal's locked dishes in every
+ * part after the first except the first one-dish part after it: on a converted library, the locked subzi and
+ * extras), the pair's cost when any part of its condition is unmet by the meal's other dishes, else 0.
  * With several parts the cost is charged once, so it pulls toward a meal meeting every part. The only path by
  * which a conditional link moves the curry; the solver adds it to the search's score, never the reported one.
  */

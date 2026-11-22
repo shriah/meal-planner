@@ -472,7 +472,7 @@ describe('repair loop', () => {
     ...[14, 15, 16, 17, 18].map((id) => component('extra', { id, frequency: 'normal' })),
   ];
   const BASES = lib.filter((c) => c.componentType === 'base').map((c) => c.id);
-  const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('slot_part', [1, 2, 3]));
+  const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('part', [1, 2, 3]));
   const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
   const prefer = (id: string, select: Matcher, weight: number, level: RuleLevel): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, level });
   const defaults: Constraint[] = [

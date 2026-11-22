@@ -1,8 +1,23 @@
 // Converts between today's stored meal shape (base/curry/subzi/extras) and meals by part.
 import type { LegacyParts } from '@/db/parts';
-import type { PartPins, PartSlot, WeekPartPins } from '@/planner';
+import type { CountConstraint, PartPins, PartSlot, PlannerPart, WeekPartPins } from '@/planner';
 import type { LegacyPins, SlotPins } from './pins';
 import type { PlanSlot } from '@/types/plan';
+
+/**
+ * Built-in caps that hold the Curry and Subzi parts to one dish per meal whatever the user's rules say, since a stored
+ * plan holds one dish in each (`toLegacySlot`). Every app path that plans and stores or reads plans in today's shape
+ * adds them, until storage holds part slots. The Base part, the first, holds one dish already.
+ */
+export function legacySlotCaps(parts: readonly PlannerPart[], legacy: LegacyParts): CountConstraint[] {
+  return (['curry', 'subzi'] as const).map((type) => {
+    const part = parts.find((p) => p.id === legacy[type]);
+    return {
+      kind: 'count', id: `builtin:one-${type}-stored`, label: `A stored meal holds one ${part?.name.toLowerCase() ?? type}`,
+      origin: 'builtin', select: { field: 'part', op: 'eq', value: legacy[type] }, groupBy: 'slot', bounds: { hardMax: 1 },
+    };
+  });
+}
 
 /** A legacy slot holds one dish in Base, Curry and Subzi and many extras. Throws when a part slot does not fit. */
 export function toLegacySlot(s: PartSlot, legacy: LegacyParts): PlanSlot {

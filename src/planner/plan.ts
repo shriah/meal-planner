@@ -2,7 +2,7 @@
 import { builtinConstraints } from './builtins';
 import { ConstraintSchema, type Constraint } from './constraints';
 import { matcherFields, type Matcher } from './matcher';
-import { compileModel, type CompiledModel, type Justification, type Score } from './scorer';
+import { cappedPart, compileModel, type CompiledModel, type Justification, type Score } from './scorer';
 import { solve, type SolveOptions, type SolveResult } from './solver';
 import { DAYS, MEALS, emptyPlan, slotIndex, type ComponentLike, type PartSlot, type Pins, type PlannerPart, type PlanState } from './types';
 
@@ -48,21 +48,28 @@ const matchersOf = (c: Constraint): Matcher[] =>
   c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
 
 /**
- * Validate and compile. Throws InvalidConstraintError for malformed or duplicate constraints, and for one that
+ * Validate and compile. Throws InvalidConstraintError for malformed or duplicate constraints, for one that
  * still names the stored-rule field `role` (rules reach the planner rewritten to parts; one the rewrite missed
- * would silently match nothing).
+ * would silently match nothing), and for a non-built-in one naming `slot_part`.
  */
 export function buildModel(input: ModelInput): CompiledModel {
   if (!input.parts.length) throw new Error('a meal needs at least one part');
-  const constraints = [...builtinConstraints(input.parts), ...(input.constraints ?? [])];
+  const own = input.constraints ?? [];
+  const capped = new Set(own.flatMap((c) => (c.kind === 'count' ? (cappedPart(c) ?? []) : [])));
+  const constraints = [...builtinConstraints(input.parts, capped), ...own];
   const seen = new Set<string>();
   for (const c of constraints) {
     const parsed = ConstraintSchema.safeParse(c);
     if (!parsed.success) {
       throw new InvalidConstraintError(c.id, parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`));
     }
-    if (matchersOf(c).some((mt) => matcherFields(mt).has('role'))) {
+    const fields = matchersOf(c).map((mt) => matcherFields(mt));
+    if (fields.some((f) => f.has('role'))) {
       throw new InvalidConstraintError(c.id, ['the field "role" is not planned; name the part with "part"']);
+    }
+    // Where a dish is placed is the planner's own business: only the meal's structure reads it.
+    if (c.origin !== 'builtin' && fields.some((f) => f.has('slot_part'))) {
+      throw new InvalidConstraintError(c.id, ['the field "slot_part" is for built-in constraints only; name the part with "part"']);
     }
     if (seen.has(c.id)) throw new InvalidConstraintError(c.id, ['duplicate constraint id']);
     seen.add(c.id);

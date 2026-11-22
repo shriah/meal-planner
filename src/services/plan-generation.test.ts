@@ -270,3 +270,20 @@ describe('stoppedEarly', () => {
     expect(planFromData(input(), { seed: 1 }).stoppedEarly).toBe(false);
   });
 });
+
+describe('planFromData without the curry cap rule', () => {
+  // A stored meal holds one curry, so the app keeps the Curry part to one dish even when the user's
+  // "At most one Curry per meal" is gone: two Always curries on one base clash, as before.
+  it('plans two Always curry links on one base with one curry per meal', () => {
+    const rice = dish(1, 'Rice', 'base');
+    const library = [rice, dish(2, 'Sambar', 'curry'), dish(3, 'Rasam', 'curry'), dish(4, 'Roti', 'base')];
+    const rules = [...defaultRules(), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [2] }), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [3] })]
+      .map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
+    for (const seed of [1, 2, 3]) {
+      const outcome = planFromData(withParts({ library, categories: [], rules }), { seed, timeLimitMs: Infinity });
+      const riceMeals = outcome.plan.slots.filter((s) => s.base_id === 1);
+      expect(riceMeals.length).toBeGreaterThan(0);
+      for (const s of riceMeals) expect([2, 3]).toContain(s.curry_id);
+    }
+  });
+});

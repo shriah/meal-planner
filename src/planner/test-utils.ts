@@ -14,8 +14,11 @@ export const TEST_PARTS: readonly PlannerPart[] = [
 /** The TEST_PARTS id of each dish type. */
 export const PART_OF_TYPE: Record<Role, number> = { base: 1, curry: 2, subzi: 3, extra: 4 };
 
-/** A dish placed in the TEST_PARTS part of `type` (what a stored rule's `role` meant). */
-export const placedIn = (type: Role): Matcher => is('slot_part', PART_OF_TYPE[type]);
+/**
+ * A dish of the TEST_PARTS part of `type`, where every valid plan places it: what a stored rule's `role` meant, as
+ * `compileRules` rewrites it (`slot_part` is for built-ins only).
+ */
+export const placedIn = (type: Role): Matcher => is('part', PART_OF_TYPE[type]);
 
 let nextId = 1;
 

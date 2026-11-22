@@ -8,7 +8,7 @@ import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { PartRecord } from '@/types/part';
 import { legacyPartIds, withPart } from '@/db/parts';
-import { fromLegacySlot, toLegacySlot, toWeekPartPins } from './legacy-slots';
+import { fromLegacySlot, legacySlotCaps, toLegacySlot, toWeekPartPins } from './legacy-slots';
 import type { LegacyPins } from './pins';
 import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { SlotChange } from '@/assistant/types';
@@ -134,7 +134,8 @@ function modelFromData(input: PlanningInput) {
     return out;
   };
 
-  const model: ModelInput = { library, parts, constraints };
+  // Plans are stored in today's shape, one curry and one subzi a meal, even when the user's caps are gone.
+  const model: ModelInput = { library, parts, constraints: [...constraints, ...legacySlotCaps(parts, legacy)] };
   /** A stored plan as the planner's week. */
   const stateOf = (plan: WeeklyPlan): PlanState => fromPartSlots(plan.slots.map((s) => fromLegacySlot(s, legacy)), parts);
   return { model, legacy, stateOf, issues, problemOf, problemsOf, ruleById };
