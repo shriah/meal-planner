@@ -40,12 +40,13 @@ export function constraintOverParts(c: Constraint, legacy: LegacyParts): Constra
 interface Named { id: number; name: string }
 
 /**
- * Names for describing rules over a library: dishes, categories and parts by id. The categories of the curry types
- * read before the noun ("lentil curries"), as `curry_category` did.
+ * Names for describing rules over a library: dishes, categories and parts by id, with the parts in meal order. The
+ * categories of the curry types read before the noun ("lentil curries"), as `curry_category` did.
  */
-export function libraryNames(lib: { dishes: readonly Named[]; categories: readonly (Named & { kind?: string })[]; parts: readonly Named[] }): Names {
+export function libraryNames(lib: { dishes: readonly Named[]; categories: readonly (Named & { kind?: string; part_id?: number })[]; parts: readonly Named[] }): Names {
   const dish = new Map(lib.dishes.map((d) => [d.id, d.name]));
   const category = new Map(lib.categories.map((c) => [c.id, c.name]));
+  const categoryPart = new Map(lib.categories.flatMap((c) => (c.part_id === undefined ? [] : [[c.id, c.part_id] as const])));
   const part = new Map(lib.parts.map((p) => [p.id, p.name]));
   const types = new Set(lib.categories.filter((c) => c.kind === 'curry').map((c) => c.id));
   return {
@@ -54,6 +55,8 @@ export function libraryNames(lib: { dishes: readonly Named[]; categories: readon
     extraCategory: (id) => category.get(id),
     part: (id) => part.get(id),
     category: (id) => category.get(id),
+    categoryPart: (id) => categoryPart.get(id),
     categoryIsType: (id) => types.has(id),
+    ...(lib.parts.length > 0 && { firstPart: lib.parts[0].id }),
   };
 }

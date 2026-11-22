@@ -85,12 +85,12 @@ describe('runSeed', () => {
 
     // Curated pairings are seeded as rules each curry owns, not as component fields.
     expect(sambar).not.toHaveProperty('compatible_base_category_ids');
-    expect(pairingCategories((await getOwnedRule(sambar!.id, 'with:base_category'))!)).toEqual([
+    expect(pairingCategories((await getOwnedRule(sambar!.id, `with:${(await getParts())[0].id}:category`))!)).toEqual([
       baseIdsByName['rice-based'],
       baseIdsByName['other'],
     ]);
     // Rasam's curated list is empty: it is never planned automatically.
-    expect(await getOwnedRule(rasam!.id, 'with:base_category')).toBeUndefined();
+    expect(await getOwnedRule(rasam!.id, `with:${(await getParts())[0].id}:category`)).toBeUndefined();
     expect(await getOwnedRule(rasam!.id, 'exclude')).toBeDefined();
     // Every seeded curry has a curated pairing or is never planned automatically.
     for (const curry of curries) {

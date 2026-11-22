@@ -51,7 +51,7 @@ export function LinkPreview({ dishId, dishName, changes, links = [], run = runPl
       const input = await loadPlanningInput()
       const { plan: current, locks } = usePlanStore.getState()
       const pins = current ? pinsFromLocks(current, locks) : undefined
-      const after = pendingRules(input.rules, id, changes, dishName, links)
+      const after = pendingRules(input.rules, id, changes, dishName, links, input.parts)
       const comparison = await compareRuleSets(input, after, { seed: COMPARE_SEED, pins, touches: (c) => c === id }, run)
       setResult({ key, comparison, names: new Map(input.library.map((c) => [c.id, c.name])) })
     } catch {

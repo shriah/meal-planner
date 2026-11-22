@@ -13,10 +13,10 @@ const SWEET = 40;
 const mk = (id: number, componentType: ComponentLike['componentType'], extra: Partial<ComponentLike> = {}): ComponentLike =>
   ({ id, name: `#${id}`, componentType, part_id: TEST_RULE_PARTS.legacy[componentType], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: [], ...extra });
 const library: ComponentLike[] = [
-  mk(1, 'base', { name: 'Rice', base_category_id: RICE }),
-  mk(2, 'base', { name: 'Jeera Rice', base_category_id: RICE }),
-  mk(3, 'base', { name: 'Roti', base_category_id: BREAD }),
-  mk(4, 'base', { name: 'Paratha', base_category_id: BREAD }),
+  mk(1, 'base', { name: 'Rice', base_category_id: RICE, category_id: RICE }),
+  mk(2, 'base', { name: 'Jeera Rice', base_category_id: RICE, category_id: RICE }),
+  mk(3, 'base', { name: 'Roti', base_category_id: BREAD, category_id: BREAD }),
+  mk(4, 'base', { name: 'Paratha', base_category_id: BREAD, category_id: BREAD }),
   mk(11, 'curry', { name: 'Dal', protein_tag: 'dal', curry_category: 'lentil' }),
   mk(12, 'curry', { name: 'Sambar', protein_tag: 'dal', regional_tags: ['south-indian'], curry_category: 'lentil' }),
   mk(13, 'curry', { name: 'Fish Curry', protein_tag: 'fish', dietary_tags: ['non-veg'] }),
@@ -25,14 +25,16 @@ const library: ComponentLike[] = [
   mk(21, 'subzi', { name: 'Bhindi' }),
   mk(22, 'subzi', { name: 'Aloo Gobi' }),
   mk(23, 'subzi', { name: 'Beans' }),
-  mk(31, 'extra', { name: 'Rasam', extra_category_id: LIQUID }),
-  mk(32, 'extra', { name: 'Buttermilk', extra_category_id: LIQUID }),
-  mk(41, 'extra', { name: 'Kheer', extra_category_id: SWEET }),
+  mk(31, 'extra', { name: 'Rasam', extra_category_id: LIQUID, category_id: LIQUID }),
+  mk(32, 'extra', { name: 'Buttermilk', extra_category_id: LIQUID, category_id: LIQUID }),
+  mk(41, 'extra', { name: 'Kheer', extra_category_id: SWEET, category_id: SWEET }),
 ];
 const known = {
   components: new Set(library.map((c) => c.id)),
   categories: new Set([RICE, BREAD, LIQUID, SWEET]),
   parts: new Set(TEST_RULE_PARTS.list.map((p) => p.id)),
+  // Rice and bread are categories of the Base part, liquid and sweet of the Extras part.
+  categoryPart: new Map([[RICE, 1], [BREAD, 1], [LIQUID, 4], [SWEET, 4]]),
 };
 
 /** A planned meal over TEST_RULE_PARTS (Base, Curry, Subzi, Extras: ids 1 to 4) in today's stored terms. */
@@ -112,7 +114,7 @@ describe('rule templates in the planner', () => {
 
   it.each(SEEDS)('require_with: rice meals include a liquid extra, and Sambar brings Rasam (seed %i)', (seed) => {
     const r = plan([
-      { template: 'require_with', params: { when: all(is('role', 'base'), is('base_category_id', RICE)), extraCategories: [LIQUID] } },
+      { template: 'require_with', params: { when: all(is('role', 'base'), is('base_category_id', RICE)), categories: [LIQUID] } },
       { template: 'require_with', params: { when: is('id', 12), components: [31] } },
     ], seed);
     expect(hard(r)).toEqual([]);
@@ -122,7 +124,7 @@ describe('rule templates in the planner', () => {
 
   it.each(SEEDS)('pairs_with: Sambar only with rice; exclude: Fish Curry never planned (seed %i)', (seed) => {
     const r = plan([
-      { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } },
+      { template: 'pairs_with', params: { match: is('id', 12), categories: [RICE] } },
       { template: 'exclude', params: { match: is('id', 13) } },
     ], seed);
     expect(hard(r)).toEqual([]);
@@ -132,7 +134,7 @@ describe('rule templates in the planner', () => {
 
   it('pairs_with: flags a matching dish next to a base outside the list or without a category, and nothing else', () => {
     const lib = [...library, mk(5, 'base', { name: 'Uncategorised' })];
-    const { constraints } = compileRules([record({ template: 'pairs_with', params: { match: oneOf('id', [12, 21]), baseCategories: [RICE] } })], known, TEST_RULE_PARTS);
+    const { constraints } = compileRules([record({ template: 'pairs_with', params: { match: oneOf('id', [12, 21]), categories: [RICE] } })], known, TEST_RULE_PARTS);
     const m = buildModel({ library: lib, parts: TEST_RULE_PARTS.list, constraints });
     // Parts in meal order: base, curry, subzi, extras.
     const p = emptyPlan(TEST_RULE_PARTS.list.length);
@@ -146,7 +148,7 @@ describe('rule templates in the planner', () => {
 
   it('compiles a scoped pairing to a scoped constraint', () => {
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    const { constraints, issues } = compileRules([record({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope, strength: 'prefer', cost: 6 } })], known, TEST_RULE_PARTS);
+    const { constraints, issues } = compileRules([record({ template: 'pairs_with', params: { match: is('id', 12), categories: [RICE], scope, strength: 'prefer', cost: 6 } })], known, TEST_RULE_PARTS);
     expect(issues).toEqual([]);
     expect(constraints).toHaveLength(1);
     expect(constraints[0]).toMatchObject({ scope });
@@ -191,7 +193,7 @@ describe('rule templates in the planner', () => {
 
 describe('require_with compilation', () => {
   it('compiles each component to a pair keeping its cost, and each extra category to a slot count', () => {
-    const bodies = compileSpec({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer', cost: 6 } });
+    const bodies = compileSpec({ template: 'require_with', params: { when: is('id', 12), components: [31], categories: [LIQUID], strength: 'prefer', cost: 6 } });
     expect(bodies).toHaveLength(2);
     expect(bodies[0]).toMatchObject({ kind: 'pair', of: is('id', 31), strength: 'prefer', cost: 6 });
     expect(bodies[1]).toMatchObject({ kind: 'count', groupBy: 'slot', costs: { min: 6, max: 6 } });
@@ -208,20 +210,21 @@ describe('require_with compilation', () => {
 
 describe('comes_with compilation', () => {
   it('comes_with compiles to one pair naming its candidates', () => {
-    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    const of = all(is('part', 2), oneOf('id', [11, 12]));
     expect(compileSpec(RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, strength: 'must' } })))
       .toEqual([{ kind: 'pair', when: is('id', 1), of, strength: 'must' }]);
   });
 
-  it('refuses an of that does not pin one kind of dish', () => {
+  it('refuses an of that does not pin one part', () => {
     const parse = (of: unknown) => RuleSpecSchema.safeParse({ template: 'comes_with', params: { match: is('id', 1), of } }).success;
     expect(parse(oneOf('id', [11, 21]))).toBe(false);
-    expect(parse(all(oneOf('id', [11]), is('componentType', 'curry')))).toBe(false);
-    expect(parse(all(is('componentType', 'curry'), oneOf('id', [11])))).toBe(true);
+    expect(parse(all(oneOf('id', [11]), is('part', 2)))).toBe(false);
+    expect(parse(all(is('componentType', 'curry'), oneOf('id', [11])))).toBe(false);
+    expect(parse(all(is('part', 2), oneOf('id', [11])))).toBe(true);
   });
 
   it('keeps scope and cost on a preferred pair, and describes it', () => {
-    const of = all(is('componentType', 'curry'), oneOf('id', [11, 12]));
+    const of = all(is('part', 2), oneOf('id', [11, 12]));
     const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { match: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 } });
     expect(compileSpec(spec)).toEqual([{ kind: 'pair', when: is('id', 1), of, scope: { meals: ['lunch'] }, strength: 'prefer', cost: 6 }]);
     expect(describeSpec(spec, { component: (id) => ({ 1: 'Idiyappam', 11: 'Stew A', 12: 'Stew B' } as Record<number, string>)[id] }))
@@ -230,20 +233,21 @@ describe('comes_with compilation', () => {
 });
 
 describe('comes_with when', () => {
-  const of = all(is('componentType', 'extra'), oneOf('id', [16]));
+  const of = all(is('part', 4), oneOf('id', [16]));
   const base = { match: is('id', 4), of, strength: 'must' as const };
   const parse = (params: object) => RuleSpecSchema.safeParse({ template: 'comes_with', params });
-  const both = { curry: [8, 9], subzi: [12] };
-  const names = { component: (id: number) => ({ 4: 'Rice', 16: 'Papad', 8: 'Sambar', 9: 'Rasam', 12: 'Beans Poriyal' } as Record<number, string>)[id] };
+  // Keyed by part id: the Curry part is 2, the Subzi part 3.
+  const both = { 2: [8, 9], 3: [12] };
+  const names = { part: (id: number) => ({ 1: 'Base', 2: 'Curry', 3: 'Subzi', 4: 'Extras' } as Record<number, string>)[id], component: (id: number) => ({ 4: 'Rice', 16: 'Papad', 8: 'Sambar', 9: 'Rasam', 12: 'Beans Poriyal' } as Record<number, string>)[id] };
 
-  it('compiles the condition to one matcher per part, curry first', () => {
+  it('compiles the condition to one matcher per part, in part id order', () => {
     const spec = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: both } });
     expect(compileSpec(spec)).toEqual([{
       kind: 'pair', when: is('id', 4), of, strength: 'must',
-      inMeal: [all(is('role', 'curry'), oneOf('id', [8, 9])), all(is('role', 'subzi'), oneOf('id', [12]))],
+      inMeal: [all(is('part', 2), oneOf('id', [8, 9])), all(is('part', 3), oneOf('id', [12]))],
     }]);
-    const subziOnly = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: { subzi: [12] } } });
-    expect(compileSpec(subziOnly)[0]).toMatchObject({ inMeal: [all(is('role', 'subzi'), oneOf('id', [12]))] });
+    const subziOnly = RuleSpecSchema.parse({ template: 'comes_with', params: { ...base, when: { 3: [12] } } });
+    expect(compileSpec(subziOnly)[0]).toMatchObject({ inMeal: [all(is('part', 3), oneOf('id', [12]))] });
   });
 
   it('emits no inMeal without a condition', () => {
@@ -252,16 +256,19 @@ describe('comes_with when', () => {
 
   it('refuses an empty condition or an empty part', () => {
     expect(parse({ ...base, when: {} }).success).toBe(false);
-    expect(parse({ ...base, when: { curry: [] } }).success).toBe(false);
-    expect(parse({ ...base, when: { curry: [8] } }).success).toBe(true);
+    expect(parse({ ...base, when: { 2: [] } }).success).toBe(false);
+    expect(parse({ ...base, when: { curry: [8] } }).success).toBe(false);
+    expect(parse({ ...base, when: { 2: [8] } }).success).toBe(true);
   });
 
   it('refuses a link that brings a dish into a part it waits for', () => {
-    const curries = all(is('componentType', 'curry'), oneOf('id', [11]));
-    const subzis = all(is('componentType', 'subzi'), oneOf('id', [12]));
-    expect(parse({ ...base, of: curries, when: { subzi: [12] } }).success).toBe(false);
-    expect(parse({ ...base, of: subzis, when: { subzi: [12] } }).success).toBe(false);
-    expect(parse({ ...base, of: subzis, when: { curry: [8] } }).success).toBe(true);
+    const curries = all(is('part', 2), oneOf('id', [11]));
+    const subzis = all(is('part', 3), oneOf('id', [12]));
+    expect(parse({ ...base, of: curries, when: { 2: [12] } }).success).toBe(false);
+    expect(parse({ ...base, of: subzis, when: { 3: [12] } }).success).toBe(false);
+    expect(parse({ ...base, of: subzis, when: { 2: [8] } }).success).toBe(true);
+    // Waiting for the first part is refused against the parts, by compileRules.
+    expect(parse({ ...base, of: subzis, when: { 1: [1] } }).success).toBe(true);
   });
 
   it('lists the condition ids as references and describes the condition', () => {
@@ -303,18 +310,21 @@ describe('rule template params', () => {
   });
 
   it('describes rules with names', () => {
-    const names = { component: (id: number) => library.find((c) => c.id === id)?.name, baseCategory: () => 'Rice', extraCategory: () => 'Liquid' };
+    const names = {
+      component: (id: number) => library.find((c) => c.id === id)?.name, category: (id: number) => (id === LIQUID ? 'Liquid' : 'Rice'),
+      categoryPart: (id: number) => (id === LIQUID ? 4 : 1), part: (id: number) => ({ 1: 'Base', 4: 'Extras' } as Record<number, string>)[id], firstPart: 1,
+    };
     const d = (spec: RuleSpecInput) => describeSpec(RuleSpecSchema.parse(spec), names);
     expect(d({ template: 'exclude', params: { match: is('protein_tag', 'fish'), scope: { days: ['friday'], meals: ['lunch'] } } }))
       .toBe('Never include dishes with fish on Friday at lunch');
-    expect(d({ template: 'require_with', params: { when: is('id', 12), components: [31], extraCategories: [LIQUID], strength: 'prefer' } }))
+    expect(d({ template: 'require_with', params: { when: is('id', 12), components: [31], categories: [LIQUID], strength: 'prefer' } }))
       .toBe('With Sambar, also include Rasam and an extra from Liquid (preferred)');
     expect(d({ template: 'limit', params: { match: is('dietary_tags', 'non-veg'), per: 'week', max: 2 } }))
       .toBe('Non-veg dishes: at most 2 per week');
-    expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE] } })).toBe('Sambar only with Rice bases');
-    expect(d({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope: { days: ['monday'], meals: ['lunch'] } } }))
+    expect(d({ template: 'pairs_with', params: { match: is('id', 12), categories: [RICE] } })).toBe('Sambar only with Rice bases');
+    expect(d({ template: 'pairs_with', params: { match: is('id', 12), categories: [RICE], scope: { days: ['monday'], meals: ['lunch'] } } }))
       .toBe('Sambar only with Rice bases on Monday at lunch');
-    expect(RuleSpecSchema.safeParse({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [] } }).success).toBe(false);
+    expect(RuleSpecSchema.safeParse({ template: 'pairs_with', params: { match: is('id', 12), categories: [] } }).success).toBe(false);
     expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'avoid', weight: 1 } })).toBe('Avoid dishes with fish (slightly)');
     expect(d({ template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'prefer', weight: 5 } })).toBe('Prefer dishes with fish (strongly)');
     expect(d({ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } })).toBe('Chole only on Saturday or Sunday');

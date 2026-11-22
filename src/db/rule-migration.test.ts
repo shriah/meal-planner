@@ -22,6 +22,12 @@ const V13_STORES = {
 const oldRule = (name: string, compiled_filter: unknown, enabled = true) =>
   ({ name, enabled, compiled_filter, created_at: '2026-01-01T00:00:00.000Z' });
 
+/**
+ * Templates whose shapes of an upgrade's time rules no longer read (component types, base and extra categories, a
+ * condition keyed by curry and subzi); the v24 upgrade converts them, so they are not checked against today's schema.
+ */
+const READ_AFTER_V24 = new Set(['no_repeat', 'pairs_with', 'require_with', 'comes_with']);
+
 describe('v14 rule migration', () => {
   afterAll(() => db.close());
 
@@ -55,8 +61,8 @@ describe('v14 rule migration', () => {
       ['Rice with rasam — No repeats', true, 'no_repeat'],
       ['Rice with rasam — Also include when', true, 'require_with'],
     ]);
-    // A no-repeat of this time names the roles it counts, which rules no longer read; the v24 upgrade converts it.
-    expect(rules.filter((r) => r.spec.template !== 'no_repeat').every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+    // A no-repeat of this time names the roles it counts, and an also-include its extra categories, which rules no longer read; the v24 upgrade converts them.
+    expect(rules.filter((r) => !READ_AFTER_V24.has(r.spec.template)).every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
     expect(rules[2].spec).toMatchObject({ params: { roles: ['base', 'curry', 'subzi'] } });
     expect(rules[3].spec).toMatchObject({ params: { extraCategories: [liquidId] } });
 
@@ -113,7 +119,7 @@ describe('v14 rule migration', () => {
     const [puri, upma] = await db.components.bulkGet([pooriId, weekdayId]);
     expect(puri?.occasion_tags).toEqual(['festive']);
     expect(upma?.occasion_tags).toEqual([]);
-    expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+    expect(rules.filter((r) => !READ_AFTER_V24.has(r.spec.template)).every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
     for (const c of await db.components.bulkGet([sambarId, rasamId, anyId, subziId, anySubziId, papadId])) {
       expect(c).not.toHaveProperty('compatible_base_category_ids');
       expect(c).not.toHaveProperty('compatible_base_types');
@@ -326,7 +332,7 @@ describe('v14 rule migration', () => {
     expect(byId.get(17)?.spec).toEqual(pairing(is('id', dosa), [sambar]));
     expect(owned(pickle).map((r) => r.id)).toEqual([15]);
     expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'moderately' });
-    for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
+    for (const r of rules.filter((x) => !READ_AFTER_V24.has(x.spec.template))) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
   });
 
   it('v20 merges a library seeded twice into one copy of each category and dish', async () => {
@@ -376,7 +382,7 @@ describe('v14 rule migration', () => {
     expect(rules.filter((r) => r.name === 'Rice at lunch')).toHaveLength(1);
     expect(rules.find((r) => r.name === 'Condiment with rice')?.spec).toMatchObject({ params: { when: oneOf('id', [1]), extraCategories: [2] } });
     expect((await db.active_plan.get('current'))?.plan.slots[0]).toMatchObject({ base_id: 1, curry_id: 2, extra_ids: [3] });
-    expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+    expect(rules.filter((r) => !READ_AFTER_V24.has(r.spec.template)).every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
   });
 });
 

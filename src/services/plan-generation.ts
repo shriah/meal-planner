@@ -78,6 +78,7 @@ function modelFromData(input: PlanningInput) {
     components: new Set(library.map((c) => c.id)),
     categories: new Set(categories.map((c) => c.id)),
     parts: new Set(parts.map((p) => p.id)),
+    categoryPart: new Map(categories.flatMap((c) => (c.part_id === undefined ? [] : [[c.id, c.part_id] as const]))),
   };
   const { constraints, issues } = compileRules(rules, known, { list: parts, legacy });
   const componentName = new Map(library.map((c) => [c.id, c.name]));

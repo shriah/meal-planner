@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { linkRule, ownedChanges, type DishLink, type LinkChange, type RuleRecord } from '@/rules';
+import { linkRule as buildLink, ownedChanges, type DishLink, type LinkChange, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import { planFromData, type PlanningInput, type PlanningOptions } from './plan-generation';
 import { compareRuleSets, pendingRules } from './compare-rules';
 import { capRecords, withParts } from './test-input';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
+
+// The converted parts, ids 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+const linkRule = (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => buildLink(owner, link, TEST_RULE_PARTS.list);
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -62,7 +70,7 @@ describe('pendingRules', () => {
   it('adds new rules with ids -1, -2 in slot order and leaves untouched slots alone', () => {
     const built = ownedChanges('curry', { ...NONE, days: ['friday'], neverAuto: true });
     const changes = { allowed_days: built.allowed_days, exclude: built.exclude };
-    const links: LinkChange[] = [{ kind: 'add', link: { mode: 'never', target: 'base_category', values: [1], strength: 'always' } }];
+    const links: LinkChange[] = [{ kind: 'add', link: { mode: 'never', target: LINK_TARGET.base_category, values: [1], strength: 'always' } }];
     const out = pendingRules([otherDish], 2, changes, 'Paneer', links);
     expect(out.map((r) => r.id)).toEqual([12, -1, -2, -3]);
     expect(out.slice(1).map((r) => r.spec.template)).toEqual(['allowed_days', 'exclude', 'avoid_with']);
@@ -70,7 +78,7 @@ describe('pendingRules', () => {
   });
 
   it('pendingRules applies link changes by rule id', () => {
-    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: 'extra_dish', values, strength: 'always' });
+    const comes = (values: number[]): DishLink => ({ mode: 'comes', target: LINK_TARGET.extra_dish, values, strength: 'always' });
     const paneer = { id: 2, name: 'Paneer' };
     const a = rule(20, 2, linkRule(paneer, comes([5])).spec, false);
     const b = rule(21, 2, linkRule(paneer, comes([6])).spec);

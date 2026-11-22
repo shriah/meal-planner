@@ -41,6 +41,7 @@ export const knownIds = (lib: CaseLibrary): KnownIds => ({
   components: new Set(lib.dishes.map((d) => d.id)),
   categories: new Set(lib.categories.map((k) => k.id)),
   parts: new Set(lib.parts.map((p) => p.id)),
+  categoryPart: new Map(lib.categories.flatMap((k) => (k.part_id === undefined ? [] : [[k.id, k.part_id] as const]))),
 });
 
 /** Names for describing a case's rules over its library. */

@@ -1,20 +1,20 @@
 // One plain sentence for a dish link, for the library row badges and the links editor.
 import { MEALS } from '@/planner';
-import { describeWhen, type Names } from './describe';
+import { describeWhen, whenParts, type Names } from './describe';
 import { STRENGTH_WORDS } from './levels';
-import { describeDays, isDishTarget, type DishLink } from './owned';
+import { describeDays, type DishLink } from './owned';
 
 const LONG_LIST = 4;
 
-function valueName(link: DishLink, value: number | string, names: Names): string {
-  const id = Number(value);
-  switch (link.target) {
-    case 'base_category': return names.baseCategory?.(id) ?? 'a deleted category';
-    case 'extra_category': return names.extraCategory?.(id) ?? 'a deleted category';
-    case 'curry_category': return String(value);
-    default: return isDishTarget(link.target) ? (names.component?.(id) ?? 'a deleted dish') : String(value);
-  }
+function valueName(link: DishLink, value: number, names: Names): string {
+  return link.target.kind === 'dish'
+    ? (names.component?.(value) ?? 'a deleted dish')
+    : (names.category?.(value) ?? 'a deleted category');
 }
+
+/** Whether a served-with link points above the first part's dishes: it then reads "added when … is in the meal". */
+const addedWhen = (link: DishLink, names: Names) =>
+  link.mode === 'serve' && names.firstPart !== undefined && link.target.part !== names.firstPart;
 
 /** ", on weekdays at breakfast", or "" when the link holds everywhere. */
 export function scopeText(link: Pick<DishLink, 'scope'>): string {
@@ -38,12 +38,16 @@ export function listValues(link: DishLink, names: Names): string {
 
 /** " when the curry is Sambar", or "" for a link with no condition. */
 const whenText = (link: DishLink, names: Names): string =>
-  link.when ? ` when ${describeWhen(link.when, (id) => names.component?.(id) ?? 'a deleted dish')}` : '';
+  link.when ? ` when ${describeWhen(link.when, (id) => names.component?.(id) ?? 'a deleted dish', names)}` : '';
 
-/** "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast", or "Sambar is always served with Idli". */
+/**
+ * "Sambar is usually planned only with Idli or Dosa, on weekdays at breakfast", "Sambar is always served with Idli", or for
+ * a dish served with a part other than the first, "Papad is always added when Sambar is in the meal".
+ */
 export function describeLink(dishName: string, link: DishLink, names: Names): string {
   const listed = listValues(link, names);
   if (link.mode === 'comes') return `${dishName} ${STRENGTH_WORDS[link.strength].word} comes with ${listed}${whenText(link, names)}${scopeText(link)}`;
+  if (addedWhen(link, names)) return `${dishName} is ${STRENGTH_WORDS[link.strength].word} added when ${listed} is in the meal${scopeText(link)}`;
   const what = link.mode === 'with' ? 'planned only with' : link.mode === 'serve' ? 'served with' : 'kept away from';
   return `${dishName} is ${STRENGTH_WORDS[link.strength].word} ${what} ${listed}${scopeText(link)}`;
 }
@@ -52,11 +56,11 @@ export function describeLink(dishName: string, link: DishLink, names: Names): st
 export function shortLink(link: DishLink, names: Names): string {
   const listed = link.values.map((v) => valueName(link, v, names)).join(', ');
   const unscoped = !link.scope?.days?.length && !link.scope?.meals?.length;
-  if (link.mode === 'with' && link.target === 'base_category' && link.strength === 'always' && unscoped) return listed;
+  const pairing = link.mode === 'with' && link.target.kind === 'category' && names.firstPart !== undefined && link.target.part === names.firstPart;
+  if (pairing && link.strength === 'always' && unscoped) return listed;
   const word = link.strength === 'always' ? '' : STRENGTH_WORDS[link.strength].label;
-  const what = { with: 'only with', serve: 'served with', comes: 'comes with', never: 'not with' }[link.mode];
-  const part = (ids?: number[]) => ids?.map((id) => names.component?.(id) ?? 'a deleted dish').join(' or ');
-  const parts = [part(link.when?.curry), part(link.when?.subzi)].filter(Boolean);
+  const what = addedWhen(link, names) ? 'added with' : { with: 'only with', serve: 'served with', comes: 'comes with', never: 'not with' }[link.mode];
+  const parts = whenParts(link.when).map(([, ids]) => ids.map((id) => names.component?.(id) ?? 'a deleted dish').join(' or '));
   const waits = parts.length ? ` (with ${parts.join(', and ')})` : '';
   return `${word ? `${word} ${what}` : what.charAt(0).toUpperCase() + what.slice(1)} ${listed}${waits}${scopeText(link)}`;
 }

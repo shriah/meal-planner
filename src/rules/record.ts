@@ -1,5 +1,5 @@
 // Stored rules and their compilation into planner constraints.
-import { matcherFields, type Bounds, type Constraint, type RuleLevel } from '@/planner';
+import { isLeaf, matcherFields, type Bounds, type Constraint, type Matcher, type RuleLevel } from '@/planner';
 import { constraintOverParts, type RuleParts } from './legacy-parts';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
@@ -21,6 +21,8 @@ export interface KnownIds {
   components: ReadonlySet<number>;
   categories: ReadonlySet<number>;
   parts: ReadonlySet<number>;
+  /** The part each category belongs to; when given, a link naming a category of another part is caught. */
+  categoryPart?: ReadonlyMap<number, number>;
 }
 
 export interface RuleIssue {
@@ -93,6 +95,7 @@ const STRENGTH: Record<RuleLevel, number> = { rule: 0, dish: 1, frequency: 2 };
 export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   const parsed = parseSpec(rule.spec);
   if (!parsed.ok) return undefined;
+  // A level does not depend on what the bodies match, so no parts are needed.
   const levels = compileSpec(parsed.spec).flatMap((b) => bodyLevels(rule, b)).map((p) => p.level);
   if (levels.includes(undefined)) return 'bring';
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
@@ -101,6 +104,36 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
 /** Whether a leave-out rule names the first part, which holds every meal's one main dish and is never left out. */
 function leavesOutFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
   return spec.template === 'skip_when' && parts.list.length > 0 && spec.params.skip.includes(parts.list[0].id);
+}
+
+/** Whether a comes link waits for the first part, which every meal holds, so the wait means nothing. */
+function waitsForFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
+  return spec.template === 'comes_with' && spec.params.when !== undefined && parts.list.length > 0 && String(parts.list[0].id) in spec.params.when;
+}
+
+/** The categories a link-shaped matcher (`all(part, category set)`, the set maybe negated) names outside its part. */
+function outsidePart(m: Matcher, categoryPart: ReadonlyMap<number, number>): { part: number; ids: number[] } | undefined {
+  if (!('all' in m) || m.all.length !== 2) return undefined;
+  const [part, set] = m.all;
+  const leaf = 'not' in set ? set.not : set;
+  if (!isLeaf(part) || part.field !== 'part' || part.op !== 'eq' || !isLeaf(leaf) || leaf.field !== 'category') return undefined;
+  const ids = ([leaf.value].flat() as number[]).filter((id) => categoryPart.has(id) && categoryPart.get(id) !== part.value);
+  return ids.length ? { part: part.value as number, ids } : undefined;
+}
+
+/** Categories a link names that belong to another part than the one it points at: a pairing's must be the first part's. */
+export function misplacedCategories(spec: RuleSpec, categoryPart: ReadonlyMap<number, number>, firstPart: number | undefined): { part: number; ids: number[] } | undefined {
+  switch (spec.template) {
+    case 'pairs_with': {
+      if (firstPart === undefined) return undefined;
+      const ids = spec.params.categories.filter((id) => categoryPart.has(id) && categoryPart.get(id) !== firstPart);
+      return ids.length ? { part: firstPart, ids } : undefined;
+    }
+    case 'comes_with': return outsidePart(spec.params.of, categoryPart);
+    case 'avoid_with': return outsidePart(spec.params.with, categoryPart);
+    case 'require_with': return outsidePart(spec.params.when, categoryPart);
+    default: return undefined;
+  }
 }
 
 /** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
@@ -141,9 +174,20 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
       issues.push({ ruleId: rule.id, name: rule.name, message: `leaves out ${parts.list[0].name}, which every meal holds` });
       continue;
     }
+    if (waitsForFirstPart(parsed.spec, parts)) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `waits for ${parts.list[0].name}, which every meal holds` });
+      continue;
+    }
+    const misplaced = known.categoryPart && misplacedCategories(parsed.spec, known.categoryPart, parts.list[0]?.id);
+    if (misplaced) {
+      const part = parts.list.find((p) => p.id === misplaced.part)?.name ?? `part #${misplaced.part}`;
+      const cats = misplaced.ids.map((id) => `category #${id}`).join(', ');
+      issues.push({ ruleId: rule.id, name: rule.name, message: `refers to ${cats}, which ${misplaced.ids.length > 1 ? 'are not categories' : 'is not a category'} of ${part}` });
+      continue;
+    }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
     const compiledRule: Constraint[] = [];
-    compileSpec(parsed.spec).forEach((spec, i) => {
+    compileSpec(parsed.spec, { firstPart: parts.list[0]?.id }).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };

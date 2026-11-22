@@ -6,9 +6,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { all, is } from '@/planner';
-import { dayRule, defaultRules, pairingRule } from '@/rules';
+import { dayRule, defaultRules, pairingRule as buildPairing } from '@/rules';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { RuleList } from './RuleList';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
+const pairingRule = (owner: { id: number; name: string }, categories: number[]) => buildPairing(owner, categories, TEST_RULE_PARTS.list);
 
 const scrollIntoView = vi.fn();
 beforeEach(() => {

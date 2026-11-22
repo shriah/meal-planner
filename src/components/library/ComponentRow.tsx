@@ -46,7 +46,7 @@ export function ComponentRow({
   // Compatible bases (curry, subzi), clashing curry types (extra) and specific days live in rules the
   // component owns; without them it goes with anything, on any day.
   const ownedRules = useMemo(() => lookup.rules.filter((r) => r.owner_component_id === component.id), [lookup.rules, component.id])
-  const owned = readOwned(ownedRules)
+  const owned = readOwned(ownedRules, lookup.parts)
   const names = useMemo(() => linkNames(lookup), [lookup])
   const linkBadges = owned.links
     .filter((link) => link.values.length > 0)

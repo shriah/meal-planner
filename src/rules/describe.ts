@@ -9,6 +9,10 @@ export interface Names {
   /** A part's name as stored ("Curry"); descriptions lower-case it. */
   part?: (id: number) => string | undefined;
   category?: (id: number) => string | undefined;
+  /** The part a category belongs to. */
+  categoryPart?: (id: number) => number | undefined;
+  /** The first part, which holds every meal's one main dish: a link to it reads "served with", and "only with" its categories is a pairing. */
+  firstPart?: number;
   /** Whether a category names a type of dish, read before the noun ("lentil curries"), as the curry types do. */
   categoryIsType?: (id: number) => boolean;
 }
@@ -24,6 +28,14 @@ export function pluralNoun(name: string): string {
   if (word.endsWith('s')) return word;
   if (/[^aeiou]y$/.test(word)) return `${word.slice(0, -1)}ies`;
   return `${word}s`;
+}
+
+/** A name as a lower-case singular noun: "Curry" reads "curry", "Extras" reads "extra". */
+export function singularNoun(name: string): string {
+  const word = name.toLowerCase();
+  if (/[^aeiou]ies$/.test(word)) return `${word.slice(0, -3)}y`;
+  if (word.endsWith('s') && !word.endsWith('ss')) return word.slice(0, -1);
+  return word;
 }
 
 /** The parts as plural nouns ("curries", "extras"); a part it cannot find reads "part #n". */
@@ -129,10 +141,23 @@ export function describeScope(scope: { days?: readonly Day[]; meals?: readonly M
   return out.length ? ` ${out.join(' ')}` : '';
 }
 
-/** The condition of a conditional link: "the curry is Sambar or Rasam and the subzi is Beans Poriyal". */
-export function describeWhen(when: { curry?: number[]; subzi?: number[] }, name: (id: number) => string): string {
-  return (['curry', 'subzi'] as const)
-    .filter((part) => when[part])
-    .map((part) => `the ${part} is ${list(when[part]!.map(name))}`)
+/**
+ * The condition of a conditional link: "the curry is Sambar or Rasam and the subzi is Beans Poriyal". Keyed by part id,
+ * read in part id order; a part it cannot name reads "part #n".
+ */
+export function describeWhen(when: Readonly<Record<number, readonly number[]>>, name: (id: number) => string, names: Pick<Names, 'part'> = {}): string {
+  return whenParts(when)
+    .map(([part, ids]) => {
+      const partName = names.part?.(part);
+      return `the ${partName === undefined ? `part #${part}` : singularNoun(partName)} is ${list(ids.map(name))}`;
+    })
     .join(' and ');
+}
+
+/** The parts a link's condition names, with their dishes, in part id order; empty parts left out. */
+export function whenParts(when: Readonly<Record<number, readonly number[]>> | undefined): [number, number[]][] {
+  return Object.entries(when ?? {})
+    .map(([part, ids]): [number, number[]] => [Number(part), [...ids]])
+    .filter(([, ids]) => ids.length > 0)
+    .sort((a, b) => a[0] - b[0]);
 }

@@ -5,7 +5,7 @@ import {
   DAYS, MEALS, MatcherSchema, all, is, isLeaf, not, oneOf,
   type Bounds, type Constraint, type GroupBy, type Matcher,
 } from '@/planner';
-import { describeMatcher, describeScope, describeWhen, partNames, type Names } from './describe';
+import { describeMatcher, describeScope, describeWhen, partNames, singularNoun, pluralNoun, whenParts, type Names } from './describe';
 import { nearestLevel } from './levels';
 
 // ─── Shared params ────────────────────────────────────────────────────────────
@@ -83,33 +83,39 @@ const RequireWithParams = z
   .object({
     when: MatcherSchema,
     components: ids.default([]),
-    extraCategories: ids.default([]),
+    /** Categories one dish of which is added too; each category belongs to one part. */
+    categories: ids.default([]),
     scope: ScopeSchema.optional(),
     strength: StrengthSchema, cost: CostSchema,
   })
   .strict()
-  .refine((p) => p.components.length + p.extraCategories.length > 0, { message: 'choose at least one component or extra category', path: ['components'] });
+  .refine((p) => p.components.length + p.categories.length > 0, { message: 'choose at least one component or category', path: ['components'] });
 
 const PairsWithParams = z
-  .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  // Categories of the first part.
+  .object({ match: MatcherSchema, categories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const ids1 = z.array(z.number().int()).min(1);
-/** The curry and subzi a "comes with" link waits for: both parts must hold, any one dish of a part will do. */
-const WhenSchema = z.object({ curry: ids1.optional(), subzi: ids1.optional() }).strict()
-  .refine((w) => w.curry !== undefined || w.subzi !== undefined, { message: 'name a curry or a subzi' });
+/**
+ * The dishes a "comes with" link waits for, keyed by part id: every part named must hold one of its dishes. Never the
+ * part it brings into (checked here) or the first part (checked by `compileRules` against the parts).
+ */
+const WhenSchema = z.record(z.string().regex(/^\d+$/, 'a part id'), ids1)
+  .refine((w) => Object.keys(w).length > 0, { message: 'name a part to wait for' });
+
+/** The part a link's `of` brings into: its first leaf, `part` eq. */
+export function ofPart(of: Matcher): number | undefined {
+  const first = 'all' in of ? of.all[0] : undefined;
+  return first && isLeaf(first) && first.field === 'part' && first.op === 'eq' ? (first.value as number) : undefined;
+}
 
 const ComesWithParams = z
   .object({ match: MatcherSchema, of: MatcherSchema, when: WhenSchema.optional(), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict()
-  // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
-  .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
-    { message: 'name one kind of dish first, then the dishes', path: ['of'] })
-  .refine((p) => {
-    if (!p.when) return true;
-    const kind = 'all' in p.of && isLeaf(p.of.all[0]) ? p.of.all[0].value : undefined;
-    return kind !== 'curry' && !(kind === 'subzi' && p.when.subzi);
-  }, { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
+  // The scorer takes the pair's part from the first candidate, so `of` must pin one part.
+  .refine((p) => ofPart(p.of) !== undefined, { message: 'name one part first, then the dishes', path: ['of'] })
+  .refine((p) => !p.when || !(String(ofPart(p.of)) in p.when), { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
 
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
@@ -190,9 +196,25 @@ const withParts = (parts: readonly number[] | undefined, ...ms: Matcher[]): Refs
   return r;
 };
 
-/** One matcher per part of a link's condition, curry first. */
-const whenMatchers = (when: { curry?: number[]; subzi?: number[] }): Matcher[] =>
-  (['curry', 'subzi'] as const).filter((part) => when[part]).map((part) => all(is('role', part), oneOf('id', when[part]!)));
+/** One matcher per part of a link's condition, in part id order. */
+const whenMatchers = (when: Record<string, number[]>): Matcher[] =>
+  whenParts(when).map(([part, dishes]) => all(is('part', part), oneOf('id', dishes)));
+
+/** What compiling needs beyond a rule's own params: the first part, which a pairing's categories belong to. */
+export interface CompileContext { firstPart?: number }
+
+/** The first part's plural noun ("bases"), or "dishes" when it cannot be named. */
+const firstPartNoun = (n: Names) => {
+  const name = n.firstPart === undefined ? undefined : n.part?.(n.firstPart);
+  return name === undefined ? 'dishes' : pluralNoun(name);
+};
+/** "an extra from Liquid", or "a dish from Liquid" when the category's part cannot be named. */
+const fromCategory = (id: number, n: Names) => {
+  const part = n.categoryPart?.(id);
+  const partName = part === undefined ? undefined : n.part?.(part);
+  const noun = partName === undefined ? 'dish' : singularNoun(partName);
+  return `${/^[aeiou]/.test(noun) ? 'an' : 'a'} ${noun} from ${n.category?.(id) ?? `category #${id}`}`;
+};
 
 const strengthWord = (s: Strength) => (s === 'must' ? '' : ' (preferred)');
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -207,7 +229,7 @@ const partList = (parts: readonly number[], names: Names) => {
 export interface RuleTemplate<P> {
   label: string;
   summary: string;
-  compile(params: P): ConstraintBody[];
+  compile(params: P, ctx: CompileContext): ConstraintBody[];
   describe(params: P, names: Names): string;
   references(params: P): Refs;
 }
@@ -295,19 +317,20 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
         kind: 'pair', when: p.when, of: is('id', component), ...(p.scope && { scope: p.scope }), strength: p.strength,
         ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
       })),
-      ...p.extraCategories.map((cat) => slotCount(all(is('role', 'extra'), is('extra_category_id', cat)), p.scope, p.strength, 1, undefined, p.when)),
+      // A category belongs to one part, so naming it names the part too.
+      ...p.categories.map((cat) => slotCount(is('category', cat), p.scope, p.strength, 1, undefined, p.when)),
     ],
     describe: (p, n) => {
       const wanted = [
         ...p.components.map((id) => n.component?.(id) ?? `component #${id}`),
-        ...p.extraCategories.map((id) => `an extra from ${n.extraCategory?.(id) ?? `category #${id}`}`),
+        ...p.categories.map((id) => fromCategory(id, n)),
       ];
       return `With ${describeMatcher(p.when, n)}, also include ${wanted.join(' and ')}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => {
       const r = refsOf(p.when);
       r.components.push(...p.components);
-      r.categories.push(...p.extraCategories);
+      r.categories.push(...p.categories);
       return r;
     },
   },
@@ -320,26 +343,26 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     }],
     describe: (p, n) => {
       const several = 'all' in p.of && p.of.all.some((m) => isLeaf(m) && m.field === 'id' && Array.isArray(m.value) && m.value.length > 1);
-      const when = p.when ? ` when ${describeWhen(p.when, (id) => n.component?.(id) ?? `component #${id}`)}` : '';
+      const when = p.when ? ` when ${describeWhen(p.when, (id) => n.component?.(id) ?? `component #${id}`, n)}` : '';
       return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${when}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => refsOf(p.match, p.of, ...(p.when ? whenMatchers(p.when) : [])),
   },
   pairs_with: {
     label: 'Only with these bases',
-    summary: 'Matching dishes only share a meal with a base from the chosen categories.',
-    // A base without a category is outside every list.
-    compile: (p) => [slotCount(
-      all(p.match, not(is('role', 'base'))), p.scope, p.strength, undefined, 0,
-      all(is('role', 'base'), not(oneOf('base_category_id', p.baseCategories))),
-    )],
+    summary: 'Matching dishes only share a meal with a main dish from the chosen categories.',
+    // A main dish without a category is outside every list. With no first part known (a rule's level only), nothing is a main dish.
+    compile: (p, ctx) => {
+      const first = is('part', ctx.firstPart ?? -1);
+      return [slotCount(all(p.match, not(first)), p.scope, p.strength, undefined, 0, all(first, not(oneOf('category', p.categories))))];
+    },
     describe: (p, n) => {
-      const bases = p.baseCategories.map((id) => n.baseCategory?.(id) ?? `base category #${id}`);
-      return `${sentence(describeMatcher(p.match, n))} only with ${bases.join(' or ')} bases${describeScope(p.scope)}${strengthWord(p.strength)}`;
+      const cats = p.categories.map((id) => n.category?.(id) ?? `category #${id}`);
+      return `${sentence(describeMatcher(p.match, n))} only with ${cats.join(' or ')} ${firstPartNoun(n)}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => {
       const r = refsOf(p.match);
-      r.categories.push(...p.baseCategories);
+      r.categories.push(...p.categories);
       return r;
     },
   },
@@ -383,8 +406,8 @@ export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [
   { label: 'Preference', templates: ['prefer'] },
 ];
 
-export function compileSpec(spec: RuleSpec): ConstraintBody[] {
-  const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params);
+export function compileSpec(spec: RuleSpec, ctx: CompileContext = {}): ConstraintBody[] {
+  const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params, ctx);
   const cost = 'cost' in spec.params ? spec.params.cost : undefined;
   if (cost === undefined) return bodies;
   return bodies.map((b) => (b.kind === 'count' && b.costs ? { ...b, costs: { min: cost, max: cost } } : b));

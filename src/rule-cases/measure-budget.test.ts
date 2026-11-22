@@ -2,11 +2,11 @@
 // MEASURE_BUDGET is set (it runs for a long time): MEASURE_BUDGET=1 npx vitest run src/rule-cases/measure-budget.test.ts --silent=false
 import { describe, it } from 'vitest';
 import { planWeek, type ComponentLike } from '@/planner';
-import { compileRules, linkRule } from '@/rules';
+import { compileRules } from '@/rules';
 import { ALL_CASES } from './cases';
 import { failsWithoutSubject, knownIds, libraryFor, recordsOf, rulePartsOf, runPlanCase, type CaseBudget } from './run';
 import { constraintsFor, seedDish, seededLibrary, seededLinks } from './seeded-library';
-import { CASE_PARTS } from './library';
+import { CASE_PARTS, caseLink } from './library';
 import { legacyPartIds } from '@/db/parts';
 import { toWeekPartPins } from '@/services/legacy-slots';
 import type { PlanCase } from './types';
@@ -69,9 +69,9 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
       const extras = [d('Papad').id, d('Coconut Chutney').id];
       return [
         ...light(lib),
-        ...others.map((b, i) => linkRule(b, { mode: 'comes', target: 'extra_dish', values: [extras[i % 2]] })),
-        ...curries.map((c, i) => linkRule(c, { mode: 'comes', target: 'extra_dish', values: [extras[i % 2]] })),
-        ...others.slice(0, 3).map((b, i) => linkRule(b, { mode: 'comes', target: 'curry_dish', values: [curries[i].id] })),
+        ...others.map((b, i) => caseLink(b, { mode: 'comes', to: 'extra', values: [extras[i % 2]] })),
+        ...curries.map((c, i) => caseLink(c, { mode: 'comes', to: 'extra', values: [extras[i % 2]] })),
+        ...others.slice(0, 3).map((b, i) => caseLink(b, { mode: 'comes', to: 'curry', values: [curries[i].id] })),
       ];
     };
     const measure = (lib: ComponentLike[], links: ReturnType<typeof light>, seeds: number[]) => {

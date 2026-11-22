@@ -1,19 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import type { ComponentRecord, ComponentType } from '@/types/component';
-import { exclusionRule, linkRule, mealRule, dayRule, type DishLink } from './owned';
-import { linkWarnings } from './link-warnings';
+import { exclusionRule, linkRule as buildLink, mealRule, dayRule, type DishLink } from './owned';
+import { linkWarnings as warningsOver } from './link-warnings';
 import type { RuleRecord } from './record';
+import { TEST_RULE_PARTS } from './test-parts';
+
+// The converted parts: Base 1, Curry 2, Subzi 3, Extras 4.
+const PARTS = TEST_RULE_PARTS.list;
+const T = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+const linkRule = (owner: { id: number; name: string }, l: Parameters<typeof buildLink>[1]) => buildLink(owner, l, PARTS);
+const linkWarnings = (self: Parameters<typeof warningsOver>[0], links: DishLink[], lookup: Omit<Parameters<typeof warningsOver>[2], 'parts'>, names?: Parameters<typeof warningsOver>[3]) =>
+  warningsOver(self, links, { ...lookup, parts: PARTS }, names);
 
 const names = {
   component: (id: number) => ({ 1: 'Idli', 2: 'Dosa', 3: 'Poori', 10: 'Sambar' } as Record<number, string>)[id],
-  baseCategory: (id: number) => ({ 1: 'Rice-based' } as Record<number, string>)[id],
+  category: (id: number) => ({ 1: 'Rice-based' } as Record<number, string>)[id],
 };
 const dish = (id: number, componentType: ComponentType, over: Partial<ComponentRecord> = {}): ComponentRecord =>
   ({ id, name: names.component(id) ?? `Dish ${id}`, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '', ...over }) as ComponentRecord;
 const rec = (rule: ReturnType<typeof exclusionRule>, id: number, enabled = true): RuleRecord => ({ ...rule, id, enabled, created_at: '' }) as RuleRecord;
 const self = { id: 10, name: 'Sambar', componentType: 'curry' as ComponentType };
-const link = (over: Partial<DishLink>): DishLink => ({ mode: 'with', target: 'base_dish', values: [1], strength: 'always', ...over });
-const dishes = [dish(1, 'base', { base_category_id: 1 }), dish(2, 'base', { base_category_id: 1 }), dish(3, 'base')];
+const link = (over: Partial<DishLink>): DishLink => ({ mode: 'with', target: T.base_dish, values: [1], strength: 'always', ...over });
+const dishes = [dish(1, 'base', { base_category_id: 1, category_id: 1 }), dish(2, 'base', { base_category_id: 1, category_id: 1 }), dish(3, 'base')];
 const idli = { id: 1, name: 'Idli' };
 
 describe('linkWarnings', () => {
@@ -35,7 +46,7 @@ describe('linkWarnings', () => {
 
   it('flags an always link whose dishes never plan automatically', () => {
     const rules = [rec(exclusionRule(idli), 1)];
-    expect(linkWarnings(self, [link({ target: 'base_category', values: [1] }), ], { dishes: [dishes[0]], rules }, names)).toEqual([
+    expect(linkWarnings(self, [link({ target: T.base_category, values: [1] }), ], { dishes: [dishes[0]], rules }, names)).toEqual([
       { link: 0, message: 'No dish in Rice-based can be planned, so Sambar would never be planned.' },
     ]);
   });
@@ -43,7 +54,7 @@ describe('linkWarnings', () => {
   it('counts deleted dishes as missing, ignores disabled exclusions and the dish itself', () => {
     expect(linkWarnings(self, [link({ values: [99] })], { dishes, rules: [] }, names)).toHaveLength(1);
     expect(linkWarnings(self, [link({})], { dishes, rules: [rec(exclusionRule(idli), 1, false)] }, names)).toEqual([]);
-    expect(linkWarnings({ id: 1, componentType: 'base' }, [link({ mode: 'with', target: 'extra_dish', values: [1] })], { dishes, rules: [] }, names)).toHaveLength(1);
+    expect(linkWarnings({ id: 1, componentType: 'base' }, [link({ mode: 'with', target: T.extra_dish, values: [1] })], { dishes, rules: [] }, names)).toHaveLength(1);
   });
 
   it('uses "this dish" when the dish has no name yet', () => {
@@ -83,7 +94,7 @@ describe('served-with warnings', () => {
 
   it('flags another curry always served with the same base, but not a softer one', () => {
     const rasam = dish(11, 'curry', { name: 'Rasam' });
-    const theirs = (strength: 'always' | 'usually') => rec(linkRule({ id: 11, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [1], strength }), 50);
+    const theirs = (strength: 'always' | 'usually') => rec(linkRule({ id: 11, name: 'Rasam' }, { mode: 'serve', target: T.base_dish, values: [1], strength }), 50);
     const links = [link({ mode: 'serve', values: [1] })];
     expect(linkWarnings(self, links, { dishes: [...dishes, rasam], rules: [theirs('always')] }, names)).toEqual([
       { link: 0, blocking: true, message: 'Rasam is already always served with Idli, and a meal holds one curry.' },
@@ -101,16 +112,16 @@ describe('comes-with warnings', () => {
     dish(903, 'curry', { name: 'Egg Curry' }), dish(904, 'curry', { name: 'Sambar' }),
   ];
   const idiyappam = { id: 900, name: 'Idiyappam', componentType: 'base' as ComponentType };
-  const comes = (values: (number | string)[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'curry_dish', values, strength: 'always', ...over });
+  const comes = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: T.curry_dish, values, strength: 'always', ...over });
   const servedWith = (id: number, name: string) =>
-    rec(linkRule({ id, name }, { mode: 'serve', target: 'base_dish', values: [900], strength: 'always' }), 70 + id);
+    rec(linkRule({ id, name }, { mode: 'serve', target: T.base_dish, values: [900], strength: 'always' }), 70 + id);
 
   it('two Always comes-with links needing the one curry block Save', () => {
     const w = linkWarnings(idiyappam, [comes([901]), comes([903])], { dishes: lib, rules: [] }, nm);
     expect(w).toEqual([{ link: 1, blocking: true, message: 'Idiyappam already always comes with Kerala Stew (Veg), and a meal holds one curry.' }]);
     expect(linkWarnings(idiyappam, [comes([901, 902]), comes([902, 903])], { dishes: lib, rules: [] }, nm)).toEqual([]);
     expect(linkWarnings(idiyappam, [comes([901]), comes([903], { strength: 'usually' })], { dishes: lib, rules: [] }, nm)).toEqual([]);
-    expect(linkWarnings(idiyappam, [comes([901]), comes([903], { target: 'extra_dish' })], { dishes: lib, rules: [] }, nm)).toEqual([]);
+    expect(linkWarnings(idiyappam, [comes([901]), comes([903], { target: T.extra_dish })], { dishes: lib, rules: [] }, nm)).toEqual([]);
   });
 
   it('an Always served-with on another curry blocks a disjoint comes-with', () => {
@@ -141,14 +152,15 @@ describe('comes-with warnings', () => {
 
   it('two disjoint Always comes links to subzis block Save', () => {
     const subzis = [...lib, dish(905, 'subzi', { name: 'Beans' }), dish(906, 'subzi', { name: 'Cabbage' })];
-    const sub = (values: number[]): DishLink => comes(values, { target: 'subzi_dish' });
+    const sub = (values: number[]): DishLink => comes(values, { target: T.subzi_dish });
     expect(linkWarnings(idiyappam, [sub([905]), sub([906])], { dishes: subzis, rules: [] }, nm)).toMatchObject([{ link: 1, blocking: true }]);
     expect(linkWarnings(idiyappam, [sub([905]), comes([901])], { dishes: subzis, rules: [] }, nm)).toEqual([]);
   });
 
   it('resolves a curry type link to its curries when judging disjoint', () => {
-    const typed = [...lib, dish(907, 'curry', { name: 'Stew B', curry_category: 'stew' } as Partial<ComponentRecord>), dish(908, 'curry', { name: 'Dal', curry_category: 'lentil' } as Partial<ComponentRecord>)];
-    const byType: DishLink = comes(['stew'], { target: 'curry_category' });
+    const typed = [...lib, dish(907, 'curry', { name: 'Stew B', curry_category: 'stew', category_id: 21 } as Partial<ComponentRecord>), dish(908, 'curry', { name: 'Dal', curry_category: 'lentil', category_id: 22 } as Partial<ComponentRecord>)];
+    // The curry type stew is the Curry part's category 21.
+    const byType: DishLink = comes([21], { target: T.curry_category });
     expect(linkWarnings(idiyappam, [byType, comes([907])], { dishes: typed, rules: [] }, nm)).toEqual([]);
     expect(linkWarnings(idiyappam, [byType, comes([908])], { dishes: typed, rules: [] }, nm)).toMatchObject([{ link: 1, blocking: true }]);
   });
@@ -171,8 +183,8 @@ describe('meal-level comes-with clashes', () => {
   ];
   const idiyappam = { id: 900, name: 'Idiyappam', componentType: 'base' as ComponentType };
   const stewVeg = { id: 901, name: 'Kerala Stew (Veg)', componentType: 'curry' as ComponentType };
-  const curry = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'curry_dish', values, strength: 'always', ...over });
-  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'subzi_dish', values, strength: 'always', ...over });
+  const curry = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: T.curry_dish, values, strength: 'always', ...over });
+  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: T.subzi_dish, values, strength: 'always', ...over });
   let next = 500;
   const stored = (owner: { id: number; name: string }, l: DishLink) => rec(linkRule(owner, l), next++);
   const blocking = (w: ReturnType<typeof linkWarnings>) => w.filter((x) => x.blocking);
@@ -251,11 +263,11 @@ describe('conditional comes-with clashes', () => {
     dish(905, 'subzi', { name: 'Beans Poriyal' }), dish(906, 'subzi', { name: 'Aloo Gobi' }), dish(907, 'subzi', { name: 'Cabbage' }),
   ];
   const rice = { id: 900, name: 'Rice', componentType: 'base' as ComponentType };
-  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: 'subzi_dish', values, strength: 'always', ...over });
-  const when = (curry: number[]) => ({ when: { curry } });
+  const subzi = (values: number[], over: Partial<DishLink> = {}): DishLink => ({ mode: 'comes', target: T.subzi_dish, values, strength: 'always', ...over });
+  const when = (curry: number[]) => ({ when: { 2: curry } });
   const blocking = (w: ReturnType<typeof linkWarnings>) => w.filter((x) => x.blocking);
   const servedWithRice = (id: number, name: string) =>
-    rec(linkRule({ id, name }, { mode: 'serve', target: 'base_dish', values: [900], strength: 'always' }), 70 + id);
+    rec(linkRule({ id, name }, { mode: 'serve', target: T.base_dish, values: [900], strength: 'always' }), 70 + id);
 
   it("blocks an Always conditional subzi link against the base's own unconditional Always subzi link", () => {
     const message = 'Rice already always comes with Aloo Gobi, and a meal holds one subzi.';
@@ -286,7 +298,7 @@ describe('conditional comes-with clashes', () => {
   });
 
   it('a conditional extra link never clashes, and a conditional link does not count as bringing in every meal', () => {
-    const papad: DishLink = { mode: 'comes', target: 'extra_dish', values: [907], strength: 'always', when: { curry: [901] } };
+    const papad: DishLink = { mode: 'comes', target: T.extra_dish, values: [907], strength: 'always', when: { 2: [901] } };
     expect(blocking(linkWarnings(rice, [papad, subzi([905])], { dishes: lib, rules: [] }, nm))).toEqual([]);
     // From Beans Poriyal's form: served with Rice, which only brings Aloo Gobi with Sambar.
     const rules = [rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([901]))), 80)];
@@ -297,7 +309,7 @@ describe('conditional comes-with clashes', () => {
   it('counts a conditional subzi link on the curry it waits for, from that curry\'s form', () => {
     // Rice always comes with Sambar, and with Aloo Gobi when the curry is Sambar; Sambar always comes with Beans Poriyal.
     const rules = [
-      rec(linkRule({ id: 900, name: 'Rice' }, { mode: 'comes', target: 'curry_dish', values: [901], strength: 'always' }), 80),
+      rec(linkRule({ id: 900, name: 'Rice' }, { mode: 'comes', target: T.curry_dish, values: [901], strength: 'always' }), 80),
       rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([901]))), 81),
     ];
     const sambar = { id: 901, name: 'Sambar', componentType: 'curry' as ComponentType };

@@ -19,9 +19,10 @@ describe('rule forms', () => {
       const spec = newSpec(id) as { template: string; params: Record<string, unknown> };
       for (const key of ['match', 'when']) if (key in spec.params) spec.params[key] = is('protein_tag', 'fish');
       if (id === 'require_with') spec.params.components = [1];
-      if (id === 'pairs_with') spec.params.baseCategories = [1];
+      if (id === 'pairs_with') spec.params.categories = [1];
       if (id === 'only_allow') spec.params.parts = [2];
       if (id === 'skip_when') spec.params.skip = [3];
+      if (id === 'comes_with') spec.params.of = all(is('part', 2), is('id', 1));
       expect(RuleSpecSchema.safeParse(spec).success, id).toBe(true);
     }
   });
@@ -57,8 +58,8 @@ describe('rule forms', () => {
     expect(keys).toContain('scope');
     expect(keys.indexOf('scope')).toBe(keys.indexOf('strength') - 1);
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    const r = validateDraft({ name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
-    expect(r).toEqual({ ok: true, name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
+    const r = validateDraft({ name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), categories: [1], scope, strength: 'prefer', cost: 6 } } });
+    expect(r).toEqual({ ok: true, name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), categories: [1], scope, strength: 'prefer', cost: 6 } } });
   });
 
   it('previews which components a condition matches', () => {

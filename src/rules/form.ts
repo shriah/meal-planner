@@ -1,6 +1,6 @@
 // Form metadata for rule templates, draft validation, and match previews. Lets any UI render
 // an editor for every template without template-specific code.
-import { all, compileMatcher, is, TRUE, type ComponentLike, type Matcher, type MatchFn } from '@/planner';
+import { compileMatcher, TRUE, type ComponentLike, type Matcher, type MatchFn } from '@/planner';
 import { fromMatcher, groupProblems } from './conditions';
 import { RuleSpecSchema, type RuleSpec, type RuleSpecInput, type TemplateId } from './templates';
 
@@ -19,7 +19,7 @@ export type FormFieldKind =
   | 'strength'         // must / prefer
   | 'cost'             // 1–10, for prefer rules
   | 'components'       // component ids
-  | 'baseCategories'   // base category ids
+  | 'baseCategories'   // category ids of the first part
   | 'extraCategories'; // extra category ids
 
 export interface FormField {
@@ -108,18 +108,18 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'when', kind: 'match', label: 'When a meal contains' },
       { key: 'components', kind: 'components', label: 'Also include these dishes', optional: true },
-      { key: 'extraCategories', kind: 'extraCategories', label: 'And an extra from', optional: true },
+      { key: 'categories', kind: 'extraCategories', label: 'And an extra from', optional: true },
       scope, strength, cost,
     ],
-    defaults: () => ({ when: TRUE, components: [], extraCategories: [], strength: 'must' }),
+    defaults: () => ({ when: TRUE, components: [], categories: [], strength: 'must' }),
   },
   pairs_with: {
     fields: [
       { key: 'match', kind: 'match', label: 'Dishes' },
-      { key: 'baseCategories', kind: 'baseCategories', label: 'Only with a base from' },
+      { key: 'categories', kind: 'baseCategories', label: 'Only with a base from' },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, baseCategories: [], strength: 'must' }),
+    defaults: () => ({ match: TRUE, categories: [], strength: 'must' }),
   },
   comes_with: {
     fields: [
@@ -127,8 +127,8 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'of', kind: 'match', label: 'Also include one of' },
       scope, strength, cost,
     ],
-    // The dishes brought along must pin one kind of dish, so the default does.
-    defaults: () => ({ match: TRUE, of: all(is('componentType', 'curry')), strength: 'must' }),
+    // The dishes brought along must pin one part; it is chosen with them, as the parts of an only-allow are.
+    defaults: () => ({ match: TRUE, of: TRUE, strength: 'must' }),
   },
   allowed_days: {
     fields: [

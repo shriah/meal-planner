@@ -1,12 +1,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, type RuleRecord } from '@/db/client';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
-import { linkRule } from '@/rules';
+import { linkRule as buildLink } from '@/rules';
 import { usePlanStore } from './plan-store';
 import { saveActivePlan, saveWeekPlan } from '@/services/plan-db';
 import { getISOWeekStart, addWeeks } from '@/services/week-utils';
 import type { WeeklyPlan } from '@/types/plan';
 import * as planningService from '@/services/planning';
+import { getParts } from '@/services/parts-db';
+
+// The converted parts by place, 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+/** A dish's link over the stored parts: a target's part (1 to 4) is the place of the converted part it names. */
+const linkRule = async (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => {
+  const parts = await getParts();
+  return buildLink(owner, { ...link, target: { ...link.target, part: parts[link.target.part - 1].id } }, parts);
+};
 
 // ─── Helper: make a minimal valid WeeklyPlan ───────────────────────────────────
 
@@ -145,11 +157,11 @@ describe('plan-store', () => {
     const rasam = await add('Rasam', 'curry');
     const chutney = await add('Chutney', 'extra');
     const podi = await add('Podi', 'extra');
-    const store = async (rule: ReturnType<typeof linkRule>) => { await db.rules.add({ ...rule, enabled: true, created_at: now } as RuleRecord); };
-    await store(linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [idli] }));
-    await store(linkRule({ id: podi, name: 'Podi' }, { mode: 'serve', target: 'base_dish', values: [idli] }));
-    await store(linkRule({ id: chutney, name: 'Chutney' }, { mode: 'serve', target: 'base_dish', values: [idli], strength: 'usually' }));
-    await store(linkRule({ id: chutney, name: 'Chutney' }, { mode: 'never', target: 'extra_dish', values: [podi] }));
+    const store = async (rule: Awaited<ReturnType<typeof linkRule>>) => { await db.rules.add({ ...rule, enabled: true, created_at: now } as RuleRecord); };
+    await store(await linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [idli] }));
+    await store(await linkRule({ id: podi, name: 'Podi' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [idli] }));
+    await store(await linkRule({ id: chutney, name: 'Chutney' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [idli], strength: 'usually' }));
+    await store(await linkRule({ id: chutney, name: 'Chutney' }, { mode: 'never', target: LINK_TARGET.extra_dish, values: [podi] }));
 
     const plan = makePlan();
     plan.slots = plan.slots.map((s, i) => ({ ...s, base_id: rice, ...(i % 2 ? { curry_id: dal } : {}), extra_ids: i % 3 ? [] : [chutney] }));
@@ -350,7 +362,7 @@ describe('week navigation', () => {
       const rice = await add('Rice', 'base');
       const pongal = await add('Pongal', 'base');
       const sambar = await add('Sambar', 'curry');
-      await db.rules.add({ ...linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [pongal] }), enabled: true, created_at: '' } as RuleRecord);
+      await db.rules.add({ ...await linkRule({ id: sambar, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [pongal] }), enabled: true, created_at: '' } as RuleRecord);
       const plan = makePlan();
       plan.slots = plan.slots.map((s) => ({ ...s, base_id: rice }));
       plan.slots[0] = { ...plan.slots[0], base_id: pongal, curry_id: sambar };

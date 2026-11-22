@@ -5,7 +5,8 @@ import type { CategoryRecord } from '@/types/category';
 import { CONVERTED_PARTS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertedValueIds, type ConvertLookup, type DishWithPart } from '@/db/parts';
 import type { PlannerPart } from '@/planner';
 import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCategory, type ExtraCategory } from '@/types/component';
-import type { CaseLibrary } from './types';
+import { linkRule, type LinkKind, type LinkMode, type LinkScope, type LinkStrength } from '@/rules';
+import type { CaseLibrary, CaseRule } from './types';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 
@@ -17,6 +18,26 @@ const PART_ID = { base: 1, curry: 2, subzi: 3, extra: 4 };
 export const CASE_PARTS: PlannerPart[] = PART_KEYS.map((k) => ({
   id: PART_ID[k], name: CONVERTED_PARTS[k].name, varied: CONVERTED_PARTS[k].varied, legacy: k,
 }));
+type PartKey = (typeof PART_KEYS)[number];
+
+/** A link as a converted case writes it: `to` names the part it points at (its dishes, unless `kind` says categories), and `when` waits by part. */
+export interface CaseLinkInput {
+  mode: LinkMode;
+  to: PartKey;
+  kind?: LinkKind;
+  values: number[];
+  strength?: LinkStrength;
+  scope?: LinkScope;
+  when?: Partial<Record<PartKey, number[]>>;
+}
+
+/** A dish's link over the converted parts, built by the app's `linkRule`. */
+export function caseLink(owner: { id: number; name: string }, link: CaseLinkInput): CaseRule {
+  const { to, kind = 'dish', when, ...rest } = link;
+  const waits = when && Object.fromEntries(Object.entries(when).map(([k, ids]) => [PART_ID[k as PartKey], ids!]));
+  return linkRule(owner, { ...rest, target: { part: PART_ID[to], kind }, ...(waits && { when: waits }) }, CASE_PARTS);
+}
+
 /** Curry categories as the converter creates them: one per curry type, ids from 21, named by the type. */
 const CURRY_CATEGORY_IDS = new Map(CURRY_CATEGORIES.map((name, i) => [name, 21 + i]));
 

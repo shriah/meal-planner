@@ -115,7 +115,8 @@ function initialFormState(
   draft?: Partial<ComponentRecord>,
   draftLinks?: DishLink[],
 ): FormState {
-  const owned = readOwned(ownedRules)
+  // Only the days, meals and never-auto are read here; links are read live, so no parts are needed.
+  const owned = readOwned(ownedRules, [])
   if (component) {
     return {
       name: component.name,
@@ -199,7 +200,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   const [editingLink, setEditingLink] = useState(false)
   const baseCategories = lookup.loaded ? lookup.baseCategories : undefined
   const extraCategories = lookup.loaded ? lookup.extraCategories : undefined
-  const storedLinks = readOwned(owned).links
+  const storedLinks = readOwned(owned, lookup.parts).links
   const links = form.links ?? storedLinks
   // Save is held back only by a conflict the edits introduced; one already stored still shows as a warning but
   // does not stop unrelated edits from being saved.

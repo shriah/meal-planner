@@ -1,11 +1,11 @@
 // The shipped seed library (ids from 100) with its default and conditional-link rules, as the search-budget measurements
 // and the repair snapshot build it.
-import { CASE_PARTS, caseLookup } from './library';
+import { CASE_PARTS, caseLink, caseLookup } from './library';
 import type { CategoryRecord } from '@/types/category';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import { convertDish, legacyPartIds } from '@/db/parts';
 import type { ComponentLike } from '@/planner';
-import { capRules, compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
+import { capRules, compileRules, defaultRules, type RuleRecord } from '@/rules';
 
 const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -30,9 +30,9 @@ export function seedDish(lib: ComponentLike[], name: string): ComponentLike {
 export function seededLinks(lib: ComponentLike[]) {
   const d = (name: string) => seedDish(lib, name);
   return [
-    linkRule(d('Plain Rice'), { mode: 'comes', target: 'curry_dish', values: [d('Sambar').id] }),
-    linkRule(d('Plain Rice'), { mode: 'comes', target: 'extra_dish', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
-    linkRule(d('Idli'), { mode: 'comes', target: 'extra_dish', values: [d('Coconut Chutney').id] }),
+    caseLink(d('Plain Rice'), { mode: 'comes', to: 'curry', values: [d('Sambar').id] }),
+    caseLink(d('Plain Rice'), { mode: 'comes', to: 'extra', values: [d('Papad').id], when: { curry: [d('Sambar').id] } }),
+    caseLink(d('Idli'), { mode: 'comes', to: 'extra', values: [d('Coconut Chutney').id] }),
   ];
 }
 

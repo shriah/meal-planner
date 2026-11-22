@@ -1,8 +1,9 @@
 import { is } from '@/planner';
-import { exclusionRule, linkRule, mealRule } from '@/rules';
+import { exclusionRule, mealRule } from '@/rules';
 import { everyMealWith, idsOf, nearNoRulesCount, neverWith, noHardProblems, plannedAtLeast, someMealWith, yieldsTo } from '../expect';
 import type { PlanExpectation, RuleCase } from '../types';
 import { limitRule } from './comes-with';
+import { caseLink } from '../library';
 
 /** Idli planned outside breakfast without Coconut Chutney: the breakfast scope must not leak. */
 const idliElsewhereHasNoChutney = (): PlanExpectation => ({
@@ -29,8 +30,8 @@ export const PAIRING_CASES: RuleCase[] = [
       const sambar = lib.dish('Sambar');
       const chutney = lib.dish('Coconut Chutney');
       return [
-        linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [pongal.id] }),
-        linkRule(chutney, { mode: 'serve', target: 'base_dish', values: [pongal.id] }),
+        caseLink(sambar, { mode: 'serve', to: 'base', values: [pongal.id] }),
+        caseLink(chutney, { mode: 'serve', to: 'base', values: [pongal.id] }),
         mealRule(sambar, ['lunch']),
         exclusionRule(sambar),
       ];
@@ -53,8 +54,8 @@ export const PAIRING_CASES: RuleCase[] = [
       const sambar = lib.dish('Sambar');
       const chutney = lib.dish('Coconut Chutney');
       return [
-        linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [pongal.id], strength: 'usually' }),
-        linkRule(chutney, { mode: 'serve', target: 'base_dish', values: [pongal.id], strength: 'usually' }),
+        caseLink(sambar, { mode: 'serve', to: 'base', values: [pongal.id], strength: 'usually' }),
+        caseLink(chutney, { mode: 'serve', to: 'base', values: [pongal.id], strength: 'usually' }),
         mealRule(sambar, ['lunch']),
         exclusionRule(sambar),
       ];
@@ -70,8 +71,8 @@ export const PAIRING_CASES: RuleCase[] = [
     rules: (lib) => {
       const pongal = lib.dish('Pongal');
       return [
-        linkRule(lib.dish('Sambar'), { mode: 'serve', target: 'base_dish', values: [pongal.id] }),
-        linkRule(lib.dish('Rasam'), { mode: 'serve', target: 'base_dish', values: [pongal.id] }),
+        caseLink(lib.dish('Sambar'), { mode: 'serve', to: 'base', values: [pongal.id] }),
+        caseLink(lib.dish('Rasam'), { mode: 'serve', to: 'base', values: [pongal.id] }),
       ];
     },
     expect: [plannedAtLeast('Pongal', 4), everyMealWith('Pongal', ['Sambar']), neverWith('Rasam', 'Pongal'), yieldsTo('Rasam', 'Sambar'), noHardProblems()],
@@ -86,7 +87,7 @@ export const PAIRING_CASES: RuleCase[] = [
       const sambar = lib.dish('Sambar');
       const chutney = lib.dish('Coconut Chutney');
       return [
-        linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [lib.dish('Pongal').id] }),
+        caseLink(sambar, { mode: 'serve', to: 'base', values: [lib.dish('Pongal').id] }),
         {
           name: 'Coconut Chutney with Sambar',
           spec: { template: 'require_with', params: { when: is('id', sambar.id), components: [chutney.id], strength: 'must' } },
@@ -104,7 +105,7 @@ export const PAIRING_CASES: RuleCase[] = [
     name: 'Pairing to a base category',
     why: 'A pairing aimed at a category of bases reaches every base in the category, not only the first.',
     rules: (lib) => [
-      linkRule(lib.dish('Sambar'), { mode: 'serve', target: 'base_category', values: [lib.category('Tiffin').id] }),
+      caseLink(lib.dish('Sambar'), { mode: 'serve', to: 'base', kind: 'category', values: [lib.category('Tiffin').id] }),
     ],
     expect: [
       everyMealWith('Idli', ['Sambar']),
@@ -120,8 +121,8 @@ export const PAIRING_CASES: RuleCase[] = [
     name: 'Pairing scoped to breakfast',
     why: 'A pairing limited to breakfast holds at breakfast only: the same base at another meal is left alone.',
     rules: (lib) => [
-      linkRule(lib.dish('Coconut Chutney'), {
-        mode: 'serve', target: 'base_dish', values: [lib.dish('Idli').id], scope: { meals: ['breakfast'] },
+      caseLink(lib.dish('Coconut Chutney'), {
+        mode: 'serve', to: 'base', values: [lib.dish('Idli').id], scope: { meals: ['breakfast'] },
       }),
     ],
     expect: [
@@ -148,7 +149,7 @@ export const PAIRING_CASES: RuleCase[] = [
     rules: (lib) => {
       const papad = lib.dish('Papad');
       const rice = lib.dish('Rice');
-      return [linkRule(papad, { mode: 'serve', target: 'base_dish', values: [rice.id] })];
+      return [caseLink(papad, { mode: 'serve', to: 'base', values: [rice.id] })];
     },
     given: (lib) => [limitRule(lib.dish('Papad'), 1, 'week')],
     expect: [nearNoRulesCount('Rice'), everyMealWith('Rice', ['Papad']), noHardProblems()],

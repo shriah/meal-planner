@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { is } from '@/planner';
-import { dayRule, defaultRules, exclusionRule, linkRule, type RuleRecord } from '@/rules';
+import { dayRule, defaultRules, exclusionRule, linkRule as buildLink, type RuleRecord } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
 import { capRecords, TEST_PART_RECORDS, withParts } from './test-input';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
+
+// The converted parts, ids 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+const linkRule = (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => buildLink(owner, link, TEST_RULE_PARTS.list);
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -56,7 +64,7 @@ describe('pairings', () => {
   const pongal = dish(10, 'Pongal', 'base');
   const sambar = dish(11, 'Sambar', 'curry');
   const rasam = dish(12, 'Rasam', 'curry');
-  const owned = linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+  const owned = linkRule(sambar, { mode: 'serve', target: LINK_TARGET.base_dish, values: [10], strength: 'always' });
   const rule: RuleRecord = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
   const data: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule] });
 
@@ -88,7 +96,7 @@ describe('pairings', () => {
   });
 
   describe('a stored conflict (a second Always curry for Pongal)', () => {
-    const rasamLink = linkRule(rasam, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const rasamLink = linkRule(rasam, { mode: 'serve', target: LINK_TARGET.base_dish, values: [10], strength: 'always' });
     const rasamRule: RuleRecord = { id: 8, name: rasamLink.name, spec: rasamLink.spec, enabled: true, created_at: '', owner_component_id: 12 } as RuleRecord;
     const conflicted: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule, ...capRecords()] });
     const reason = 'Rasam is not served with Pongal: a meal holds one curry and Sambar is always served with it.';
@@ -159,7 +167,7 @@ describe('pairings', () => {
       ({ id, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: owned.owner_component_id } as RuleRecord);
 
     it('a comes-with link replaced by a pin says so', () => {
-      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21], strength: 'always' }));
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [21], strength: 'always' }));
       const out = planFromData(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [comes] }), {
         seed: 3,
         pins: { 'monday-breakfast': { base_id: 20, curry_id: 11 } },
@@ -170,7 +178,7 @@ describe('pairings', () => {
     });
 
     it('the meal picker brings the stew the rules allow', () => {
-      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [21, 22], strength: 'always' }));
       const notVeg: RuleRecord = {
         id: 6, name: 'Idiyappam never with Kerala Stew (Veg)', enabled: true, created_at: '',
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 21), strength: 'must' } },
@@ -185,8 +193,8 @@ describe('pairings', () => {
 
     it('the meal picker brings a stew with what that stew always comes with', () => {
       const papad = dish(23, 'Papad', 'extra');
-      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
-      const vegBrings = record(6, linkRule(stewVeg, { mode: 'comes', target: 'extra_dish', values: [23], strength: 'always' }));
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [21, 22], strength: 'always' }));
+      const vegBrings = record(6, linkRule(stewVeg, { mode: 'comes', target: LINK_TARGET.extra_dish, values: [23], strength: 'always' }));
       const notNonVeg: RuleRecord = {
         id: 7, name: 'Idiyappam never with Kerala Stew (Non-Veg)', enabled: true, created_at: '',
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 22), strength: 'must' } },
@@ -201,7 +209,7 @@ describe('pairings', () => {
 
     it('the meal picker brings the frequent stew when both have been planned equally often', () => {
       // Idiyappam may hold neither stew, so both cost the same and the picker reports the one it brings.
-      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [21, 22], strength: 'always' }));
       const never = (id: number, stew: number): RuleRecord => ({
         id, name: `Idiyappam never with ${stew}`, enabled: true, created_at: '',
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', stew), strength: 'must' } },
@@ -222,8 +230,8 @@ describe('pairings', () => {
     });
 
     it('a pairing it cannot hold names every stew', () => {
-      const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [20], strength: 'always' }));
-      const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
+      const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: LINK_TARGET.base_dish, values: [20], strength: 'always' }));
+      const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [21, 22], strength: 'always' }));
       const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 20, curry_id: 11 });
       const problems = explainPlan(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes, ...capRecords()] }), plan);
       expect(problems.filter((p) => p.ruleId === 8).map((p) => p.reason)).toEqual([
@@ -238,7 +246,7 @@ describe('the meal picker and a link waiting for a curry', () => {
   const rice = dish(30, 'Rice', 'base');
   const sambar = dish(11, 'Sambar', 'curry');
   const papad = dish(31, 'Papad', 'extra');
-  const owned = linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [31], when: { curry: [11] } });
+  const owned = linkRule(rice, { mode: 'comes', target: LINK_TARGET.extra_dish, values: [31], when: { 2: [11] } });
   const papadLink: RuleRecord = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 30 } as RuleRecord;
   const noPapadAtDinner: RuleRecord = {
     id: 6, name: 'Never include Papad at dinner', enabled: true, created_at: '',
@@ -255,7 +263,7 @@ describe('the meal picker and a link waiting for a curry', () => {
   });
 
   it('a plain link still brings its side and marks the base', () => {
-    const plain = linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [31] });
+    const plain = linkRule(rice, { mode: 'comes', target: LINK_TARGET.extra_dish, values: [31] });
     const plainLink = { ...papadLink, name: plain.name, spec: plain.spec } as RuleRecord;
     expect(picker(plainLink).get(30)?.map((p) => p.ruleId)).toEqual([6]);
   });
@@ -277,7 +285,7 @@ describe('planFromData without the curry cap rule', () => {
   it('plans two Always curry links on one base with one curry per meal', () => {
     const rice = dish(1, 'Rice', 'base');
     const library = [rice, dish(2, 'Sambar', 'curry'), dish(3, 'Rasam', 'curry'), dish(4, 'Roti', 'base')];
-    const rules = [...defaultRules(TEST_PART_RECORDS), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [2] }), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [3] })]
+    const rules = [...defaultRules(TEST_PART_RECORDS), linkRule(rice, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2] }), linkRule(rice, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [3] })]
       .map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
     for (const seed of [1, 2, 3]) {
       const outcome = planFromData(withParts({ library, categories: [], rules }), { seed, timeLimitMs: Infinity });

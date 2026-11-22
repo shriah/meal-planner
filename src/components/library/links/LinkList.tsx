@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { addableSlots, describeLink, isSideTarget, LINK_TARGETS, linkWarnings, offersComes, type DishLink, type LinkWarning } from '@/rules'
+import { addableSlots, describeLink, linkTargets, linkWarnings, type DishLink, type LinkWarning } from '@/rules'
 import type { ComponentType } from '@/types/component'
-import { linkNames, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
+import { linkNames, ownerPartOf, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
 
 interface LinkListProps {
@@ -30,8 +30,8 @@ export function useLinkWarnings(self: { id?: number; name: string; componentType
 /** Which link this is, for keys and editing: its rule id, or its place for one not yet saved. */
 export const linkKey = (link: DishLink, index: number): string => (link.ruleId !== undefined ? String(link.ruleId) : `new-${index}`)
 
-/** An old "only with" link to sides: it only limits, where a link to sides now brings the dish. */
-const limitsOnly = (link: DishLink) => link.mode === 'with' && isSideTarget(link.target)
+/** An old "only with" link to a part below the first: it only limits, where such a link now brings the dish. */
+const limitsOnly = (link: DishLink, firstPart: number | undefined) => link.mode === 'with' && link.target.part !== firstPart
 
 /** A dish's links as sentences, each editable in place, plus an "Add link" flow. */
 export function LinkList({ dishName, componentType, selfId, baseCategoryId, links, offRuleIds = [], onChange, onEditingChange }: LinkListProps) {
@@ -46,17 +46,20 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
   const names = linkNames(lookup)
   // Nothing is known about the library until it has loaded, so every link would look unpairable.
   const warnings = useLinkWarnings({ id: selfId, name: dishName, componentType, base_category_id: baseCategoryId }, links)
+  // The part the dish's links are made from; unknown until the parts have loaded.
+  const ownerPart = ownerPartOf(lookup, componentType, selfId)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
-  const ready = lookup.loaded
+  const ready = lookup.loaded && ownerPart !== undefined
   const name = dishName.trim() || 'This dish'
-  // "Comes with" may be added again and again, so only other kinds of link run out.
-  const slotsLeft = addableSlots(componentType, links).length > 0 || LINK_TARGETS.some((t) => offersComes(componentType, t))
+  const firstPart = lookup.parts[0]?.id
+  const targets = linkTargets(lookup.parts, (part) => lookup.categories.some((c) => c.part_id === part))
+  const slotsLeft = ownerPart !== undefined && addableSlots(ownerPart, links, targets, lookup.parts).length > 0
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
   const editor = (initial?: DishLink, index?: number) => (
     <ShareLibraryLookup value={lookup}>
       <LinkEditor
-        componentType={componentType}
+        ownerPart={ownerPart!}
         selfId={selfId}
         dishName={dishName}
         initial={initial}
@@ -84,7 +87,7 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
                 <div className="flex items-center gap-2">
                   <span className="flex-1">
                     {describeLink(name, link, names)}
-                    {limitsOnly(link) && ' (only limits: edit it to have it come with the meal)'}
+                    {limitsOnly(link, firstPart) && ' (only limits: edit it to have it come with the meal)'}
                     {link.ruleId !== undefined && offRuleIds.includes(link.ruleId) && ' (off)'}
                   </span>
                   <Button type="button" variant="ghost" size="xs" disabled={!ready || editing !== null} onClick={() => setEditing(linkKey(link, i))}>Edit</Button>

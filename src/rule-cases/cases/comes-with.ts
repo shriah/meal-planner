@@ -1,10 +1,10 @@
 import { is } from '@/planner';
-import { linkRule, mealRule } from '@/rules';
+import { mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
 import { atLeastPicked, eachPlanned, everyPicked, mealsPicked, mostPicked, nonePicked, someWeekPicks, type Pick, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
 import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseRule, CaseWeeks, PlanExpectation, RuleCase } from '../types';
-import { TEST_LIBRARY } from '../library';
+import { caseLink, TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -55,7 +55,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Comes with either of two stews',
     why: `${REPORT}Idiyappam comes with Kerala Stew (Veg) or Kerala Stew (Non-Veg): every Idiyappam meal has one of them, and over the weeks both turn up.`,
     dishes: DISHES,
-    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: STEWS.map((n) => lib.dish(n).id) })],
+    rules: (lib) => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: STEWS.map((n) => lib.dish(n).id) })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [
       everyMealWithOneOf('Idiyappam', STEWS),
@@ -71,7 +71,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Comes with a frequent stew more often than a rare one',
     why: `${REPORT}"prefer frequent / avoid rare" still holds among a link's dishes: Idiyappam comes with Kerala Stew (Veg), which is frequent, or Kerala Stew (Non-Veg), which is rare; both turn up, the frequent one at least half again as often (a week has only two or three Idiyappam meals, so the rare stew still gets its turn in many weeks).`,
     dishes: DISHES_BY_FREQUENCY,
-    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: STEWS.map((n) => lib.dish(n).id) })],
+    rules: (lib) => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: STEWS.map((n) => lib.dish(n).id) })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [
       eachPlanned(STEWS, 'Idiyappam'),
@@ -95,7 +95,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'A curry comes with an extra',
     why: `${REPORT}a curry can bring an extra: Mutton Curry comes with Pepper Rasam wherever it is planned.`,
     dishes: DISHES,
-    rules: () => [linkRule(MUTTON_CURRY, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] })],
+    rules: () => [caseLink(MUTTON_CURRY, { mode: 'comes', to: 'extra', values: [PEPPER_RASAM.id] })],
     given: () => [CURRY_AT_EVERY_MEAL],
     expect: [everyMealWith('Mutton Curry', ['Pepper Rasam'])],
   },
@@ -107,8 +107,8 @@ const PAIRING_CASES: RuleCase[] = [
     why: `${REPORT}a meal holds what each of its dishes brings: Rice brings Papad and Mutton Curry brings Pepper Rasam.`,
     dishes: DISHES,
     rules: (lib) => [
-      linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [lib.dish('Papad').id] }),
-      linkRule(MUTTON_CURRY, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] }),
+      caseLink(lib.dish('Rice'), { mode: 'comes', to: 'extra', values: [lib.dish('Papad').id] }),
+      caseLink(MUTTON_CURRY, { mode: 'comes', to: 'extra', values: [PEPPER_RASAM.id] }),
     ],
     pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Rice').id, curry_id: MUTTON_CURRY.id } },
     expect: [mondayLunchExtras(['Papad', 'Pepper Rasam'])],
@@ -121,8 +121,8 @@ const PAIRING_CASES: RuleCase[] = [
     why: `${REPORT}a dish with two comes-with links brings both: Idli comes with Coconut Chutney and with Tomato Chutney.`,
     dishes: DISHES,
     rules: (lib) => [
-      linkRule(lib.dish('Idli'), { mode: 'comes', target: 'extra_dish', values: [lib.dish('Coconut Chutney').id] }),
-      linkRule(lib.dish('Idli'), { mode: 'comes', target: 'extra_dish', values: [lib.dish('Tomato Chutney').id] }),
+      caseLink(lib.dish('Idli'), { mode: 'comes', to: 'extra', values: [lib.dish('Coconut Chutney').id] }),
+      caseLink(lib.dish('Idli'), { mode: 'comes', to: 'extra', values: [lib.dish('Tomato Chutney').id] }),
     ],
     expect: [everyMealWith('Idli', ['Coconut Chutney', 'Tomato Chutney'])],
   },
@@ -133,7 +133,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Usually comes with a stew',
     why: `${REPORT}a Usually link is a preference: Idiyappam is still planned about as often, and usually has the stew.`,
     dishes: DISHES,
-    rules: () => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id], strength: 'usually' })],
+    rules: () => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [STEW_VEG.id], strength: 'usually' })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [
       nearNoRulesCount('Idiyappam'),
@@ -157,7 +157,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Comes with a curry type',
     why: `${REPORT}a link can name a curry type: Idiyappam comes with a stew, and either stew meets it.`,
     dishes: DISHES,
-    rules: () => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_category', values: ['stew'] })],
+    rules: (lib) => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', kind: 'category', values: [lib.category('stew').id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [everyMealWithOneOf('Idiyappam', STEWS)],
   },
@@ -169,8 +169,8 @@ const PAIRING_CASES: RuleCase[] = [
     why: `${REPORT}what a dish brings brings its own: Idiyappam brings Kerala Stew (Veg), which brings Pepper Rasam.`,
     dishes: DISHES,
     rules: () => [
-      linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id] }),
-      linkRule(STEW_VEG, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] }),
+      caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [STEW_VEG.id] }),
+      caseLink(STEW_VEG, { mode: 'comes', to: 'extra', values: [PEPPER_RASAM.id] }),
     ],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [everyMealWith('Idiyappam', ['Kerala Stew (Veg)', 'Pepper Rasam'])],
@@ -182,7 +182,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Only-with bases still limits a curry',
     why: `${REPORT}a curry that goes only with certain bases is kept to them, and is still planned; and it is not brought to them: some Idli or Dosa meal has another curry.`,
     rules: (lib) => [
-      linkRule(lib.dish('Sambar'), { mode: 'with', target: 'base_dish', values: [lib.dish('Idli').id, lib.dish('Dosa').id] }),
+      caseLink(lib.dish('Sambar'), { mode: 'with', to: 'base', values: [lib.dish('Idli').id, lib.dish('Dosa').id] }),
     ],
     given: () => [CURRY_AT_EVERY_MEAL],
     expect: [
@@ -208,7 +208,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: 'Only-with curries still limits a base',
     why: `${REPORT}a base that goes only with certain curries is kept to them: every Idiyappam meal has a stew. That an old only-with link does not bring is pinned by the owned.test.ts unit test that the avoid_with link still reads as mode 'with'; a curry at every meal makes it unobservable here.`,
     dishes: DISHES,
-    rules: () => [linkRule(IDIYAPPAM, { mode: 'with', target: 'curry_dish', values: [STEW_VEG.id, STEW_NON_VEG.id] })],
+    rules: () => [caseLink(IDIYAPPAM, { mode: 'with', to: 'curry', values: [STEW_VEG.id, STEW_NON_VEG.id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), CURRY_AT_EVERY_MEAL],
     expect: [everyMealWithOneOf('Idiyappam', STEWS)],
   },
@@ -220,8 +220,8 @@ const PAIRING_CASES: RuleCase[] = [
     why: `${REPORT}two Always curries for one base cannot share a curry slot: the older link wins, the base is still planned, and no hard rule is reported broken.`,
     dishes: DISHES,
     rules: () => [
-      linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id] }),
-      linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [MUTTON_CURRY.id] }),
+      caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [STEW_VEG.id] }),
+      caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [MUTTON_CURRY.id] }),
     ],
     given: () => [mealRule(IDIYAPPAM, ['breakfast'])],
     expect: [
@@ -238,7 +238,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: "A brought side's limit does not make its base rarer",
     why: `${REPORT}Kerala Stew (Veg) was limited to once a week, and Idiyappam, which always comes with it, became rarer: a brought dish's own limit made its base rarer. A brought dish's limits only rank the pick among a link's dishes.`,
     dishes: DISHES,
-    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [lib.dish('Kerala Stew (Veg)').id] })],
+    rules: (lib) => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [lib.dish('Kerala Stew (Veg)').id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
     expect: [nearNoRulesCount('Idiyappam'), everyMealWith('Idiyappam', ['Kerala Stew (Veg)']), noHardProblems()],
   },
@@ -249,7 +249,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: "A usually-brought side's limit does not make its base rarer",
     why: `${REPORT}as the Always case, with a Usually link: a brought dish's own limit made its base rarer. The stew is still in at least 3 of 4 Idiyappam meals.`,
     dishes: DISHES,
-    rules: () => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id], strength: 'usually' })],
+    rules: () => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [STEW_VEG.id], strength: 'usually' })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(STEW_VEG, 1, 'week')],
     expect: [
       nearNoRulesCount('Idiyappam'),
@@ -273,7 +273,7 @@ const PAIRING_CASES: RuleCase[] = [
     name: "A limit ranks the dishes of a link",
     why: `${REPORT}Idiyappam comes with a frequent Kerala Stew (Veg) or a rare Kerala Stew (Non-Veg), and the frequent one is limited to once a week. Frequency alone would pick the frequent stew for most meals; the limit ranks it down, so it is in at most one Idiyappam meal a week and the others take the other stew. A brought dish's limit no longer counts against its base, so only the limit ranking the link's dishes can hold this. The frequent stew must still get its one meal in most weeks: a pick made while the search briefly had it in another meal was never revisited, crowding it out of the link.`,
     dishes: DISHES_BY_FREQUENCY,
-    rules: (lib) => [linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [lib.dish('Kerala Stew (Veg)').id, lib.dish('Kerala Stew (Non-Veg)').id] })],
+    rules: (lib) => [caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [lib.dish('Kerala Stew (Veg)').id, lib.dish('Kerala Stew (Non-Veg)').id] })],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(FREQUENT_STEW_VEG, 1, 'week')],
     expect: [
       everyMealWithOneOf('Idiyappam', STEWS),
@@ -309,8 +309,8 @@ const PAIRING_CASES: RuleCase[] = [
     why: `${REPORT}Idiyappam brings Kerala Stew (Veg), which brings Pepper Rasam, limited to once a week: a brought dish's own limit, two links down, made the base rarer. The links alone make Idiyappam more frequent than with no rules, so only "not rarer" is checked.`,
     dishes: DISHES,
     rules: () => [
-      linkRule(IDIYAPPAM, { mode: 'comes', target: 'curry_dish', values: [STEW_VEG.id] }),
-      linkRule(STEW_VEG, { mode: 'comes', target: 'extra_dish', values: [PEPPER_RASAM.id] }),
+      caseLink(IDIYAPPAM, { mode: 'comes', to: 'curry', values: [STEW_VEG.id] }),
+      caseLink(STEW_VEG, { mode: 'comes', to: 'extra', values: [PEPPER_RASAM.id] }),
     ],
     given: () => [mealRule(IDIYAPPAM, ['breakfast']), limitRule(PEPPER_RASAM, 1, 'week')],
     expect: [notRarerThanNoRules('Idiyappam'), everyMealWith('Idiyappam', ['Kerala Stew (Veg)', 'Pepper Rasam'])],
@@ -349,9 +349,9 @@ const MORE_THAN_TWO = someWeekPicks('Some week has more than 2 Rice meals with S
 
 const papadWhen = (when: { curry?: string[]; subzi?: string[] }, extra: { strength?: 'usually'; scope?: { meals: ['lunch'] }; values?: string[] } = {}) =>
   (lib: CaseLibrary): CaseRule[] => [
-    linkRule(lib.dish('Rice'), {
+    caseLink(lib.dish('Rice'), {
       mode: 'comes',
-      target: 'extra_dish',
+      to: 'extra',
       values: (extra.values ?? ['Papad']).map((n) => dishId(lib, n)),
       when: { ...(when.curry && { curry: when.curry.map((n) => dishId(lib, n)) }), ...(when.subzi && { subzi: when.subzi.map((n) => dishId(lib, n)) }) },
       ...(extra.strength && { strength: extra.strength }),
@@ -372,7 +372,7 @@ const SUBZI_AT_EVERY_MEAL: CaseRule = {
 };
 /** Rice comes with Sambar, so Rice and Sambar meals are common enough to check. */
 const riceWithSambar = (lib: CaseLibrary, strength?: 'usually' | 'sometimes') =>
-  linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')], ...(strength && { strength }) });
+  caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar')], ...(strength && { strength }) });
 
 function conditionalCases(): RuleCase[] {
   return [
@@ -441,7 +441,7 @@ function conditionalCases(): RuleCase[] {
       name: 'Papad waits for a curry that Rice itself brings',
       why: `${PAPAD_RULE}Rice always comes with Sambar, and Papad waits for Sambar: the condition is met by a curry another link brought, so every Rice meal has Sambar and Papad. Passes today because the planner ignores the condition and brings the dish to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
       rules: papadOnSambar,
-      given: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')] })],
+      given: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar')] })],
       expect: [everyPicked('Every Rice meal has Sambar and Papad', baseIs('Rice'), allOf(curryIs('Sambar'), papad))],
     },
     {
@@ -450,7 +450,7 @@ function conditionalCases(): RuleCase[] {
       group: 'Pairings',
       name: 'A subzi comes with Rice when the curry is Sambar',
       why: `${PAPAD_RULE}a condition can wait to bring a subzi too: Rice comes with Beans Poriyal when the meal has Sambar, so every Rice and Sambar meal has it. Passes today because the planner ignores the condition and brings the dish to every Rice meal, which is also what this case wants; it guards the condition once the planner reads it.`,
-      rules: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
+      rules: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'subzi', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
       given: () => [CURRY_AT_EVERY_MEAL],
       expect: [everyPicked('Every Rice meal with Sambar has Beans Poriyal', riceSambar, subziIs('Beans Poriyal'))],
     },
@@ -473,9 +473,9 @@ function conditionalCases(): RuleCase[] {
       group: 'Pairings',
       name: 'A conditional subzi link beats an older plain one',
       why: `${PAPAD_RULE}Rice usually comes with Aloo Gobi (an older link) and with Beans Poriyal when the meal has Sambar: the conditional one is firmer for its meals, so every Rice and Sambar meal has Beans Poriyal, and other Rice meals mostly keep Aloo Gobi.`,
-      rules: (lib) => [linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
+      rules: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'subzi', values: [dishId(lib, 'Beans Poriyal')], when: { curry: [dishId(lib, 'Sambar')] } })],
       given: (lib) => [
-        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'subzi_dish', values: [dishId(lib, 'Aloo Gobi')], strength: 'usually' }),
+        caseLink(lib.dish('Rice'), { mode: 'comes', to: 'subzi', values: [dishId(lib, 'Aloo Gobi')], strength: 'usually' }),
         CURRY_AT_EVERY_MEAL,
         SUBZI_AT_EVERY_MEAL,
       ],
@@ -526,8 +526,8 @@ function conditionalCases(): RuleCase[] {
       rules: papadWhen({ curry: ['Sambar'] }, { strength: 'usually' }),
       given: (lib) => [
         mealRule(lib.dish('Rice'), ['breakfast']),
-        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [dishId(lib, 'Pickle')], strength: 'usually' }),
-        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'extra_dish', values: [dishId(lib, 'Curd')], strength: 'usually' }),
+        caseLink(lib.dish('Rice'), { mode: 'comes', to: 'extra', values: [dishId(lib, 'Pickle')], strength: 'usually' }),
+        caseLink(lib.dish('Rice'), { mode: 'comes', to: 'extra', values: [dishId(lib, 'Curd')], strength: 'usually' }),
         CURRY_AT_EVERY_MEAL,
         riceWithSambar(lib, 'sometimes'),
       ],
@@ -579,7 +579,7 @@ function conditionalCases(): RuleCase[] {
       why: `${PAPAD_RULE}Rice always comes with Sambar or Rasam, Papad is never at dinner, and Rice comes with Papad when the curry is Sambar: Rice and Sambar dinners stay within x1.5 of the count without the Papad link, and every Rice and Sambar lunch has Papad. The bug: the pick between Sambar and Rasam was scored with the Papad the conditional link would bring, so at dinner the missing Papad ranked Sambar down and Rice dinners never had Sambar.`,
       rules: papadOnSambar,
       given: (lib) => [
-        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar'), dishId(lib, 'Rasam')] }),
+        caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar'), dishId(lib, 'Rasam')] }),
         papadNotAtDinner(lib),
         preferRiceStrongly(lib),
       ],
@@ -597,7 +597,7 @@ function conditionalCases(): RuleCase[] {
       rules: papadOnSambar,
       given: (lib) => [
         CURRY_AT_EVERY_MEAL,
-        linkRule(lib.dish('Rice'), { mode: 'comes', target: 'curry_dish', values: [dishId(lib, 'Sambar')] }),
+        caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar')] }),
         {
           name: 'Papad never with Pickle',
           spec: { template: 'avoid_with', params: { match: is('id', dishId(lib, 'Papad')), with: is('id', dishId(lib, 'Pickle')), strength: 'must' } },

@@ -103,7 +103,7 @@ async function seed(data: SeedData): Promise<void> {
     const bases = c.componentType === 'curry' ? resolveSeededCurryCompatibilityIds(c.name, categoryLookup) : undefined;
     const days = seededDays(c.name);
     return [
-      ...(bases ? [bases.length ? pairingRule(dish, bases) : exclusionRule(dish)] : []),
+      ...(bases ? [bases.length ? pairingRule(dish, bases, storedParts) : exclusionRule(dish)] : []),
       ...(days ? [dayRule(dish, days)] : []),
     ];
   });

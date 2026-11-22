@@ -3,10 +3,22 @@ import { liveQuery } from 'dexie';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
-import { linkRule } from '@/rules';
+import { linkRule as buildLink } from '@/rules';
 import { addRule } from '@/services/food-db';
 import { planFromData, slotConflicts } from './plan-generation';
 import { generatePlan, loadPlanningInput } from './planning';
+import { getParts } from '@/services/parts-db';
+
+// The converted parts by place, 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+/** A dish's link over the stored parts: a target's part (1 to 4) is the place of the converted part it names. */
+const linkRule = async (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => {
+  const parts = await getParts();
+  return buildLink(owner, { ...link, target: { ...link.target, part: parts[link.target.part - 1].id } }, parts);
+};
 
 beforeEach(async () => {
   await Promise.all(db.tables.map((t) => t.clear()));
@@ -150,7 +162,7 @@ describe('served with', () => {
     const library = await db.components.toArray();
     const dosa = library.find((c) => c.name === 'Dosa')!;
     const sambar = library.find((c) => c.name === 'Sambar')!;
-    await db.rules.add({ ...linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [dosa.id] }), enabled: true, created_at: '' });
+    await db.rules.add({ ...await linkRule(sambar, { mode: 'serve', target: LINK_TARGET.base_dish, values: [dosa.id] }), enabled: true, created_at: '' });
 
     const { plan } = await generatePlan({ seed: 1, pins: { 'monday-breakfast': { base_id: dosa.id } } });
     const dosaMeals = plan.slots.filter((s) => s.base_id === dosa.id);
@@ -168,7 +180,7 @@ describe('links to specific dishes', () => {
     const [onlyBase] = byType('base');
     const [avoided] = byType('extra');
     const now = new Date().toISOString();
-    for (const rule of [linkRule(curry, { mode: 'with', target: 'base_dish', values: [onlyBase.id] }), linkRule(curry, { mode: 'never', target: 'extra_dish', values: [avoided.id] })]) {
+    for (const rule of [await linkRule(curry, { mode: 'with', target: LINK_TARGET.base_dish, values: [onlyBase.id] }), await linkRule(curry, { mode: 'never', target: LINK_TARGET.extra_dish, values: [avoided.id] })]) {
       await db.rules.add({ ...rule, enabled: true, created_at: now });
     }
     // Sides are left out unless a rule asks for them, so ask for this curry wherever it fits.

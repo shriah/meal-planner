@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, offersComes, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
+import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -10,6 +10,7 @@ import {
 import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
 import { MAX_LIST_ITEMS } from './limits';
+import { legacyPartIds } from '@/db/parts';
 import { namesFor, searchLibrary, type AssistantData } from './retrieve';
 import type { AssistantEffect, ToolContext } from './types';
 
@@ -325,16 +326,17 @@ function servedWithLinks(
     if (hit.error) return { ok: false, error: hit.error };
     categoryIds.push(hit.id!);
   }
+  const base = legacyPartIds(data.parts).base;
   return {
     ok: true,
     links: [
-      ...(baseIds.length ? [{ mode: 'serve' as const, target: 'base_dish' as const, values: [...new Set(baseIds)], strength }] : []),
-      ...(categoryIds.length ? [{ mode: 'serve' as const, target: 'base_category' as const, values: [...new Set(categoryIds)], strength }] : []),
+      ...(baseIds.length ? [{ mode: 'serve' as const, target: { part: base, kind: 'dish' as const }, values: [...new Set(baseIds)], strength }] : []),
+      ...(categoryIds.length ? [{ mode: 'serve' as const, target: { part: base, kind: 'category' as const }, values: [...new Set(categoryIds)], strength }] : []),
     ],
   };
 }
 
-const COMES_DISH_TARGET = { curry: 'curry_dish', subzi: 'subzi_dish', extra: 'extra_dish' } as const;
+type ComesTarget = { type: Exclude<ComponentType, 'base'>; kind: 'dish' | 'category' };
 
 /** One "comes with" link per entry, on a dish of this type: dishes of one type, curry types, or extra categories. */
 function comesLinks(
@@ -350,13 +352,16 @@ function comesLinks(
     if (kinds === 0) return { ok: false, error: 'each comes_with entry needs dishes, curry_types or extra_categories' };
     if (kinds > 1) return { ok: false, error: 'each comes_with entry is one kind of link: dishes, curry_types or extra_categories; use a separate entry for each' };
     const strength = SERVE_STRENGTH[entry.strength ?? 'always'];
-    const add = (target: Parameters<typeof offersComes>[1], values: (number | string)[]): string | undefined => {
-      if (!offersComes(componentType, target)) {
-        return componentType === 'curry' || componentType === 'subzi'
-          ? `a ${componentType} does not come with ${componentType === 'curry' ? 'curries' : 'subzis'}`
-          : `a ${componentType} cannot come with ${target.replace('_', ' ')}`;
+    const legacy = legacyPartIds(data.parts);
+    // A meal holds one curry and one subzi, so neither comes with specific dishes of its own type. A link to a higher
+    // part is stored the other way round (the dish is added when that dish is in the meal), as the dish form stores it.
+    const add = (target: ComesTarget, values: number[]): string | undefined => {
+      if (target.type === componentType && target.kind === 'dish' && (componentType === 'curry' || componentType === 'subzi')) {
+        return `a ${componentType} does not come with ${componentType === 'curry' ? 'curries' : 'subzis'}`;
       }
-      links.push({ mode: 'comes', target, values: [...new Set(values)], strength });
+      const part = legacy[target.type];
+      const mode = part === legacy[componentType] ? 'comes' : bringMode(legacy[componentType], part, data.parts);
+      links.push({ mode, target: { part, kind: target.kind }, values: [...new Set(values)], strength });
       return undefined;
     };
     let error: string | undefined;
@@ -373,12 +378,20 @@ function comesLinks(
       }
       const types = new Set(found.map((c) => c.componentType));
       if (types.size > 1) return { ok: false, error: 'the dishes of one comes_with entry must be of the same type (all curries, all subzis or all extras); use a separate entry for each type' };
-      const type = found[0].componentType as keyof typeof COMES_DISH_TARGET;
-      error = add(COMES_DISH_TARGET[type], found.map((c) => c.id));
+      const type = found[0].componentType as ComesTarget['type'];
+      error = add({ type, kind: 'dish' }, found.map((c) => c.id));
     } else if (entry.curry_types?.length) {
       const bad = badValues('curry_types', entry.curry_types, CURRY_CATEGORIES);
       if (bad) return { ok: false, error: bad };
-      error = add('curry_category', entry.curry_types);
+      // A curry type is a category of the Curry part, made when a curry of that type is first saved.
+      const curryPart = legacyPartIds(data.parts).curry;
+      const ids: number[] = [];
+      for (const type of entry.curry_types) {
+        const hit = data.categories.find((c) => c.part_id === curryPart && c.name === type);
+        if (!hit) return { ok: false, error: `no curry in the library is of type "${type}"` };
+        ids.push(hit.id);
+      }
+      error = add({ type: 'curry', kind: 'category' }, ids);
     } else {
       const ids: number[] = [];
       for (const wanted of entry.extra_categories ?? []) {
@@ -386,7 +399,7 @@ function comesLinks(
         if (hit.error) return { ok: false, error: hit.error };
         ids.push(hit.id!);
       }
-      error = add('extra_category', ids);
+      error = add({ type: 'extra', kind: 'category' }, ids);
     }
     if (error) return { ok: false, error };
   }
@@ -399,7 +412,7 @@ function comesLinks(
  * lands on a new link is the draft's doing.
  */
 function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[], stored: DishLink[] = []): string | undefined {
-  return linkWarnings(self, [...stored, ...links], { dishes: data.library, rules: data.rules }, namesFor(data))
+  return linkWarnings(self, [...stored, ...links], { dishes: data.library, rules: data.rules, parts: data.parts }, namesFor(data))
     .find((w) => w.blocking && w.link >= stored.length)?.message;
 }
 
@@ -443,10 +456,10 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
 }
 
 /** How a pairing brought a side; a comes-with link that waits for a curry or subzi says which. */
-function howBrought(rule: RuleRecord | undefined, by: string, side: string, name: (id: number) => string): string {
+function howBrought(rule: RuleRecord | undefined, by: string, side: string, name: (id: number) => string, data: AssistantData): string {
   if (rule?.spec.template !== 'comes_with') return `${side} is served with ${by}`;
-  const when = readLink(rule)?.when;
-  return `${by} comes with ${side}${when ? ` when ${describeWhen(when, name)}` : ''}`;
+  const when = readLink(rule, data.parts)?.when;
+  return `${by} comes with ${side}${when ? ` when ${describeWhen(when, name, namesFor(data))}` : ''}`;
 }
 
 /** The dishes in one slot that a pairing brought, named with the dish that brought each. */
@@ -459,7 +472,7 @@ function pairedWith(data: AssistantData, plan: WeeklyPlan, day: DayOfWeek, meal:
     .map((p) => ({
       dish: name(p.component),
       by: name(p.by),
-      how: howBrought(ruleOf(p.ruleId), name(p.by), name(p.component), name),
+      how: howBrought(ruleOf(p.ruleId), name(p.by), name(p.component), name, data),
     }));
 }
 
@@ -659,8 +672,8 @@ const HANDLERS: Record<string, Handler> = {
     // The drafted served-with link replaces the stored one in its slot, so carry over the bases already there and their limits.
     // A switched-off link is not in force: nothing is carried over from it, and saving the draft switches the slot on.
     const owned = data.rules.filter((r) => r.owner_component_id === dish.id);
-    const stored = readOwned(owned.filter((r) => r.enabled)).links;
-    const off = readOwned(owned.filter((r) => !r.enabled)).links.map(linkSlotOf);
+    const stored = readOwned(owned.filter((r) => r.enabled), data.parts).links;
+    const off = readOwned(owned.filter((r) => !r.enabled), data.parts).links.map(linkSlotOf);
     const already: number[] = [];
     let replacesOff = false;
     // Only what this proposal adds or firms up is checked; a conflict already stored is not made worse by being kept.
@@ -677,7 +690,7 @@ const HANDLERS: Record<string, Handler> = {
       const firmer = (requested ?? before.strength) !== before.strength;
       const added = firmer ? values : link.values.filter((v) => !before.values.includes(v));
       if (added.length) changed.push({ ...link, values: added, strength: requested ?? before.strength });
-      if (link.target === 'base_dish') already.push(...before.values.filter((id) => typeof id === 'number'));
+      if (link.target.kind === 'dish') already.push(...before.values);
       return {
         ...link,
         values,
