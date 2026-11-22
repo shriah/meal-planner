@@ -1,6 +1,6 @@
 // The rule case model: a situation written in code (dishes, stored-style rules, the outcome it must
 // produce). Cases cover the rule engine and the planner only; nothing here touches app UI code.
-import type { Justification, Pins, PlanSlotLike } from '@/planner';
+import type { Justification, Pins, PlanSlotLike, PlannerPart } from '@/planner';
 import type { RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord, ComponentType } from '@/types/component';
@@ -8,6 +8,8 @@ import type { ComponentRecord, ComponentType } from '@/types/component';
 export type CaseGroup = 'Pairings' | 'Days and meals' | 'Variety' | 'Locks and picks' | 'Extras';
 
 export interface CaseLibrary {
+  /** The four converted parts (ids 1 to 4), in meal order. */
+  parts: PlannerPart[];
   dishes: ComponentRecord[];
   categories: CategoryRecord[];
   dish(name: string): ComponentRecord;

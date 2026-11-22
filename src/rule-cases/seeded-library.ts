@@ -1,16 +1,23 @@
 // The shipped seed library (ids from 100) with its default and conditional-link rules, as the search-budget measurements
 // and the repair snapshot build it.
+import { caseLookup } from './library';
+import type { CategoryRecord } from '@/types/category';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
+import { convertDish } from '@/db/parts';
 import type { ComponentLike } from '@/planner';
 import { compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
 
 const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
 const CREATED = '2026-01-01T00:00:00.000Z';
 
+const CATEGORIES: CategoryRecord[] = [...Object.values(CAT.base), ...Object.values(CAT.extra)].map((id) => ({
+  id, kind: id < 10 ? 'base' : 'extra', name: `category ${id}`, created_at: CREATED,
+}));
+
 export function seededLibrary(): ComponentLike[] {
-  return [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
-    ...c, id: 100 + i, frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
-  }));
+  const lookup = caseLookup(CATEGORIES);
+  return [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) =>
+    convertDish({ ...c, id: 100 + i, frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal' }, lookup));
 }
 
 export function seedDish(lib: ComponentLike[], name: string): ComponentLike {

@@ -20,6 +20,13 @@ export type Meal = (typeof MEALS)[number];
 export const ROLES = COMPONENT_TYPES;
 export type Role = ComponentType;
 
+/** A user-visible part of a meal. A meal's parts are a `readonly PlannerPart[]` in order; index 0 is the first part. */
+export interface PlannerPart {
+  id: number;
+  name: string;
+  varied: boolean;
+}
+
 /** Structural shape the planner needs; the app's ComponentRecord is assignable to it. */
 export interface ComponentLike {
   id: number;
@@ -33,6 +40,11 @@ export interface ComponentLike {
   regional_tags: readonly RegionalTag[];
   occasion_tags: readonly OccasionTag[];
   frequency?: Frequency;
+  /** The part the dish fills (required from the planner switch-over). */
+  part_id?: number;
+  category_id?: number | null;
+  /** Tag value ids by tag group id. */
+  tags?: Readonly<Record<number, readonly number[]>>;
 }
 
 /** One component placed in one role of one slot. */

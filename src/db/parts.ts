@@ -20,6 +20,19 @@ export const CONVERTED_PARTS: Record<ComponentType, Pick<PartRecord, 'name' | 'p
   extra: { name: 'Extras', position: 3, varied: false },
 };
 
+export type LegacyParts = Record<ComponentType, number>;
+
+/** The part id of each component type, matched by converted part name. Throws when one is missing. */
+export function legacyPartIds(parts: readonly Pick<PartRecord, 'id' | 'name'>[]): LegacyParts {
+  const idOf = (type: ComponentType): number => {
+    const { name } = CONVERTED_PARTS[type];
+    const part = parts.find((p) => p.name === name);
+    if (!part) throw new Error(`no "${name}" part`);
+    return part.id;
+  };
+  return { base: idOf('base'), curry: idOf('curry'), subzi: idOf('subzi'), extra: idOf('extra') };
+}
+
 type ConvertedTagGroup = Pick<TagGroupRecord, 'name' | 'position' | 'multiple'> & { values: readonly string[] };
 
 /** Today's tag arrays as groups. Value ids are 1..n within each group, in list order. */

@@ -36,6 +36,25 @@ describe('matcher', () => {
     expect(test(is('componentType', 'curry'), at(fishCurry, 'extra'))).toBe(true);
   });
 
+  it('reads part, category and tags from the component', () => {
+    const dish = component('curry', { part_id: 2, category_id: 50, tags: { 2: [5], 3: [1, 4] } });
+    expect(test(is('part', 2), at(dish))).toBe(true);
+    expect(test(is('part', 1), at(dish))).toBe(false);
+    expect(test(is('category', 50), at(dish))).toBe(true);
+    expect(test(is('category', 50), at(plainSubzi))).toBe(false);
+    expect(test(is('tags', '2:5'), at(dish))).toBe(true);
+    expect(test(is('tags', '3:4'), at(dish))).toBe(true);
+    expect(test(is('tags', '2:6'), at(dish))).toBe(false);
+    expect(test(is('tags', '2:5'), at(plainSubzi))).toBe(false);
+    expect(test(oneOf('tags', ['9:9', '3:1']), at(dish))).toBe(true);
+  });
+
+  it('rejects a malformed tag value', () => {
+    expect(MatcherSchema.safeParse({ field: 'tags', op: 'has', value: '2:5' }).success).toBe(true);
+    expect(MatcherSchema.safeParse({ field: 'tags', op: 'has', value: 'x' }).success).toBe(false);
+    expect(MatcherSchema.safeParse({ field: 'part', op: 'eq', value: 2 }).success).toBe(true);
+  });
+
   it('lists referenced fields', () => {
     expect([...matcherFields(all(is('day', 'monday'), not(oneOf('id', [1, 2]))))].sort()).toEqual(['day', 'id']);
   });

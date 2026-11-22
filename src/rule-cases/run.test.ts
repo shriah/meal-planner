@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { everyMealWith, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
 import { is } from '@/planner';
 import { exclusionRule, mealRule } from '@/rules';
-import { TEST_LIBRARY } from './library';
+import { legacyPartIds } from '@/db/parts';
+import { libraryOf, TEST_LIBRARY } from './library';
+import { seededLibrary } from './seeded-library';
 import { failsWithoutSubject, recordsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks, PlanCase } from './types';
 
@@ -25,6 +27,29 @@ describe('TEST_LIBRARY', () => {
     const pongal = TEST_LIBRARY.dish('Pongal');
     expect(pongal.componentType).toBe('base');
     expect(pongal.base_category_id).toBe(TEST_LIBRARY.category('Rice-based').id);
+  });
+});
+
+describe('library dishes carry their part', () => {
+  it('gives every dish the part of its type, and the library its four parts', () => {
+    const ids = legacyPartIds(TEST_LIBRARY.parts);
+    expect(TEST_LIBRARY.parts.map((p) => [p.id, p.name, p.varied])).toEqual([
+      [1, 'Base', true], [2, 'Curry', true], [3, 'Subzi', true], [4, 'Extras', false],
+    ]);
+    for (const d of TEST_LIBRARY.dishes) expect(d.part_id, d.name).toBe(ids[d.componentType]);
+  });
+  it('gives categories and tags from the old fields', () => {
+    expect(TEST_LIBRARY.dish('Pongal').category_id).toBe(TEST_LIBRARY.category('Rice-based').id);
+    expect(TEST_LIBRARY.dish('Pickle').category_id).toBe(TEST_LIBRARY.category('Condiments').id);
+    expect(TEST_LIBRARY.dish('Sambar').category_id).toBe(TEST_LIBRARY.category('lentil').id);
+    expect(TEST_LIBRARY.dish('Beans Poriyal').category_id).toBeUndefined();
+    expect(TEST_LIBRARY.dish('Pongal').tags).toEqual({ 1: [1], 2: [], 3: [], 4: [] });
+  });
+  it('converts case-only dishes and the seeded library too', () => {
+    const lib = libraryOf([{ ...TEST_LIBRARY.dish('Dal'), id: 900, name: 'Extra Dal' }], TEST_LIBRARY.categories);
+    expect(lib.dish('Extra Dal').part_id).toBe(2);
+    const ids = legacyPartIds(TEST_LIBRARY.parts);
+    for (const d of seededLibrary()) expect(d.part_id, d.name).toBe(ids[d.componentType]);
   });
 });
 

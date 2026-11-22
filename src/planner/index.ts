@@ -1,7 +1,7 @@
 // Public API of the planner: a headless constraint-optimisation engine for weekly meal plans.
 export {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotIndex, slotDay, slotMeal, emptyPlan,
-  type Day, type Meal, type Role, type ComponentLike, type Assignment, type SlotState, type PlanState,
+  type Day, type Meal, type Role, type ComponentLike, type PlannerPart, type Assignment, type SlotState, type PlanState,
   type SlotPins, type Pins,
 } from './types';
 export {
