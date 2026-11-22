@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildModel } from './plan';
 import { is } from './matcher';
 import type { Constraint } from './constraints';
-import { component } from './test-utils';
+import { component, TEST_PARTS } from './test-utils';
 import {
   BUDGET_MAX, BUDGET_MIN, BUDGET_PER_DISH, BUDGET_PER_PAIR, BUDGET_PLATEAU, BUDGET_BASE, searchBudget,
 } from './budget';
@@ -13,7 +13,7 @@ const pairs = (n: number): Constraint[] =>
     kind: 'pair', id: `pair-${i}`, label: 'Served with', origin: 'rule', when: is('id', 1), of: is('id', 2), strength: 'must',
   }));
 const budgetOf = (dishes: number, pairCount = 0) =>
-  searchBudget(buildModel({ library: library(dishes), constraints: pairs(pairCount) }));
+  searchBudget(buildModel({ library: library(dishes), parts: TEST_PARTS, constraints: pairs(pairCount) }));
 
 // Measured in docs/superpowers/plans/2026-11-16-planner-search-budget-measurements.md (max over seeds).
 const NEEDS = [

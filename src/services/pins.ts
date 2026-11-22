@@ -1,13 +1,23 @@
-// Turns the locked parts of a plan into planner pins, so a re-plan keeps them and plans around them.
-import type { Pins, SlotPins } from '@/planner';
+// Turns the locked parts of a plan into pins, so a re-plan keeps them and plans around them. Pins keep today's
+// shape (base, curry, subzi, extras); the planner gets them by part through `toWeekPartPins`.
+import type { Day, Meal } from '@/planner';
 import type { DayOfWeek, WeeklyPlan } from '@/types/plan';
 import type { MealSlot } from '@/types/preferences';
 
-export function pinsFromLocks(plan: WeeklyPlan, locks: Record<string, boolean>): Pins {
-  const pins: Pins = {};
+/** Locked values for one slot. The planner never moves a pinned value. A `null` curry or subzi holds that part empty. */
+export interface SlotPins {
+  base_id?: number;
+  curry_id?: number | null;
+  subzi_id?: number | null;
+  extra_ids?: number[];
+}
+export type LegacyPins = Partial<Record<`${Day}-${Meal}`, SlotPins>>;
+
+export function pinsFromLocks(plan: WeeklyPlan, locks: Record<string, boolean>): LegacyPins {
+  const pins: LegacyPins = {};
   for (const planSlot of plan.slots) {
-    const prefix = `${planSlot.day}-${planSlot.meal_slot}` as keyof Pins;
-    const slotPins: NonNullable<Pins[keyof Pins]> = {};
+    const prefix = `${planSlot.day}-${planSlot.meal_slot}` as keyof LegacyPins;
+    const slotPins: NonNullable<LegacyPins[keyof LegacyPins]> = {};
     if (locks[`${prefix}-base`]) slotPins.base_id = planSlot.base_id;
     if (locks[`${prefix}-curry`] && planSlot.curry_id !== undefined) slotPins.curry_id = planSlot.curry_id;
     if (locks[`${prefix}-subzi`] && planSlot.subzi_id !== undefined) slotPins.subzi_id = planSlot.subzi_id;
@@ -21,8 +31,8 @@ export function pinsFromLocks(plan: WeeklyPlan, locks: Record<string, boolean>):
  * Pins for re-planning one meal: every other meal is pinned exactly as it is (an empty curry or subzi
  * held empty), and in this meal only the base and the locked parts are pinned.
  */
-export function pinsForMeal(plan: WeeklyPlan, locks: Record<string, boolean>, day: DayOfWeek, meal: MealSlot): Pins {
-  const pins: Pins = {};
+export function pinsForMeal(plan: WeeklyPlan, locks: Record<string, boolean>, day: DayOfWeek, meal: MealSlot): LegacyPins {
+  const pins: LegacyPins = {};
   for (const s of plan.slots) {
     const prefix = `${s.day}-${s.meal_slot}` as const;
     if (s.day !== day || s.meal_slot !== meal) {

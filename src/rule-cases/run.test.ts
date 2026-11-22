@@ -111,7 +111,7 @@ describe('recordsOf', () => {
     const shape = (c: Constraint) => Object.fromEntries(Object.entries(c).filter(([k]) => !['id', 'label', 'ruleId'].includes(k)));
     expect(caps.map(shape)).toEqual(capConstraints(TEST_LIBRARY.parts).map(shape));
     expect(caps.map((c) => c.label)).toEqual(capConstraints(TEST_LIBRARY.parts).map((c) => c.label));
-    expect([...capped(compileModel(TEST_LIBRARY.dishes, constraints))]).toEqual([2, 3]);
+    expect([...capped(compileModel(TEST_LIBRARY.dishes, constraints, TEST_LIBRARY.parts))]).toEqual([2, 3]);
   });
   it('orders own rules, then given ones, then the defaults less those dropped', () => {
     const own = mealRule(TEST_LIBRARY.dish('Dal'), ['lunch']);

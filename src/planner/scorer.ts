@@ -5,8 +5,8 @@
 import { byComponent, timeOf, type Constraint, type CountConstraint, type RuleLevel, type Origin, type PairConstraint } from './constraints';
 import { compileMatcher, isLeaf, type MatchFn } from './matcher';
 import {
-  DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
-  type Assignment, type ComponentLike, type Day, type Meal, type PlanState, type Role, type SlotState,
+  DAYS, MEALS, SLOT_COUNT, slotDay, slotMeal, titleCase,
+  type Assignment, type ComponentLike, type Day, type Meal, type PlannerPart, type PlanState, type SlotState,
 } from './types';
 
 export type BoundKind = 'hardMin' | 'softMin' | 'softMax' | 'hardMax';
@@ -107,7 +107,7 @@ export interface Brings { wants: Want[] }
 /** One dish's pairs as resolved in a meal (codes like `Memo.pairs`), and what they bring. */
 interface Resolved { codes: Int32Array; brings?: Brings }
 
-/** Cached matcher results for one (component, role, slot). */
+/** Cached matcher results for one (component, part, slot). */
 interface Memo {
   /** Prefer weights split by whom they give way to. */
   prefer: number;
@@ -141,6 +141,13 @@ const givesWay = (l: RuleLevel | undefined): number => (l === 'dish' ? GIVES_TO_
 export interface CompiledModel {
   readonly library: readonly ComponentLike[];
   readonly byId: ReadonlyMap<number, ComponentLike>;
+  /** The meal's parts, in order; a slot's `parts[k]` holds part `parts[k]`. */
+  readonly parts: readonly PlannerPart[];
+  /**
+   * By part position: whether the part holds one dish (the first part, and every part capped at one per meal),
+   * else many.
+   */
+  readonly single: readonly boolean[];
   readonly constraints: readonly Constraint[];
   /** Internal, mutable scoring state. A model must not be scored concurrently. */
   readonly state: ScoringState;
@@ -148,6 +155,8 @@ export interface CompiledModel {
 
 interface ScoringState {
   idIndex: Map<number, number>;
+  /** Position of each part id. */
+  partIndex: Map<number, number>;
   /** The parts that hold one dish, in the order their caps come; a pair's `claim` indexes it. */
   capParts: readonly number[];
   /** The same parts as a set (`capped`). */
@@ -201,7 +210,7 @@ function cappedPart(c: CountConstraint): number | undefined {
 /** The parts that hold one dish in a meal: those a constraint caps at one per meal. A pair claims such a part. */
 export const capped = (m: CompiledModel): ReadonlySet<number> => m.state.capped;
 
-export function compileModel(library: readonly ComponentLike[], constraints: readonly Constraint[]): CompiledModel {
+export function compileModel(library: readonly ComponentLike[], constraints: readonly Constraint[], parts: readonly PlannerPart[]): CompiledModel {
   // Before the pairs, which claim these parts: the caps are usually the last rules.
   const capParts: number[] = [];
   for (const c of constraints) {
@@ -222,12 +231,12 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       continue;
     }
     if (c.kind === 'pair') {
-      // Candidates are matched as their own type, at the first slot: `of` names dishes, `scope` times.
+      // Candidates are matched in their own part, at the first slot: `of` names dishes, `scope` times.
       const of = compileMatcher(c.of);
       const isCandidate = new Uint8Array(N);
       const cis: number[] = [];
       library.forEach((d, i) => {
-        if (of({ c: d, role: d.componentType, day: slotDay(0), meal: slotMeal(0) })) {
+        if (of({ c: d, part: d.part_id, day: slotDay(0), meal: slotMeal(0) })) {
           isCandidate[i] = 1;
           cis.push(i);
         }
@@ -238,7 +247,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       }
       pairs.push({
         def: c, when: addMatcher(compileMatcher(c.when)), cis: Int32Array.from(cis), isCandidate,
-        claim: cis.length ? capParts.indexOf(library[cis[0]].part_id ?? NaN) : -1,
+        claim: cis.length ? capParts.indexOf(library[cis[0]].part_id) : -1,
         must: c.strength === 'must', cost: c.cost ?? 10, inScope,
         inMeal: Int32Array.from((c.inMeal ?? []).map((mt) => addMatcher(compileMatcher(mt)))),
       });
@@ -287,22 +296,26 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     for (let t = 0; t < SLOT_COUNT; t++) {
       if (!p.inScope[t]) continue;
       const forbidden = sides.every(({ side, own }) => {
-        const a: Assignment = { c: side, role: side.componentType, day: slotDay(t), meal: slotMeal(t) };
+        const a: Assignment = { c: side, part: side.part_id, day: slotDay(t), meal: slotMeal(t) };
         return own.some((cc) => groupInScope(cc, t) && matchers[cc.sel](a));
       });
       if (forbidden) p.inScope[t] = 0;
     }
   }
 
+  const capped = new Set(capParts);
   return {
     library,
     byId: new Map(library.map((c) => [c.id, c])),
+    parts,
+    single: parts.map((p, k) => k === 0 || capped.has(p.id)),
     constraints,
     state: {
       idIndex,
-      capParts, capped: new Set(capParts),
+      partIndex: new Map(parts.map((p, k) => [p.id, k])),
+      capParts, capped,
       counts, matchers, prefers, pairs,
-      memo: new Array(N * ROLES.length * SLOT_COUNT),
+      memo: new Array(N * parts.length * SLOT_COUNT),
       bufCi: new Int32Array(MAX_ASSIGNMENTS),
       bufSlot: new Int32Array(MAX_ASSIGNMENTS),
       bufMemo: new Array(MAX_ASSIGNMENTS),
@@ -328,12 +341,13 @@ function groupInScope(cc: CompiledCount, t: number): boolean {
   }
 }
 
-function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo {
+/** The memo of library dish `ci` in the part at position `k` of slot `slot`. */
+function memoFor(m: CompiledModel, ci: number, k: number, slot: number): Memo {
   const st = m.state;
-  const key = (ci * ROLES.length + role) * SLOT_COUNT + slot;
+  const key = (ci * m.parts.length + k) * SLOT_COUNT + slot;
   let e = st.memo[key];
   if (!e) {
-    const a: Assignment = { c: m.library[ci], role: ROLES[role], day: slotDay(slot), meal: slotMeal(slot) };
+    const a: Assignment = { c: m.library[ci], part: m.parts[k].id, day: slotDay(slot), meal: slotMeal(slot) };
     const bits = st.matchers.map((f) => f(a));
     const prefer = [0, 0, 0];
     for (const p of st.prefers) if (bits[p.idx]) prefer[p.yields] += p.weight;
@@ -436,18 +450,15 @@ const bringsOf = (m: CompiledModel, codes: Int32Array): Brings => {
   return { wants };
 };
 
-/** The memo of each dish in meal `s` at `slot`, with its role; dishes missing from the library are left out. */
-function mealMemos(m: CompiledModel, s: SlotState, slot: number): { id: number; role: Role; memo: Memo }[] {
-  const out: { id: number; role: Role; memo: Memo }[] = [];
-  const add = (id: number | undefined, role: Role) => {
-    if (id === undefined) return;
-    const ci = m.state.idIndex.get(id);
-    if (ci !== undefined) out.push({ id, role, memo: memoFor(m, ci, ROLE_INDEX[role], slot) });
-  };
-  add(s.base, 'base');
-  add(s.curry, 'curry');
-  add(s.subzi, 'subzi');
-  for (const id of s.extras) add(id, 'extra');
+/** The memo of each dish in meal `s` at `slot`, parts in order, with its part's position; dishes missing from the library are left out. */
+function mealMemos(m: CompiledModel, s: SlotState, slot: number): { id: number; k: number; memo: Memo }[] {
+  const out: { id: number; k: number; memo: Memo }[] = [];
+  for (let k = 0; k < s.parts.length; k++) {
+    for (const id of s.parts[k]) {
+      const ci = m.state.idIndex.get(id);
+      if (ci !== undefined) out.push({ id, k, memo: memoFor(m, ci, k, slot) });
+    }
+  }
   return out;
 }
 
@@ -457,15 +468,24 @@ const resolveIn = (st: ScoringState, memo: Memo, others: readonly { memo: Memo }
 
 const candidateIds = (m: CompiledModel, p: CompiledPair): number[] => Array.from(p.cis, (ci) => m.library[ci].id);
 
+/** Position of part `partId` in the model, or -1. */
+export const partPosition = (m: CompiledModel, partId: number | undefined): number =>
+  partId === undefined ? -1 : (m.state.partIndex.get(partId) ?? -1);
+
 /**
- * What placing `id` in `role` at `slot` brings, after conflict resolution: one want per enforced pair,
+ * What placing `id` in part `partId` at `slot` brings, after conflict resolution: one want per enforced pair,
  * `unit` for `must` pairs. Pairs that wait for a curry or subzi in the meal are left out (see `mealBrings`).
  * Memoised.
  */
-export function bringsWith(m: CompiledModel, id: number, role: Role, slot: number): Brings {
+export function bringsWith(m: CompiledModel, id: number, partId: number, slot: number): Brings {
+  return bringsAt(m, id, partPosition(m, partId), slot);
+}
+
+/** `bringsWith` by part position. */
+export function bringsAt(m: CompiledModel, id: number, k: number, slot: number): Brings {
   const ci = m.state.idIndex.get(id);
-  if (ci === undefined) return { wants: [] };
-  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  if (ci === undefined || k < 0) return { wants: [] };
+  const memo = memoFor(m, ci, k, slot);
   return (memo.brings ??= bringsOf(m, memo.pairs));
 }
 
@@ -474,32 +494,39 @@ export function bringsWith(m: CompiledModel, id: number, role: Role, slot: numbe
  * does, what each dish brings does not depend on the rest of the meal. Memoised per dish.
  */
 export function mealHasConditional(m: CompiledModel, s: SlotState, slot: number): boolean {
-  const has = (id: number | undefined, role: Role) => {
-    const ci = id === undefined ? undefined : m.state.idIndex.get(id);
-    return ci !== undefined && memoFor(m, ci, ROLE_INDEX[role], slot).cond.length > 0;
-  };
-  return has(s.base, 'base') || has(s.curry, 'curry') || has(s.subzi, 'subzi') || s.extras.some((e) => has(e, 'extra'));
+  for (let k = 0; k < s.parts.length; k++) {
+    for (const id of s.parts[k]) {
+      const ci = m.state.idIndex.get(id);
+      if (ci !== undefined && memoFor(m, ci, k, slot).cond.length > 0) return true;
+    }
+  }
+  return false;
 }
 
 /**
- * What `id` in `role` brings to meal `s` at `slot`: as `bringsWith`, but a pair that waits for a curry or
+ * What `id` in part `partId` brings to meal `s` at `slot`: as `bringsWith`, but a pair that waits for a curry or
  * subzi is a want where every part of its condition is met by another dish of `s`, and there it takes its
- * role from the dish's other pairs (see `resolvePairs`). The same object for the same met conditions.
+ * part from the dish's other pairs (see `resolvePairs`). The same object for the same met conditions.
  */
-export function mealBrings(m: CompiledModel, s: SlotState, slot: number, id: number, role: Role): Brings {
+export function mealBrings(m: CompiledModel, s: SlotState, slot: number, id: number, partId: number): Brings {
+  return mealBringsAt(m, s, slot, id, partPosition(m, partId));
+}
+
+/** `mealBrings` by part position. */
+export function mealBringsAt(m: CompiledModel, s: SlotState, slot: number, id: number, k: number): Brings {
   const ci = m.state.idIndex.get(id);
-  if (ci === undefined) return { wants: [] };
-  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  if (ci === undefined || k < 0) return { wants: [] };
+  const memo = memoFor(m, ci, k, slot);
   if (!memo.cond.length) return (memo.brings ??= bringsOf(m, memo.pairs));
   const meal = mealMemos(m, s, slot);
-  const self = meal.findIndex((d) => d.id === id && d.role === role);
-  const r = resolveIn(m.state, memo, self < 0 ? meal : meal.filter((_, k) => k !== self));
+  const self = meal.findIndex((d) => d.id === id && d.k === k);
+  const r = resolveIn(m.state, memo, self < 0 ? meal : meal.filter((_, j) => j !== self));
   return (r.brings ??= bringsOf(m, r.codes));
 }
 
 /**
  * Whether scoring `id` as a free pick (`ScoreOptions.freePick`) can add hard violations: some count rule that
- * gives way to asked sides and has a hard maximum selects the dish in some role and slot. When none does, the
+ * gives way to asked sides and has a hard maximum selects the dish in some part and slot. When none does, the
  * free pick's hard score equals the plain one. Memoised per dish.
  */
 export function freePickLimited(m: CompiledModel, id: number): boolean {
@@ -510,9 +537,9 @@ export function freePickLimited(m: CompiledModel, id: number): boolean {
     const c = m.library[ci];
     const limits = st.counts.filter((cc) => cc.yields === GIVES_TO_ANY && cc.hardMax !== Infinity);
     let hit = false;
-    for (let r = 0; r < ROLES.length && !hit; r++) {
+    for (let k = 0; k < m.parts.length && !hit; k++) {
       for (let slot = 0; slot < SLOT_COUNT && !hit; slot++) {
-        const a: Assignment = { c, role: ROLES[r], day: slotDay(slot), meal: slotMeal(slot) };
+        const a: Assignment = { c, part: m.parts[k].id, day: slotDay(slot), meal: slotMeal(slot) };
         hit = limits.some((cc) => st.matchers[cc.sel](a));
       }
     }
@@ -523,23 +550,25 @@ export function freePickLimited(m: CompiledModel, id: number): boolean {
 
 /**
  * How many of the dish's own rules (its days, meals, "never planned automatically") forbid placing `id` in
- * `role` at `slot`. Placed as a unit member, the dish overrides them: they give way and the score does not
- * count them. Memoised.
+ * part `partId` at `slot`. Placed as a unit member, the dish overrides them: they give way and the score does
+ * not count them. Memoised.
  */
-export function ownRulesOverridden(m: CompiledModel, id: number, role: Role, slot: number): number {
+export function ownRulesOverridden(m: CompiledModel, id: number, partId: number, slot: number): number {
   const ci = m.state.idIndex.get(id);
-  return ci === undefined ? 0 : memoFor(m, ci, ROLE_INDEX[role], slot).overrides;
+  const k = partPosition(m, partId);
+  return ci === undefined || k < 0 ? 0 : memoFor(m, ci, k, slot).overrides;
 }
 
 /**
- * The summed weight of the prefer rules that match `id` in `role` at `slot` and give way to a brought dish
- * (a unit member or an asked-for side): what the score leaves out when the dish is brought. By default
+ * The summed weight of the prefer rules that match `id` in part `partId` at `slot` and give way to a brought
+ * dish (a unit member or an asked-for side): what the score leaves out when the dish is brought. By default
  * "Prefer frequent dishes", "Avoid rare dishes" and "Curries, subzis and extras only when a rule asks". Memoised.
  */
-export function yieldedPreferWeight(m: CompiledModel, id: number, role: Role, slot: number): number {
+export function yieldedPreferWeight(m: CompiledModel, id: number, partId: number, slot: number): number {
   const ci = m.state.idIndex.get(id);
-  if (ci === undefined) return 0;
-  const memo = memoFor(m, ci, ROLE_INDEX[role], slot);
+  const k = partPosition(m, partId);
+  if (ci === undefined || k < 0) return 0;
+  const memo = memoFor(m, ci, k, slot);
   return memo.preferUnit + memo.preferAsk;
 }
 
@@ -552,13 +581,14 @@ export function yieldedPreferWeight(m: CompiledModel, id: number, role: Role, sl
  */
 export function lockNudge(m: CompiledModel, plan: PlanState, slot: number, locked: readonly number[]): number {
   const s = plan[slot];
-  if (s.base === undefined || !locked.length) return 0;
+  const first = s.parts[0][0];
+  if (first === undefined || !locked.length) return 0;
   const st = m.state;
-  const ci = st.idIndex.get(s.base);
+  const ci = st.idIndex.get(first);
   if (ci === undefined) return 0;
-  const { cond } = memoFor(m, ci, ROLE_INDEX.base, slot);
+  const { cond } = memoFor(m, ci, 0, slot);
   if (!cond.length) return 0;
-  const others = mealMemos(m, s, slot).filter((d) => d.role !== 'base');
+  const others = mealMemos(m, s, slot).filter((d) => d.k !== 0);
   let cost = 0;
   for (const pk of cond) {
     const p = st.pairs[pk];
@@ -587,7 +617,7 @@ export interface SlotPair {
 export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): SlotPair[] {
   const out: SlotPair[] = [];
   const s = plan[slot];
-  const inMeal = [s.base, s.curry, s.subzi, ...s.extras].filter((d): d is number => d !== undefined);
+  const inMeal = s.parts.flat();
   const meal = mealMemos(m, s, slot);
   meal.forEach(({ id, memo }, k) => {
     for (const code of resolveIn(m.state, memo, meal.filter((_, j) => j !== k)).codes) {
@@ -605,8 +635,6 @@ export function slotPairs(m: CompiledModel, plan: PlanState, slot: number): Slot
   return out;
 }
 
-const ROLE_INDEX: Record<Role, number> = Object.fromEntries(ROLES.map((r, i) => [r, i])) as Record<Role, number>;
-
 export interface ScoreOptions {
   /**
    * Score every assignment of `id` in the plan as a free pick for its frequency count rules (the count
@@ -619,7 +647,7 @@ export interface ScoreOptions {
    * Score as if no pair waiting for a curry or subzi existed: a dish in a meal only because such a pair
    * brought it is left out of every count rule with an upper bound, of the `when` of every count rule and of
    * every prefer rule (it still counts toward a minimum, such as "a subzi at every meal", and still holds
-   * its role, so the plain pairs it took the role from stay suppressed), and a missing conditional pair
+   * its part, so the plain pairs it took the part from stay suppressed), and a missing conditional pair
    * costs nothing. The search judges a curry with it, so what a conditional pair brings never moves the curry.
    */
   ignoreConditional?: boolean;
@@ -640,7 +668,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
   let soft = 0;
   let n = 0;
 
-  const place = (id: number, role: number, slot: number) => {
+  const place = (id: number, k: number, slot: number) => {
     const ci = st.idIndex.get(id);
     if (ci === undefined) {
       hard += 1;
@@ -656,7 +684,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
     if (n >= MAX_ASSIGNMENTS) throw new Error(`plan has more than ${MAX_ASSIGNMENTS} assignments`);
     bufCi[n] = ci;
     bufSlot[n] = slot;
-    bufMemo[n] = memoFor(m, ci, role, slot);
+    bufMemo[n] = memoFor(m, ci, k, slot);
     bufFlag[n] = 0;
     n++;
   };
@@ -783,10 +811,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
   for (let slot = 0; slot < plan.length; slot++) {
     const s = plan[slot];
     const start = n;
-    if (s.base !== undefined) place(s.base, ROLE_INDEX.base, slot);
-    if (s.curry !== undefined) place(s.curry, ROLE_INDEX.curry, slot);
-    if (s.subzi !== undefined) place(s.subzi, ROLE_INDEX.subzi, slot);
-    for (const id of s.extras) place(id, ROLE_INDEX.extra, slot);
+    for (let k = 0; k < s.parts.length; k++) for (const id of s.parts[k]) place(id, k, slot);
     if (pairs.length && n > start) pairSlot(slot, start, n);
   }
 
@@ -814,7 +839,8 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
     const free = bufCi[i] === freeCi;
     const slot = bufSlot[i];
     const day = (slot / MEALS.length) | 0;
-    const base = flag & UNIT ? plan[slot].base : undefined;
+    // The meal's first-part dish, which owns the rules a unit member does not trigger.
+    const firstDish = flag & UNIT ? plan[slot].parts[0][0] : undefined;
     for (const code of memo.hits) {
       const cc = counts[code >> 2];
       let selected = (code & 1) !== 0;
@@ -826,7 +852,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
         // Rules that give way skip unit members (and asked-for sides, for 'ask'); a unit member does
         // not trigger its own base's rules.
         if (selected && !(free && cc.yields === GIVES_TO_ANY) && (flag & UNIT ? cc.yields : cc.yields === GIVES_TO_ANY)) selected = false;
-        if (triggers && cc.owner === base) triggers = false;
+        if (triggers && cc.owner === firstDish) triggers = false;
         if (!selected && !triggers) continue;
       }
       let lo: number;

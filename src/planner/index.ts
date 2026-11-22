@@ -2,7 +2,7 @@
 export {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotIndex, slotDay, slotMeal, emptyPlan,
   type Day, type Meal, type Role, type ComponentLike, type PlannerPart, type Assignment, type SlotState, type PlanState,
-  type SlotPins, type Pins, type PartSlot, type PartPins, type WeekPartPins,
+  type Pins, type PartSlot, type PartPins, type WeekPartPins,
 } from './types';
 export {
   all, any, not, is, oneOf, TRUE, isLeaf, compileMatcher, matcherFields, MatcherSchema, FIELDS, FIELD_KEYS, OPS_BY_KIND,
@@ -13,7 +13,7 @@ export {
   type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type RuleLevel, type GroupBy, type TimeGroup, type Bounds, type Origin,
 } from './constraints';
 export {
-  capped, compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, slotPairs, UNKNOWN_COMPONENT,
+  capped, compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, partPosition, slotPairs, UNKNOWN_COMPONENT,
   type CompiledModel, type SlotPair, type Brings, type Want, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';
@@ -23,6 +23,6 @@ export {
 export { solve, SAFETY_CAP_MS, clonePlan, chooseCandidate, candidateWeight, broughtScore, compareBrought, type BroughtScore, type SolveOptions, type SolveResult, type StopReason } from './solver';
 export { mulberry32 } from './rng';
 export {
-  buildModel, planWeek, toPlanSlots, fromPlanSlots, InvalidConstraintError,
-  type ModelInput, type PlanResult, type PlanSlotLike,
+  buildModel, planWeek, toPartSlots, fromPartSlots, InvalidConstraintError,
+  type ModelInput, type PlanResult,
 } from './plan';

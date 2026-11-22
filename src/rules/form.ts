@@ -1,6 +1,6 @@
 // Form metadata for rule templates, draft validation, and match previews. Lets any UI render
 // an editor for every template without template-specific code.
-import { all, compileMatcher, is, TRUE, type ComponentLike, type Matcher } from '@/planner';
+import { all, compileMatcher, is, TRUE, type ComponentLike, type Matcher, type MatchFn } from '@/planner';
 import { fromMatcher, groupProblems } from './conditions';
 import { RuleSpecSchema, type RuleSpec, type RuleSpecInput, type TemplateId } from './templates';
 
@@ -199,8 +199,15 @@ export function validateDraft(draft: Draft): DraftResult {
   return { ok: true, name: draft.name.trim(), spec: parsed.data };
 }
 
-/** Library components a matcher picks out, each in its own role. */
-export function previewMatches<C extends ComponentLike>(matcher: Matcher, library: readonly C[]): C[] {
+/** A dish as stored: one saved by a path that gave it no part has none. */
+export type StoredDish = Omit<ComponentLike, 'part_id'> & { part_id?: number };
+
+/** Whether `test` matches stored dish `c` in its own part, on Monday lunch. A dish without a part matches no part. */
+export const matchesDish = (test: MatchFn, c: StoredDish): boolean =>
+  test({ c: { ...c, part_id: c.part_id ?? NaN }, part: c.part_id ?? NaN, day: 'monday', meal: 'lunch' });
+
+/** Library components a matcher picks out, each in its own part. */
+export function previewMatches<C extends StoredDish>(matcher: Matcher, library: readonly C[]): C[] {
   const test = compileMatcher(matcher);
-  return library.filter((c) => test({ c, role: c.componentType, day: 'monday', meal: 'lunch' }));
+  return library.filter((c) => matchesDish(test, c));
 }

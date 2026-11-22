@@ -5,6 +5,7 @@ import {
   type KnownIds, type Names, type RuleIssue, type RuleParts, type RuleRecord,
 } from '@/rules';
 import { legacyPartIds } from '@/db/parts';
+import { toLegacySlot, toWeekPartPins } from '@/services/legacy-slots';
 import { libraryOf, TEST_LIBRARY } from './library';
 import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseSuppressed, CaseWeeks, PlanCase } from './types';
 
@@ -55,9 +56,12 @@ function suppressedAs(j: Justification, s: NonNullable<Justification['suppressed
 
 function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins'], budget: CaseBudget = BUDGET): CaseWeeks & { issues: RuleIssue[] } {
   const { constraints, issues } = compileRules(rules, knownIds(lib), rulePartsOf(lib));
-  const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins }));
+  // Pins go in and weeks come out in today's shape, as the app stores them.
+  const legacy = legacyPartIds(lib.parts);
+  const partPins = pins && toWeekPartPins(pins, legacy);
+  const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, parts: lib.parts, constraints }, { ...budget, seed, pins: partPins }));
   return {
-    weeks: results.map((r) => r.slots),
+    weeks: results.map((r) => r.slots.map((s) => toLegacySlot(s, legacy))),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
     soft: results.map((r) => r.justifications.filter((j) => j.level === 'soft')),
     suppressed: results.map((r) => r.justifications.flatMap((j) => (j.suppressed ? [suppressedAs(j, j.suppressed, lib)] : []))),

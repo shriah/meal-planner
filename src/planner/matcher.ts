@@ -1,4 +1,4 @@
-// Typed predicate AST over assignments (component + role + day + meal).
+// Typed predicate AST over assignments (component + part + day + meal).
 // Serialisable, Zod-validated, compiled to plain closures (no eval).
 import { z } from 'zod';
 import {
@@ -28,6 +28,7 @@ export interface FieldValues {
   category: number;
   /** `"<groupId>:<valueId>"`. */
   tags: string;
+  slot_part: number;
 }
 export type FieldKey = keyof FieldValues;
 
@@ -45,7 +46,9 @@ const flatTags = (tags: ComponentLike['tags']): string[] | undefined =>
 
 // `satisfies` keeps each field's kind as a literal so leaf types can be derived from it.
 export const FIELDS = {
-  role: { kind: 'enum', label: 'Role', options: ROLES, read: (a) => a.role },
+  // Stored-rule schemas only, until Stage 3: rules reach the planner rewritten to `part`, and `buildModel` rejects
+  // it. Read outside the planner (rule previews) on a dish in its own part, where it is the dish's type.
+  role: { kind: 'enum', label: 'Role', options: ROLES, read: (a) => a.c.componentType },
   day: { kind: 'enum', label: 'Day', options: DAYS, read: (a) => a.day },
   meal: { kind: 'enum', label: 'Meal', options: MEALS, read: (a) => a.meal },
   componentType: { kind: 'enum', label: 'Component type', options: COMPONENT_TYPES, read: (a) => a.c.componentType },
@@ -61,6 +64,8 @@ export const FIELDS = {
   part: { kind: 'id', label: 'Part', read: (a) => a.c.part_id },
   category: { kind: 'id', label: 'Category', read: (a) => a.c.category_id ?? undefined },
   tags: { kind: 'set', label: 'Tags', read: (a) => flatTags(a.c.tags) },
+  /** The part the dish is placed in (planner-internal; `part` is the dish's own). */
+  slot_part: { kind: 'id', label: 'Placed in part', read: (a) => a.part },
 } as const satisfies Record<FieldKey, FieldDef>;
 export const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[];
 
@@ -128,7 +133,7 @@ export const not = (m: Matcher): Matcher => ({ not: m });
 export const TRUE: Matcher = { all: [] };
 
 const isSetKind = (field: FieldKey) => FIELDS[field].kind === 'set';
-/** `is('role', 'curry')`, `is('dietary_tags', 'non-veg')`: eq for scalars, has for sets. */
+/** `is('part', 2)`, `is('dietary_tags', 'non-veg')`: eq for scalars, has for sets. */
 export const is = <F extends FieldKey>(field: F, value: FieldValues[F]): Matcher =>
   ({ field, op: isSetKind(field) ? 'has' : 'eq', value }) as unknown as Leaf;
 /** In-list for scalars, has-any for sets. */

@@ -1,17 +1,18 @@
 // Expectation helpers: each is a sentence with a check over the planned weeks.
-import type { Day, Meal, PlanSlotLike } from '@/planner';
+import type { Day, Meal } from '@/planner';
+import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseWeeks, PlanExpectation } from './types';
 
-export const idsOf = (s: PlanSlotLike): number[] =>
+export const idsOf = (s: PlanSlot): number[] =>
   [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((x): x is number => x !== undefined);
-const slotsOf = (w: CaseWeeks): PlanSlotLike[] => w.weeks.flat();
+const slotsOf = (w: CaseWeeks): PlanSlot[] => w.weeks.flat();
 const countOf = (w: CaseWeeks, dishId: number): number => slotsOf(w).filter((s) => idsOf(s).includes(dishId)).length;
 const times = (n: number) => (n === 1 ? '1 time' : `${n} times`);
 export const mealCount = (n: number) => (n === 1 ? '1 meal' : `${n} meals`);
 const list = (xs: string[], word = 'and') => (xs.length <= 1 ? xs.join('') : `${xs.slice(0, -1).join(', ')} ${word} ${xs[xs.length - 1]}`);
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** The first week (index) in which `bad` holds, for the report's sample week. */
-const firstWeek = (w: CaseWeeks, bad: (week: PlanSlotLike[], i: number) => boolean): number | undefined => {
+const firstWeek = (w: CaseWeeks, bad: (week: PlanSlot[], i: number) => boolean): number | undefined => {
   const i = w.weeks.findIndex(bad);
   return i < 0 ? undefined : i;
 };
@@ -66,9 +67,9 @@ export const someMealWith = (dish: string, alsoHas: string[], at: Meal[]): PlanE
 /** Every meal of the dish except one locked meal has the others. */
 export const everyOtherMealWith = (dish: string, alsoHas: string[], except: `${Day}-${Meal}`): PlanExpectation => {
   const [day, meal] = except.split('-');
-  const others = (w: CaseWeeks, wk: PlanSlotLike[]) =>
+  const others = (w: CaseWeeks, wk: PlanSlot[]) =>
     wk.filter((s) => idsOf(s).includes(w.lib.dish(dish).id) && !(s.day === day && s.meal_slot === meal));
-  const lacks = (w: CaseWeeks, s: PlanSlotLike) => !alsoHas.every((n) => idsOf(s).includes(w.lib.dish(n).id));
+  const lacks = (w: CaseWeeks, s: PlanSlot) => !alsoHas.every((n) => idsOf(s).includes(w.lib.dish(n).id));
   return {
     says: `Every other ${dish} meal (not the locked ${cap(except.replace('-', ' '))}) has ${list(alsoHas)}`,
     check: (w) => {
@@ -110,7 +111,7 @@ export const neverWith = (dish: string, other: string): PlanExpectation => ({
 export const neverAt = (dish: string, where: { meals?: Meal[]; days?: Day[] }): PlanExpectation => {
   if (!where.meals?.length && !where.days?.length) throw new Error('neverAt needs meals or days');
   const at = [where.meals && `at ${list(where.meals, 'or')}`, where.days && `on ${list(where.days, 'or')}`].filter(Boolean).join(' ');
-  const hit = (s: PlanSlotLike, id: number) =>
+  const hit = (s: PlanSlot, id: number) =>
     idsOf(s).includes(id) && (!where.meals || where.meals.includes(s.meal_slot)) && (!where.days || where.days.includes(s.day));
   return {
     says: `${dish} is never planned ${at}`,
@@ -176,8 +177,8 @@ export const notRarerThanNoRules = (dish: string): PlanExpectation => ({
 
 /** Every meal of the dish has at least one of these other dishes. */
 export const everyMealWithOneOf = (dish: string, oneOf: string[]): PlanExpectation => {
-  const lacks = (w: CaseWeeks, s: PlanSlotLike) => !oneOf.some((n) => idsOf(s).includes(w.lib.dish(n).id));
-  const mine = (w: CaseWeeks, s: PlanSlotLike) => idsOf(s).includes(w.lib.dish(dish).id);
+  const lacks = (w: CaseWeeks, s: PlanSlot) => !oneOf.some((n) => idsOf(s).includes(w.lib.dish(n).id));
+  const mine = (w: CaseWeeks, s: PlanSlot) => idsOf(s).includes(w.lib.dish(dish).id);
   return {
     says: `Every ${dish} meal has ${list(oneOf, 'or')}`,
     check: (w) => {
@@ -205,8 +206,8 @@ export const eachPlanned = (names: string[], partner: string): PlanExpectation =
 });
 
 /** Which meals an expectation looks at. */
-export type Pick = (s: PlanSlotLike, lib: CaseLibrary) => boolean;
-export const mealsPicked = (w: CaseWeeks, pick: Pick): PlanSlotLike[] => w.weeks.flat().filter((s) => pick(s, w.lib));
+export type Pick = (s: PlanSlot, lib: CaseLibrary) => boolean;
+export const mealsPicked = (w: CaseWeeks, pick: Pick): PlanSlot[] => w.weeks.flat().filter((s) => pick(s, w.lib));
 
 /** A check over the meals `where` picks: `pass` gets the count that also satisfy `then` and the meals picked. */
 const overPicked = (says: string, where: Pick, then: Pick, pass: (k: number, n: number) => boolean): PlanExpectation => ({

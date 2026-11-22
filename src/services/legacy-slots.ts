@@ -1,6 +1,7 @@
 // Converts between today's stored meal shape (base/curry/subzi/extras) and meals by part.
 import type { LegacyParts } from '@/db/parts';
-import type { PartPins, PartSlot, Pins, SlotPins, WeekPartPins } from '@/planner';
+import type { PartPins, PartSlot, WeekPartPins } from '@/planner';
+import type { LegacyPins, SlotPins } from './pins';
 import type { PlanSlot } from '@/types/plan';
 
 /** A legacy slot holds one dish in Base, Curry and Subzi and many extras. Throws when a part slot does not fit. */
@@ -46,9 +47,9 @@ export function toPartPins(p: SlotPins, legacy: LegacyParts): PartPins {
   return pins;
 }
 
-export function toWeekPartPins(p: Pins, legacy: LegacyParts): WeekPartPins {
+export function toWeekPartPins(p: LegacyPins, legacy: LegacyParts): WeekPartPins {
   const week: WeekPartPins = {};
-  for (const key of Object.keys(p) as (keyof Pins)[]) {
+  for (const key of Object.keys(p) as (keyof LegacyPins)[]) {
     const slot = p[key];
     if (slot) week[key] = toPartPins(slot, legacy);
   }

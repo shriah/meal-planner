@@ -5,8 +5,8 @@ import type { Assignment } from './types';
 
 const fishCurry = component('curry', { dietary_tags: ['non-veg'], protein_tag: 'fish', regional_tags: ['coastal-konkan'] });
 const plainSubzi = component('subzi'); // no protein_tag
-const at = (c: Assignment['c'], role: Assignment['role'] = c.componentType): Assignment =>
-  ({ c, role, day: 'friday', meal: 'lunch' });
+const at = (c: Assignment['c'], part: Assignment['part'] = c.part_id): Assignment =>
+  ({ c, part, day: 'friday', meal: 'lunch' });
 const test = (m: Matcher, a: Assignment) => compileMatcher(m)(a);
 
 describe('matcher', () => {
@@ -28,12 +28,19 @@ describe('matcher', () => {
   it('combines with all / any / not, where all([]) is true and any([]) is false', () => {
     expect(test(TRUE, at(plainSubzi))).toBe(true);
     expect(test(any(), at(plainSubzi))).toBe(false);
-    expect(test(all(is('role', 'curry'), not(is('protein_tag', 'dal'))), at(fishCurry))).toBe(true);
+    expect(test(all(is('part', 2), not(is('protein_tag', 'dal'))), at(fishCurry))).toBe(true);
   });
 
-  it('reads role from the assignment, not the component', () => {
-    expect(test(is('role', 'extra'), at(fishCurry, 'extra'))).toBe(true);
-    expect(test(is('componentType', 'curry'), at(fishCurry, 'extra'))).toBe(true);
+  it('reads slot_part from the assignment and part from the component', () => {
+    // Fish curry (part 2) placed in part 4.
+    expect(test(is('slot_part', 4), at(fishCurry, 4))).toBe(true);
+    expect(test(is('part', 2), at(fishCurry, 4))).toBe(true);
+    expect(test(is('componentType', 'curry'), at(fishCurry, 4))).toBe(true);
+  });
+
+  it("reads a stored rule's role as the dish's type (outside the planner, which rejects it)", () => {
+    expect(test(is('role', 'curry'), at(fishCurry))).toBe(true);
+    expect(test(is('role', 'extra'), at(fishCurry))).toBe(false);
   });
 
   it('reads part, category and tags from the component', () => {

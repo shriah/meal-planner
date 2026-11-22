@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { is, TRUE, type Pins } from '@/planner';
+import { is, TRUE } from '@/planner';
+import type { LegacyPins } from '@/services/pins';
 import type { RuleSpecInput } from '@/rules';
 import { planFromData, type PlanningInput, type PlanningOptions } from '@/services/plan-generation';
 import type { ComponentRecord } from '@/types/component';
 import { COMPARE_SEED, makeCompare } from './compare';
-import { withParts } from '@/services/test-input';
+import { capRecords, withParts } from '@/services/test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
 const library = [dish(1, 'Pulao', 'base'), dish(2, 'Paneer', 'curry'), dish(3, 'Dal', 'curry'), dish(4, 'Rajma', 'curry')];
-const data = withParts({ library, categories: [], rules: [] });
+// With the curry and subzi caps every library has: without them a meal may hold several curries.
+const data = withParts({ library, categories: [], rules: capRecords() });
 const run = async (input: PlanningInput, opts: PlanningOptions) => planFromData(input, opts);
 const exclude = (match: unknown) => ({ template: 'exclude', params: { match } }) as unknown as RuleSpecInput;
 
@@ -44,12 +46,12 @@ describe('makeCompare', () => {
   it('runs both plans with the same seed and pins, and the draft only in the second', async () => {
     const calls: { input: PlanningInput; opts: PlanningOptions }[] = [];
     const spy = async (input: PlanningInput, opts: PlanningOptions) => { calls.push({ input, opts }); return planFromData(input, opts); };
-    const pins: Pins = { 'monday-lunch': { base_id: 1 } };
+    const pins: LegacyPins = { 'monday-lunch': { base_id: 1 } };
     await makeCompare(data, pins, spy)(exclude(is('id', 2)), 'No paneer');
     expect(calls).toHaveLength(2);
     expect(calls[0].opts).toEqual({ seed: COMPARE_SEED, pins });
     expect(calls[1].opts).toEqual({ seed: COMPARE_SEED, pins });
-    expect(calls[0].input.rules).toHaveLength(0);
-    expect(calls[1].input.rules).toEqual([expect.objectContaining({ id: -1, enabled: true, name: 'No paneer' })]);
+    expect(calls[0].input.rules).toEqual(data.rules);
+    expect(calls[1].input.rules).toEqual([...data.rules, expect.objectContaining({ id: -1, enabled: true, name: 'No paneer' })]);
   });
 });

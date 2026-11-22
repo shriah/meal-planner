@@ -9,6 +9,9 @@ import { compileRules } from '@/rules';
 import { ALL_CASES } from './cases';
 import { knownIds, libraryFor, recordsOf, rulePartsOf } from './run';
 import { seededConstraints, seededLibrary } from './seeded-library';
+import { CASE_PARTS } from './library';
+import { legacyPartIds } from '@/db/parts';
+import { toWeekPartPins } from '@/services/legacy-slots';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 const LONG = { timeout: 10 * 60 * 1000 };
@@ -18,7 +21,7 @@ const caseModel = (id: string) => {
   if (!c) throw new Error(`no rule case ${id}`);
   const lib = libraryFor(c);
   const { constraints } = compileRules(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), knownIds(lib), rulePartsOf(lib));
-  return { library: lib.dishes, constraints, pins: c.pins };
+  return { library: lib.dishes, parts: lib.parts, constraints, pins: c.pins && toWeekPartPins(c.pins, legacyPartIds(lib.parts)) };
 };
 
 describe('repair loop', () => {
@@ -31,15 +34,15 @@ describe('repair loop', () => {
     for (const withLinks of [true, false]) {
       const constraints = seededConstraints(library, withLinks);
       for (const seed of SEEDS) {
-        const r = planWeek({ library, constraints }, { seed, timeLimitMs: Infinity });
+        const r = planWeek({ library, parts: CASE_PARTS, constraints }, { seed, timeLimitMs: Infinity });
         expect(r.stats.repairRounds).toBeGreaterThan(0);
         expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
       }
     }
     for (const id of ['when-curry-brings', 'when-curry-retried-after-polish', 'when-curry-lock-nudge']) {
-      const { library: lib, constraints, pins } = caseModel(id);
+      const { library: lib, parts, constraints, pins } = caseModel(id);
       for (const seed of SEEDS) {
-        const r = planWeek({ library: lib, constraints }, { seed, pins, timeLimitMs: Infinity });
+        const r = planWeek({ library: lib, parts, constraints }, { seed, pins, timeLimitMs: Infinity });
         expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
       }
     }
@@ -48,9 +51,9 @@ describe('repair loop', () => {
   // Whether re-pick and retry's memory stops a cycle is shown in solver.test.ts on built models; here the loop
   // simply ends early.
   it('ends early on limit-ranks-a-links-dishes', LONG, () => {
-    const { library: lib, constraints, pins } = caseModel('limit-ranks-a-links-dishes');
+    const { library: lib, parts, constraints, pins } = caseModel('limit-ranks-a-links-dishes');
     for (const seed of SEEDS) {
-      const r = planWeek({ library: lib, constraints }, { seed, pins, timeLimitMs: Infinity });
+      const r = planWeek({ library: lib, parts, constraints }, { seed, pins, timeLimitMs: Infinity });
       expect(r.stats.repairRounds).toBeLessThanOrEqual(3);
     }
   });
