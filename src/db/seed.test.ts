@@ -245,11 +245,11 @@ describe('runSeed', () => {
       expect(again.tagGroups.map((g) => g.id)).toEqual(first.tagGroups.map((g) => g.id));
     });
 
-    it('matches stored parts by name: a short, reordered parts table gets the missing parts and every dish its own', async () => {
+    it('matches stored parts by legacy: a short, reordered parts table gets the missing parts and every dish its own', async () => {
       const at = new Date().toISOString();
       const [curryId, baseId] = (await db.parts.bulkAdd([
-        { name: 'Curry', position: 0, varied: true, created_at: at },
-        { name: 'Base', position: 1, varied: true, created_at: at },
+        { name: 'Curry', position: 0, varied: true, legacy: 'curry', created_at: at },
+        { name: 'Base', position: 1, varied: true, legacy: 'base', created_at: at },
       ] as never[], { allKeys: true })) as number[];
 
       await runSeed();
@@ -261,6 +261,33 @@ describe('runSeed', () => {
       const idOf = Object.fromEntries(parts.map((p) => [p.name, p.id]));
       const partName = { base: 'Base', curry: 'Curry', subzi: 'Subzi', extra: 'Extras' } as const;
       for (const c of await db.components.toArray()) expect(c.part_id).toBe(idOf[partName[c.componentType]]);
+    });
+
+    it('creates no fifth part or fifth tag group when the converted ones were renamed', async () => {
+      const { parts, tagGroups } = await ensurePartsAndTagGroups();
+      await db.parts.update(parts[0].id, { name: 'Mains' });
+      await db.tag_groups.update(tagGroups[2].id, { name: 'Where from' });
+
+      await runSeed();
+
+      expect((await db.parts.toArray()).map((p) => [p.name, p.legacy])).toEqual([
+        ['Mains', 'base'], ['Curry', 'curry'], ['Subzi', 'subzi'], ['Extras', 'extra'],
+      ]);
+      expect(await db.tag_groups.count()).toBe(4);
+      const idOfBase = parts[0].id;
+      const dishes = await db.components.toArray();
+      for (const c of dishes.filter((d) => d.componentType === 'base')) expect(c.part_id).toBe(idOfBase);
+    });
+
+    it('creates a missing part with its legacy set', async () => {
+      await ensurePartsAndTagGroups();
+      const extras = (await db.parts.toArray()).find((p) => p.legacy === 'extra')!;
+      await db.parts.delete(extras.id);
+
+      const { parts } = await ensurePartsAndTagGroups();
+
+      expect(parts.find((p) => p.legacy === 'extra')).toMatchObject({ name: 'Extras', varied: false });
+      expect(parts).toHaveLength(4);
     });
 
     it('creates a tag group that is missing and gives dishes its tags', async () => {

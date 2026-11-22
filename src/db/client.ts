@@ -1205,4 +1205,32 @@ db.version(22).stores({
   await tx.table('rules').bulkAdd(capRules().map((r) => ({ ...r, enabled: true, created_at })));
 });
 
+// v23: the four converted parts and tag groups are found by `legacy`, so they can be renamed. Only the rows that
+// still carry a converted name get it; a library with no parts yet (never seeded) gets nothing.
+db.version(23).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
+  const parts = await tx.table('parts').toArray() as PartRecord[];
+  for (const t of partTypes) {
+    const part = parts.find((p) => p.name === CONVERTED_PARTS[t].name);
+    if (part) await tx.table('parts').update(part.id, { legacy: t });
+  }
+  const groups = await tx.table('tag_groups').toArray() as TagGroupRecord[];
+  for (const k of CONVERTED_TAG_GROUP_KEYS) {
+    const group = groups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name);
+    if (group) await tx.table('tag_groups').update(group.id, { legacy: k });
+  }
+});
+
 export { db, normalizeComponentCategoryRefs };

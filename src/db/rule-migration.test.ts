@@ -3,6 +3,8 @@ import Dexie from 'dexie';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, RULE_MIGRATION_NOTICE_ID } from '@/db/client';
 import { all, is, oneOf } from '@/planner';
+import { legacyPartIds } from '@/db/parts';
+import { runSeed } from '@/db/seed';
 import { capRules, defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
 
 const V13_STORES = {
@@ -541,5 +543,77 @@ describe('v22 one curry and one subzi per meal', () => {
     await db.open();
 
     expect(await db.rules.count()).toBe(0);
+  });
+});
+
+const V22_STORES = V21_STORES;
+
+describe('v23 converted parts keep who they are', () => {
+  afterAll(() => db.close());
+  const now = '2026-01-01T00:00:00.000Z';
+
+  async function openV22(parts: object[], groups: object[]) {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v22 = new Dexie('FoodPlannerDB');
+    v22.version(22).stores(V22_STORES);
+    await v22.open();
+    await v22.table('parts').bulkAdd(parts);
+    await v22.table('tag_groups').bulkAdd(groups);
+    v22.close();
+  }
+
+  const group = (id: number, name: string, position: number, multiple: boolean) =>
+    ({ id, name, position, multiple, values: [{ id: 1, name: 'x' }], created_at: now });
+
+  it('marks the four parts and four tag groups by their converted names, leaving other fields alone', async () => {
+    await openV22(
+      [
+        { id: 1, name: 'Base', position: 0, varied: true, created_at: now },
+        { id: 2, name: 'Curry', position: 1, varied: true, created_at: now },
+        { id: 3, name: 'Subzi', position: 2, varied: true, created_at: now },
+        { id: 4, name: 'Extras', position: 3, varied: false, created_at: now },
+      ],
+      [group(1, 'Dietary', 0, true), group(2, 'Protein', 1, false), group(3, 'Region', 2, true), group(4, 'Occasion', 3, true)],
+    );
+
+    await db.open();
+
+    expect((await db.parts.toArray()).map((p) => [p.id, p.name, p.varied, p.legacy])).toEqual([
+      [1, 'Base', true, 'base'], [2, 'Curry', true, 'curry'], [3, 'Subzi', true, 'subzi'], [4, 'Extras', false, 'extra'],
+    ]);
+    expect((await db.tag_groups.toArray()).map((g) => [g.id, g.name, g.legacy])).toEqual([
+      [1, 'Dietary', 'dietary'], [2, 'Protein', 'protein'], [3, 'Region', 'regional'], [4, 'Occasion', 'occasion'],
+    ]);
+    expect(legacyPartIds(await db.parts.toArray())).toEqual({ base: 1, curry: 2, subzi: 3, extra: 4 });
+  });
+
+  it('a part renamed after the upgrade is still found, and the seed makes no fifth part', async () => {
+    await openV22(
+      [
+        { id: 1, name: 'Base', position: 0, varied: true, created_at: now },
+        { id: 2, name: 'Curry', position: 1, varied: true, created_at: now },
+        { id: 3, name: 'Subzi', position: 2, varied: true, created_at: now },
+        { id: 4, name: 'Extras', position: 3, varied: false, created_at: now },
+      ],
+      [group(1, 'Dietary', 0, true), group(2, 'Protein', 1, false), group(3, 'Region', 2, true), group(4, 'Occasion', 3, true)],
+    );
+    await db.open();
+    await db.parts.update(1, { name: 'Mains' });
+
+    expect(legacyPartIds(await db.parts.toArray()).base).toBe(1);
+    await runSeed();
+
+    expect(await db.parts.count()).toBe(4);
+    expect((await db.parts.get(1))?.name).toBe('Mains');
+  });
+
+  it('adds nothing to a library that was never seeded (the seed marks its own)', async () => {
+    await openV22([], []);
+
+    await db.open();
+
+    expect(await db.parts.count()).toBe(0);
+    expect(await db.tag_groups.count()).toBe(0);
   });
 });

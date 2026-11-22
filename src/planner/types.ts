@@ -25,6 +25,8 @@ export interface PlannerPart {
   id: number;
   name: string;
   varied: boolean;
+  /** The converted part this is, when it is one (see `PartRecord.legacy`). */
+  legacy?: 'base' | 'curry' | 'subzi' | 'extra';
 }
 
 /** Structural shape the planner needs; the app's ComponentRecord is assignable to it. */

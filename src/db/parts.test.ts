@@ -162,11 +162,17 @@ describe('convertLibrary', () => {
 
 describe('legacyPartIds', () => {
   const parts = [
-    { id: 7, name: 'Base' }, { id: 8, name: 'Curry' }, { id: 9, name: 'Subzi' }, { id: 10, name: 'Extras' },
-  ];
+    { id: 7, name: 'Base', legacy: 'base' }, { id: 8, name: 'Curry', legacy: 'curry' },
+    { id: 9, name: 'Subzi', legacy: 'subzi' }, { id: 10, name: 'Extras', legacy: 'extra' },
+  ] as const;
 
-  it('maps each component type to the part of its converted name', () => {
+  it('maps each component type to the part marked with it', () => {
     expect(legacyPartIds(parts)).toEqual({ base: 7, curry: 8, subzi: 9, extra: 10 });
+  });
+
+  it('still finds a renamed part, and never finds one by its name alone', () => {
+    expect(legacyPartIds(parts.map((p) => (p.id === 7 ? { ...p, name: 'Mains' } : p)))).toEqual({ base: 7, curry: 8, subzi: 9, extra: 10 });
+    expect(() => legacyPartIds(parts.map(({ id, name }) => ({ id, name })) as never)).toThrow(/Base/);
   });
 
   it('throws when a converted part is missing', () => {

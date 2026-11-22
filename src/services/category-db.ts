@@ -1,5 +1,5 @@
 import { db, normalizeComponentCategoryRefs } from '@/db/client';
-import { CONVERTED_PARTS } from '@/db/parts';
+import { legacyPartIds } from '@/db/parts';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { linkRule, readLink } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
@@ -14,10 +14,9 @@ export async function addCategory(
 ): Promise<number> {
   return db.transaction('rw', db.categories, db.parts, db.tag_groups, async () => {
     const { parts } = await ensurePartsAndTagGroups();
-    const partName = CONVERTED_PARTS[category.kind].name;
     return (await db.categories.add({
       ...category,
-      part_id: parts.find((p) => p.name === partName)!.id,
+      part_id: legacyPartIds(parts)[category.kind],
       created_at: new Date().toISOString(),
     })) as number;
   });

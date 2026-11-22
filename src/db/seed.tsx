@@ -6,7 +6,7 @@ import { is, type Matcher, type Meal } from '@/planner';
 import { capRules, dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
-import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
+import { convertDish, convertLibrary, CONVERTED_TAG_GROUP_KEYS, legacyPartIds } from '@/db/parts';
 import { ensurePartsAndTagGroups, loadConvertLookup } from '@/db/parts-store';
 
 type SeedData = typeof import('@/db/seed-data');
@@ -52,9 +52,8 @@ async function seed(data: SeedData): Promise<void> {
     seededDays,
   } = data;
   const { parts: storedParts, tagGroups: storedGroups } = await ensurePartsAndTagGroups();
-  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
-  const parts = Object.fromEntries(partTypes.map((t) => [t, storedParts.find((p) => p.name === CONVERTED_PARTS[t].name)!.id])) as ConvertLookup['parts'];
-  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => storedGroups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name)!;
+  const parts = legacyPartIds(storedParts);
+  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => storedGroups.find((g) => g.legacy === k)!;
   const tagGroupIds = Object.fromEntries(CONVERTED_TAG_GROUP_KEYS.map((k) => [k, groupOf(k).id])) as Record<(typeof CONVERTED_TAG_GROUP_KEYS)[number], number>;
 
   const categoryLookup = await ensureSeedCategories(data, { base: parts.base, extra: parts.extra });

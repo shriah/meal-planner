@@ -22,11 +22,11 @@ export const CONVERTED_PARTS: Record<ComponentType, Pick<PartRecord, 'name' | 'p
 
 export type LegacyParts = Record<ComponentType, number>;
 
-/** The part id of each component type, matched by converted part name. Throws when one is missing. */
-export function legacyPartIds(parts: readonly Pick<PartRecord, 'id' | 'name'>[]): LegacyParts {
+/** The part id of each component type, matched by `legacy` (never by name). Throws when one is missing. */
+export function legacyPartIds(parts: readonly Pick<PartRecord, 'id' | 'legacy'>[]): LegacyParts {
   const idOf = (type: ComponentType): number => {
     const { name } = CONVERTED_PARTS[type];
-    const part = parts.find((p) => p.name === name);
+    const part = parts.find((p) => p.legacy === type);
     if (!part) throw new Error(`no "${name}" part`);
     return part.id;
   };

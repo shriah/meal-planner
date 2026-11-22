@@ -15,7 +15,7 @@ const cat = (id: number, kind: CategoryRecord['kind'], name: string): CategoryRe
 const PART_KEYS = ['base', 'curry', 'subzi', 'extra'] as const;
 const PART_ID = { base: 1, curry: 2, subzi: 3, extra: 4 };
 export const CASE_PARTS: PlannerPart[] = PART_KEYS.map((k) => ({
-  id: PART_ID[k], name: CONVERTED_PARTS[k].name, varied: CONVERTED_PARTS[k].varied,
+  id: PART_ID[k], name: CONVERTED_PARTS[k].name, varied: CONVERTED_PARTS[k].varied, legacy: k,
 }));
 /** Curry categories as the converter creates them: one per curry type, ids from 21, named by the type. */
 const CURRY_CATEGORY_IDS = new Map(CURRY_CATEGORIES.map((name, i) => [name, 21 + i]));
