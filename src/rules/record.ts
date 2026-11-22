@@ -1,6 +1,7 @@
 // Stored rules and their compilation into planner constraints.
 import { ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
 import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
+import { defaultRules } from './defaults';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -98,12 +99,27 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
-/** The spec with a default's match replaced by the parts it is about; any other spec as it is. */
+const sameData = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const ka = Object.keys(a);
+  return Array.isArray(a) === Array.isArray(b) && ka.length === Object.keys(b).length
+    && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+};
+
+/**
+ * The spec with a stock default's match replaced by the parts it is about. A default the user has edited, and any
+ * other rule, is left as stored (its component types are rewritten to parts afterwards, like any rule).
+ */
 function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
-  const match = rule.default_key === 'variety' || rule.default_key === 'spacing' ? variedPartsMatcher(parts)
-    : rule.default_key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
+  const key = rule.default_key;
+  const match = key === 'variety' || key === 'spacing' ? variedPartsMatcher(parts)
+    : key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
     : undefined;
-  if (match === undefined || !('match' in spec.params)) return spec;
+  if (match === undefined) return spec;
+  const stock = defaultRules().find((d) => d.default_key === key)?.spec;
+  const stockParsed = stock && parseSpec(stock);
+  if (!stockParsed?.ok || !sameData(spec, stockParsed.spec) || !('match' in spec.params)) return spec;
   // `roles` restricts a no-repeat rule to types; the match now names the parts, so every role is let through.
   const roles = 'roles' in spec.params ? { roles: [...ROLES] } : {};
   return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;

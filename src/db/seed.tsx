@@ -40,6 +40,8 @@ export function runSeed(): Promise<void> {
 }
 
 async function seed(data: SeedData): Promise<void> {
+  // Every library has its parts, seeded or not: planning reads them without writing.
+  await ensurePartsAndTagGroups();
   const count = await db.components.count();
   if (count > 0) return; // Already seeded
 

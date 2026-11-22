@@ -5,6 +5,7 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { db } from '@/db/client';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { ownedChanges } from '@/rules';
 import { saveActivePlan } from '@/services/plan-db';
 import type { PlanningInput, PlanningOptions, PlanningOutcome } from '@/services/plan-generation';
@@ -36,6 +37,9 @@ afterEach(() => cleanup());
 beforeEach(async () => {
   await db.components.clear();
   await db.rules.clear();
+  await db.parts.clear();
+  await db.tag_groups.clear();
+  await db.transaction('rw', db.parts, db.tag_groups, () => ensurePartsAndTagGroups()); // the app creates them at start
   await db.active_plan.clear();
   // The plan store is a module singleton; start every test unhydrated.
   usePlanStore.setState({ plan: null, locks: {}, hydrated: false });

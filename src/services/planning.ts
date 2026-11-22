@@ -1,20 +1,20 @@
 // Loads planning data from the database and generates a plan, off the main thread when possible.
 import { db } from '@/db/client';
 import { legacyPartIds } from '@/db/parts';
-import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import type { RuleRecord } from '@/rules';
 import { planFromData, type PlanningInput, type PlanningOptions, type PlanningOutcome, type PlanProblem } from './plan-generation';
 
 export async function loadPlanningInput(): Promise<PlanningInput> {
-  // The parts are created when the library has none, so the read can write.
-  const parts = await db.transaction('rw', db.parts, db.tag_groups, async () => (await ensurePartsAndTagGroups()).parts);
-  const [stored, categories, rules] = await Promise.all([
+  // Read-only (it runs inside live queries); `runSeed` makes sure the parts exist.
+  const [partRows, stored, categories, rules] = await Promise.all([
+    db.parts.toArray(),
     db.components.toArray(),
     db.categories.toArray(),
     db.rules.toArray(),
   ]);
   // A dish saved by a path that did not give it a part is placed by its type.
-  const partOf = legacyPartIds(parts);
+  const parts = [...partRows].sort((a, b) => a.position - b.position);
+  const partOf = legacyPartIds(parts); // throws an Error naming a missing part
   const library = stored.map((c) => (c.part_id === undefined ? { ...c, part_id: partOf[c.componentType] } : c));
   return { library, categories, rules, parts };
 }

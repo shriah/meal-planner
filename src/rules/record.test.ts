@@ -226,6 +226,19 @@ describe('compiled rules are about parts', () => {
     expect(selectOf('spacing', parts)).toEqual([repeated([1, 2])]);
   });
 
+  it('plans an edited default as stored: only its component types become parts', () => {
+    const rule = defaults.find((r) => r.default_key === 'variety')!;
+    const edited = { ...rule, spec: { template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', strength: 'prefer', cost: 5, roles: ['curry'] } } } as RuleRecord;
+    const { constraints } = compileRules(records(edited), lib, TEST_RULE_PARTS);
+    expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([
+      { all: [{ field: 'part', op: 'eq', value: 2 }, { field: 'part', op: 'in', value: [2] }] },
+    ]);
+    const sides = defaults.find((r) => r.default_key === 'sides-only-when-asked')!;
+    const narrowed = { ...sides, spec: { ...sides.spec, params: { ...sides.spec.params, match: is('componentType', 'extra') } } } as RuleRecord;
+    expect(compileRules(records(narrowed), lib, TEST_RULE_PARTS).constraints.map((c) => (c.kind === 'pair' ? undefined : c.select)))
+      .toEqual([{ field: 'part', op: 'eq', value: 4 }]);
+  });
+
   it('does not change the stored rule', () => {
     const rule = defaults.find((r) => r.default_key === 'variety')!;
     const before = JSON.stringify(rule);

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { liveQuery } from 'dexie';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
@@ -84,9 +85,26 @@ describe('loadPlanningInput parts', () => {
     expect(input.library.every((c) => c.part_id !== undefined)).toBe(true);
   });
 
-  it('creates the parts when the library has none', async () => {
-    const input = await loadPlanningInput();
-    expect(input.parts.map((p) => p.name)).toEqual(['Base', 'Curry', 'Subzi', 'Extras']);
+  it('throws an Error naming the missing part when the library has no parts', async () => {
+    await expect(loadPlanningInput()).rejects.toThrow('no "Base" part');
+  });
+
+  it('runSeed creates the parts of a library that already has dishes', async () => {
+    await runSeed();
+    await db.parts.clear();
+    await runSeed(); // dishes exist, so nothing is seeded, but the parts come back
+    expect(await db.parts.count()).toBe(4);
+  });
+
+  it('runs inside a live query, which refuses writes', async () => {
+    await runSeed();
+    const input = await new Promise<Awaited<ReturnType<typeof loadPlanningInput>>>((resolve, reject) => {
+      const sub = liveQuery(() => loadPlanningInput()).subscribe({
+        next: (v) => { sub.unsubscribe(); resolve(v); },
+        error: reject,
+      });
+    });
+    expect(input.parts).toHaveLength(4);
   });
 });
 
