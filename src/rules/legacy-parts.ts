@@ -10,7 +10,8 @@ export type LegacyParts = Record<ComponentType, number>;
 /** The parts a rule set is compiled against: the planner's parts in meal order, and the legacy type-to-part ids. */
 export interface RuleParts {
   list: readonly PlannerPart[];
-  legacy: LegacyParts;
+  /** The converted type-to-part ids. Absent for parts that are not the converted four: a rule that still names a component type cannot then be planned. */
+  legacy?: LegacyParts;
 }
 
 /** Rewrites every `role` and `componentType` leaf (eq, neq, in) to the same op on `part`. Other leaves are unchanged. */

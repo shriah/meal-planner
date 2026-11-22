@@ -42,7 +42,7 @@ describe('rule levels', () => {
   it('every constraint of every case rule, and the defaults, has a level', () => {
     let total = check(defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
     for (const c of ALL_CASES) {
-      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
+      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], { categories: TEST_LIBRARY.categories }) : TEST_LIBRARY;
       total += check(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), lib);
     }
     expect(total).toBeGreaterThan(100);
@@ -88,7 +88,7 @@ describe('rule levels', () => {
     };
     verify(defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
     for (const c of ALL_CASES) {
-      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
+      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], { categories: TEST_LIBRARY.categories }) : TEST_LIBRARY;
       verify(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), lib);
     }
     expect(checked).toBeGreaterThan(100);

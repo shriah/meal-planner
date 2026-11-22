@@ -97,4 +97,10 @@ describe('renderReport', () => {
   it('refuses two cases with the same id', () => {
     expect(() => renderReport([result(), result()], TEST_LIBRARY, RUN_AT)).toThrow('unique');
   });
+
+  it('renders a sample week keyed by part, with the part names', () => {
+    const slot = { day: 'monday' as const, meal_slot: 'breakfast' as const, parts: { 7: [1], 3: [11, 12] } };
+    const html = renderReport([result({ sampleWeek: [{ slot, text: 'Main: Biryani · Side: Raita, Salan', highlight: false }] })], TEST_LIBRARY, RUN_AT);
+    expect(html).toContain('<td>Main: Biryani · Side: Raita, Salan</td>');
+  });
 });

@@ -1,5 +1,5 @@
 // Expectation helpers: each is a sentence with a check over the planned weeks.
-import type { Day, Meal } from '@/planner';
+import type { Day, Meal, PartSlot } from '@/planner';
 import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseWeeks, PlanExpectation } from './types';
 
@@ -15,6 +15,30 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const firstWeek = (w: CaseWeeks, bad: (week: PlanSlot[], i: number) => boolean): number | undefined => {
   const i = w.weeks.findIndex(bad);
   return i < 0 ? undefined : i;
+};
+
+/** The dish ids a part-keyed meal holds in a part (none when the part is empty). */
+export const partDishes = (slot: PartSlot, partId: number): number[] => slot.parts[partId] ?? [];
+
+/** Every meal of a library with its own parts holds all these dish ids in the part. */
+export const everyMealHasInPart = (partId: number, ids: number[]): PlanExpectation => {
+  const lacks = (s: PartSlot) => !ids.every((id) => partDishes(s, partId).includes(id));
+  const weeksOf = (w: CaseWeeks): PartSlot[][] => {
+    if (!w.parts) throw new Error('everyMealHasInPart reads part-keyed weeks; the case needs its own library');
+    return w.parts;
+  };
+  return {
+    says: `Every meal has ${ids.length === 1 ? 'dish' : 'dishes'} ${list(ids.map(String))} in part ${partId}`,
+    check: (w) => {
+      const meals = weeksOf(w).flat();
+      const k = meals.filter((s) => !lacks(s)).length;
+      return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
+    },
+    failingSeed: (w) => {
+      const i = weeksOf(w).findIndex((wk) => wk.some(lacks));
+      return i < 0 ? undefined : i;
+    },
+  };
 };
 
 export const plannedAtLeast = (dish: string, n: number): PlanExpectation => ({

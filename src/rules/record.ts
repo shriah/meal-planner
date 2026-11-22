@@ -162,7 +162,7 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };
         const compiled = { ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint;
-        compiledRule.push(constraintOverParts(compiled, parts.legacy));
+        compiledRule.push(parts.legacy ? constraintOverParts(compiled, parts.legacy) : compiled);
       }
     });
     // The rewrite turns role and componentType into parts; a field it leaves behind cannot be planned.

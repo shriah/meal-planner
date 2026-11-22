@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { everyMealWith, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
+import { everyMealHasInPart, everyMealWith, partDishes, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
 import { capped, compileModel, is, type Constraint } from '@/planner';
 import { capConstraints } from '@/planner/test-utils';
 import { compileRules, exclusionRule, mealRule } from '@/rules';
 import { legacyPartIds } from '@/db/parts';
 import { libraryOf, TEST_LIBRARY } from './library';
+import type { PartSlot } from '@/planner';
+import type { ComponentRecord } from '@/types/component';
 import { seededLibrary } from './seeded-library';
 import { failsWithoutSubject, knownIds, recordsOf, rulePartsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks, PlanCase } from './types';
@@ -47,7 +49,7 @@ describe('library dishes carry their part', () => {
     expect(TEST_LIBRARY.dish('Pongal').tags).toEqual({ 1: [1], 2: [], 3: [], 4: [] });
   });
   it('converts case-only dishes and the seeded library too', () => {
-    const lib = libraryOf([{ ...TEST_LIBRARY.dish('Dal'), id: 900, name: 'Extra Dal' }], TEST_LIBRARY.categories);
+    const lib = libraryOf([{ ...TEST_LIBRARY.dish('Dal'), id: 900, name: 'Extra Dal' }], { categories: TEST_LIBRARY.categories });
     expect(lib.dish('Extra Dal').part_id).toBe(2);
     const ids = legacyPartIds(TEST_LIBRARY.parts);
     for (const d of seededLibrary()) expect(d.part_id, d.name).toBe(ids[d.componentType]);
@@ -203,5 +205,41 @@ describe('failing seed and highlights', () => {
 describe('neverAt', () => {
   it('needs meals or days', () => {
     expect(() => neverAt('Pongal', {})).toThrow();
+  });
+});
+
+describe('cases on a library with its own parts', () => {
+  // Ids out of position order: nothing may lean on a part's id to find its place.
+  const MAIN = 7;
+  const SIDE = 3;
+  const DESSERT = 5;
+  const dish = (id: number, name: string, part_id: number): ComponentRecord & { part_id: number } => ({
+    id, name, componentType: 'base', part_id, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], frequency: 'normal', created_at: '',
+  });
+  const library = libraryOf(
+    [dish(1, 'Biryani', MAIN), dish(11, 'Raita', SIDE), dish(12, 'Salan', SIDE), dish(21, 'Kheer', DESSERT)],
+    { parts: [{ id: MAIN, name: 'Main', varied: true }, { id: SIDE, name: 'Side', varied: true }, { id: DESSERT, name: 'Dessert', varied: false }] },
+  );
+  const trivial: PlanCase = {
+    kind: 'plan', id: 'parts-trivial', group: 'Extras', name: 'Trivial', why: 'x', library, defaults: false,
+    rules: () => [], expect: [everyMealHasInPart(MAIN, [1])],
+  };
+
+  it('plans part-keyed weeks: one Main in each meal, no Sides or Desserts without a rule', () => {
+    const r = runPlanCase(trivial);
+    expect(r.status).toBe('pass');
+    expect(r.sampleWeek).toHaveLength(21);
+    const slot = r.sampleWeek![0].slot as PartSlot;
+    expect(partDishes(slot, MAIN)).toHaveLength(1);
+    expect(partDishes(slot, SIDE)).toEqual([]);
+    expect(r.sampleWeek![0].text).toBe('Main: Biryani');
+  });
+  it('names the part in the expectation sentence and fails when a meal lacks the dish', () => {
+    expect(everyMealHasInPart(MAIN, [1]).says).toBe('Every meal has dish 1 in part 7');
+    const w: CaseWeeks = {
+      weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib: library,
+      parts: [[{ day: 'monday', meal_slot: 'lunch', parts: { [MAIN]: [1], [SIDE]: [], [DESSERT]: [] } }]],
+    };
+    expect(everyMealHasInPart(SIDE, [11]).check(w, { baseline: () => w })).toEqual({ pass: false, got: '0 of 1' });
   });
 });

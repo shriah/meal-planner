@@ -1,6 +1,6 @@
 // The rule case model: a situation written in code (dishes, stored-style rules, the outcome it must
 // produce). Cases cover the rule engine and the planner only; nothing here touches app UI code.
-import type { Justification, PlannerPart } from '@/planner';
+import type { Justification, PartSlot, PlannerPart } from '@/planner';
 import type { LegacyPins } from '@/services/pins';
 import type { PlanSlot } from '@/types/plan';
 import type { RuleRecord } from '@/rules';
@@ -11,7 +11,7 @@ import type { ComponentRecord, ComponentType } from '@/types/component';
 export type CaseGroup = 'Pairings' | 'Days and meals' | 'Variety' | 'Locks and picks' | 'Extras';
 
 export interface CaseLibrary {
-  /** The four converted parts (ids 1 to 4), in meal order. */
+  /** The library's parts in meal order: the four converted parts (ids 1 to 4) unless the library names its own. */
   parts: PlannerPart[];
   dishes: DishWithPart[];
   categories: CategoryRecord[];
@@ -22,14 +22,17 @@ export interface CaseLibrary {
 /** A rule as a case writes it: the app's owned rules (`linkRule`, `dayRule`, ...) fit. */
 export type CaseRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>;
 
-/** A pairing a week left out of a meal, with the part another pairing held named as today's type. */
+/** A pairing a week left out of a meal, keyed by the part another pairing held; `legacy` reads that part as today's type on a converted library. */
 export type CaseSuppressed = Omit<Justification, 'suppressed'> & {
-  suppressed: Omit<NonNullable<Justification['suppressed']>, 'part'> & { role: 'curry' | 'subzi' };
+  suppressed: NonNullable<Justification['suppressed']> & { legacy?: 'curry' | 'subzi' };
 };
 
 /** The planned weeks of one case: one entry per seed. */
 export interface CaseWeeks {
+  /** Meals in today's shape, for a converted library. Empty weeks (one per seed) on a library with its own parts. */
   weeks: PlanSlot[][];
+  /** Meals by part, for a library with its own parts: one entry per seed. Absent on a converted library. */
+  parts?: PartSlot[][];
   /** The hard problems each week was left with. */
   hard: Justification[][];
   /** The soft problems each week was left with. */
@@ -58,7 +61,9 @@ export interface PlanCase {
   group: CaseGroup;
   name: string;
   why: string;
-  /** Extra dishes for this case only (ids from 900). */
+  /** A library with its own parts; the case then plans and reads part-keyed weeks (`CaseWeeks.parts`), with no legacy conversion. */
+  library?: CaseLibrary;
+  /** Extra dishes for this case only (ids from 900). Not for a case with its own `library`. */
   dishes?: ComponentRecord[];
   /** The rules the case is about: its expectations must fail without them (and without its pins). */
   rules(lib: CaseLibrary): CaseRule[];
@@ -93,5 +98,5 @@ export interface CaseResult {
   expectations: { says: string; pass: boolean; got: string }[];
   /** The seed the sample week was planned with: the first failing seed, else 1. */
   sampleSeed: number;
-  sampleWeek?: { slot: PlanSlot; text: string; highlight: boolean }[];
+  sampleWeek?: { slot: PlanSlot | PartSlot; text: string; highlight: boolean }[];
 }
