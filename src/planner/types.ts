@@ -81,6 +81,12 @@ export interface SlotPins {
 }
 export type Pins = Partial<Record<`${Day}-${Meal}`, SlotPins>>;
 
+/** A meal by its parts: dish ids per part id. Every part of the model is present, `[]` when empty; the first part holds exactly one dish. */
+export interface PartSlot { day: Day; meal_slot: Meal; parts: Record<number, number[]> }
+/** Locked parts of one meal: a part id present is locked to exactly that list (`[]` = locked empty); absent = free. */
+export type PartPins = Readonly<Record<number, readonly number[]>>;
+export type WeekPartPins = Partial<Record<`${Day}-${Meal}`, PartPins>>;
+
 /** One part of a meal: the role its dishes fill, whether it holds many dishes, and its pin. */
 export interface PartDef { role: Role; many: boolean; pin: keyof SlotPins }
 /** The parts of a meal, in order. The first is the meal's base, which is never left empty. */

@@ -2,7 +2,7 @@
 export {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotIndex, slotDay, slotMeal, emptyPlan,
   type Day, type Meal, type Role, type ComponentLike, type PlannerPart, type Assignment, type SlotState, type PlanState,
-  type SlotPins, type Pins,
+  type SlotPins, type Pins, type PartSlot, type PartPins, type WeekPartPins,
 } from './types';
 export {
   all, any, not, is, oneOf, TRUE, isLeaf, compileMatcher, matcherFields, MatcherSchema, FIELDS, FIELD_KEYS, OPS_BY_KIND,
