@@ -11,11 +11,11 @@ export { linkWarnings, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, describeWhen, pluralNoun, singularNoun, whenParts, type Names } from './describe';
 export { capRules, defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
-  pairingRule, pairingCategories, cleanWhen, linkRule, readLink, bringMode, linkModes, linkTargets, sameTarget, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, ownedSlot, offersLink, addableSlots, isLinkSlot, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, linkRuleName, ownedRuleNameOf,
+  pairingRule, pairingCategories, cleanWhen, linkRule, readLink, bringMode, wrongWay, linkModes, linkTargets, sameTarget, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, ownedSlot, offersLink, addableSlots, isLinkSlot, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, linkRuleName, ownedRuleNameOf,
   readOwned, ownedChanges, linkChanges, sameLink, PLAIN_OWNED_SLOTS, dayModeOf, daysOfMode, describeDays, describeMeals,
   type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkKind, type LinkParts, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkWhen, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type LinkChange, type DayMode,
 } from './owned';
-export { compileRules, cappedParts, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
+export { compileRules, cappedParts, partsOfDishes, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export { toPartMatcher, constraintOverParts, libraryNames, type RuleParts } from './legacy-parts';
 export {
   CONDITION_FIELDS, toMatcher, fromMatcher, groupProblems, emptyGroup,

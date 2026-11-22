@@ -3,7 +3,7 @@ import {
   bringsWith, broughtScore, buildModel, compareBrought, candidateWeight, chooseCandidate, explain, fromPartSlots, mealBrings, partPosition, planWeek, score, slotIndex, slotPairs,
   MEALS, type Brings, type Justification, type Meal, type ModelInput, type PlanState,
 } from '@/planner';
-import { compileRules, describeSpec, libraryNames, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
+import { compileRules, describeSpec, libraryNames, parseSpec, partsOfDishes, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { PartRecord } from '@/types/part';
@@ -78,6 +78,7 @@ function modelFromData(input: PlanningInput) {
     components: new Set(library.map((c) => c.id)),
     categories: new Set(categories.map((c) => c.id)),
     parts: new Set(parts.map((p) => p.id)),
+    partOf: partsOfDishes(library),
     categoryPart: new Map(categories.flatMap((c) => (c.part_id === undefined ? [] : [[c.id, c.part_id] as const]))),
   };
   const { constraints, issues } = compileRules(rules, known, { list: parts, legacy });

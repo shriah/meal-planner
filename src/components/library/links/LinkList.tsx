@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { addableSlots, describeLink, linkTargets, linkWarnings, type DishLink, type LinkWarning } from '@/rules'
+import { addableSlots, describeLink, linkTargets, linkWarnings, wrongWay, type DishLink, type LinkWarning } from '@/rules'
 import type { ComponentType } from '@/types/component'
 import { cappedOf, linkNames, ownerPartOf, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
@@ -49,6 +49,8 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
   // The part the dish's links are made from; unknown until the parts have loaded.
   const ownerPart = ownerPartOf(lookup, componentType, selfId)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
+  // A stored link can point the wrong way once the parts are reordered; the planner skips it, so the form says so.
+  const wrongWayOf = (link: DishLink) => (ownerPart === undefined ? undefined : wrongWay(link.mode, ownerPart, link.target.part, lookup.parts))
   const ready = lookup.loaded && ownerPart !== undefined
   const name = dishName.trim() || 'This dish'
   const firstPart = lookup.parts[0]?.id
@@ -96,6 +98,9 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
                     Remove
                   </Button>
                 </div>
+              )}
+              {editing !== linkKey(link, i) && wrongWayOf(link) && (
+                <p role="alert" className="text-amber-700 dark:text-amber-400">Not planned: {wrongWayOf(link)}</p>
               )}
               {editing !== linkKey(link, i) && warnings.filter((w) => w.link === i).map((w) => (
                 <p key={w.message} role={w.blocking ? 'alert' : undefined}

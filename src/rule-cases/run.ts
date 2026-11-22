@@ -1,7 +1,7 @@
 // Runs a case through the real rule pipeline: compileRules, then planWeek on seeds 1-8.
 import { DAYS, MEALS, planWeek, type Justification, type SolveOptions } from '@/planner';
 import {
-  capRules, compileRules, defaultRules, describeSpec, libraryNames, parseSpec, specReferences,
+  capRules, compileRules, defaultRules, describeSpec, libraryNames, parseSpec, partsOfDishes, specReferences,
   type KnownIds, type Names, type RuleIssue, type RuleParts, type RuleRecord,
 } from '@/rules';
 import { legacyPartIds } from '@/db/parts';
@@ -41,6 +41,7 @@ export const knownIds = (lib: CaseLibrary): KnownIds => ({
   components: new Set(lib.dishes.map((d) => d.id)),
   categories: new Set(lib.categories.map((k) => k.id)),
   parts: new Set(lib.parts.map((p) => p.id)),
+  partOf: partsOfDishes(lib.dishes),
   categoryPart: new Map(lib.categories.flatMap((k) => (k.part_id === undefined ? [] : [[k.id, k.part_id] as const]))),
 });
 

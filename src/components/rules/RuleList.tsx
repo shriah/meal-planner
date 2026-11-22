@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/client'
 import { getRules, restoreDefaultRules } from '@/services/food-db'
 import { parseHash, useUrlHash } from '@/lib/hash-target'
-import { describeSpec, groupRules, libraryNames, parseSpec, type KnownIds, type Names } from '@/rules'
+import { describeSpec, groupRules, libraryNames, partsOfDishes, parseSpec, type KnownIds, type Names } from '@/rules'
 import type { RuleRecord } from '@/db/client'
 import { RuleRow } from './RuleRow'
 import { RuleEmptyState } from './RuleEmptyState'
@@ -32,6 +32,7 @@ export function RuleList() {
       components: new Set(components.map((c) => c.id)),
       categories: new Set(categories.map((c) => c.id)),
       parts: new Set((parts ?? []).map((p) => p.id)),
+      partOf: partsOfDishes(components),
     }
     return { names, known }
   }, [components, categories, parts])

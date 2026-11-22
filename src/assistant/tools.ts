@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
+import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, partsOfDishes, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -211,6 +211,7 @@ const knownIds = ({ library, categories, parts }: AssistantData): KnownIds => ({
   components: new Set(library.map((c) => c.id)),
   categories: new Set(categories.map((c) => c.id)),
   parts: new Set(parts.map((p) => p.id)),
+  partOf: partsOfDishes(library),
 });
 
 const normName = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();

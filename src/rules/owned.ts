@@ -80,6 +80,21 @@ export function bringMode(ownerPart: number, targetPart: number, parts: LinkPart
 }
 
 /**
+ * Why a link of this mode from a dish of `ownerPart` to a dish of `targetPart` points the wrong way, or undefined when it
+ * does not: a comes link brings a part below its owner, a serve link waits for a part above it. Only a link between two
+ * parts can point the wrong way: a comes link to the owner's own part brings a sibling. Reordering the parts (Stage 4)
+ * can leave a stored link pointing the wrong way; `compileRules` skips it and names it with this text.
+ */
+export function wrongWay(mode: LinkMode, ownerPart: number, targetPart: number, parts: LinkParts): string | undefined {
+  const owner = position(parts, ownerPart);
+  const target = position(parts, targetPart);
+  if (owner < 0 || target < 0) return undefined;
+  if (mode === 'comes' && target < owner) return `points to ${parts[target].name}, which is no longer below ${parts[owner].name}`;
+  if (mode === 'serve' && target >= owner) return `points to ${parts[target].name}, which is no longer above ${parts[owner].name}`;
+  return undefined;
+}
+
+/**
  * Whether a dish of `ownerPart` may hold a link of this mode to `target`. Another part: "never with" always, the others
  * too. Its own part: "comes with" and "never with" only, and only where a meal may hold two of it: not the first part,
  * nor a part `capped` at one per meal (see `cappedParts`).

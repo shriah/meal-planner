@@ -33,6 +33,7 @@ const known = {
   components: new Set(library.map((c) => c.id)),
   categories: new Set([RICE, BREAD, LIQUID, SWEET]),
   parts: new Set(TEST_RULE_PARTS.list.map((p) => p.id)),
+  partOf: new Map<number, number>(library.flatMap((c) => (c.part_id === undefined ? [] : [[c.id, c.part_id] as const]))),
   // Rice and bread are categories of the Base part, liquid and sweet of the Extras part.
   categoryPart: new Map([[RICE, 1], [BREAD, 1], [LIQUID, 4], [SWEET, 4]]),
 };

@@ -6,7 +6,7 @@ import { capRules, defaultRules } from './defaults';
 import { linkRule } from './owned';
 import { TEST_RULE_PARTS } from './test-parts';
 
-const known = { components: new Set([1, 2]), categories: new Set([10, 30]), parts: new Set([1, 2, 3, 4]) };
+const known = { components: new Set([1, 2]), categories: new Set([10, 30]), parts: new Set([1, 2, 3, 4]), partOf: new Map<number, number>() };
 const rule = (id: number, spec: unknown, enabled = true): RuleRecord =>
   ({ id, name: `Rule ${id}`, enabled, spec: spec as RuleRecord['spec'], created_at: '' });
 
@@ -233,7 +233,7 @@ describe('compiled rules are about parts', () => {
   const stored = (name: string, r: { name: string; spec: RuleRecord['spec']; default_key?: string; owner_component_id?: number }): RuleRecord =>
     ({ ...r, id: 0, enabled: true, created_at: '', name });
   const defaults = defaultRules(TEST_RULE_PARTS.list).map((r) => stored(r.name, r as never));
-  const lib = { components: new Set([1, 2, 3]), categories: new Set<number>(), parts: new Set([1, 2, 3, 4]) };
+  const lib = { components: new Set([1, 2, 3]), categories: new Set<number>(), parts: new Set([1, 2, 3, 4]), partOf: new Map<number, number>() };
   const link = linkRule({ id: 1, name: 'Plain Rice' }, { mode: 'comes', target: { part: 4, kind: 'dish' }, values: [3], when: { 2: [2] } }, TEST_RULE_PARTS.list);
 
   it('leaves no role or componentType leaf in the defaults and a conditional link', () => {
@@ -323,6 +323,7 @@ describe('links over parts', () => {
   const PARTS = TEST_RULE_PARTS.list;
   const known: KnownIds = {
     components: new Set([1, 2, 3, 12]), categories: new Set([10, 11, 30]), parts: new Set([1, 2, 3, 4]),
+    partOf: new Map<number, number>(),
     // 10 and 11 are base categories, 30 an extra one.
     categoryPart: new Map([[10, 1], [11, 1], [30, 4]]),
   };
@@ -354,6 +355,44 @@ describe('links over parts', () => {
     ]);
     // Without the categories' parts, nothing is checked.
     expect(compileRules([at(1, pairing)], { ...known, categoryPart: undefined }, TEST_RULE_PARTS).issues).toEqual([]);
+  });
+});
+
+describe('links that point the wrong way', () => {
+  const PARTS = TEST_RULE_PARTS.list;
+  // Dish 12 is a subzi (part 3): the curry (2) is above it and the extras (4) below.
+  const known: KnownIds = { components: new Set([1, 2, 3, 12]), categories: new Set<number>(), parts: new Set([1, 2, 3, 4]), partOf: new Map([[12, 3]]) };
+  const link = (id: number, mode: 'comes' | 'serve', part: number, owner = 12): RuleRecord =>
+    ({ ...rule(id, linkRule({ id: owner, name: 'Beans' }, { mode, target: { part, kind: 'dish' }, values: [3] }, PARTS).spec), owner_component_id: owner });
+  const compile = (r: RuleRecord, k = known) => compileRules([r], k, TEST_RULE_PARTS);
+
+  it('plans a comes link to a lower part and a serve link to a higher one', () => {
+    expect(compile(link(1, 'comes', 4)).issues).toEqual([]);
+    expect(compile(link(2, 'serve', 2)).issues).toEqual([]);
+    expect(compile(link(2, 'serve', 2)).constraints).toHaveLength(1);
+  });
+
+  it('skips and names a comes link to a higher part', () => {
+    const { constraints, issues } = compile(link(1, 'comes', 2));
+    expect(constraints).toEqual([]);
+    expect(issues).toEqual([{ ruleId: 1, name: 'Rule 1', message: 'points to Curry, which is no longer below Subzi' }]);
+  });
+
+  it('skips and names a serve link to a lower part, or to the owner\'s own part', () => {
+    expect(compile(link(1, 'serve', 4)).issues.map((i) => i.message)).toEqual(['points to Extras, which is no longer above Subzi']);
+    expect(compile(link(2, 'serve', 3)).issues.map((i) => i.message)).toEqual(['points to Subzi, which is no longer above Subzi']);
+  });
+
+  it('plans a comes link to the owner\'s own part: it brings a sibling, which is not the wrong way', () => {
+    const { constraints, issues } = compile(link(1, 'comes', 3));
+    expect(issues).toEqual([]);
+    expect(constraints).toHaveLength(1);
+  });
+
+  it('keeps a link whose owner has no known part, and a rule that is not the dish\'s own link', () => {
+    expect(compile(link(1, 'comes', 2), { ...known, partOf: new Map() }).issues).toEqual([]);
+    const notOwned = { ...link(1, 'comes', 2), owner_component_id: undefined };
+    expect(compile(notOwned).issues).toEqual([]);
   });
 });
 

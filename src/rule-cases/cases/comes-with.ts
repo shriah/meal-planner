@@ -1,10 +1,10 @@
-import { is } from '@/planner';
-import { mealRule } from '@/rules';
+import { is, type PartSlot } from '@/planner';
+import { bringMode, linkRule, mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
-import { atLeastPicked, eachPlanned, everyPicked, mealsPicked, mostPicked, nonePicked, someWeekPicks, type Pick, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
+import { everyPartMeal, partDishes, ruleIssueNamed, atLeastPicked, eachPlanned, everyPicked, mealsPicked, mostPicked, nonePicked, someWeekPicks, type Pick, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
 import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseRule, CaseWeeks, PlanExpectation, RuleCase } from '../types';
-import { caseLink, TEST_LIBRARY } from '../library';
+import { caseLink, libraryOf, TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -699,4 +699,106 @@ function mondayLunchHas(dish: string, has: boolean, meal = 'pinned Monday lunch'
   };
 }
 
-export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases()];
+// ─── Links over a library's own parts ────────────────────────────────────────────
+
+const OWN = (id: number, name: string, part_id: number): ComponentRecord & { part_id: number } => ({
+  ...fields(), id, name, componentType: 'base', part_id,
+});
+// Ids out of position order: nothing may lean on a part's id to find its place.
+const MAIN = 7;
+const SIDE = 3;
+const DESSERT = 5;
+const MEAL_PARTS = [{ id: MAIN, name: 'Main', varied: true }, { id: SIDE, name: 'Side', varied: true }, { id: DESSERT, name: 'Dessert', varied: false }];
+const MEAL_DISHES = [OWN(1, 'Biryani', MAIN), OWN(2, 'Pulao', MAIN), OWN(11, 'Raita', SIDE), OWN(12, 'Salan', SIDE), OWN(21, 'Kheer', DESSERT)];
+const MEAL_LIBRARY = libraryOf(MEAL_DISHES, { parts: MEAL_PARTS });
+const mealOwner = (name: string) => {
+  const d = MEAL_LIBRARY.dish(name) as ComponentRecord & { part_id: number };
+  return { id: d.id, name: d.name, part_id: d.part_id };
+};
+const holds = (partId: number, id: number) => (s: PartSlot) => partDishes(s, partId).includes(id);
+
+// A Main, a Curry and an Extra: the extra is below the curry, so its link to the curry is a "served with".
+const CURRY = 8;
+const EXTRA = 9;
+const SPREAD_PARTS = [{ id: MAIN, name: 'Main', varied: true }, { id: CURRY, name: 'Curry', varied: true }, { id: EXTRA, name: 'Extra', varied: false }];
+const SPREAD_LIBRARY = libraryOf(
+  [OWN(1, 'Rice', MAIN), OWN(31, 'Dal', CURRY), OWN(32, 'Kurma', CURRY), OWN(41, 'Papad', EXTRA), OWN(42, 'Pickle', EXTRA)],
+  { parts: SPREAD_PARTS },
+);
+
+const PART_LINK_CASES: RuleCase[] = [
+  {
+    kind: 'plan',
+    id: 'comes-with-two-sides',
+    group: 'Pairings',
+    name: 'A Main comes with two different Sides',
+    why: 'A dish can own several links: Biryani has two Always "comes with" links, one to Raita and one to Salan, and a meal with Biryani gets both Sides, one from each link. Pulao has none and gets no Side.',
+    library: MEAL_LIBRARY,
+    rules: () => ['Raita', 'Salan'].map((n) => linkRule(mealOwner('Biryani'), { mode: 'comes', target: { part: SIDE, kind: 'dish' }, values: [MEAL_LIBRARY.dish(n).id] }, MEAL_PARTS)),
+    expect: [
+      everyPartMeal('Every meal with Biryani has Raita and Salan', holds(MAIN, 1), (s) => holds(SIDE, 11)(s) && holds(SIDE, 12)(s)),
+      everyPartMeal('Every meal with Pulao has no Side', holds(MAIN, 2), (s) => partDishes(s, SIDE).length === 0),
+      noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'comes-with-meets-a-general-side-rule',
+    group: 'Pairings',
+    name: 'A Main link to one Side also satisfies "every meal has a Side"',
+    why: 'A general rule asks for a Side in every meal and Biryani comes with Raita: a Biryani meal gets Raita and no second Side, because the link already satisfies the general rule; every meal holds exactly one Side.',
+    library: MEAL_LIBRARY,
+    rules: () => [
+      { name: 'Every meal has a Side', spec: { template: 'require', params: { match: is('part', SIDE), min: 1, strength: 'must' } } },
+      linkRule(mealOwner('Biryani'), { mode: 'comes', target: { part: SIDE, kind: 'dish' }, values: [11] }, MEAL_PARTS),
+    ],
+    expect: [
+      everyPartMeal('Every meal with Biryani has exactly Raita as its Side', holds(MAIN, 1), (s) => partDishes(s, SIDE).join() === '11'),
+      everyPartMeal('Every meal has one Side', () => true, (s) => partDishes(s, SIDE).length === 1),
+      noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'upward-link-adds-the-extra-with-its-curry',
+    group: 'Pairings',
+    name: 'An extra that comes with a curry is in every meal with that curry',
+    why: 'Papad (an Extra) "comes with" Dal (a Curry): the link points up the parts, so it is stored as "when Dal is in the meal, Papad is added". Papad is in every meal that has Dal and in no other, though Kurma is the other curry in the library.',
+    library: SPREAD_LIBRARY,
+    defaults: false,
+    // Dal is for lunch and Kurma for dinner, so some meals have each curry.
+    given: () => [
+      { name: 'Extras only when asked', spec: { template: 'prefer', params: { match: is('part', EXTRA), direction: 'avoid', weight: 1 } } },
+      mealRule({ id: 31, name: 'Dal' }, ['lunch']),
+      { name: 'Lunch has Dal', spec: { template: 'require', params: { match: is('id', 31), min: 1, scope: { meals: ['lunch'] }, strength: 'must' } } },
+      { name: 'Dinner has a curry', spec: { template: 'require', params: { match: is('part', CURRY), min: 1, scope: { meals: ['dinner'] }, strength: 'must' } } },
+    ],
+    rules: () => {
+      const papad = { id: 41, name: 'Papad', part_id: EXTRA };
+      return [linkRule(papad, { mode: bringMode(EXTRA, CURRY, SPREAD_PARTS), target: { part: CURRY, kind: 'dish' }, values: [31] }, SPREAD_PARTS)];
+    },
+    expect: [
+      everyPartMeal('Every meal with Dal has Papad', holds(CURRY, 31), holds(EXTRA, 41)),
+      everyPartMeal('Every meal without Dal has no Papad', (s) => !holds(CURRY, 31)(s), (s) => !holds(EXTRA, 41)(s)),
+      everyPartMeal('Meals with Kurma and not Dal exist and have no Papad', (s) => holds(CURRY, 32)(s) && !holds(CURRY, 31)(s), (s) => !holds(EXTRA, 41)(s)),
+      noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'link-pointing-the-wrong-way-is-named',
+    group: 'Pairings',
+    name: 'A link that points the wrong way is named and not planned',
+    why: 'After the parts are reordered, Raita (a Side) "comes with" Biryani (a Main, now above the Side): a comes link may only bring a part below its owner, so the link is skipped and named as a rule issue instead of being planned, and the plan is the one the library has without it: no Side at all.',
+    library: MEAL_LIBRARY,
+    rules: () => [linkRule(mealOwner('Raita'), { mode: 'comes', target: { part: MAIN, kind: 'dish' }, values: [1] }, MEAL_PARTS)],
+    issues: ['points to Main, which is no longer below Side'],
+    expect: [
+      ruleIssueNamed('points to Main, which is no longer below Side'),
+      everyPartMeal('Every meal has no Side', () => true, (s) => partDishes(s, SIDE).length === 0),
+      noHardProblems(),
+    ],
+  },
+];
+
+export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES];

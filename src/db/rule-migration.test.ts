@@ -768,6 +768,7 @@ describe('v24 stored rules and links name parts', () => {
       components: new Set((await db.components.toArray()).map((c) => c.id)),
       categories: new Set((await db.categories.toArray()).map((c) => c.id)),
       parts: new Set(PARTS.map((p) => p.id)),
+      partOf: new Map<number, number>(),
     };
     const { issues } = compileRules(rules, known, { list: NEW_PARTS, legacy: legacyPartIds(NEW_PARTS) });
     expect(issues.map((x) => x.message)).toEqual(['refers to component #999, which no longer exists']);

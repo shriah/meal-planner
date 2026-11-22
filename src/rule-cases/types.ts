@@ -3,7 +3,7 @@
 import type { Justification, PartSlot, PlannerPart } from '@/planner';
 import type { LegacyPins } from '@/services/pins';
 import type { PlanSlot } from '@/types/plan';
-import type { RuleRecord } from '@/rules';
+import type { RuleIssue, RuleRecord } from '@/rules';
 import type { DishWithPart } from '@/db/parts';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
@@ -40,6 +40,8 @@ export interface CaseWeeks {
   /** The pairings each week left out of a meal because another pairing already held the curry or subzi. */
   suppressed: CaseSuppressed[][];
   lib: CaseLibrary;
+  /** The rules the planner left out, each named (what `PlanCase.issues` expects). */
+  issues?: RuleIssue[];
 }
 
 export interface Outcome { pass: boolean; got: string }

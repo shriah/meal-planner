@@ -25,6 +25,38 @@ const firstWeek = (w: CaseWeeks, bad: (week: PlanSlot[], i: number) => boolean):
 /** The dish ids a part-keyed meal holds in a part (none when the part is empty). */
 export const partDishes = (slot: PartSlot, partId: number): number[] => slot.parts[partId] ?? [];
 
+/**
+ * Over the meals of a library with its own parts: some meals match `where`, and every one of them also matches `then`.
+ * `highlights` is left out: a part-keyed meal is not a converted slot.
+ */
+export const everyPartMeal = (says: string, where: (s: PartSlot) => boolean, then: (s: PartSlot) => boolean): PlanExpectation => {
+  const weeksOf = (w: CaseWeeks): PartSlot[][] => {
+    if (!w.parts) throw new Error('everyPartMeal reads part-keyed weeks; the case needs its own library');
+    return w.parts;
+  };
+  return {
+    says,
+    check: (w) => {
+      const meals = weeksOf(w).flat().filter(where);
+      const k = meals.filter(then).length;
+      return { pass: meals.length > 0 && k === meals.length, got: `${k} of ${meals.length}` };
+    },
+    failingSeed: (w) => {
+      const i = weeksOf(w).findIndex((wk) => wk.some((s) => where(s) && !then(s)));
+      return i < 0 ? undefined : i;
+    },
+  };
+};
+
+/** The planner named a rule it left out: `text` appears in the rule's name or message. */
+export const ruleIssueNamed = (text: string): PlanExpectation => ({
+  says: `A rule left out of the plan is named: ${text}`,
+  check: (w) => {
+    const names = (w.issues ?? []).map((i) => `${i.name}: ${i.message}`);
+    return { pass: names.some((n) => n.includes(text)), got: names.length ? names.join('; ') : 'no rule issue' };
+  },
+});
+
 /** Every meal of a library with its own parts holds all these dish ids in the part. */
 export const everyMealHasInPart = (partId: number, ids: number[], partName = `part ${partId}`): PlanExpectation => {
   const lacks = (s: PartSlot) => !ids.every((id) => partDishes(s, partId).includes(id));

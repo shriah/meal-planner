@@ -1,6 +1,7 @@
 // Stored rules and their compilation into planner constraints.
 import { cappedPart, isLeaf, matcherFields, type Bounds, type Constraint, type CountConstraint, type Matcher, type RuleLevel } from '@/planner';
 import { constraintOverParts, type RuleParts } from './legacy-parts';
+import { readLink, wrongWay } from './owned';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -23,7 +24,13 @@ export interface KnownIds {
   parts: ReadonlySet<number>;
   /** The part each category belongs to; when given, a link naming a category of another part is caught. */
   categoryPart?: ReadonlyMap<number, number>;
+  /** The part each dish belongs to, so a dish's link can be checked against the order of the parts. */
+  partOf: ReadonlyMap<number, number>;
 }
+
+/** The part of each dish that has one: what `KnownIds.partOf` holds. */
+export const partsOfDishes = (dishes: readonly { id: number; part_id?: number }[]): Map<number, number> =>
+  new Map(dishes.flatMap((d) => (d.part_id === undefined ? [] : [[d.id, d.part_id] as const])));
 
 export interface RuleIssue {
   ruleId: number;
@@ -131,6 +138,14 @@ function waitsForFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
   return spec.template === 'comes_with' && spec.params.when !== undefined && parts.list.length > 0 && String(parts.list[0].id) in spec.params.when;
 }
 
+/** The wrong-way text of a dish's own link (`wrongWay`), or undefined for a rule that is not one or a dish with no known part. */
+function wrongWayLink(rule: RuleRecord, known: KnownIds, parts: RuleParts): string | undefined {
+  if (rule.owner_component_id === undefined) return undefined;
+  const link = readLink(rule, parts.list);
+  const ownerPart = known.partOf.get(rule.owner_component_id);
+  return link && ownerPart !== undefined ? wrongWay(link.mode, ownerPart, link.target.part, parts.list) : undefined;
+}
+
 /** The categories a link-shaped matcher (`all(part, category set)`, the set maybe negated) names outside its part. */
 function outsidePart(m: Matcher, categoryPart: ReadonlyMap<number, number>): { part: number; ids: number[] } | undefined {
   if (!('all' in m) || m.all.length !== 2) return undefined;
@@ -196,6 +211,11 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
     }
     if (waitsForFirstPart(parsed.spec, parts)) {
       issues.push({ ruleId: rule.id, name: rule.name, message: `waits for ${parts.list[0].name}, which every meal holds` });
+      continue;
+    }
+    const wrongWay = wrongWayLink(rule, known, parts);
+    if (wrongWay) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: wrongWay });
       continue;
     }
     const misplaced = known.categoryPart && misplacedCategories(parsed.spec, known.categoryPart, parts.list[0]?.id);

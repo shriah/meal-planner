@@ -173,7 +173,7 @@ describe('Phase 14 category services', () => {
     expect(extraComponent).not.toHaveProperty('compatible_base_types');
     // The rule is kept unchanged; compiling it now reports the deleted category instead of applying it.
     expect(rule.enabled).toBe(true);
-    const known = { components: new Set<number>(), categories: new Set([riceId, condimentId]), parts: new Set([1, 2, 3, 4]) };
+    const known = { components: new Set<number>(), categories: new Set([riceId, condimentId]), parts: new Set([1, 2, 3, 4]), partOf: new Map<number, number>() };
     expect(compileRules([rule], known, TEST_RULE_PARTS).issues).toEqual([
       expect.objectContaining({ name: 'Bread dinner', message: `refers to category #${breadId}, which no longer exists` }),
     ]);

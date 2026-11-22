@@ -5,7 +5,7 @@ import type { CategoryRecord } from '@/types/category';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import { convertDish, legacyPartIds } from '@/db/parts';
 import type { ComponentLike } from '@/planner';
-import { capRules, compileRules, defaultRules, type RuleRecord } from '@/rules';
+import { capRules, compileRules, defaultRules, partsOfDishes, type RuleRecord } from '@/rules';
 
 const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -43,6 +43,7 @@ export function constraintsFor(lib: ComponentLike[], links: ReturnType<typeof se
     components: new Set(lib.map((x) => x.id)),
     categories: new Set(CATEGORIES.map((k) => k.id)),
     parts: new Set(CASE_PARTS.map((p) => p.id)),
+    partOf: partsOfDishes(lib),
   }, { list: CASE_PARTS, legacy: legacyPartIds(CASE_PARTS) });
 }
 

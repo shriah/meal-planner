@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildModel, DAYS, emptyPlan, is, oneOf, score, slotIndex, type ComponentLike, type Day, type PlannerPart } from '@/planner';
 import { capRules, defaultKeyForName, defaultRules, legacyOccasionDays } from './defaults';
-import { compileRules } from './record';
+import { compileRules, partsOfDishes } from './record';
 import { RuleSpecSchema } from './templates';
 import { TEST_RULE_PARTS } from './test-parts';
 
@@ -42,7 +42,7 @@ describe('default rules', () => {
       ({ id, name: `#${id}`, componentType, part_id: TEST_RULE_PARTS.legacy[componentType], dietary_tags: [], regional_tags: [], occasion_tags: [] });
     const library = [mk(1, 'base'), mk(2, 'extra'), mk(3, 'extra'), mk(4, 'extra')];
     const rules = defaultRules(PARTS, { breakfast: 2, lunch: 3, dinner: 2 }).map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
-    const { constraints } = compileRules(rules, { components: new Set([1, 2, 3, 4]), categories: new Set(), parts: new Set([1, 2, 3, 4]) }, TEST_RULE_PARTS);
+    const { constraints } = compileRules(rules, { components: new Set([1, 2, 3, 4]), categories: new Set(), parts: new Set([1, 2, 3, 4]), partOf: partsOfDishes(library) }, TEST_RULE_PARTS);
     // The parts in meal order: base 1 and extras 2, 3 and 4.
     const plan = emptyPlan(TEST_RULE_PARTS.list.length);
     plan[slotIndex('monday', 'dinner')] = { parts: [[1], [], [], [2, 3, 4]] };
