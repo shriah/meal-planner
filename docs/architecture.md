@@ -115,6 +115,35 @@ stores them next to today's fields; nothing reads them yet, so nothing visible c
   (`loadConvertLookup` in `src/db/parts-store.ts`). Renaming a part would make the next save create a second one. A save also rewrites a
   dish's whole `tags` map, but only when a source field changed. Both must be revisited when the new fields become the source of truth.
 
+### Meal parts (Stage 2)
+
+Design: `docs/superpowers/specs`. The planner now works over parts. Storage, locks, pins and lock keys keep today's shape until Stage 5, so nothing
+visible changed except the two cap rules on the Rules page, and a converted library plans the same weeks as before (`repair.snapshot.test.ts`).
+
+- **Input.** `ModelInput.parts` (`PlannerPart`: id, name, `varied`) lists the meal's parts in order; the first holds exactly one dish. A solver slot
+  is one dish list per part (`SlotState.parts`), `PartSlot` and `PartPins` are the same by part id. Each dish carries its derived `part_id`, and an
+  assignment names the part it is placed in (`part`); the dish's own part is `c.part_id`. `loadPlanningInput` fills a missing `part_id` from `componentType`.
+- **Single and many.** A part is single (one dish) when the first part, or when a hard per-meal cap of 1 selects it (`cappedPart`, `capped` in
+  `builtinConstraints`); otherwise it holds many. Only many parts get the "no dish twice" built-in, and the pick, swap and polish moves change
+  single parts while add/remove moves change many parts.
+- **Rules reach the planner as rules about parts.** `src/rules/legacy-parts.ts` rewrites every `role` and `componentType` leaf of a compiled
+  constraint to a `part` leaf (`constraintOverParts`); stored rules are not changed. The variety, spacing and sides-only defaults are the exception:
+  when the stored row still equals the stock `defaultRules()` spec they are compiled over the parts' `varied` flag (variety, spacing) or every part
+  after the first (sides only), so they follow the parts. An edited default gets the plain rewrite. This code and `src/db/parts.ts`,
+  `src/db/seed.tsx`, `src/services/legacy-slots.ts` and the v22 upgrade are the only places that name base, curry, subzi or extras.
+- **Cap rules.** "At most one Curry per meal" and "At most one Subzi per meal" (`capRules` in `src/rules/defaults.ts`) replace the built-in one curry
+  and one subzi. They are Always `limit` rules with no default key, added by the v22 upgrade (only when the library has parts), the seed and the
+  rule-case runner, and the user can edit, disable or delete them. Having no default key, "restore defaults" cannot bring a deleted cap back.
+- **Boundary caps.** A stored plan holds one curry and one subzi, so `legacySlotCaps` (`src/services/legacy-slots.ts`) adds structural caps of 1 for the
+  Curry and Subzi parts on every app path that plans (`planFromData` and the paths around it), whatever the user's rules say. Base needs none.
+  A deleted cap rule therefore changes nothing yet; "delete the cap, get two curries" arrives in Stage 5 with its rule case. The planner itself
+  supports many dishes per part (`parts.test.ts`: Main, Side, Dessert).
+- **Guards.** `buildModel` throws `InvalidConstraintError` for any `role` leaf (a rule the rewrite missed would silently match nothing) and for
+  `slot_part` in a constraint that is not a built-in; `slot_part` is planner-internal and names where a dish is placed.
+- **Joint part and locks.** The joint part is the first single part after the first (the curry): the base+curry move changes it with the first part.
+  `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out, and the repair sweep skips it, as the curry
+  did before. Both keep today's weeks. Stage 3 makes the sweep a rule case.
+
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
 
@@ -132,7 +161,7 @@ comes. A curry, subzi or extra may also be
 **served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
 is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner plans a base together with
 its served-with dishes (see **Pairings as units** below); picking a base by hand on the plan re-plans only that meal through the
-planner: `pinsForMeal` in `src/services/pins.ts` pins every other meal exactly (and holds a role empty with `null` in
+planner: `pinsForMeal` in `src/services/pins.ts` pins every other meal exactly (and holds a part empty with `null` in
 `SlotPins`), so the meal's sides follow every rule and locked parts stay. The re-plan is applied only if the meal is still as
 picked, and a replaced base takes the sides it brought with it.
 
@@ -183,7 +212,7 @@ library automatically once editing pauses.
 flowchart TD
     A["Constraints: built-ins + compiled rules"] --> B["compileModel: matchers to closures, groups"]
     B --> C["Construction: fill 21 slots, pins first, softmax over candidates"]
-    C --> D["Local search (late acceptance): change, swap, base+curry, add/remove extra"]
+    C --> D["Local search (late acceptance): change, swap, first part + joint part, add/remove a dish of a many-dish part"]
     D --> E{"No hard violations and no improvement for N iterations, or the step budget (or time cap) reached?"}
     E -->|no| D
     E -->|yes| H["Repair loop, rounds until one keeps nothing (at most REPAIR_ROUNDS): descent, re-pick, polish; sweep and retry only with a conditional link"]
@@ -193,12 +222,12 @@ flowchart TD
 
 Every step that places a dish brings its pairings with it (see below), so a base is always scored with its sides in place.
 
-- **Count** constraint: select assignments (component + role + day + meal), group them (slot, day,
+- **Count** constraint: select assignments (component + part + day + meal), group them (slot, day,
   meal, week, per component, sliding k-day window), optionally only where a trigger exists in the
   same group, and bound the count with hard and/or soft min/max.
 - **Prefer** constraint: soft cost or reward per matching assignment.
 - **Score** is lexicographic: any hard violation outweighs every soft cost.
-- **Built-ins** are only the structure of a meal: one base, each component in its own role, no extra twice.
+- **Built-ins** are only the structure of a meal: the first part holds one dish, each dish sits in its own part, no dish twice in a part that holds many.
   Everything else is a stored rule, including "At most one Curry per meal" and "At most one Subzi per meal"
   (`capRules`, added by v22 and the seed). A part with a hard per-meal cap of 1 holds one dish (`capped`).
 - **Pair** constraint: when a meal holds a dish matching `when`, it should also hold a dish matching `of` (a set of candidates);
@@ -207,8 +236,8 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - The **repair loop** runs after the random search: a round runs the move kinds in a fixed order, each over the whole week
   (descent: every single change of a free base, curry or subzi, kept if it strictly improves; re-pick of a link's dish;
   sweep of conditional sides that break a hard rule; polish: drop a side whose removal improves; retry of a refused
-  conditional side). Polish keeps its own role-major order over the week: every free curry, then every free subzi, then
-  every free meal's extras, extras last to first. Sweep and retry run only when a link waits for a curry or subzi (a
+  conditional side). Polish keeps its own part-major order over the week: every free single part after the first (curry, then subzi), then
+  every free meal's many-dish parts (extras), last dish to first. Sweep and retry run only when a link waits for a curry or subzi (a
   conditional link); without one the kinds are descent, re-pick and polish. Rounds repeat until one keeps nothing, for at most `REPAIR_ROUNDS` (10). Re-pick and retry keep
   not-worse changes, so each remembers across rounds what it already tried. The safety cap does not cut it short.
 - **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
@@ -250,7 +279,7 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
-- **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free roles only and
+- **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free parts only and
   never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
   the candidate's own `dish` limits it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
   then the `frequency` limits it breaks as a freed pick, then soft score. `broughtScore` returns these as separate components
@@ -261,7 +290,7 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   practice only matters in the meal picker). Unit members stay while their base does; asked-for sides
   are free, and polish may drop one.
 - **Conflicts.** Where stored data holds two Always curries (or subzis) for one base, the rule with the lower id makes the unit
-  and the other is reported once as a soft problem; it never blocks the base. A pinned or held-empty role keeps the pin, and
+  and the other is reported once as a soft problem; it never blocks the base. A pinned or held-empty part keeps the pin, and
   the missing pairing is reported as "replaced by your pick".
 - **Around the planner.** `PlanningOutcome.paired` (`pairedSides` in `src/services/plan-generation.ts`) lists each meal's
   paired sides with the candidates and the rule that brought them (`SlotPair`, `PairedSide`; `bringsWith` returns `{ wants }`), and the plan board labels such a side "with <base>", also on a reloaded plan. The meal picker
