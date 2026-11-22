@@ -206,10 +206,10 @@ function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; er
   return { ok: true, spec: r.data };
 }
 
-const knownIds = ({ library, categories }: AssistantData): KnownIds => ({
+const knownIds = ({ library, categories, parts }: AssistantData): KnownIds => ({
   components: new Set(library.map((c) => c.id)),
-  baseCategories: new Set(categories.filter((c) => c.kind === 'base').map((c) => c.id)),
-  extraCategories: new Set(categories.filter((c) => c.kind === 'extra').map((c) => c.id)),
+  categories: new Set(categories.map((c) => c.id)),
+  parts: new Set(parts.map((p) => p.id)),
 });
 
 const normName = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();

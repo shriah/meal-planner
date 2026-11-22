@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { all, any, is, not, oneOf, TRUE, type Matcher } from '@/planner';
-import { fromMatcher, groupProblems, toMatcher, type ConditionGroup } from './conditions';
+import { CONDITION_FIELDS, fromMatcher, groupProblems, toMatcher, type ConditionGroup } from './conditions';
 
 describe('conditions', () => {
   it('round-trips every shape the editor can show', () => {
@@ -10,6 +10,8 @@ describe('conditions', () => {
       oneOf('protein_tag', ['fish', 'chicken']),
       not(is('dietary_tags', 'non-veg')),
       all(is('componentType', 'base'), is('base_category_id', 10)),
+      all(is('part', 1), is('category', 10)),
+      not(oneOf('part', [2, 3])),
       any(is('id', 3), not(oneOf('regional_tags', ['south-indian', 'coastal-konkan']))),
     ];
     for (const m of shapes) {
@@ -37,11 +39,22 @@ describe('conditions', () => {
     const group: ConditionGroup = {
       join: 'any',
       conditions: [
-        { field: 'componentType', negate: false, values: ['curry'] },
+        { field: 'part', negate: false, values: [2] },
         { field: 'dietary_tags', negate: true, values: ['veg', 'vegan'] },
       ],
     };
-    expect(toMatcher(group)).toEqual(any(is('componentType', 'curry'), not(oneOf('dietary_tags', ['veg', 'vegan']))));
+    expect(toMatcher(group)).toEqual(any(is('part', 2), not(oneOf('dietary_tags', ['veg', 'vegan']))));
+  });
+
+  it('offers parts and categories, not component types or the old category fields', () => {
+    expect(CONDITION_FIELDS).toEqual(['part', 'id', 'category', 'dietary_tags', 'protein_tag', 'regional_tags', 'occasion_tags', 'frequency']);
+    expect(fromMatcher(all(is('part', 1), is('category', 10)))).toEqual({
+      join: 'all', conditions: [{ field: 'part', negate: false, values: [1] }, { field: 'category', negate: false, values: [10] }],
+    });
+    // Old leaves still read, so rules written with them describe and edit as before.
+    for (const old of [is('componentType', 'curry'), is('base_category_id', 10), is('extra_category_id', 3), is('curry_category', 'lentil')]) {
+      expect(fromMatcher(all(is('id', 1), old)), JSON.stringify(old)).not.toBeNull();
+    }
   });
 
   it('flags conditions without values', () => {

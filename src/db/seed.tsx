@@ -79,7 +79,7 @@ async function seed(data: SeedData): Promise<void> {
   const restIds = await db.components.bulkAdd(rest, { allKeys: true });
 
   const now = new Date().toISOString();
-  await db.rules.bulkAdd([...defaultRules({ breakfast: 2, lunch: 3, dinner: 3 }), ...capRules()].map((r) => ({ ...r, enabled: true, created_at: now })));
+  await db.rules.bulkAdd([...defaultRules(storedParts, { breakfast: 2, lunch: 3, dinner: 3 }), ...capRules(storedParts)].map((r) => ({ ...r, enabled: true, created_at: now })));
 
   // Default rules: which meals each kind of base suits.
   const onlyAt = (name: string, match: Matcher, meals: Meal[]): Omit<RuleRecord, 'id'> => ({
@@ -89,9 +89,9 @@ async function seed(data: SeedData): Promise<void> {
     created_at: now,
   });
   await db.rules.bulkAdd([
-    onlyAt('Other: breakfast and dinner', is('base_category_id', categoryLookup.base.other), ['breakfast', 'dinner']),
-    onlyAt('Rice-based: lunch only', is('base_category_id', categoryLookup.base['rice-based']), ['lunch']),
-    onlyAt('Bread-based: dinner only', is('base_category_id', categoryLookup.base['bread-based']), ['dinner']),
+    onlyAt('Other: breakfast and dinner', is('category', categoryLookup.base.other), ['breakfast', 'dinner']),
+    onlyAt('Rice-based: lunch only', is('category', categoryLookup.base['rice-based']), ['lunch']),
+    onlyAt('Bread-based: dinner only', is('category', categoryLookup.base['bread-based']), ['dinner']),
     onlyAt('Poori: breakfast only', is('id', pooriId), ['breakfast']),
   ]);
 

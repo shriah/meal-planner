@@ -55,7 +55,9 @@ describe('v14 rule migration', () => {
       ['Rice with rasam — No repeats', true, 'no_repeat'],
       ['Rice with rasam — Also include when', true, 'require_with'],
     ]);
-    expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+    // A no-repeat of this time names the roles it counts, which rules no longer read; the v24 upgrade converts it.
+    expect(rules.filter((r) => r.spec.template !== 'no_repeat').every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+    expect(rules[2].spec).toMatchObject({ params: { roles: ['base', 'curry', 'subzi'] } });
     expect(rules[3].spec).toMatchObject({ params: { extraCategories: [liquidId] } });
 
     const notice = await db.notices.get(RULE_MIGRATION_NOTICE_ID);

@@ -3,7 +3,7 @@ import {
   bringsWith, broughtScore, buildModel, compareBrought, candidateWeight, chooseCandidate, explain, fromPartSlots, mealBrings, partPosition, planWeek, score, slotIndex, slotPairs,
   MEALS, type Brings, type Justification, type Meal, type ModelInput, type PlanState,
 } from '@/planner';
-import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
+import { compileRules, describeSpec, libraryNames, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import type { PartRecord } from '@/types/part';
@@ -76,18 +76,13 @@ function modelFromData(input: PlanningInput) {
   const library = input.library.map((c) => withPart(c, legacy));
   const known = {
     components: new Set(library.map((c) => c.id)),
-    baseCategories: new Set(categories.filter((c) => c.kind === 'base').map((c) => c.id)),
-    extraCategories: new Set(categories.filter((c) => c.kind === 'extra').map((c) => c.id)),
+    categories: new Set(categories.map((c) => c.id)),
+    parts: new Set(parts.map((p) => p.id)),
   };
   const { constraints, issues } = compileRules(rules, known, { list: parts, legacy });
   const componentName = new Map(library.map((c) => [c.id, c.name]));
-  const categoryName = new Map(categories.map((c) => [c.id, c.name]));
   const partName = new Map(parts.map((p) => [p.id, p.name.toLowerCase()]));
-  const names: Names = {
-    component: (id) => componentName.get(id),
-    baseCategory: (id) => categoryName.get(id),
-    extraCategory: (id) => categoryName.get(id),
-  };
+  const names: Names = libraryNames({ dishes: library, categories, parts });
   const ruleById = new Map(rules.map((r) => [r.id, r]));
 
   /** Rule problems read as the rule's description; anything else keeps the planner's own wording. */

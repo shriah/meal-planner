@@ -4,7 +4,7 @@ import { dayRule, defaultRules, exclusionRule, linkRule, type RuleRecord } from 
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
-import { capRecords, withParts } from './test-input';
+import { capRecords, TEST_PART_RECORDS, withParts } from './test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -206,7 +206,7 @@ describe('pairings', () => {
         id, name: `Idiyappam never with ${stew}`, enabled: true, created_at: '',
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', stew), strength: 'must' } },
       } as RuleRecord);
-      const frequency = defaultRules()
+      const frequency = defaultRules(TEST_PART_RECORDS)
         .filter((r) => r.default_key === 'prefer-frequent' || r.default_key === 'avoid-rare')
         .map((r, k) => ({ ...r, id: 10 + k, enabled: true, created_at: '' } as RuleRecord));
       const picker = slotConflicts(
@@ -277,7 +277,7 @@ describe('planFromData without the curry cap rule', () => {
   it('plans two Always curry links on one base with one curry per meal', () => {
     const rice = dish(1, 'Rice', 'base');
     const library = [rice, dish(2, 'Sambar', 'curry'), dish(3, 'Rasam', 'curry'), dish(4, 'Roti', 'base')];
-    const rules = [...defaultRules(), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [2] }), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [3] })]
+    const rules = [...defaultRules(TEST_PART_RECORDS), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [2] }), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [3] })]
       .map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
     for (const seed of [1, 2, 3]) {
       const outcome = planFromData(withParts({ library, categories: [], rules }), { seed, timeLimitMs: Infinity });

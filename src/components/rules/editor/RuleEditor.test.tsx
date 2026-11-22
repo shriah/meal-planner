@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { all, any, is } from '@/planner';
 import { addComponent } from '@/services/food-db';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
+import type { RuleSpecInput } from '@/rules';
 import { RuleEditor } from './RuleEditor';
 
 afterEach(() => cleanup());
@@ -60,6 +62,51 @@ describe('RuleEditor', () => {
     await waitFor(async () => expect(await db.rules.count()).toBe(1));
     const [rule] = await db.rules.toArray();
     expect(rule.name).toBe('Never include dishes with fish');
+  });
+
+  it('offers part and category conditions by name, and saves them as part and category leaves', async () => {
+    const { parts } = await ensurePartsAndTagGroups();
+    const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
+    const rice = (await db.categories.add({ kind: 'base', name: 'Rice-based', part_id: partOf('base'), created_at: '' })) as number;
+    render(<RuleEditor onSaved={vi.fn()} />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
+    await choose(screen.getByRole('combobox', { name: 'Condition 1 field' }), 'Part');
+    await choose(await screen.findByRole('combobox', { name: 'Add part' }), 'Curry');
+    await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
+    await choose(screen.getByRole('combobox', { name: 'Condition 2 field' }), 'Category');
+    await choose(await screen.findByRole('combobox', { name: 'Add category' }), 'Rice-based (Base)');
+
+    expect(screen.getByText('Never include curries in the Rice-based category')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+    await waitFor(async () => expect(await db.rules.count()).toBe(1));
+    const [rule] = await db.rules.toArray();
+    expect(rule.spec).toEqual({ template: 'exclude', params: { match: all(is('part', partOf('curry')), is('category', rice)), strength: 'must' } });
+  });
+
+  it('chooses the parts a rule covers by name, and never offers to leave out the first part', async () => {
+    const { parts } = await ensurePartsAndTagGroups();
+    const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
+    const spec: RuleSpecInput = { template: 'skip_when', params: { when: is('protein_tag', 'fish'), skip: [], strength: 'must' } };
+    render(<RuleEditor initial={{ name: 'No subzi with fish', spec }} onSaved={vi.fn()} />);
+
+    const leaveOut = await screen.findByRole('group', { name: 'Leave out' });
+    await waitFor(() => expect(within(leaveOut).getAllByRole('button').map((b) => b.textContent)).toEqual(['Curry', 'Subzi', 'Extras']));
+    await userEvent.click(within(leaveOut).getByRole('button', { name: 'Subzi' }));
+    expect(screen.getByText('With dishes with fish, no subzis')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
+
+    await waitFor(async () => expect(await db.rules.count()).toBe(1));
+    expect((await db.rules.toArray())[0].spec.params).toMatchObject({ skip: [partOf('subzi')] });
+  });
+
+  it('still edits a condition on a field it no longer offers, as an assistant draft may hold', async () => {
+    const spec: RuleSpecInput = { template: 'exclude', params: { match: is('componentType', 'curry'), strength: 'must' } };
+    render(<RuleEditor initial={{ name: 'No curries', spec }} onSaved={vi.fn()} />);
+
+    expect(screen.queryByText(/too complex to edit here/)).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Condition 1 field' })).toHaveTextContent('Type');
+    expect(screen.getByText('Never include curries')).toBeInTheDocument();
   });
 
   it('groups the rule types by what they do', async () => {

@@ -20,8 +20,21 @@ describe('rule forms', () => {
       for (const key of ['match', 'when']) if (key in spec.params) spec.params[key] = is('protein_tag', 'fish');
       if (id === 'require_with') spec.params.components = [1];
       if (id === 'pairs_with') spec.params.baseCategories = [1];
+      if (id === 'only_allow') spec.params.parts = [2];
+      if (id === 'skip_when') spec.params.skip = [3];
       expect(RuleSpecSchema.safeParse(spec).success, id).toBe(true);
     }
+  });
+
+  it('chooses parts by id: which an only-allow covers, which a leave-out drops, which a no-repeat counts', () => {
+    const kinds = (id: 'only_allow' | 'skip_when' | 'no_repeat') => TEMPLATE_FORMS[id].fields.map((f) => [f.key, f.kind]);
+    expect(kinds('only_allow')).toContainEqual(['parts', 'parts']);
+    expect(kinds('skip_when')).toContainEqual(['skip', 'skip']);
+    expect(kinds('no_repeat')).toContainEqual(['parts', 'parts']);
+    expect(TEMPLATE_FORMS.no_repeat.fields.find((f) => f.key === 'parts')?.optional).toBe(true);
+    expect(newSpec('only_allow').params).toMatchObject({ parts: [] });
+    expect(newSpec('skip_when').params).toMatchObject({ skip: [] });
+    expect(newSpec('no_repeat').params).not.toHaveProperty('parts');
   });
 
   it('reports errors against the field they belong to', () => {

@@ -17,6 +17,6 @@ export function withParts<T extends Omit<PlanningInput, 'parts'>>(input: T): T &
   return { ...input, library, parts: TEST_PART_RECORDS };
 }
 
-/** The stored curry and subzi caps every library has (`capRules()`), with ids from `firstId`. */
+/** The stored curry and subzi caps every library has (`capRules(parts)`), with ids from `firstId`. */
 export const capRecords = (firstId = 100): RuleRecord[] =>
-  capRules().map((r, i) => ({ ...r, id: firstId + i, enabled: true, created_at: '' }));
+  capRules(TEST_PART_RECORDS).map((r, i) => ({ ...r, id: firstId + i, enabled: true, created_at: '' }));

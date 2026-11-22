@@ -8,6 +8,7 @@ import { CONVERTED_TAG_GROUP_KEYS, CONVERTED_TAG_GROUPS } from '@/db/parts';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getOwnedRule, getOwnedRules } from '@/services/food-db';
+import { getParts } from '@/services/parts-db';
 import type { CurryRecord, ExtraRecord } from '@/types/component';
 
 describe('runSeed', () => {
@@ -149,16 +150,25 @@ describe('runSeed', () => {
     ]);
 
     expect(await db.preferences.count()).toBe(0);
-    const names = new Set(rules.map((r) => r.name));
-    for (const r of defaultRules({ breakfast: 2, lunch: 3, dinner: 3 })) expect(names, r.name).toContain(r.name);
-    expect(rules.filter((r) => r.default_key).map((r) => r.default_key).sort()).toEqual(defaultRules().map((r) => r.default_key).sort());
+    const parts = await getParts();
+    for (const r of defaultRules(parts, { breakfast: 2, lunch: 3, dinner: 3 })) {
+      expect(rules.find((s) => s.default_key === r.default_key), r.name).toMatchObject({ name: r.name, spec: r.spec });
+    }
+    expect(rules.filter((r) => r.default_key).map((r) => r.default_key).sort()).toEqual(defaultRules(parts).map((r) => r.default_key).sort());
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
       expect(rule.spec).toMatchObject({
         template: 'allowed_meals',
-        params: { match: { field: 'base_category_id', op: 'eq', value: expect.any(Number) } },
+        params: { match: { field: 'category', op: 'eq', value: expect.any(Number) } },
       });
     }
+    // Each window names a base category, which the seeded bases carry.
+    const bases = (await db.components.toArray()).filter((c) => c.componentType === 'base');
+    for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
+      const category = (rule.spec.params as { match: { value: number } }).match.value;
+      expect(bases.some((b) => b.category_id === category && b.base_category_id === category), rule.name).toBe(true);
+    }
+    expect(JSON.stringify(rules.filter((r) => r.owner_component_id === undefined).map((r) => r.spec))).not.toMatch(/componentType|base_category_id|extra_category_id|curry_category/);
 
     const pooriRule = rules.find((rule) => rule.name === 'Poori: breakfast only');
     expect(pooriRule?.spec).toMatchObject({ template: 'allowed_meals', params: { match: { field: 'id' }, meals: ['breakfast'] } });
@@ -170,10 +180,11 @@ describe('runSeed', () => {
     await runSeed();
 
     const rules = await db.rules.orderBy('id').toArray();
-    const defaults = defaultRules().length;
+    const parts = await getParts();
+    const defaults = defaultRules(parts).length;
     expect(rules.slice(0, defaults).every((r) => r.default_key)).toBe(true);
     const caps = rules.slice(defaults, defaults + 2);
-    expect(caps.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules().map((r) => ({ ...r, enabled: true })));
+    expect(caps.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules(parts).map((r) => ({ ...r, enabled: true })));
     expect(caps.map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
     expect(rules.filter((r) => r.name.startsWith('At most one '))).toHaveLength(2);
   });

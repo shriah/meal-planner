@@ -7,8 +7,8 @@ import { RuleSpecSchema, type RuleSpec, type RuleSpecInput, type TemplateId } fr
 export type FormFieldKind =
   | 'match'            // a condition group (Matcher)
   | 'scope'            // optional days and meals
-  | 'roles'            // base / curry / subzi / extra
-  | 'skip'             // curry / subzi / extra
+  | 'parts'            // part ids
+  | 'skip'             // part ids, every part but the first
   | 'meals'            // one or more meals
   | 'days'             // one or more days
   | 'count'            // a whole number
@@ -54,11 +54,11 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   },
   only_allow: {
     fields: [
-      { key: 'roles', kind: 'roles', label: 'For these parts of a meal' },
+      { key: 'parts', kind: 'parts', label: 'For these parts of a meal' },
       { key: 'match', kind: 'match', label: 'Only allow' },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, roles: ['curry'], strength: 'must' }),
+    defaults: () => ({ match: TRUE, parts: [], strength: 'must' }),
   },
   require: {
     fields: [
@@ -82,10 +82,10 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'match', kind: 'match', label: "Don't repeat" },
       { key: 'within', kind: 'within', label: 'Not again within' },
-      { key: 'roles', kind: 'roles', label: 'Counting these parts of a meal' },
+      { key: 'parts', kind: 'parts', label: 'Counting these parts of a meal', help: 'Leave empty for every part.', optional: true },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, within: 'week', roles: ['base', 'curry', 'subzi'], strength: 'must' }),
+    defaults: () => ({ match: TRUE, within: 'week', strength: 'must' }),
   },
   allowed_meals: {
     fields: [
@@ -102,7 +102,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'skip', kind: 'skip', label: 'Leave out' },
       scope, strength, cost,
     ],
-    defaults: () => ({ when: TRUE, skip: ['subzi'], strength: 'must' }),
+    defaults: () => ({ when: TRUE, skip: [], strength: 'must' }),
   },
   require_with: {
     fields: [

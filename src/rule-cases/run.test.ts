@@ -245,8 +245,18 @@ describe('cases on a library with its own parts', () => {
   it('names the part by its given name in the sentence', () => {
     expect(everyMealHasInPart(SIDE, [11, 12], 'Side').says).toBe('Every meal has dishes 11 and 12 in Side');
   });
-  it('throws on a custom library with default rules, and reads no converted-shape expectation', () => {
-    expect(() => runPlanCase({ ...trivial, defaults: undefined })).toThrow(/part-based defaults/);
+  it('plans with the default rules over its own parts: no extras limits or caps, sides left out unless asked', () => {
+    const withDefaults: PlanCase = { ...trivial, defaults: undefined };
+    expect(recordsOf(withDefaults, []).map((r) => r.default_key)).toEqual(['variety', 'spacing', 'sides-only-when-asked', 'prefer-frequent', 'avoid-rare']);
+    const r = runPlanCase(withDefaults);
+    expect(r.status).toBe('pass');
+    expect(r.defaults).toBe(true);
+    for (const meal of r.sampleWeek!) {
+      expect(partDishes(meal.slot as PartSlot, SIDE)).toEqual([]);
+      expect(partDishes(meal.slot as PartSlot, DESSERT)).toEqual([]);
+    }
+  });
+  it('reads no converted-shape expectation', () => {
     const w: CaseWeeks = { weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib: library, parts: [[]] };
     expect(() => plannedAtLeast('Biryani', 1).check(w, { baseline: () => w })).toThrow(/converted shape/);
   });

@@ -38,11 +38,11 @@ export function seededLinks(lib: ComponentLike[]) {
 
 /** Compiled constraints (and issues) for `links` ahead of the default rules and the caps, over a seeded-library cut. */
 export function constraintsFor(lib: ComponentLike[], links: ReturnType<typeof seededLinks>) {
-  const records: RuleRecord[] = [...links, ...defaultRules(), ...capRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
+  const records: RuleRecord[] = [...links, ...defaultRules(CASE_PARTS), ...capRules(CASE_PARTS)].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
   return compileRules(records, {
     components: new Set(lib.map((x) => x.id)),
-    baseCategories: new Set([1, 2, 3]),
-    extraCategories: new Set([11, 12, 13, 14, 15]),
+    categories: new Set(CATEGORIES.map((k) => k.id)),
+    parts: new Set(CASE_PARTS.map((p) => p.id)),
   }, { list: CASE_PARTS, legacy: legacyPartIds(CASE_PARTS) });
 }
 

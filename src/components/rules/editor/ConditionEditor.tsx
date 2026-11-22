@@ -4,24 +4,32 @@ import { Plus, Trash2 } from 'lucide-react'
 import { FIELDS, TRUE, type Matcher } from '@/planner'
 import {
   CONDITION_FIELDS, describeMatcher, fromMatcher, toMatcher,
-  type Condition, type ConditionField, type ConditionGroup, type ConditionValue, type Names,
+  type Condition, type ConditionGroup, type ConditionValue, type Names, type ReadableField,
 } from '@/rules'
 import type { ComponentRecord } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
+import type { PartRecord } from '@/types/part'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { MultiPicker, type Option } from './widgets'
 
 export interface EditorData {
   components: ComponentRecord[]
+  /** The meal's parts, in meal order. */
+  parts: PartRecord[]
+  /** Every category, of every part. */
+  categories: CategoryRecord[]
   baseCategories: CategoryRecord[]
   extraCategories: CategoryRecord[]
   names: Names
 }
 
-const FIELD_LABELS: Record<ConditionField, string> = {
-  componentType: 'Type',
+const FIELD_LABELS: Record<ReadableField, string> = {
+  part: 'Part',
   id: 'Dish',
+  category: 'Category',
+  // Fields of rules written before rules named parts: still shown and edited, never offered for a new condition.
+  componentType: 'Type',
   base_category_id: 'Base category',
   extra_category_id: 'Extra category',
   curry_category: 'Curry type',
@@ -32,18 +40,32 @@ const FIELD_LABELS: Record<ConditionField, string> = {
   frequency: 'Frequency',
 }
 
-function valueOptions(field: ConditionField, data: EditorData): Option<ConditionValue>[] {
+function valueOptions(field: ReadableField, data: EditorData): Option<ConditionValue>[] {
   switch (field) {
     case 'id':
       return [...data.components].sort((a, b) => a.name.localeCompare(b.name)).map((c) => ({ value: c.id, label: `${c.name} (${c.componentType})` }))
+    case 'part':
+      return data.parts.map((p) => ({ value: p.id, label: p.name }))
+    case 'category':
+      // Every part's categories, in meal order: "Rice-based (Base)".
+      return data.parts.flatMap((p) => data.categories
+        .filter((c) => c.part_id === p.id)
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((c) => ({ value: c.id, label: `${c.name} (${p.name})` })))
     case 'base_category_id':
       return data.baseCategories.map((c) => ({ value: c.id, label: c.name }))
     case 'extra_category_id':
       return data.extraCategories.map((c) => ({ value: c.id, label: c.name }))
-    default:
-      return (FIELDS[field].options ?? []).map((o) => ({ value: o, label: o }))
+    default: {
+      const options: readonly string[] = FIELDS[field].options
+      return options.map((o) => ({ value: o, label: o }))
+    }
   }
 }
+
+/** The fields a condition may switch to: the offered ones, and its own when it holds an older field. */
+const fieldsFor = (field: ReadableField): ReadableField[] =>
+  (CONDITION_FIELDS as readonly ReadableField[]).includes(field) ? [...CONDITION_FIELDS] : [field, ...CONDITION_FIELDS]
 
 /** Edit a matcher as conditions joined by "all" or "any". */
 export function ConditionEditor({ label, value, onChange, data }: {
@@ -79,10 +101,10 @@ export function ConditionEditor({ label, value, onChange, data }: {
       )}
       {group.conditions.map((c, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2 rounded-md border p-2">
-          <Select value={c.field} onValueChange={(field) => setCondition(i, { field: field as ConditionField, negate: c.negate, values: [] })}>
+          <Select value={c.field} onValueChange={(field) => setCondition(i, { field: field as ReadableField, negate: c.negate, values: [] })}>
             <SelectTrigger className="w-36" aria-label={`Condition ${i + 1} field`}><SelectValue /></SelectTrigger>
             <SelectContent>
-              {CONDITION_FIELDS.map((f) => <SelectItem key={f} value={f}>{FIELD_LABELS[f]}</SelectItem>)}
+              {fieldsFor(c.field).map((f) => <SelectItem key={f} value={f}>{FIELD_LABELS[f]}</SelectItem>)}
             </SelectContent>
           </Select>
           <Select value={c.negate ? 'not' : 'is'} onValueChange={(v) => setCondition(i, { ...c, negate: v === 'not' })}>
@@ -108,7 +130,7 @@ export function ConditionEditor({ label, value, onChange, data }: {
         </div>
       ))}
       <Button type="button" variant="outline" size="sm"
-        onClick={() => update({ ...group, conditions: [...group.conditions, { field: 'componentType', negate: false, values: [] }] })}>
+        onClick={() => update({ ...group, conditions: [...group.conditions, { field: 'part', negate: false, values: [] }] })}>
         <Plus className="h-4 w-4 mr-1" /> Add condition
       </Button>
     </div>

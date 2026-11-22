@@ -1,8 +1,9 @@
-// Rules are stored over today's component types. They reach the planner as rules about parts: every `role` and
-// `componentType` leaf is rewritten to a `part` leaf. Conversion only; stored rules are not changed.
+// Rules stored before rules named parts hold today's component types. They reach the planner as rules about parts:
+// every `role` and `componentType` leaf is rewritten to a `part` leaf. Conversion only; stored rules are not changed.
 import type { Constraint, Matcher, PlannerPart } from '@/planner';
-import { isLeaf, oneOf } from '@/planner';
+import { isLeaf } from '@/planner';
 import type { ComponentType } from '@/types/component';
+import type { Names } from './describe';
 
 /** The part id of each component type (same shape as `LegacyParts` in `src/db/parts.ts`). */
 export type LegacyParts = Record<ComponentType, number>;
@@ -36,8 +37,23 @@ export function constraintOverParts(c: Constraint, legacy: LegacyParts): Constra
   }
 }
 
-/** Part leaf over the parts that are varied (variety and spacing). */
-export const variedPartsMatcher = (parts: RuleParts): Matcher => oneOf('part', parts.list.filter((p) => p.varied).map((p) => p.id));
+interface Named { id: number; name: string }
 
-/** Part leaf over every part after the first (sides only when asked). */
-export const sidePartsMatcher = (parts: RuleParts): Matcher => oneOf('part', parts.list.slice(1).map((p) => p.id));
+/**
+ * Names for describing rules over a library: dishes, categories and parts by id. The categories of the curry types
+ * read before the noun ("lentil curries"), as `curry_category` did.
+ */
+export function libraryNames(lib: { dishes: readonly Named[]; categories: readonly (Named & { kind?: string })[]; parts: readonly Named[] }): Names {
+  const dish = new Map(lib.dishes.map((d) => [d.id, d.name]));
+  const category = new Map(lib.categories.map((c) => [c.id, c.name]));
+  const part = new Map(lib.parts.map((p) => [p.id, p.name]));
+  const types = new Set(lib.categories.filter((c) => c.kind === 'curry').map((c) => c.id));
+  return {
+    component: (id) => dish.get(id),
+    baseCategory: (id) => category.get(id),
+    extraCategory: (id) => category.get(id),
+    part: (id) => part.get(id),
+    category: (id) => category.get(id),
+    categoryIsType: (id) => types.has(id),
+  };
+}

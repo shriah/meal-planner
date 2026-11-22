@@ -1,7 +1,7 @@
 // Runs a case through the real rule pipeline: compileRules, then planWeek on seeds 1-8.
 import { DAYS, MEALS, planWeek, type Justification, type SolveOptions } from '@/planner';
 import {
-  capRules, compileRules, defaultRules, describeSpec, parseSpec, specReferences,
+  capRules, compileRules, defaultRules, describeSpec, libraryNames, parseSpec, specReferences,
   type KnownIds, type Names, type RuleIssue, type RuleParts, type RuleRecord,
 } from '@/rules';
 import { legacyPartIds } from '@/db/parts';
@@ -29,19 +29,22 @@ const CAP_KEYS = ['cap:curry', 'cap:subzi'] as const;
  * default or cap named in `drop`.
  */
 export function recordsOf(c: PlanCase, own: CaseRule[], given: CaseRule[] = [], drop: readonly string[] = []): RuleRecord[] {
-  if (c.library && c.defaults !== false) throw new Error('default rules on a custom library need part-based defaults: set `defaults: false`');
-  const defaults = c.defaults === false ? [] : defaultRules().filter((r) => !drop.includes(r.default_key));
+  const parts = libraryFor(c).parts;
+  const defaults = c.defaults === false ? [] : defaultRules(parts).filter((r) => !drop.includes(r.default_key));
   // The caps are about the converted Curry and Subzi parts: a library with its own parts has none.
-  const caps = c.library ? [] : capRules().filter((_, i) => !drop.includes(CAP_KEYS[i]));
+  const caps = c.library ? [] : capRules(parts).filter((_, i) => !drop.includes(CAP_KEYS[i]));
   const all = [...own, ...given, ...defaults, ...caps];
   return all.map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
 }
 
 export const knownIds = (lib: CaseLibrary): KnownIds => ({
   components: new Set(lib.dishes.map((d) => d.id)),
-  baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
-  extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
+  categories: new Set(lib.categories.map((k) => k.id)),
+  parts: new Set(lib.parts.map((p) => p.id)),
 });
+
+/** Names for describing a case's rules over its library. */
+export const namesOf = (lib: CaseLibrary): Names => libraryNames(lib);
 
 /** Whether the library's parts are the converted four, the only parts a stored rule over component types can be read against. */
 const isConverted = (lib: CaseLibrary): boolean => lib.parts.every((p) => p.legacy !== undefined);
@@ -127,12 +130,7 @@ export function runPlanCase(c: PlanCase, budget: CaseBudget = BUDGET): CaseResul
   const allPass = expectations.every((e) => e.pass);
 
   const dishName = new Map(lib.dishes.map((d) => [d.id, d.name]));
-  const catName = new Map(lib.categories.map((k) => [k.id, k.name]));
-  const names: Names = {
-    component: (id) => dishName.get(id),
-    baseCategory: (id) => catName.get(id),
-    extraCategory: (id) => catName.get(id),
-  };
+  const names = namesOf(lib);
   const sentences: string[] = [];
   const referenced = new Set<number>();
   for (const r of [...own, ...given]) {

@@ -186,9 +186,11 @@ export async function deleteRule(id: number): Promise<void> {
  * switched off, are left as they are. Returns how many were added.
  */
 export async function restoreDefaultRules(): Promise<number> {
-  return db.transaction('rw', db.rules, async () => {
+  return db.transaction('rw', db.rules, db.parts, async () => {
     const have = new Set((await db.rules.toArray()).map((r) => r.default_key).filter(Boolean));
-    const missing = defaultRules().filter((r) => !have.has(r.default_key));
+    // The defaults are about the stored parts, in meal order.
+    const parts = (await db.parts.toArray()).sort((a, b) => a.position - b.position);
+    const missing = defaultRules(parts).filter((r) => !have.has(r.default_key));
     const created_at = new Date().toISOString();
     await db.rules.bulkAdd(missing.map((r) => ({ ...r, enabled: true, created_at })) as RuleRecord[]);
     return missing.length;

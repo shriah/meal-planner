@@ -2,6 +2,7 @@
 // what the last run of the rule cases found. A pure function; it knows nothing of the app's UI.
 import { DAYS, MEALS } from '@/planner';
 import { defaultRules, describeSpec, parseSpec } from '@/rules';
+import { namesOf } from './run';
 import type { CaseGroup, CaseLibrary, CaseResult, CaseStatus } from './types';
 
 const GROUPS: CaseGroup[] = ['Pairings', 'Days and meals', 'Variety', 'Locks and picks', 'Extras'];
@@ -57,8 +58,8 @@ function libraryPanel(lib: CaseLibrary): string {
       return `<tr><td>${esc(d.name)}</td><td>${esc(d.componentType)}</td><td>${esc(cat ?? '')}</td></tr>`;
     })
     .join('');
-  const names = { component: () => undefined, baseCategory: () => undefined, extraCategory: () => undefined };
-  const defaults = defaultRules()
+  const names = namesOf(lib);
+  const defaults = defaultRules(lib.parts)
     .map((r) => {
       const parsed = parseSpec(r.spec);
       return `<li>${esc(parsed.ok ? describeSpec(parsed.spec, names) : r.name)}</li>`;

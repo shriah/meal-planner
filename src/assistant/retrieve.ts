@@ -1,5 +1,5 @@
 // Local, no-LLM retrieval: picks the small slice of the user's data relevant to a chat message.
-import { describeSpec, parseSpec, specReferences, HAND_TEMPLATE_IDS, type Names, type TemplateId } from '@/rules';
+import { describeSpec, libraryNames, parseSpec, specReferences, HAND_TEMPLATE_IDS, type Names, type TemplateId } from '@/rules';
 import type { PlanningInput } from '@/services/plan-generation';
 import {
   CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS, type ComponentRecord,
@@ -66,13 +66,7 @@ export function searchLibrary(message: string, data: AssistantData): ComponentRe
 }
 
 export function namesFor(data: AssistantData): Names {
-  const componentName = new Map(data.library.map((c) => [c.id, c.name]));
-  const categoryName = new Map(data.categories.map((c) => [c.id, c.name]));
-  return {
-    component: (id) => componentName.get(id),
-    baseCategory: (id) => categoryName.get(id),
-    extraCategory: (id) => categoryName.get(id),
-  };
+  return libraryNames({ dishes: data.library, categories: data.categories, parts: data.parts });
 }
 
 export function buildSlice(message: string, data: AssistantData): Slice {
@@ -86,7 +80,7 @@ export function buildSlice(message: string, data: AssistantData): Slice {
     if (parsed.ok) {
       const refs = specReferences(parsed.spec);
       if (refs.components.some((id) => matchedIds.has(id))) return 1;
-      if ([...refs.baseCategories, ...refs.extraCategories].some((id) => categoryIds.has(id))) return 2;
+      if (refs.categories.some((id) => categoryIds.has(id))) return 2;
     }
     return words(r.name).some((w) => messageWords.has(w)) ? 3 : -1;
   };

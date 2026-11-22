@@ -4,9 +4,11 @@ import { createContext, useContext, type ReactNode } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { getAllComponents, getRules } from '@/services/food-db'
 import { getCategoriesByKind } from '@/services/category-db'
+import { getParts } from '@/services/parts-db'
 import type { Names, RuleRecord } from '@/rules'
 import type { ComponentRecord } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
+import type { PartRecord } from '@/types/part'
 
 export interface LibraryLookup {
   dishes: ComponentRecord[]
@@ -14,6 +16,8 @@ export interface LibraryLookup {
   extraCategories: CategoryRecord[]
   /** Every rule: the ones dishes own, and the hand-written ones. Filter by `owner_component_id`. */
   rules: RuleRecord[]
+  /** The meal's parts, in meal order. */
+  parts: PartRecord[]
   loaded: boolean
 }
 
@@ -25,12 +29,14 @@ function useLookupQueries(enabled: boolean): LibraryLookup {
   const baseCategories = useLiveQuery(() => (enabled ? getCategoriesByKind('base') : []), [enabled], undefined)
   const extraCategories = useLiveQuery(() => (enabled ? getCategoriesByKind('extra') : []), [enabled], undefined)
   const rules = useLiveQuery(() => (enabled ? getRules() : []), [enabled], undefined)
+  const parts = useLiveQuery(() => (enabled ? getParts() : []), [enabled], undefined)
   return {
     dishes: dishes ?? [],
     baseCategories: baseCategories ?? [],
     extraCategories: extraCategories ?? [],
     rules: rules ?? [],
-    loaded: dishes !== undefined && baseCategories !== undefined && extraCategories !== undefined && rules !== undefined,
+    parts: parts ?? [],
+    loaded: dishes !== undefined && baseCategories !== undefined && extraCategories !== undefined && rules !== undefined && parts !== undefined,
   }
 }
 
@@ -56,9 +62,11 @@ export function linkNames(lookup: LibraryLookup): Names {
   const dishes = new Map(lookup.dishes.map((d) => [d.id, d.name]))
   const base = new Map(lookup.baseCategories.map((c) => [c.id, c.name]))
   const extra = new Map(lookup.extraCategories.map((c) => [c.id, c.name]))
+  const parts = new Map(lookup.parts.map((p) => [p.id, p.name]))
   return {
     component: (id) => dishes.get(id),
     baseCategory: (id) => base.get(id),
     extraCategory: (id) => extra.get(id),
+    part: (id) => parts.get(id),
   }
 }

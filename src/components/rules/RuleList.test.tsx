@@ -5,8 +5,9 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
-import { is } from '@/planner';
+import { all, is } from '@/planner';
 import { dayRule, defaultRules, pairingRule } from '@/rules';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { RuleList } from './RuleList';
 
 const scrollIntoView = vi.fn();
@@ -23,7 +24,8 @@ const stored = (r: object) => ({ enabled: true, created_at: '', ...r }) as never
 
 beforeEach(async () => {
   await Promise.all([db.rules.clear(), db.components.clear(), db.categories.clear(), db.notices.clear()]);
-  const defaults = defaultRules();
+  const { parts } = await ensurePartsAndTagGroups();
+  const defaults = defaultRules(parts);
   await db.rules.bulkAdd([
     stored({ name: 'No paneer on weekdays', spec: { template: 'exclude', params: { match: is('protein_tag', 'paneer'), strength: 'must' } } }),
     stored({ name: 'Fish Fridays', spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } } }),
@@ -107,6 +109,22 @@ describe('RuleList', () => {
     expect(await screen.findByText('Planner defaults (0)')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Restore defaults' }));
     expect(await screen.findByText('Restored 8 default rules')).toBeInTheDocument();
+  });
+
+  it('reads rules over parts by part and category name, and flags one naming a deleted category', async () => {
+    const { parts } = await ensurePartsAndTagGroups();
+    const curry = parts.find((p) => p.legacy === 'curry')!.id;
+    const gravy = (await db.categories.add({ kind: 'curry', name: 'gravy', part_id: curry, created_at: '' })) as number;
+    await db.rules.bulkAdd([
+      stored({ name: 'Gravy at lunch', spec: { template: 'limit', params: { match: all(is('part', curry), is('category', gravy)), per: 'meal', max: 1, strength: 'must' } } }),
+      stored({ name: 'Gone category', spec: { template: 'exclude', params: { match: is('category', 9999), strength: 'must' } } }),
+    ]);
+    render(<RuleList />);
+
+    expect(await screen.findByText('Gravy curries: at most 1 per meal')).toBeInTheDocument();
+    const gone = screen.getByText('Gone category').closest('[id^="rule-"]') as HTMLElement;
+    await userEvent.hover(within(gone).getByText('Not applied'));
+    expect((await screen.findAllByText('Refers to category #9999, which no longer exists')).length).toBeGreaterThan(0);
   });
 
   it('opens the planner defaults for a default rule, and does nothing for a rule that is gone', async () => {

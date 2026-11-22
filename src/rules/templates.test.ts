@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PartSlot } from '@/planner';
+import { all, buildModel, emptyPlan, is, not, oneOf, planWeek, score, slotIndex, type ComponentLike, type PartSlot } from '@/planner';
 import { capRules } from './defaults';
 import { compileRules, type RuleRecord } from './record';
 import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, specReferences, OWNED_ONLY_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
@@ -31,8 +31,8 @@ const library: ComponentLike[] = [
 ];
 const known = {
   components: new Set(library.map((c) => c.id)),
-  baseCategories: new Set([RICE, BREAD]),
-  extraCategories: new Set([LIQUID, SWEET]),
+  categories: new Set([RICE, BREAD, LIQUID, SWEET]),
+  parts: new Set(TEST_RULE_PARTS.list.map((p) => p.id)),
 };
 
 /** A planned meal over TEST_RULE_PARTS (Base, Curry, Subzi, Extras: ids 1 to 4) in today's stored terms. */
@@ -44,7 +44,7 @@ const storedSlot = (s: PartSlot): StoredSlot => ({
 const record = (spec: RuleSpecInput, id = 1): RuleRecord => ({ id, name: `Rule ${id}`, enabled: true, spec, created_at: '' });
 /** Plans the rules (ids 1..n) with the curry and subzi caps every library has; the week in today's stored terms. */
 const plan = (specs: RuleSpecInput[], seed: number) => {
-  const caps = capRules().map((r, i) => ({ ...r, id: specs.length + i + 1, enabled: true, created_at: '' }));
+  const caps = capRules(TEST_RULE_PARTS.list).map((r, i) => ({ ...r, id: specs.length + i + 1, enabled: true, created_at: '' }));
   const { constraints, issues } = compileRules([...specs.map((s, i) => record(s, i + 1)), ...caps], known, TEST_RULE_PARTS);
   expect(issues).toEqual([]);
   const r = planWeek({ library, parts: TEST_RULE_PARTS.list, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 30_000, plateauIterations: 3000 });
@@ -62,7 +62,7 @@ describe('rule templates in the planner', () => {
   });
 
   it.each(SEEDS)('only_allow: curries at lunch are dal only (seed %i)', (seed) => {
-    const r = plan([{ template: 'only_allow', params: { match: is('protein_tag', 'dal'), roles: ['curry'], scope: { meals: ['lunch'] } } }], seed);
+    const r = plan([{ template: 'only_allow', params: { match: is('protein_tag', 'dal'), parts: [2], scope: { meals: ['lunch'] } } }], seed);
     expect(hard(r)).toEqual([]);
     for (const s of r.slots.filter((x) => x.meal_slot === 'lunch' && x.curry_id !== undefined)) expect([11, 12]).toContain(s.curry_id);
   });
@@ -105,7 +105,7 @@ describe('rule templates in the planner', () => {
   });
 
   it.each(SEEDS)('skip_when: bread meals have no subzi (seed %i)', (seed) => {
-    const r = plan([{ template: 'skip_when', params: { when: is('base_category_id', BREAD), skip: ['subzi'] } }], seed);
+    const r = plan([{ template: 'skip_when', params: { when: is('base_category_id', BREAD), skip: [3] } }], seed);
     expect(hard(r)).toEqual([]);
     for (const s of r.slots.filter((x) => [3, 4].includes(x.base_id))) expect(s.subzi_id).toBeUndefined();
   });
@@ -276,7 +276,7 @@ describe('rule template params', () => {
 
   it('fills defaults', () => {
     const parsed = RuleSpecSchema.parse({ template: 'no_repeat', params: { match: is('componentType', 'curry') } });
-    expect(parsed).toEqual({ template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', roles: ['base', 'curry', 'subzi'], strength: 'must' } });
+    expect(parsed).toEqual({ template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', strength: 'must' } });
   });
 
   it('groups every rule type exactly once, for the type picker', () => {
@@ -295,8 +295,9 @@ describe('rule template params', () => {
     expect(valid({ template: 'limit', params: { match: is('role', 'curry'), per: 'week' } })).toBe(false);
     expect(valid({ template: 'limit', params: { match: is('role', 'curry'), per: 'week', min: 3, max: 2 } })).toBe(false);
     expect(valid({ template: 'require_with', params: { when: is('id', 1) } })).toBe(false);
-    expect(valid({ template: 'only_allow', params: { match: is('id', 1), roles: [] } })).toBe(false);
-    expect(valid({ template: 'skip_when', params: { when: is('id', 1), skip: ['base'] } })).toBe(false);
+    expect(valid({ template: 'only_allow', params: { match: is('id', 1), parts: [] } })).toBe(false);
+    expect(valid({ template: 'skip_when', params: { when: is('id', 1), skip: [] } })).toBe(false);
+    expect(valid({ template: 'no_repeat', params: { match: is('id', 1), parts: [] } })).toBe(false);
     expect(valid({ template: 'exclude', params: { match: is('id', 1), scope: { days: [] } } })).toBe(false);
     expect(valid({ template: 'nope', params: {} })).toBe(false);
   });
@@ -319,5 +320,71 @@ describe('rule template params', () => {
     expect(d({ template: 'allowed_days', params: { match: is('id', 15), days: ['saturday', 'sunday'] } })).toBe('Chole only on Saturday or Sunday');
     expect(d({ template: 'avoid_with', params: { match: is('id', 31), with: all(is('componentType', 'curry'), oneOf('curry_category', ['soup', 'lentil'])) } }))
       .toBe('Rasam never with soup or lentil curries');
+  });
+});
+
+describe('descriptions over parts', () => {
+  // The converted parts (Base, Curry, Subzi, Extras: ids 1 to 4) and their categories, as stored: the curry types are
+  // categories of the Curry part, read before the noun.
+  const PART: Record<number, string> = { 1: 'Base', 2: 'Curry', 3: 'Subzi', 4: 'Extras' };
+  const CATEGORY: Record<number, string> = { 10: 'Rice-based', 30: 'Liquid', 21: 'lentil', 22: 'legume' };
+  const names = {
+    component: (id: number) => ({ 1: 'Sambar', 2: 'Rasam' } as Record<number, string>)[id],
+    baseCategory: (id: number) => CATEGORY[id],
+    extraCategory: (id: number) => CATEGORY[id],
+    part: (id: number) => PART[id],
+    category: (id: number) => CATEGORY[id],
+    categoryIsType: (id: number) => id === 21 || id === 22,
+  };
+  const d = (spec: unknown) => describeSpec(RuleSpecSchema.parse(spec), names);
+
+  // [today's sentence, today's stored spec (undefined when its params no longer parse), the new-shape twin]
+  const TWINS: [string, unknown, unknown][] = [
+    ['Never include lentil curries with fish on Friday',
+      { template: 'exclude', params: { match: all(is('componentType', 'curry'), is('curry_category', 'lentil'), is('protein_tag', 'fish')), scope: { days: ['friday'] } } },
+      { template: 'exclude', params: { match: all(is('part', 2), is('category', 21), is('protein_tag', 'fish')), scope: { days: ['friday'] } } }],
+    ['Curries and subzis: only south-indian dishes', undefined,
+      { template: 'only_allow', params: { match: is('regional_tags', 'south-indian'), parts: [2, 3] } }],
+    ['Curries at lunch: only Sambar (preferred)', undefined,
+      { template: 'only_allow', params: { match: is('id', 1), parts: [2], scope: { meals: ['lunch'] }, strength: 'prefer' } }],
+    ['Always include at least 2 extras at breakfast',
+      { template: 'require', params: { match: is('componentType', 'extra'), min: 2, scope: { meals: ['breakfast'] } } },
+      { template: 'require', params: { match: is('part', 4), min: 2, scope: { meals: ['breakfast'] } } }],
+    ['Bases in the Rice-based category: at most 3 per week',
+      { template: 'limit', params: { match: all(is('componentType', 'base'), is('base_category_id', 10)), per: 'week', max: 3 } },
+      { template: 'limit', params: { match: all(is('part', 1), is('category', 10)), per: 'week', max: 3 } }],
+    ['Dishes except extras: at most 3 per meal',
+      { template: 'limit', params: { match: not(is('componentType', 'extra')), per: 'meal', max: 3 } },
+      { template: 'limit', params: { match: not(is('part', 4)), per: 'meal', max: 3 } }],
+    ["Don't repeat subzis within 3 days", undefined,
+      { template: 'no_repeat', params: { match: is('part', 3), parts: [3], within: 3 } }],
+    ["Don't repeat bases, curries or subzis in the week (preferred)", undefined,
+      { template: 'no_repeat', params: { match: oneOf('part', [1, 2, 3]), strength: 'prefer', cost: 2 } }],
+    ['Extras in the Liquid category only at lunch',
+      { template: 'allowed_meals', params: { match: all(is('componentType', 'extra'), is('extra_category_id', 30)), meals: ['lunch'] } },
+      { template: 'allowed_meals', params: { match: all(is('part', 4), is('category', 30)), meals: ['lunch'] } }],
+    ['With Sambar, no subzis and extras', undefined,
+      { template: 'skip_when', params: { when: is('id', 1), skip: [3, 4] } }],
+    ['With lentil dishes, no curries on Monday', undefined,
+      { template: 'skip_when', params: { when: is('category', 21), skip: [2], scope: { days: ['monday'] } } }],
+    ['Curries or subzis only on Saturday or Sunday',
+      { template: 'allowed_days', params: { match: oneOf('componentType', ['curry', 'subzi']), days: ['saturday', 'sunday'] } },
+      { template: 'allowed_days', params: { match: oneOf('part', [2, 3]), days: ['saturday', 'sunday'] } }],
+    ['Avoid curries that are not lentil (strongly)',
+      { template: 'prefer', params: { match: all(is('componentType', 'curry'), not(is('curry_category', 'lentil'))), direction: 'avoid', weight: 5 } },
+      { template: 'prefer', params: { match: all(is('part', 2), not(is('category', 21))), direction: 'avoid', weight: 5 } }],
+    ['Never include lentil or legume dishes',
+      { template: 'exclude', params: { match: oneOf('curry_category', ['lentil', 'legume']) } },
+      { template: 'exclude', params: { match: oneOf('category', [21, 22]) } }],
+  ];
+
+  it.each(TWINS)('"%s" reads the same over parts', (sentence, old, twin) => {
+    expect(d(twin)).toBe(sentence);
+    if (old !== undefined) expect(d(old)).toBe(sentence);
+  });
+
+  it('names a part or category it cannot find by id', () => {
+    expect(describeSpec(RuleSpecSchema.parse({ template: 'exclude', params: { match: all(is('part', 9), is('category', 8)) } })))
+      .toBe('Never include part #9 in the category #8 category');
   });
 });

@@ -1,7 +1,7 @@
 // Stored rules and their compilation into planner constraints.
-import { matcherFields, ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
-import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
-import { defaultRules } from './defaults';
+import { isLeaf, matcherFields, type Bounds, type Constraint, type Matcher, type RuleLevel } from '@/planner';
+import { constraintOverParts, type RuleParts } from './legacy-parts';
+import { defaultMatch, defaultRules } from './defaults';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -17,11 +17,11 @@ export interface RuleRecord {
   owner_component_id?: number;
 }
 
-/** Ids that currently exist, so rules pointing at deleted components or categories are caught. */
+/** Ids that currently exist, so rules pointing at deleted components, categories or parts are caught. */
 export interface KnownIds {
   components: ReadonlySet<number>;
-  baseCategories: ReadonlySet<number>;
-  extraCategories: ReadonlySet<number>;
+  categories: ReadonlySet<number>;
+  parts: ReadonlySet<number>;
 }
 
 export interface RuleIssue {
@@ -37,13 +37,13 @@ export function parseSpec(spec: unknown): { ok: true; spec: RuleSpec } | { ok: f
   return { ok: false, message: `${issue.path.join('.') || 'rule'}: ${issue.message}` };
 }
 
-/** Names of references that no longer exist, e.g. ["component #12", "extra category #3"]. */
+/** Names of references that no longer exist, e.g. ["component #12", "category #3", "part #5"]. */
 export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
   const refs = specReferences(spec);
   return [
     ...refs.components.filter((id) => !known.components.has(id)).map((id) => `component #${id}`),
-    ...refs.baseCategories.filter((id) => !known.baseCategories.has(id)).map((id) => `base category #${id}`),
-    ...refs.extraCategories.filter((id) => !known.extraCategories.has(id)).map((id) => `extra category #${id}`),
+    ...refs.parts.filter((id) => !known.parts.has(id)).map((id) => `part #${id}`),
+    ...refs.categories.filter((id) => !known.categories.has(id)).map((id) => `category #${id}`),
   ];
 }
 
@@ -107,22 +107,29 @@ const sameData = (a: unknown, b: unknown): boolean => {
     && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
 };
 
+/** A stock default's match: one `part in` leaf. */
+const isPartList = (m: Matcher): boolean => isLeaf(m) && m.field === 'part' && m.op === 'in';
+
 /**
- * The spec with a stock default's match replaced by the parts it is about. A default the user has edited, and any
- * other rule, is left as stored (its component types are rewritten to parts afterwards, like any rule).
+ * The spec with a stock default's match replaced by the parts it is about now, so it follows the parts' `varied`
+ * setting and parts added since it was stored. A stored default is stock when it is `defaultRules(parts)`'s spec for
+ * its key but for which parts its match lists. A default edited in any other way, and any other rule, is left as
+ * stored (component types in it are rewritten to parts afterwards, like any rule).
  */
 function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
   const key = rule.default_key;
-  const match = key === 'variety' || key === 'spacing' ? variedPartsMatcher(parts)
-    : key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
-    : undefined;
-  if (match === undefined) return spec;
-  const stock = defaultRules().find((d) => d.default_key === key)?.spec;
+  const match = key === undefined ? undefined : defaultMatch(key, parts.list);
+  if (match === undefined || !('match' in spec.params) || !isPartList(spec.params.match)) return spec;
+  const stock = defaultRules(parts.list).find((d) => d.default_key === key)?.spec;
   const stockParsed = stock && parseSpec(stock);
-  if (!stockParsed?.ok || !sameData(spec, stockParsed.spec) || !('match' in spec.params)) return spec;
-  // `roles` restricts a no-repeat rule to types; the match now names the parts, so every role is let through.
-  const roles = 'roles' in spec.params ? { roles: [...ROLES] } : {};
-  return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;
+  if (!stockParsed?.ok) return spec;
+  const now = { ...spec, params: { ...spec.params, match } } as RuleSpec;
+  return sameData(now, stockParsed.spec) ? now : spec;
+}
+
+/** Whether a leave-out rule names the first part, which holds every meal's one main dish and is never left out. */
+function leavesOutFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
+  return spec.template === 'skip_when' && parts.list.length > 0 && spec.params.skip.includes(parts.list[0].id);
 }
 
 /** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
@@ -156,6 +163,10 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
     const missing = missingReferences(parsed.spec, known);
     if (missing.length) {
       issues.push({ ruleId: rule.id, name: rule.name, message: `refers to ${missing.join(', ')}, which no longer exists` });
+      continue;
+    }
+    if (leavesOutFirstPart(parsed.spec, parts)) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `leaves out ${parts.list[0].name}, which every meal holds` });
       continue;
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};

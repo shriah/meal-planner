@@ -18,7 +18,7 @@ export const DAY_OPTIONS: Option<Day>[] = DAYS.map((d) => ({ value: d, label: ti
 export const MEAL_OPTIONS: Option<Meal>[] = MEALS.map((m) => ({ value: m, label: titleCase(m) }))
 
 /** Pick any number of options with toggle buttons. */
-export function ToggleGroup<V extends string>({ label, options, value, onChange }: {
+export function ToggleGroup<V extends string | number>({ label, options, value, onChange }: {
   label: string
   options: Option<V>[]
   value: readonly V[]
