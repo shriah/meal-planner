@@ -132,7 +132,7 @@ visible changed except the two cap rules on the Rules page, and a converted libr
   after the first (sides only), so they follow the parts. An edited default gets the plain rewrite. This code and `src/db/parts.ts`,
   `src/db/seed.tsx`, `src/services/legacy-slots.ts` and the v22 upgrade are the only places that name base, curry, subzi or extras.
 - **Cap rules.** "At most one Curry per meal" and "At most one Subzi per meal" (`capRules` in `src/rules/defaults.ts`) replace the built-in one curry
-  and one subzi. They are Always `limit` rules with no default key, added by the v22 upgrade (only when the library has parts), the seed and the
+  and one subzi. They are Always `limit` rules with no default key, added by the v22 upgrade (only when the library has dishes), the seed and the
   rule-case runner, and the user can edit, disable or delete them. Having no default key, "restore defaults" cannot bring a deleted cap back.
 - **Boundary caps.** A stored plan holds one curry and one subzi, so `legacySlotCaps` (`src/services/legacy-slots.ts`) adds structural caps of 1 for the
   Curry and Subzi parts on every app path that plans (`planFromData` and the paths around it), whatever the user's rules say. Base needs none.
@@ -236,8 +236,8 @@ Every step that places a dish brings its pairings with it (see below), so a base
 - The **repair loop** runs after the random search: a round runs the move kinds in a fixed order, each over the whole week
   (descent: every single change of a free base, curry or subzi, kept if it strictly improves; re-pick of a link's dish;
   sweep of conditional sides that break a hard rule; polish: drop a side whose removal improves; retry of a refused
-  conditional side). Polish keeps its own part-major order over the week: every free single part after the first (curry, then subzi), then
-  every free meal's many-dish parts (extras), last dish to first. Sweep and retry run only when a link waits for a curry or subzi (a
+  conditional side). Polish keeps its own part-major order over the week: part by part, in order (on a converted library: curry, subzi, then
+  extras, the extras last dish to first). Sweep and retry run only when a link waits for a curry or subzi (a
   conditional link); without one the kinds are descent, re-pick and polish. Rounds repeat until one keeps nothing, for at most `REPAIR_ROUNDS` (10). Re-pick and retry keep
   not-worse changes, so each remembers across rounds what it already tried. The safety cap does not cut it short.
 - **Search budget** (`src/planner/budget.ts`): the random search runs `searchBudget` iterations, where
