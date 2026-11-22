@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { all, is, matcherFields, type Constraint, type Matcher } from '@/planner';
+import { all, is, matcherFields, oneOf, type Constraint, type Matcher } from '@/planner';
 import { compileRules, missingReferences, ruleLevel, type RuleRecord } from './record';
 import { RuleSpecSchema } from './templates';
 import { defaultRules } from './defaults';
@@ -263,10 +263,13 @@ describe('compiled rules are about parts', () => {
     expect(selectOf('sides-only-when-asked')).toEqual([{ field: 'part', op: 'in', value: [2, 3, 4] }]);
   });
 
-  it('a part that is not varied is left out of variety and spacing', () => {
+  it('a part that is not varied is left out of the variety and spacing defaults built over it', () => {
     const parts = { ...TEST_RULE_PARTS, list: TEST_RULE_PARTS.list.map((p) => (p.name === 'Subzi' ? { ...p, varied: false } : p)) };
-    expect(selectOf('variety', parts)).toEqual([repeated([1, 2])]);
-    expect(selectOf('spacing', parts)).toEqual([repeated([1, 2])]);
+    const over = defaultRules(parts.list).map((r) => stored(r.name, r as never));
+    for (const key of ['variety', 'spacing']) {
+      const { constraints } = compileRules(records(over.find((r) => r.default_key === key)!), lib, parts);
+      expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([repeated([1, 2])]);
+    }
   });
 
   it('plans an edited default as stored: only its component types become parts', () => {
@@ -282,10 +285,18 @@ describe('compiled rules are about parts', () => {
       .toEqual([{ field: 'part', op: 'eq', value: 4 }]);
   });
 
-  it('a stock default follows a part added after it was stored', () => {
+  it('keeps an edited part list: the planner varies only the parts the default lists', () => {
+    const variety = defaults.find((r) => r.default_key === 'variety')!;
+    const edited = { ...variety, spec: { ...variety.spec, params: { ...variety.spec.params, match: oneOf('part', [1, 2]) } } } as RuleRecord;
+    const { constraints } = compileRules(records(edited), lib, TEST_RULE_PARTS);
+    expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([repeated([1, 2])]);
+  });
+
+  it('plans a stored default as stored when the parts have changed since', () => {
+    // Stage 4's part editing rewrites the unedited defaults when parts change; until then they keep what they name.
     const parts = { ...TEST_RULE_PARTS, list: [...TEST_RULE_PARTS.list, { id: 5, name: 'Dessert', varied: true }] };
-    expect(selectOf('variety', parts)).toEqual([repeated([1, 2, 3, 5])]);
-    expect(selectOf('sides-only-when-asked', parts)).toEqual([{ field: 'part', op: 'in', value: [2, 3, 4, 5] }]);
+    expect(selectOf('variety', parts)).toEqual([repeated([1, 2, 3])]);
+    expect(selectOf('sides-only-when-asked', parts)).toEqual([{ field: 'part', op: 'in', value: [2, 3, 4] }]);
   });
 
   it('does not change the stored rule', () => {

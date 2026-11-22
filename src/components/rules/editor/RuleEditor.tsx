@@ -41,16 +41,20 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
 
   const components = useLiveQuery(() => db.components.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
-  const parts = useLiveQuery(getParts, [], [])
-  const data: EditorData = useMemo(() => ({
-    components,
-    parts,
-    categories,
-    baseCategories: categories.filter((c) => c.kind === 'base'),
-    extraCategories: categories.filter((c) => c.kind === 'extra'),
-    names: libraryNames({ dishes: components, categories, parts }),
-  }), [components, categories, parts])
-  const partOptions = parts.map((p) => ({ value: p.id, label: p.name }))
+  // Undefined until loaded: the form waits for the parts, so it never shows "part #n" for a moment.
+  const loadedParts = useLiveQuery(getParts)
+  const data: EditorData = useMemo(() => {
+    const parts = loadedParts ?? []
+    return {
+      components,
+      parts,
+      categories,
+      baseCategories: categories.filter((c) => c.kind === 'base'),
+      extraCategories: categories.filter((c) => c.kind === 'extra'),
+      names: libraryNames({ dishes: components, categories, parts }),
+    }
+  }, [components, categories, loadedParts])
+  const partOptions = data.parts.map((p) => ({ value: p.id, label: p.name }))
 
   // An empty name falls back to what the rule says, so a name is never needed.
   const parsedSpec = RuleSpecSchema.safeParse(spec)
@@ -224,6 +228,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         )
     }
   }
+
+  if (!loadedParts) return null
 
   return (
     <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); void save() }}>

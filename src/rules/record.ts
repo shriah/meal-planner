@@ -1,7 +1,6 @@
 // Stored rules and their compilation into planner constraints.
-import { isLeaf, matcherFields, type Bounds, type Constraint, type Matcher, type RuleLevel } from '@/planner';
+import { matcherFields, type Bounds, type Constraint, type RuleLevel } from '@/planner';
 import { constraintOverParts, type RuleParts } from './legacy-parts';
-import { defaultMatch, defaultRules } from './defaults';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -99,34 +98,6 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
-const sameData = (a: unknown, b: unknown): boolean => {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  const ka = Object.keys(a);
-  return Array.isArray(a) === Array.isArray(b) && ka.length === Object.keys(b).length
-    && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
-};
-
-/** A stock default's match: one `part in` leaf. */
-const isPartList = (m: Matcher): boolean => isLeaf(m) && m.field === 'part' && m.op === 'in';
-
-/**
- * The spec with a stock default's match replaced by the parts it is about now, so it follows the parts' `varied`
- * setting and parts added since it was stored. A stored default is stock when it is `defaultRules(parts)`'s spec for
- * its key but for which parts its match lists. A default edited in any other way, and any other rule, is left as
- * stored (component types in it are rewritten to parts afterwards, like any rule).
- */
-function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
-  const key = rule.default_key;
-  const match = key === undefined ? undefined : defaultMatch(key, parts.list);
-  if (match === undefined || !('match' in spec.params) || !isPartList(spec.params.match)) return spec;
-  const stock = defaultRules(parts.list).find((d) => d.default_key === key)?.spec;
-  const stockParsed = stock && parseSpec(stock);
-  if (!stockParsed?.ok) return spec;
-  const now = { ...spec, params: { ...spec.params, match } } as RuleSpec;
-  return sameData(now, stockParsed.spec) ? now : spec;
-}
-
 /** Whether a leave-out rule names the first part, which holds every meal's one main dish and is never left out. */
 function leavesOutFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
   return spec.template === 'skip_when' && parts.list.length > 0 && spec.params.skip.includes(parts.list[0].id);
@@ -146,8 +117,9 @@ const constraintFields = (c: Constraint): Set<string> => {
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
  * are skipped and reported, so the planner never runs a rule whose meaning has changed. Constraints are about
- * parts: the stored component-type matchers are rewritten, and the variety, spacing and sides-only defaults
- * name the parts they apply to (the stored rows are not changed).
+ * parts: every rule, a default too, is planned as stored, and component-type matchers left in older rules are
+ * rewritten to parts (the stored rows are not changed). The defaults name the parts they were built over; editing
+ * the parts (Stage 4) is what rewrites them.
  */
 export function compileRules(rules: readonly RuleRecord[], known: KnownIds, parts: RuleParts): { constraints: Constraint[]; issues: RuleIssue[] } {
   const constraints: Constraint[] = [];
@@ -171,7 +143,7 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
     const compiledRule: Constraint[] = [];
-    compileSpec(partsSpec(rule, parsed.spec, parts)).forEach((spec, i) => {
+    compileSpec(parsed.spec).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };

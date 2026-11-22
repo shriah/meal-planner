@@ -20,6 +20,12 @@ beforeEach(async () => {
   await addComponent({ name: 'Dal Tadka', componentType: 'curry', protein_tag: 'dal', dietary_tags: ['veg'], regional_tags: ['north-indian'], occasion_tags: [], created_at: '' });
 });
 
+/** Renders the editor and waits for it to show, once the parts have loaded. */
+async function renderLoaded(ui: React.ReactElement) {
+  render(ui);
+  await screen.findByRole('button', { name: /^(Add rule|Save changes)$/ });
+}
+
 async function choose(trigger: HTMLElement, option: string) {
   await userEvent.click(trigger);
   await userEvent.click(await screen.findByRole('option', { name: option }));
@@ -28,7 +34,7 @@ async function choose(trigger: HTMLElement, option: string) {
 describe('RuleEditor', () => {
   it('creates a rule from conditions and shows its description and matches', async () => {
     const onSaved = vi.fn();
-    render(<><RuleEditor onSaved={onSaved} /><Toaster /></>);
+    await renderLoaded(<><RuleEditor onSaved={onSaved} /><Toaster /></>);
 
     await userEvent.type(screen.getByLabelText(/Rule name/), 'No fish on Fridays');
     await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
@@ -52,7 +58,7 @@ describe('RuleEditor', () => {
   });
 
   it('names a rule after its description when the name is left empty', async () => {
-    render(<RuleEditor onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor onSaved={vi.fn()} />);
     await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
     await choose(screen.getByRole('combobox', { name: 'Condition 1 field' }), 'Protein');
     await userEvent.click(screen.getByRole('combobox', { name: 'Add protein' }));
@@ -68,7 +74,7 @@ describe('RuleEditor', () => {
     const { parts } = await ensurePartsAndTagGroups();
     const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
     const rice = (await db.categories.add({ kind: 'base', name: 'Rice-based', part_id: partOf('base'), created_at: '' })) as number;
-    render(<RuleEditor onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor onSaved={vi.fn()} />);
 
     await userEvent.click(screen.getByRole('button', { name: /Add condition/ }));
     await choose(screen.getByRole('combobox', { name: 'Condition 1 field' }), 'Part');
@@ -88,7 +94,7 @@ describe('RuleEditor', () => {
     const { parts } = await ensurePartsAndTagGroups();
     const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
     const spec: RuleSpecInput = { template: 'skip_when', params: { when: is('protein_tag', 'fish'), skip: [], strength: 'must' } };
-    render(<RuleEditor initial={{ name: 'No subzi with fish', spec }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor initial={{ name: 'No subzi with fish', spec }} onSaved={vi.fn()} />);
 
     const leaveOut = await screen.findByRole('group', { name: 'Leave out' });
     await waitFor(() => expect(within(leaveOut).getAllByRole('button').map((b) => b.textContent)).toEqual(['Curry', 'Subzi', 'Extras']));
@@ -102,7 +108,7 @@ describe('RuleEditor', () => {
 
   it('still edits a condition on a field it no longer offers, as an assistant draft may hold', async () => {
     const spec: RuleSpecInput = { template: 'exclude', params: { match: is('componentType', 'curry'), strength: 'must' } };
-    render(<RuleEditor initial={{ name: 'No curries', spec }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor initial={{ name: 'No curries', spec }} onSaved={vi.fn()} />);
 
     expect(screen.queryByText(/too complex to edit here/)).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Condition 1 field' })).toHaveTextContent('Type');
@@ -110,7 +116,7 @@ describe('RuleEditor', () => {
   });
 
   it('groups the rule types by what they do', async () => {
-    render(<RuleEditor onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor onSaved={vi.fn()} />);
     await userEvent.click(screen.getByRole('combobox', { name: 'Rule type' }));
     for (const label of ['Where and when', 'Keep out', 'Pair and require', 'Count and spread', 'Preference']) {
       expect(await screen.findByText(label)).toBeInTheDocument();
@@ -124,7 +130,7 @@ describe('RuleEditor', () => {
   ])('sets how much a preferred rule matters in words: %s', async (level, cost) => {
     const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: level === 'Sometimes' ? undefined : 3 } } as const;
     const id = (await db.rules.add({ name: 'Fish', enabled: true, created_at: '', spec })) as number;
-    render(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
 
     expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent(level === 'Sometimes' ? 'Usually' : 'Sometimes');
     await choose(screen.getByRole('combobox', { name: 'How much it matters' }), level);
@@ -137,14 +143,14 @@ describe('RuleEditor', () => {
 
   it('shows a stored cost of 6 as Often', async () => {
     const spec = { template: 'require', params: { match: is('protein_tag', 'fish'), strength: 'prefer', cost: 6 } } as const;
-    render(<RuleEditor initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
     expect(screen.getByRole('combobox', { name: 'How much it matters' })).toHaveTextContent('Often');
   });
 
   it('uses the same words for the weight of a prefer or avoid rule', async () => {
     const spec = { template: 'prefer', params: { match: is('protein_tag', 'fish'), direction: 'prefer', weight: 4 } } as const;
     const id = (await db.rules.add({ name: 'Fish', enabled: true, created_at: '', spec })) as number;
-    render(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor ruleId={id} initial={{ name: 'Fish', spec }} onSaved={vi.fn()} />);
 
     expect(screen.getByRole('combobox', { name: 'How strongly' })).toHaveTextContent('Strongly');
     await choose(screen.getByRole('combobox', { name: 'How strongly' }), 'Slightly');
@@ -155,7 +161,7 @@ describe('RuleEditor', () => {
 
   it('does not save an incomplete rule and says why', async () => {
     const onSaved = vi.fn();
-    render(<RuleEditor onSaved={onSaved} />);
+    await renderLoaded(<RuleEditor onSaved={onSaved} />);
     await userEvent.click(screen.getByRole('button', { name: 'Add rule' }));
 
     // The empty name is not an error: it falls back to the rule's description.
@@ -171,7 +177,7 @@ describe('RuleEditor', () => {
       spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } },
     })) as number;
     const onSaved = vi.fn();
-    render(<><RuleEditor ruleId={id} initial={{ name: 'Fish rule', spec: (await db.rules.get(id))!.spec }} onSaved={onSaved} /><Toaster /></>);
+    await renderLoaded(<><RuleEditor ruleId={id} initial={{ name: 'Fish rule', spec: (await db.rules.get(id))!.spec }} onSaved={onSaved} /><Toaster /></>);
 
     await choose(screen.getByRole('combobox', { name: 'Rule type' }), 'How often');
     expect(screen.getByText('Dishes with fish: at most 2 per week')).toBeInTheDocument();
@@ -186,7 +192,7 @@ describe('RuleEditor', () => {
 
   it('shows conditions it cannot edit read-only instead of altering them', async () => {
     const nested = all(is('componentType', 'curry'), any(is('protein_tag', 'fish'), is('protein_tag', 'dal')));
-    render(<RuleEditor initial={{ name: 'Nested', spec: { template: 'exclude', params: { match: nested } } }} onSaved={vi.fn()} />);
+    await renderLoaded(<RuleEditor initial={{ name: 'Nested', spec: { template: 'exclude', params: { match: nested } } }} onSaved={vi.fn()} />);
     expect(screen.getByText(/too complex to edit here/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Replace with simple conditions' })).toBeInTheDocument();
   });
@@ -197,7 +203,7 @@ describe('RuleEditor', () => {
       name: 'No fish', enabled: true, created_at: '',
       spec: { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } },
     });
-    render(<RuleEditor initial={{
+    await renderLoaded(<RuleEditor initial={{
       name: 'Fish on Friday lunch',
       spec: { template: 'require', params: { match: is('protein_tag', 'fish'), scope: { days: ['friday'], meals: ['lunch'] } } },
     }} onSaved={vi.fn()} />);
@@ -211,7 +217,7 @@ describe('RuleEditor', () => {
     const spec = { template: 'exclude', params: { match: is('protein_tag', 'fish'), strength: 'must' } } as const;
     const open = async (name: string) => {
       const id = (await db.rules.add({ name, enabled: true, created_at: '', spec })) as number;
-      render(<RuleEditor ruleId={id} initial={{ name, spec }} onSaved={vi.fn()} />);
+      await renderLoaded(<RuleEditor ruleId={id} initial={{ name, spec }} onSaved={vi.fn()} />);
       return id;
     };
     const addFriday = () => userEvent.click(within(screen.getByRole('group', { name: 'Days' })).getByRole('button', { name: 'Fri' }));

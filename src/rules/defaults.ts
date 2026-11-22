@@ -24,7 +24,7 @@ const CLOSE_REPEAT_COST = 3;
 const legacyPart = (parts: readonly PlannerPart[], type: ComponentType): number | undefined => parts.find((p) => p.legacy === type)?.id;
 
 /** The stock match of a default that follows the parts: the varied parts (variety, spacing) or every part after the first (sides only). */
-export function defaultMatch(key: string, parts: readonly PlannerPart[]) {
+function defaultMatch(key: string, parts: readonly PlannerPart[]) {
   if (key === 'variety' || key === 'spacing') return oneOf('part', parts.filter((p) => p.varied).map((p) => p.id));
   if (key === 'sides-only-when-asked') return oneOf('part', parts.slice(1).map((p) => p.id));
   return undefined;
