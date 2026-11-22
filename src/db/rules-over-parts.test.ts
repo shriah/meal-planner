@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, any, is, not, oneOf, type PlannerPart } from '@/planner';
 import {
-  capRules, defaultRules, describeSpec, libraryNames, linkRule, pairingRule, RuleSpecSchema, type RuleRecord, type RuleSpec,
+  capRules, defaultRules, describeSpec, libraryNames, linkRule, pairingRule, readLink, RuleSpecSchema, type RuleRecord, type RuleSpec,
 } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
@@ -92,9 +92,10 @@ describe('convertRuleSpec: links', () => {
     expect(converted(old.spec)).toMatchObject({ template: 'require_with', params: { strength: 'prefer', cost: 7 } });
   });
 
-  it('an upward link that also waits for a part cannot be served, so it is left as it was', () => {
+  it('an upward link that also waits for a part cannot be served, so it stays a comes link over parts', () => {
     const old = legacy.linkRule(papad, { mode: 'comes', target: 'subzi_dish', values: [4], when: { curry: [2] } });
-    expect(convertRuleSpec(old.spec, ctx)).toEqual({ skipped: expect.stringContaining('wait') });
+    expect(converted(old.spec)).toEqual(linkRule(papad, { mode: 'comes', target: { part: SUBZI, kind: 'dish' }, values: [4], when: { [CURRY]: [2] } }, PARTS).spec);
+    expect(readLink({ spec: converted(old.spec) as RuleSpec }, PARTS)).toMatchObject({ mode: 'comes', target: { part: SUBZI, kind: 'dish' } });
   });
 
   it('a link whose owner or target was deleted keeps the deleted id, and is not flipped without its owner', () => {

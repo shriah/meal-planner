@@ -74,18 +74,17 @@ function firstPart(m: unknown): number | undefined {
 
 /**
  * A comes link whose target part is above its owner's becomes a serve link: the owner is added when one of the
- * dishes is in the meal. Kept as a comes link when its owner is unknown (deleted) or not one dish, or when it points
- * down or into the owner's own part.
+ * dishes is in the meal. Kept as a comes link when its owner is unknown (deleted) or not one dish, when it points
+ * down or into the owner's own part, or when it also waits for another part, which a serve link cannot say: it then
+ * plans as before, its dish form still shows it, and a link pointing the wrong way is named (Task 7).
  */
 function flipUpward(params: Params, ctx: ConvertRulesContext): RuleSpecInput {
   const owner = params.match as Matcher;
   const ownerPart = isLeaf(owner) && owner.field === 'id' && owner.op === 'eq' ? ctx.partOf.get(owner.value as number) : undefined;
   const target = firstPart(params.of);
   const position = (part: number | undefined) => ctx.parts.findIndex((p) => p.id === part);
-  if (ownerPart === undefined || target === undefined || position(target) < 0 || position(target) >= position(ownerPart)) {
-    return { template: 'comes_with', params } as RuleSpecInput;
-  }
-  if (params.when) throw new Error('a dish added when a higher part holds a dish cannot also wait for another part');
+  const upward = ownerPart !== undefined && target !== undefined && position(target) >= 0 && position(target) < position(ownerPart);
+  if (!upward || params.when) return { template: 'comes_with', params } as RuleSpecInput;
   const { match, of, ...rest } = params;
   return { template: 'require_with', params: { when: of, components: [(match as { value: number }).value], categories: [], ...rest } } as RuleSpecInput;
 }
