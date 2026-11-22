@@ -5,13 +5,14 @@ import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
 import { MAX_LIST_ITEMS } from './limits';
 import { buildSlice, type AssistantData } from './retrieve';
+import { withParts } from '@/services/test-input';
 
 const dish = (id: number, name: string, extra: Partial<ComponentRecord> = {}): ComponentRecord =>
   ({ id, name, componentType: 'curry', dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: '', ...extra });
 const rule = (id: number, spec: unknown, extra: Partial<RuleRecord> = {}): RuleRecord =>
   ({ id, name: `Rule ${id}`, enabled: true, spec: spec as RuleRecord['spec'], created_at: '', ...extra });
 const exclude = (componentId: number) => ({ template: 'exclude', params: { match: is('id', componentId) } });
-const data = (over: Partial<AssistantData> = {}): AssistantData => ({ library: [], categories: [], rules: [], ...over });
+const data = (over: Partial<AssistantData> = {}): AssistantData => withParts({ library: [], categories: [], rules: [], ...over });
 
 describe('buildSlice', () => {
   it('returns a named dish with the rules that reference it and the rules it owns', () => {

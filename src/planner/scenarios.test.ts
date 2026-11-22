@@ -4,9 +4,18 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import type { Constraint, CountConstraint, PairConstraint } from './constraints';
 import { all, is, not, oneOf, type Matcher } from './matcher';
-import { planWeek, type PlanResult, type PlanSlotLike } from './plan';
+import { planWeek as planParts, type ModelInput } from './plan';
 import { explain } from './scorer';
-import type { ComponentLike, Pins } from './types';
+import { capConstraints, legacySlot, partPinsOf, placedIn, TEST_PARTS, type LegacyPins, type LegacySlot } from './test-utils';
+import { ROLES, type ComponentLike } from './types';
+import type { SolveOptions } from './solver';
+
+/** Plans over TEST_PARTS with pins in today's terms; the week comes back in today's stored terms. */
+const planWeek = (input: Omit<ModelInput, 'parts'>, opts: Omit<SolveOptions, 'pins'> & { pins?: LegacyPins } = {}) => {
+  const r = planParts({ ...input, parts: TEST_PARTS }, { ...opts, pins: opts.pins && partPinsOf(opts.pins) });
+  return { ...r, slots: r.slots.map(legacySlot) };
+};
+type Planned = ReturnType<typeof planWeek>;
 
 const CAT = {
   base: { 'rice-based': 1, 'bread-based': 2, other: 3 },
@@ -16,6 +25,7 @@ const CAT = {
 const library: ComponentLike[] = [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
   ...c,
   id: 100 + i,
+  part_id: TEST_PARTS[ROLES.indexOf(c.componentType)].id,
   frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
 }));
 const byName = (name: string) => {
@@ -39,16 +49,17 @@ const DEFAULTS: Constraint[] = [
   })),
   rule({ id: 'default:want-curry', label: 'want-curry', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: 5, max: 5 } }),
   rule({ id: 'default:want-subzi', label: 'want-subzi', select: is('componentType', 'subzi'), groupBy: 'slot', bounds: { softMin: 1 }, costs: { min: 5, max: 5 } }),
-  rule({ id: 'default:variety', label: 'variety', select: all(dishes, oneOf('role', ['base', 'curry', 'subzi'])), groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 } }),
-  rule({ id: 'default:spacing', label: 'spacing', select: all(dishes, oneOf('role', ['base', 'curry', 'subzi'])), groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 } }),
+  rule({ id: 'default:variety', label: 'variety', select: all(dishes, oneOf('part', [1, 2, 3])), groupBy: 'component', bounds: { softMax: 1 }, costs: { min: 2, max: 2 } }),
+  rule({ id: 'default:spacing', label: 'spacing', select: all(dishes, oneOf('part', [1, 2, 3])), groupBy: ['component', { days: 2 }], bounds: { softMax: 1 }, costs: { min: 3, max: 3 } }),
   prefer('default:extra-cost', is('componentType', 'extra'), 1),
   prefer('default:frequent', is('frequency', 'frequent'), -1),
   prefer('default:rare', is('frequency', 'rare'), 1),
+  ...capConstraints(),
 ];
-const run = (constraints: CountConstraint[], seed: number, pins?: Pins) =>
+const run = (constraints: CountConstraint[], seed: number, pins?: LegacyPins) =>
   planWeek({ library, constraints: [...DEFAULTS, ...constraints] }, { ...BUDGET, seed, pins });
-const hardOf = (r: PlanResult) => r.justifications.filter((j) => j.level === 'hard').map((j) => explain(j, { component: nameOf }));
-const ids = (r: PlanResult, pick: (s: PlanSlotLike) => (number | undefined)[]) => r.slots.flatMap(pick).filter((x): x is number => x !== undefined);
+const hardOf = (r: Planned) => r.justifications.filter((j) => j.level === 'hard').map((j) => explain(j, { component: nameOf }));
+const ids = (r: Planned, pick: (s: LegacySlot) => (number | undefined)[]) => r.slots.flatMap(pick).filter((x): x is number => x !== undefined);
 
 // The current defaults as planner-level fixtures. Their levels are not compileRules' exactly (compileRules
 // puts variety and spacing on `frequency`; here they are `dish`): default rules give way to unit members,
@@ -63,6 +74,7 @@ const CURRENT_DEFAULTS: Constraint[] = [
   { ...prefer('default:sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2), level: 'frequency' } as Constraint,
   { ...prefer('default:prefer-frequent', is('frequency', 'frequent'), -1), level: 'dish' } as Constraint,
   { ...prefer('default:avoid-rare', is('frequency', 'rare'), 1), level: 'dish' } as Constraint,
+  ...capConstraints(),
 ];
 
 describe('planner scenarios (seed library)', () => {
@@ -73,7 +85,7 @@ describe('planner scenarios (seed library)', () => {
   });
 
   it.each(SEEDS)('weekly minimum: at least 6 dal curries (seed %i)', (seed) => {
-    const r = run([rule({ id: 'dal-6', label: 'Dal curries this week', select: all(is('role', 'curry'), is('protein_tag', 'dal')), groupBy: 'plan', bounds: { hardMin: 6 } })], seed);
+    const r = run([rule({ id: 'dal-6', label: 'Dal curries this week', select: all(placedIn('curry'), is('protein_tag', 'dal')), groupBy: 'plan', bounds: { hardMin: 6 } })], seed);
     expect(hardOf(r)).toEqual([]);
     const dal = new Set(library.filter((c) => c.protein_tag === 'dal').map((c) => c.id));
     expect(ids(r, (s) => [s.curry_id]).filter((id) => dal.has(id)).length).toBeGreaterThanOrEqual(6);
@@ -82,7 +94,7 @@ describe('planner scenarios (seed library)', () => {
   it.each(SEEDS)('a later role constrains an earlier one: Chicken Curry needs a rice base (seed %i)', (seed) => {
     const chicken = byName('Chicken Curry').id;
     const r = run([
-      rule({ id: 'chicken-rice', label: 'Chicken Curry needs a rice base', select: all(is('role', 'base'), is('base_category_id', CAT.base['rice-based'])), groupBy: 'slot', when: { exists: is('id', chicken) }, bounds: { hardMin: 1 } }),
+      rule({ id: 'chicken-rice', label: 'Chicken Curry needs a rice base', select: all(placedIn('base'), is('base_category_id', CAT.base['rice-based'])), groupBy: 'slot', when: { exists: is('id', chicken) }, bounds: { hardMin: 1 } }),
       rule({ id: 'chicken-twice', label: 'Chicken Curry twice', select: is('id', chicken), groupBy: 'plan', bounds: { hardMin: 2 } }),
     ], seed);
     expect(hardOf(r)).toEqual([]);
@@ -92,7 +104,7 @@ describe('planner scenarios (seed library)', () => {
   });
 
   it.each(SEEDS)('spacing: the same curry never within 3 days (seed %i)', (seed) => {
-    const r = run([rule({ id: 'spacing', label: 'Same curry within 3 days', select: is('role', 'curry'), groupBy: ['component', { days: 3 }], bounds: { hardMax: 1 } })], seed);
+    const r = run([rule({ id: 'spacing', label: 'Same curry within 3 days', select: placedIn('curry'), groupBy: ['component', { days: 3 }], bounds: { hardMax: 1 } })], seed);
     expect(hardOf(r)).toEqual([]);
   });
 
@@ -106,7 +118,7 @@ describe('planner scenarios (seed library)', () => {
     const r = run([
       rule({ id: 'no-fish', label: 'No fish', select: is('protein_tag', 'fish'), groupBy: 'slot', bounds: { hardMax: 0 } }),
       rule({ id: 'idli-breakfast', label: 'Idli only at breakfast', select: all(is('id', idli), oneOf('meal', ['lunch', 'dinner'])), groupBy: 'slot', bounds: { hardMax: 0 } }),
-      rule({ id: 'rice-liquid', label: 'Rice meals need a liquid extra', select: all(is('role', 'extra'), is('extra_category_id', CAT.extra.liquid)), groupBy: 'slot', when: { exists: all(is('role', 'base'), is('base_category_id', CAT.base['rice-based'])) }, bounds: { hardMin: 1 } }),
+      rule({ id: 'rice-liquid', label: 'Rice meals need a liquid extra', select: all(placedIn('extra'), is('extra_category_id', CAT.extra.liquid)), groupBy: 'slot', when: { exists: all(placedIn('base'), is('base_category_id', CAT.base['rice-based'])) }, bounds: { hardMin: 1 } }),
     ], seed, { 'monday-breakfast': { base_id: idli } });
     expect(hardOf(r)).toEqual([]);
     expect(r.slots.find((s) => s.day === 'monday' && s.meal_slot === 'breakfast')?.base_id).toBe(idli);
@@ -168,8 +180,8 @@ describe('planner scenarios (seed library)', () => {
     const plan = (constraints: Constraint[], seed: number, opts: object = BUDGET) =>
       planWeek({ library, constraints: [...CURRENT_DEFAULTS, sambarLunchOnly, ...constraints] }, { ...opts, seed });
     const always = [pair('pongal-sambar', is('id', pongal), sambar), pair('pongal-chutney', is('id', pongal), chutney)];
-    const pongalSlots = (r: PlanResult) => r.slots.filter((s) => s.base_id === pongal);
-    const isOther = (s: PlanSlotLike) => library.find((c) => c.id === s.base_id)?.base_category_id === CAT.base.other;
+    const pongalSlots = (r: Planned) => r.slots.filter((s) => s.base_id === pongal);
+    const isOther = (s: LegacySlot) => library.find((c) => c.id === s.base_id)?.base_category_id === CAT.base.other;
     // The same weeks with no pairings: a pairing should not make its base much more (or less) common.
     const baseline = { pongal: 0, other: 0 };
     beforeAll(() => {
@@ -225,7 +237,7 @@ describe('planner scenarios (seed library)', () => {
     });
 
     it('a pairing to a base category makes a unit for every base in it', () => {
-      const other = all(is('role', 'base'), is('base_category_id', CAT.base.other));
+      const other = all(placedIn('base'), is('base_category_id', CAT.base.other));
       let total = 0;
       for (const seed of WEEKS) {
         const r = plan([pair('other-sambar', other, sambar)], seed);

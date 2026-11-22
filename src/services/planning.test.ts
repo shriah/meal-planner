@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { liveQuery } from 'dexie';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { is } from '@/planner';
@@ -56,6 +57,16 @@ describe('planFromData', () => {
     ]);
   });
 
+  it('still plans when a stored rule names slot_part: the rule is skipped and reported', async () => {
+    await runSeed();
+    await addRule({ name: 'Placed rule', enabled: true, created_at: '', spec: { template: 'exclude', params: { match: is('slot_part', 2) } } });
+
+    const outcome = planFromData(await loadPlanningInput(), { seed: 3 });
+
+    expect(outcome.plan.slots).toHaveLength(21);
+    expect(outcome.ruleIssues).toEqual([expect.objectContaining({ name: 'Placed rule', message: expect.stringContaining('"slot_part"') })]);
+  });
+
   it('applies the seeded per-meal extras limit, an ordinary rule the user can change', async () => {
     await runSeed();
     const lunchLimit = (await db.rules.toArray()).find((r) => r.name === 'Extras at lunch: at most 3')!;
@@ -67,6 +78,43 @@ describe('planFromData', () => {
     const extras = input.library.filter((c) => c.componentType === 'extra').map((c) => c.id);
     const outcome = planFromData(input, { seed: 4, pins: { 'monday-lunch': { extra_ids: extras.slice(0, 2) } } });
     expect(outcome.problems).toContainEqual(expect.objectContaining({ level: 'hard', day: 'monday', meal: 'lunch', reason: 'Extras: at most 1 per meal at lunch', message: 'Extras: at most 1 per meal at lunch — Monday lunch' }));
+  });
+});
+
+describe('loadPlanningInput parts', () => {
+  it('gives the input the library parts, and a stored dish without a part the part of its type', async () => {
+    await runSeed();
+    const curry = (await db.components.toArray()).find((c) => c.componentType === 'curry')!;
+    await db.components.update(curry.id, { part_id: undefined });
+    expect((await db.components.get(curry.id))!.part_id).toBeUndefined();
+
+    const input = await loadPlanningInput();
+    expect(input.parts.map((p) => p.name)).toEqual(['Base', 'Curry', 'Subzi', 'Extras']);
+    const curryPart = input.parts.find((p) => p.name === 'Curry')!;
+    expect(input.library.find((c) => c.id === curry.id)!.part_id).toBe(curryPart.id);
+    expect(input.library.every((c) => c.part_id !== undefined)).toBe(true);
+  });
+
+  it('throws an Error naming the missing part when the library has no parts', async () => {
+    await expect(loadPlanningInput()).rejects.toThrow('no "Base" part');
+  });
+
+  it('runSeed creates the parts of a library that already has dishes', async () => {
+    await runSeed();
+    await db.parts.clear();
+    await runSeed(); // dishes exist, so nothing is seeded, but the parts come back
+    expect(await db.parts.count()).toBe(4);
+  });
+
+  it('runs inside a live query, which refuses writes', async () => {
+    await runSeed();
+    const input = await new Promise<Awaited<ReturnType<typeof loadPlanningInput>>>((resolve, reject) => {
+      const sub = liveQuery(() => loadPlanningInput()).subscribe({
+        next: (v) => { sub.unsubscribe(); resolve(v); },
+        error: reject,
+      });
+    });
+    expect(input.parts).toHaveLength(4);
   });
 });
 

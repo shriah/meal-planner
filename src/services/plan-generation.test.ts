@@ -4,12 +4,13 @@ import { dayRule, defaultRules, exclusionRule, linkRule, type RuleRecord } from 
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
+import { capRecords, withParts } from './test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
 
 const pulao = dish(1, 'Pulao', 'base');
-const input = (rules: RuleRecord[] = []): PlanningInput => ({ library: [pulao], categories: [], rules });
+const input = (rules: RuleRecord[] = []): PlanningInput => withParts({ library: [pulao], categories: [], rules });
 const planOf = (...slots: Partial<PlanSlot>[]): WeeklyPlan => ({
   slots: slots.map((s) => ({ day: 'monday', meal_slot: 'lunch', base_id: 1, extra_ids: [], ...s })),
 });
@@ -57,7 +58,7 @@ describe('pairings', () => {
   const rasam = dish(12, 'Rasam', 'curry');
   const owned = linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
   const rule: RuleRecord = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
-  const data: PlanningInput = { library: [pongal, sambar, rasam], categories: [], rules: [rule] };
+  const data: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule] });
 
   it('does not count the paired side against a base that brings it', () => {
     const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 });
@@ -71,7 +72,7 @@ describe('pairings', () => {
     const idliNeverWith = (curry: number, id: number): RuleRecord =>
       ({ id, name: `Idli never with ${curry}`, spec: { template: 'avoid_with', params: { match: is('id', 13), with: is('id', curry), strength: 'must' } }, enabled: true, created_at: '' });
     const picker = (rules: RuleRecord[], curry: number) => slotConflicts(
-      { library: [pongal, sambar, rasam, idli], categories: [], rules: [rule, neverAuto, ...rules] },
+      withParts({ library: [pongal, sambar, rasam, idli], categories: [], rules: [rule, neverAuto, ...rules] }),
       planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: curry }),
       'monday', 'breakfast', 'base', [13],
     );
@@ -89,7 +90,7 @@ describe('pairings', () => {
   describe('a stored conflict (a second Always curry for Pongal)', () => {
     const rasamLink = linkRule(rasam, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
     const rasamRule: RuleRecord = { id: 8, name: rasamLink.name, spec: rasamLink.spec, enabled: true, created_at: '', owner_component_id: 12 } as RuleRecord;
-    const conflicted: PlanningInput = { library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule] };
+    const conflicted: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule, ...capRecords()] });
     const reason = 'Rasam is not served with Pongal: a meal holds one curry and Sambar is always served with it.';
 
     it('is reported once, as one soft problem worded as the conflict, not per meal', () => {
@@ -113,7 +114,7 @@ describe('pairings', () => {
         spec: { template: 'require_with', params: { when: is('id', 14), components: [12], strength: 'must' } },
       } as RuleRecord;
       const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11, extra_ids: [14] });
-      const problems = explainPlan({ library: [pongal, sambar, rasam, chutney], categories: [], rules: [rule, withChutney] }, plan);
+      const problems = explainPlan(withParts({ library: [pongal, sambar, rasam, chutney], categories: [], rules: [rule, withChutney, ...capRecords()] }), plan);
       expect(problems.filter((p) => p.ruleId === 9).map((p) => p.reason)).toEqual([
         'Rasam is not served with Chutney: a meal holds one curry and Sambar is always served with Pongal.',
       ]);
@@ -159,7 +160,7 @@ describe('pairings', () => {
 
     it('a comes-with link replaced by a pin says so', () => {
       const comes = record(5, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21], strength: 'always' }));
-      const out = planFromData({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [comes] }, {
+      const out = planFromData(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [comes] }), {
         seed: 3,
         pins: { 'monday-breakfast': { base_id: 20, curry_id: 11 } },
       });
@@ -175,7 +176,7 @@ describe('pairings', () => {
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 21), strength: 'must' } },
       } as RuleRecord;
       const picker = slotConflicts(
-        { library: [pongal, idiyappam, stewVeg, stewNonVeg], categories: [], rules: [comes, notVeg] },
+        withParts({ library: [pongal, idiyappam, stewVeg, stewNonVeg], categories: [], rules: [comes, notVeg] }),
         planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 }),
         'monday', 'breakfast', 'base', [20],
       );
@@ -191,7 +192,7 @@ describe('pairings', () => {
         spec: { template: 'avoid_with', params: { match: is('id', 20), with: is('id', 22), strength: 'must' } },
       } as RuleRecord;
       const picker = slotConflicts(
-        { library: [pongal, idiyappam, stewVeg, stewNonVeg, papad], categories: [], rules: [comes, vegBrings, notNonVeg] },
+        withParts({ library: [pongal, idiyappam, stewVeg, stewNonVeg, papad], categories: [], rules: [comes, vegBrings, notNonVeg] }),
         planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 }),
         'monday', 'breakfast', 'base', [20],
       );
@@ -209,7 +210,7 @@ describe('pairings', () => {
         .filter((r) => r.default_key === 'prefer-frequent' || r.default_key === 'avoid-rare')
         .map((r, k) => ({ ...r, id: 10 + k, enabled: true, created_at: '' } as RuleRecord));
       const picker = slotConflicts(
-        { library: [pongal, idiyappam, stewVeg, { ...stewNonVeg, frequency: 'frequent' }], categories: [], rules: [comes, never(6, 21), never(7, 22), ...frequency] },
+        withParts({ library: [pongal, idiyappam, stewVeg, { ...stewNonVeg, frequency: 'frequent' }], categories: [], rules: [comes, never(6, 21), never(7, 22), ...frequency] }),
         planOf(
           { day: 'monday', meal_slot: 'breakfast', base_id: 10 },
           { day: 'thursday', meal_slot: 'lunch', base_id: 10, curry_id: 21 },
@@ -224,7 +225,7 @@ describe('pairings', () => {
       const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [20], strength: 'always' }));
       const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
       const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 20, curry_id: 11 });
-      const problems = explainPlan({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes] }, plan);
+      const problems = explainPlan(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes, ...capRecords()] }), plan);
       expect(problems.filter((p) => p.ruleId === 8).map((p) => p.reason)).toEqual([
         'Kerala Stew (Veg) or Kerala Stew (Non-Veg) is not served with Idiyappam: a meal holds one curry and Sambar is always served with it.',
       ]);
@@ -244,7 +245,7 @@ describe('the meal picker and a link waiting for a curry', () => {
     spec: { template: 'exclude', params: { match: is('id', 31), scope: { meals: ['dinner'] }, strength: 'must' } },
   } as RuleRecord;
   const picker = (link: RuleRecord) => slotConflicts(
-    { library: [pongal, rice, sambar, papad], categories: [], rules: [link, noPapadAtDinner] },
+    withParts({ library: [pongal, rice, sambar, papad], categories: [], rules: [link, noPapadAtDinner] }),
     planOf({ day: 'monday', meal_slot: 'dinner', base_id: 10, curry_id: 11 }),
     'monday', 'dinner', 'base', [30],
   );
@@ -267,5 +268,22 @@ describe('stoppedEarly', () => {
 
   it('is false for a search that finished on its own', () => {
     expect(planFromData(input(), { seed: 1 }).stoppedEarly).toBe(false);
+  });
+});
+
+describe('planFromData without the curry cap rule', () => {
+  // A stored meal holds one curry, so the app keeps the Curry part to one dish even when the user's
+  // "At most one Curry per meal" is gone: two Always curries on one base clash, as before.
+  it('plans two Always curry links on one base with one curry per meal', () => {
+    const rice = dish(1, 'Rice', 'base');
+    const library = [rice, dish(2, 'Sambar', 'curry'), dish(3, 'Rasam', 'curry'), dish(4, 'Roti', 'base')];
+    const rules = [...defaultRules(), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [2] }), linkRule(rice, { mode: 'comes', target: 'curry_dish', values: [3] })]
+      .map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
+    for (const seed of [1, 2, 3]) {
+      const outcome = planFromData(withParts({ library, categories: [], rules }), { seed, timeLimitMs: Infinity });
+      const riceMeals = outcome.plan.slots.filter((s) => s.base_id === 1);
+      expect(riceMeals.length).toBeGreaterThan(0);
+      for (const s of riceMeals) expect([2, 3]).toContain(s.curry_id);
+    }
   });
 });

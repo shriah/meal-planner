@@ -1,41 +1,30 @@
-// High-level entry: library + constraints -> best plan found, its score and explanations.
+// High-level entry: library + parts + constraints -> best plan found, its score and explanations.
 import { builtinConstraints } from './builtins';
 import { ConstraintSchema, type Constraint } from './constraints';
-import { compileModel, type CompiledModel, type Justification, type Score } from './scorer';
+import { matcherFields, type Matcher } from './matcher';
+import { cappedPart, compileModel, type CompiledModel, type Justification, type Score } from './scorer';
 import { solve, type SolveOptions, type SolveResult } from './solver';
-import { DAYS, MEALS, emptyPlan, slotIndex, type ComponentLike, type Day, type Meal, type PlanState } from './types';
+import { DAYS, MEALS, emptyPlan, slotIndex, type ComponentLike, type PartSlot, type Pins, type PlannerPart, type PlanState } from './types';
 
-/** The app's plan slot shape. */
-export interface PlanSlotLike {
-  day: Day;
-  meal_slot: Meal;
-  base_id: number;
-  curry_id?: number;
-  subzi_id?: number;
-  extra_ids: number[];
-}
-
-/** Slots in day order, then meal order. Slots without a base are omitted. */
-export function toPlanSlots(p: PlanState): PlanSlotLike[] {
-  const out: PlanSlotLike[] = [];
+/** Meals in day order, then meal order, every part present. Meals without a first-part dish are omitted. */
+export function toPartSlots(p: PlanState, parts: readonly PlannerPart[]): PartSlot[] {
+  const out: PartSlot[] = [];
   for (const day of DAYS) {
     for (const meal of MEALS) {
       const s = p[slotIndex(day, meal)];
-      if (s.base === undefined) continue;
-      const slot: PlanSlotLike = { day, meal_slot: meal, base_id: s.base, extra_ids: [...s.extras] };
-      if (s.curry !== undefined) slot.curry_id = s.curry;
-      if (s.subzi !== undefined) slot.subzi_id = s.subzi;
-      out.push(slot);
+      if (!s.parts[0].length) continue;
+      const byId: Record<number, number[]> = {};
+      parts.forEach((part, k) => { byId[part.id] = [...s.parts[k]]; });
+      out.push({ day, meal_slot: meal, parts: byId });
     }
   }
   return out;
 }
 
-export function fromPlanSlots(slots: readonly PlanSlotLike[]): PlanState {
-  const p = emptyPlan();
-  for (const s of slots) {
-    p[slotIndex(s.day, s.meal_slot)] = { base: s.base_id, curry: s.curry_id, subzi: s.subzi_id, extras: [...s.extra_ids] };
-  }
+/** The solver's week for `slots`; a part a slot does not name is empty. */
+export function fromPartSlots(slots: readonly PartSlot[], parts: readonly PlannerPart[]): PlanState {
+  const p = emptyPlan(parts.length);
+  for (const s of slots) p[slotIndex(s.day, s.meal_slot)] = { parts: parts.map((part) => [...(s.parts[part.id] ?? [])]) };
   return p;
 }
 
@@ -48,35 +37,56 @@ export class InvalidConstraintError extends Error {
 
 export interface ModelInput {
   library: readonly ComponentLike[];
+  /** The meal's parts, in order. The first part holds exactly one dish. */
+  parts: readonly PlannerPart[];
   /** Constraints compiled from stored rules. The meal-structure built-ins are added automatically. */
   constraints?: readonly Constraint[];
 }
 
-/** Validate and compile. Throws InvalidConstraintError for malformed or duplicate constraints. */
+/** Every matcher of a constraint. */
+const matchersOf = (c: Constraint): Matcher[] =>
+  c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
+
+/**
+ * Validate and compile. Throws InvalidConstraintError for malformed or duplicate constraints, for one that
+ * still names the stored-rule field `role` (rules reach the planner rewritten to parts; one the rewrite missed
+ * would silently match nothing), and for a non-built-in one naming `slot_part`.
+ */
 export function buildModel(input: ModelInput): CompiledModel {
-  const constraints = [...builtinConstraints(), ...(input.constraints ?? [])];
+  if (!input.parts.length) throw new Error('a meal needs at least one part');
+  const own = input.constraints ?? [];
+  const capped = new Set(own.flatMap((c) => (c.kind === 'count' ? (cappedPart(c) ?? []) : [])));
+  const constraints = [...builtinConstraints(input.parts, capped), ...own];
   const seen = new Set<string>();
   for (const c of constraints) {
     const parsed = ConstraintSchema.safeParse(c);
     if (!parsed.success) {
       throw new InvalidConstraintError(c.id, parsed.error.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`));
     }
+    const fields = matchersOf(c).map((mt) => matcherFields(mt));
+    if (fields.some((f) => f.has('role'))) {
+      throw new InvalidConstraintError(c.id, ['the field "role" is not planned; name the part with "part"']);
+    }
+    // Where a dish is placed is the planner's own business: only the meal's structure reads it.
+    if (c.origin !== 'builtin' && fields.some((f) => f.has('slot_part'))) {
+      throw new InvalidConstraintError(c.id, ['the field "slot_part" is for built-in constraints only; name the part with "part"']);
+    }
     if (seen.has(c.id)) throw new InvalidConstraintError(c.id, ['duplicate constraint id']);
     seen.add(c.id);
   }
-  return compileModel(input.library, constraints);
+  return compileModel(input.library, constraints, input.parts);
 }
 
 export interface PlanResult {
-  slots: PlanSlotLike[];
+  slots: PartSlot[];
   score: Score;
   /** Every hard and soft violation in the returned plan. Empty hard list = all hard rules hold. */
   justifications: Justification[];
   stats: SolveResult['stats'];
 }
 
-export function planWeek(input: ModelInput, opts: SolveOptions = {}): PlanResult {
+export function planWeek(input: ModelInput, opts: SolveOptions & { pins?: Pins } = {}): PlanResult {
   const r = solve(buildModel(input), opts);
   const { justifications, ...score } = r.score;
-  return { slots: toPlanSlots(r.plan), score, justifications, stats: r.stats };
+  return { slots: toPartSlots(r.plan, input.parts), score, justifications, stats: r.stats };
 }

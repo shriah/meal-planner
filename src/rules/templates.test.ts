@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PlanSlotLike } from '@/planner';
+import { all, buildModel, emptyPlan, is, oneOf, planWeek, score, slotIndex, type ComponentLike, type PartSlot } from '@/planner';
+import { capRules } from './defaults';
 import { compileRules, type RuleRecord } from './record';
 import { compileSpec, describeSpec, PREFER_COST, RuleSpecSchema, specReferences, OWNED_ONLY_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_IDS, type RuleSpecInput } from './templates';
+import { TEST_RULE_PARTS } from './test-parts';
 
 // ─── Library: two base categories, several curries/subzis, extras in two categories ──────────
 const RICE = 10;
@@ -9,7 +11,7 @@ const BREAD = 20;
 const LIQUID = 30;
 const SWEET = 40;
 const mk = (id: number, componentType: ComponentLike['componentType'], extra: Partial<ComponentLike> = {}): ComponentLike =>
-  ({ id, name: `#${id}`, componentType, dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: [], ...extra });
+  ({ id, name: `#${id}`, componentType, part_id: TEST_RULE_PARTS.legacy[componentType], dietary_tags: ['veg'], regional_tags: ['pan-indian'], occasion_tags: [], ...extra });
 const library: ComponentLike[] = [
   mk(1, 'base', { name: 'Rice', base_category_id: RICE }),
   mk(2, 'base', { name: 'Jeera Rice', base_category_id: RICE }),
@@ -33,14 +35,23 @@ const known = {
   extraCategories: new Set([LIQUID, SWEET]),
 };
 
+/** A planned meal over TEST_RULE_PARTS (Base, Curry, Subzi, Extras: ids 1 to 4) in today's stored terms. */
+interface StoredSlot { day: string; meal_slot: string; base_id: number; curry_id?: number; subzi_id?: number; extra_ids: number[] }
+const storedSlot = (s: PartSlot): StoredSlot => ({
+  day: s.day, meal_slot: s.meal_slot, base_id: s.parts[1][0],
+  ...(s.parts[2].length ? { curry_id: s.parts[2][0] } : {}), ...(s.parts[3].length ? { subzi_id: s.parts[3][0] } : {}), extra_ids: s.parts[4],
+});
 const record = (spec: RuleSpecInput, id = 1): RuleRecord => ({ id, name: `Rule ${id}`, enabled: true, spec, created_at: '' });
+/** Plans the rules (ids 1..n) with the curry and subzi caps every library has; the week in today's stored terms. */
 const plan = (specs: RuleSpecInput[], seed: number) => {
-  const { constraints, issues } = compileRules(specs.map((s, i) => record(s, i + 1)), known);
+  const caps = capRules().map((r, i) => ({ ...r, id: specs.length + i + 1, enabled: true, created_at: '' }));
+  const { constraints, issues } = compileRules([...specs.map((s, i) => record(s, i + 1)), ...caps], known, TEST_RULE_PARTS);
   expect(issues).toEqual([]);
-  return planWeek({ library, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 30_000, plateauIterations: 3000 });
+  const r = planWeek({ library, parts: TEST_RULE_PARTS.list, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 30_000, plateauIterations: 3000 });
+  return { ...r, slots: r.slots.map(storedSlot) };
 };
 const SEEDS = [1, 2, 3];
-const at = (r: { slots: PlanSlotLike[] }, day: string, meal: string) => r.slots.find((s) => s.day === day && s.meal_slot === meal)!;
+const at = (r: { slots: StoredSlot[] }, day: string, meal: string) => r.slots.find((s) => s.day === day && s.meal_slot === meal)!;
 const hard = (r: ReturnType<typeof plan>) => r.justifications.filter((j) => j.level === 'hard');
 
 describe('rule templates in the planner', () => {
@@ -121,20 +132,21 @@ describe('rule templates in the planner', () => {
 
   it('pairs_with: flags a matching dish next to a base outside the list or without a category, and nothing else', () => {
     const lib = [...library, mk(5, 'base', { name: 'Uncategorised' })];
-    const { constraints } = compileRules([record({ template: 'pairs_with', params: { match: oneOf('id', [12, 21]), baseCategories: [RICE] } })], known);
-    const m = buildModel({ library: lib, constraints });
-    const p = emptyPlan();
-    p[slotIndex('monday', 'lunch')] = { base: 1, curry: 12, subzi: 21, extras: [] }; // rice: fine
-    p[slotIndex('monday', 'dinner')] = { base: 3, curry: 12, subzi: 21, extras: [] }; // bread: curry and subzi
-    p[slotIndex('tuesday', 'lunch')] = { base: 5, curry: 12, extras: [] }; // uncategorised: curry
-    p[slotIndex('tuesday', 'dinner')] = { base: 3, curry: 11, extras: [] }; // not matched: fine
+    const { constraints } = compileRules([record({ template: 'pairs_with', params: { match: oneOf('id', [12, 21]), baseCategories: [RICE] } })], known, TEST_RULE_PARTS);
+    const m = buildModel({ library: lib, parts: TEST_RULE_PARTS.list, constraints });
+    // Parts in meal order: base, curry, subzi, extras.
+    const p = emptyPlan(TEST_RULE_PARTS.list.length);
+    p[slotIndex('monday', 'lunch')] = { parts: [[1], [12], [21], []] }; // rice: fine
+    p[slotIndex('monday', 'dinner')] = { parts: [[3], [12], [21], []] }; // bread: curry and subzi
+    p[slotIndex('tuesday', 'lunch')] = { parts: [[5], [12], [], []] }; // uncategorised: curry
+    p[slotIndex('tuesday', 'dinner')] = { parts: [[3], [11], [], []] }; // not matched: fine
     const broken = score(m, p, true).justifications.filter((j) => j.ruleId === 1);
     expect(broken.map((j) => [j.group.day, j.group.meal, j.actual])).toEqual([['monday', 'dinner', 2], ['tuesday', 'lunch', 1]]);
   });
 
   it('compiles a scoped pairing to a scoped constraint', () => {
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    const { constraints, issues } = compileRules([record({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope, strength: 'prefer', cost: 6 } })], known);
+    const { constraints, issues } = compileRules([record({ template: 'pairs_with', params: { match: is('id', 12), baseCategories: [RICE], scope, strength: 'prefer', cost: 6 } })], known, TEST_RULE_PARTS);
     expect(issues).toEqual([]);
     expect(constraints).toHaveLength(1);
     expect(constraints[0]).toMatchObject({ scope });

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { db, type RuleRecord } from '@/db/client';
 import { is, type Matcher, type Meal } from '@/planner';
-import { dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
+import { capRules, dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
 import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
@@ -40,6 +40,8 @@ export function runSeed(): Promise<void> {
 }
 
 async function seed(data: SeedData): Promise<void> {
+  // Every library has its parts, seeded or not: planning reads them without writing.
+  await ensurePartsAndTagGroups();
   const count = await db.components.count();
   if (count > 0) return; // Already seeded
 
@@ -78,7 +80,7 @@ async function seed(data: SeedData): Promise<void> {
   const restIds = await db.components.bulkAdd(rest, { allKeys: true });
 
   const now = new Date().toISOString();
-  await db.rules.bulkAdd(defaultRules({ breakfast: 2, lunch: 3, dinner: 3 }).map((r) => ({ ...r, enabled: true, created_at: now })));
+  await db.rules.bulkAdd([...defaultRules({ breakfast: 2, lunch: 3, dinner: 3 }), ...capRules()].map((r) => ({ ...r, enabled: true, created_at: now })));
 
   // Default rules: which meals each kind of base suits.
   const onlyAt = (name: string, match: Matcher, meals: Meal[]): Omit<RuleRecord, 'id'> => ({

@@ -1,5 +1,7 @@
 // Stored rules and their compilation into planner constraints.
-import type { Bounds, Constraint, RuleLevel } from '@/planner';
+import { matcherFields, ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
+import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
+import { defaultRules } from './defaults';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -97,11 +99,47 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
+const sameData = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  const ka = Object.keys(a);
+  return Array.isArray(a) === Array.isArray(b) && ka.length === Object.keys(b).length
+    && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
+};
+
+/**
+ * The spec with a stock default's match replaced by the parts it is about. A default the user has edited, and any
+ * other rule, is left as stored (its component types are rewritten to parts afterwards, like any rule).
+ */
+function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
+  const key = rule.default_key;
+  const match = key === 'variety' || key === 'spacing' ? variedPartsMatcher(parts)
+    : key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
+    : undefined;
+  if (match === undefined) return spec;
+  const stock = defaultRules().find((d) => d.default_key === key)?.spec;
+  const stockParsed = stock && parseSpec(stock);
+  if (!stockParsed?.ok || !sameData(spec, stockParsed.spec) || !('match' in spec.params)) return spec;
+  // `roles` restricts a no-repeat rule to types; the match now names the parts, so every role is let through.
+  const roles = 'roles' in spec.params ? { roles: [...ROLES] } : {};
+  return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;
+}
+
+/** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
+const UNPLANNED_FIELDS = ['role', 'slot_part'] as const;
+
+const constraintFields = (c: Constraint): Set<string> => {
+  const matchers = c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
+  return new Set(matchers.flatMap((m) => [...matcherFields(m)]));
+};
+
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
- * are skipped and reported, so the planner never runs a rule whose meaning has changed.
+ * are skipped and reported, so the planner never runs a rule whose meaning has changed. Constraints are about
+ * parts: the stored component-type matchers are rewritten, and the variety, spacing and sides-only defaults
+ * name the parts they apply to (the stored rows are not changed).
  */
-export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { constraints: Constraint[]; issues: RuleIssue[] } {
+export function compileRules(rules: readonly RuleRecord[], known: KnownIds, parts: RuleParts): { constraints: Constraint[]; issues: RuleIssue[] } {
   const constraints: Constraint[] = [];
   const issues: RuleIssue[] = [];
   // The scorer settles conflicts between pairs by constraint order, so compile in rule-id order.
@@ -118,13 +156,22 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { c
       continue;
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
-    compileSpec(parsed.spec).forEach((spec, i) => {
+    const compiledRule: Constraint[] = [];
+    compileSpec(partsSpec(rule, parsed.spec, parts)).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };
-        constraints.push({ ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
+        const compiled = { ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint;
+        compiledRule.push(constraintOverParts(compiled, parts.legacy));
       }
     });
+    // The rewrite turns role and componentType into parts; a field it leaves behind cannot be planned.
+    const unplanned = UNPLANNED_FIELDS.find((f) => compiledRule.some((c) => constraintFields(c).has(f)));
+    if (unplanned) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `names the field "${unplanned}", which the planner does not use; name the part with "part"` });
+      continue;
+    }
+    constraints.push(...compiledRule);
   }
   return { constraints, issues };
 }

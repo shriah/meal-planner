@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { everyMealWith, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
-import { is } from '@/planner';
-import { exclusionRule, mealRule } from '@/rules';
-import { TEST_LIBRARY } from './library';
-import { failsWithoutSubject, recordsOf, runPlanCase, statusOf } from './run';
+import { capped, compileModel, is, type Constraint } from '@/planner';
+import { capConstraints } from '@/planner/test-utils';
+import { compileRules, exclusionRule, mealRule } from '@/rules';
+import { legacyPartIds } from '@/db/parts';
+import { libraryOf, TEST_LIBRARY } from './library';
+import { seededLibrary } from './seeded-library';
+import { failsWithoutSubject, knownIds, recordsOf, rulePartsOf, runPlanCase, statusOf } from './run';
 import type { CaseWeeks, PlanCase } from './types';
 
 const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib });
@@ -25,6 +28,29 @@ describe('TEST_LIBRARY', () => {
     const pongal = TEST_LIBRARY.dish('Pongal');
     expect(pongal.componentType).toBe('base');
     expect(pongal.base_category_id).toBe(TEST_LIBRARY.category('Rice-based').id);
+  });
+});
+
+describe('library dishes carry their part', () => {
+  it('gives every dish the part of its type, and the library its four parts', () => {
+    const ids = legacyPartIds(TEST_LIBRARY.parts);
+    expect(TEST_LIBRARY.parts.map((p) => [p.id, p.name, p.varied])).toEqual([
+      [1, 'Base', true], [2, 'Curry', true], [3, 'Subzi', true], [4, 'Extras', false],
+    ]);
+    for (const d of TEST_LIBRARY.dishes) expect(d.part_id, d.name).toBe(ids[d.componentType]);
+  });
+  it('gives categories and tags from the old fields', () => {
+    expect(TEST_LIBRARY.dish('Pongal').category_id).toBe(TEST_LIBRARY.category('Rice-based').id);
+    expect(TEST_LIBRARY.dish('Pickle').category_id).toBe(TEST_LIBRARY.category('Condiments').id);
+    expect(TEST_LIBRARY.dish('Sambar').category_id).toBe(TEST_LIBRARY.category('lentil').id);
+    expect(TEST_LIBRARY.dish('Beans Poriyal').category_id).toBeUndefined();
+    expect(TEST_LIBRARY.dish('Pongal').tags).toEqual({ 1: [1], 2: [], 3: [], 4: [] });
+  });
+  it('converts case-only dishes and the seeded library too', () => {
+    const lib = libraryOf([{ ...TEST_LIBRARY.dish('Dal'), id: 900, name: 'Extra Dal' }], TEST_LIBRARY.categories);
+    expect(lib.dish('Extra Dal').part_id).toBe(2);
+    const ids = legacyPartIds(TEST_LIBRARY.parts);
+    for (const d of seededLibrary()) expect(d.part_id, d.name).toBe(ids[d.componentType]);
   });
 });
 
@@ -67,9 +93,25 @@ describe('runPlanCase', () => {
 
 describe('recordsOf', () => {
   const base = { kind: 'plan' as const, id: 'c', group: 'Extras' as const, name: 'C', why: 'x', rules: () => [], expect: [] };
-  it('leaves the defaults out for a defaults: false case, baseline included', () => {
-    expect(recordsOf({ ...base, defaults: false }, [])).toEqual([]);
-    expect(recordsOf(base, []).length).toBeGreaterThan(0);
+  it('leaves the defaults out for a defaults: false case, baseline included; the caps stay, as the built-ins did', () => {
+    expect(recordsOf({ ...base, defaults: false }, []).map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
+    expect(recordsOf(base, []).length).toBeGreaterThan(2);
+  });
+  it('puts the curry and subzi caps after the defaults, and drops one by cap:curry or cap:subzi', () => {
+    const names = (drop: string[] = []) => recordsOf(base, [], [], drop).map((r) => r.name);
+    expect(names().slice(-2)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
+    expect(names(['cap:curry']).filter((n) => n.startsWith('At most one'))).toEqual(['At most one Subzi per meal']);
+    expect(names(['cap:subzi']).filter((n) => n.startsWith('At most one'))).toEqual(['At most one Curry per meal']);
+  });
+  it('compiles the caps to what capConstraints builds, and the planner caps the Curry and Subzi parts', () => {
+    const { constraints, issues } = compileRules(recordsOf(base, []), knownIds(TEST_LIBRARY), rulePartsOf(TEST_LIBRARY));
+    expect(issues).toEqual([]);
+    const caps = constraints.filter((c) => c.label.startsWith('At most one'));
+    // Apart from what names the constraint.
+    const shape = (c: Constraint) => Object.fromEntries(Object.entries(c).filter(([k]) => !['id', 'label', 'ruleId'].includes(k)));
+    expect(caps.map(shape)).toEqual(capConstraints(TEST_LIBRARY.parts).map(shape));
+    expect(caps.map((c) => c.label)).toEqual(capConstraints(TEST_LIBRARY.parts).map((c) => c.label));
+    expect([...capped(compileModel(TEST_LIBRARY.dishes, constraints, TEST_LIBRARY.parts))]).toEqual([2, 3]);
   });
   it('orders own rules, then given ones, then the defaults less those dropped', () => {
     const own = mealRule(TEST_LIBRARY.dish('Dal'), ['lunch']);

@@ -1,5 +1,5 @@
 // Plans the week with two rule sets (same seed and pins) and reports which meals change.
-import type { Pins } from '@/planner';
+import type { LegacyPins } from './pins';
 import { linkRule, ownedSlot, PLAIN_OWNED_SLOTS, type LinkChange, type OwnedRule, type OwnedRuleChanges, type RuleRecord } from '@/rules';
 import type { Comparison } from '@/assistant/types';
 import { diffPlans, type PlanningInput, type PlanProblem } from './plan-generation';
@@ -13,7 +13,7 @@ const problemKey = (p: PlanProblem) => `${p.ruleId ?? ''}|${p.day ?? ''}|${p.mea
 export async function compareRuleSets(
   input: PlanningInput,
   after: RuleRecord[],
-  opts: { seed: number; pins?: Pins; touches?: (componentId: number) => boolean },
+  opts: { seed: number; pins?: LegacyPins; touches?: (componentId: number) => boolean },
   run = runPlanning,
 ): Promise<Comparison> {
   const planOpts = { seed: opts.seed, pins: opts.pins };

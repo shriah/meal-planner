@@ -11,7 +11,7 @@ import { CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, conver
 import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
 import {
-  convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
+  capRules, convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
   readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 
 export type { RuleRecord };
@@ -1182,6 +1182,27 @@ db.version(21).stores({
     ) as ConvertLookup['tagGroups'],
   };
   await tx.table('components').bulkPut(converted.components.map((c) => convertDish(c, lookup)));
+});
+
+// v22: "one curry and one subzi per meal" was built into the planner; it becomes two stored Always rules the
+// user can see and edit, added after the stored rules. A library that was never seeded gets them from the seed
+// instead (as v16 leaves the defaults to it).
+db.version(22).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  if ((await tx.table('components').count()) === 0) return;
+  const created_at = new Date().toISOString();
+  await tx.table('rules').bulkAdd(capRules().map((r) => ({ ...r, enabled: true, created_at })));
 });
 
 export { db, normalizeComponentCategoryRefs };

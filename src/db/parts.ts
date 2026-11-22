@@ -20,6 +20,26 @@ export const CONVERTED_PARTS: Record<ComponentType, Pick<PartRecord, 'name' | 'p
   extra: { name: 'Extras', position: 3, varied: false },
 };
 
+export type LegacyParts = Record<ComponentType, number>;
+
+/** The part id of each component type, matched by converted part name. Throws when one is missing. */
+export function legacyPartIds(parts: readonly Pick<PartRecord, 'id' | 'name'>[]): LegacyParts {
+  const idOf = (type: ComponentType): number => {
+    const { name } = CONVERTED_PARTS[type];
+    const part = parts.find((p) => p.name === name);
+    if (!part) throw new Error(`no "${name}" part`);
+    return part.id;
+  };
+  return { base: idOf('base'), curry: idOf('curry'), subzi: idOf('subzi'), extra: idOf('extra') };
+}
+
+/** A dish whose part is known. */
+export type DishWithPart = ComponentRecord & { part_id: number };
+
+/** The dish with a part: its own `part_id`, or, for a dish saved by a path that gave it none, its type's part. */
+export const withPart = <C extends ComponentRecord>(c: C, legacy: LegacyParts): C & { part_id: number } =>
+  ({ ...c, part_id: c.part_id ?? legacy[c.componentType] });
+
 type ConvertedTagGroup = Pick<TagGroupRecord, 'name' | 'position' | 'multiple'> & { values: readonly string[] };
 
 /** Today's tag arrays as groups. Value ids are 1..n within each group, in list order. */
@@ -64,7 +84,7 @@ function oldCategoryId(c: ComponentRecord, lookup: ConvertLookup): number | unde
  * Derives `part_id`, `category_id` and `tags` from the old fields. Pure; the old fields are kept.
  * `category_id` is left absent (never null) when the dish has no category or its reference is unknown.
  */
-export function convertDish(c: ComponentRecord, lookup: ConvertLookup): ComponentRecord {
+export function convertDish(c: ComponentRecord, lookup: ConvertLookup): DishWithPart {
   const rest = { ...c };
   delete rest.category_id;
   const categoryId = oldCategoryId(c, lookup);

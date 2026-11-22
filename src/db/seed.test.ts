@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, expectTypeOf, it } from 'vitest';
 import { is } from '@/planner';
-import { defaultRules, pairingCategories, ruleDays, RuleSpecSchema } from '@/rules';
+import { capRules, defaultRules, pairingCategories, ruleDays, RuleSpecSchema } from '@/rules';
 import { db } from '@/db/client';
 import { runSeed } from '@/db/seed';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
@@ -164,6 +164,18 @@ describe('runSeed', () => {
     expect(pooriRule?.spec).toMatchObject({ template: 'allowed_meals', params: { match: { field: 'id' }, meals: ['breakfast'] } });
     // Every seeded rule is valid and applies.
     expect(rules.every((rule) => RuleSpecSchema.safeParse(rule.spec).success)).toBe(true);
+  });
+
+  it('gives a new library one curry and one subzi per meal as two rules, right after the defaults', async () => {
+    await runSeed();
+
+    const rules = await db.rules.orderBy('id').toArray();
+    const defaults = defaultRules().length;
+    expect(rules.slice(0, defaults).every((r) => r.default_key)).toBe(true);
+    const caps = rules.slice(defaults, defaults + 2);
+    expect(caps.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules().map((r) => ({ ...r, enabled: true })));
+    expect(caps.map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
+    expect(rules.filter((r) => r.name.startsWith('At most one '))).toHaveLength(2);
   });
 
   it('is idempotent and does not duplicate seeded categories or components', async () => {

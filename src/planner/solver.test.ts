@@ -1,12 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, RuleLevel } from './constraints';
 import { all, is, oneOf, type Matcher } from './matcher';
-import { buildModel } from './plan';
-import { compareScore, compileModel, lockNudge, score, type CompiledModel, type Score } from './scorer';
+import { buildModel as buildBare, type ModelInput } from './plan';
+import { compareScore, compileModel as compileBare, lockNudge, score, type CompiledModel, type Score } from './scorer';
 import { searchBudget } from './budget';
-import { SAFETY_CAP_MS, broughtScore, chooseCandidate, compareBrought, type BroughtScore, clonePlan, solve } from './solver';
-import { component } from './test-utils';
-import { DAYS, MEALS, SLOT_COUNT, emptyPlan, slotIndex, type ComponentLike, type Pins, type PlanState, type SlotState } from './types';
+import { SAFETY_CAP_MS, broughtScore, chooseCandidate, compareBrought, type BroughtScore, clonePlan, solve as solveParts, type SolveOptions } from './solver';
+import { capConstraints, component, legacyOf, partPinsOf, placedIn, planOf, slotOf, TEST_PARTS, type LegacyMeal, type LegacyPins } from './test-utils';
+import { DAYS, MEALS, SLOT_COUNT, slotIndex, type ComponentLike, type PlanState } from './types';
+
+// Every model here is built as a converted library's is: over TEST_PARTS, with the stored curry and subzi caps
+// after the other constraints.
+const buildModel = (input: Omit<ModelInput, 'parts'>) =>
+  buildBare({ ...input, parts: TEST_PARTS, constraints: [...(input.constraints ?? []), ...capConstraints()] });
+const compileModel = (library: readonly ComponentLike[], constraints: readonly Constraint[]) =>
+  compileBare(library, [...constraints, ...capConstraints()], TEST_PARTS);
+/** Solves with pins in today's terms; `plan` holds each meal in today's terms, `raw` the solver's own week. */
+const solve = (m: CompiledModel, opts: Omit<SolveOptions, 'pins'> & { pins?: LegacyPins } = {}) => {
+  const r = solveParts(m, { ...opts, pins: opts.pins && partPinsOf(opts.pins) });
+  return { ...r, raw: r.plan, plan: r.plan.map(legacyOf) };
+};
 
 const library: ComponentLike[] = [
   ...[1, 2, 3, 4].map((id) => component('base', { id, base_category_id: 10 })),
@@ -30,7 +42,7 @@ describe('solver', () => {
     // Rice (1) comes with extra 31 when the curry is 11: the conditional pair fills the per-meal caches.
     const pairs: Constraint[] = [{
       kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31),
-      strength: 'must', inMeal: [all(is('role', 'curry'), is('id', 11))],
+      strength: 'must', inMeal: [all(placedIn('curry'), is('id', 11))],
     }];
     const fresh = solve(buildModel({ library, constraints: pairs }), { ...quick, seed: 5 });
     solve(buildModel({ library }), { ...quick, seed: 2 });
@@ -157,12 +169,12 @@ describe('solver', () => {
       // them apart.
       const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, level: 'frequency' };
       const m = buildModel({ library, constraints: [want, once11] });
-      const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
-      plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
+      const plan: PlanState = planOf();
+      plan[slotIndex('monday', 'lunch')] = slotOf({ base: 2, curry: 11 });
       const slot = slotIndex('tuesday', 'lunch');
       const withCurry = (curry: number) => {
         const p = clonePlan(plan);
-        p[slot] = { base: 1, curry, extras: [] };
+        p[slot] = slotOf({ base: 1, curry });
         return broughtScore(m, p, slot, curry);
       };
       expect(withCurry(11).hard).toBe(withCurry(12).hard);
@@ -177,12 +189,12 @@ describe('solver', () => {
       const once11: Constraint = { kind: 'count', id: 'once-11', label: 'Curry 11 once a week', origin: 'rule', select: is('id', 11), groupBy: 'plan', bounds: { hardMax: 1 }, level: 'frequency' };
       const meals12: Constraint = { kind: 'count', id: 'meals-12', label: 'Curry 12 at lunch and dinner', origin: 'rule', select: is('id', 12), groupBy: 'slot', scope: { meals: ['breakfast'] }, bounds: { hardMax: 0 }, level: 'dish', owner: 12 };
       const m = buildModel({ library, constraints: [want, once11, meals12] });
-      const plan: PlanState = Array.from({ length: SLOT_COUNT }, () => ({ extras: [] }));
-      plan[slotIndex('monday', 'lunch')] = { base: 2, curry: 11, extras: [] };
+      const plan: PlanState = planOf();
+      plan[slotIndex('monday', 'lunch')] = slotOf({ base: 2, curry: 11 });
       const slot = slotIndex('tuesday', 'breakfast');
       const withCurry = (curry: number) => {
         const p = clonePlan(plan);
-        p[slot] = { base: 1, curry, extras: [] };
+        p[slot] = slotOf({ base: 1, curry });
         return broughtScore(m, p, slot, curry);
       };
       expect(compareBrought(withCurry(11), withCurry(12))).toBeLessThan(0);
@@ -300,7 +312,7 @@ describe('solver', () => {
       { kind: 'count', id: 'cap', label: 'At most 2 extras', origin: 'rule', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 2 } },
       { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } },
     ];
-    const papad = comes(33, [all(is('role', 'curry'), is('id', 11))]);
+    const papad = comes(33, [all(placedIn('curry'), is('id', 11))]);
 
     it("a curry's chance is the same with and without a conditional link whose side breaks a limit", () => {
       for (const seed of [1, 2, 3]) {
@@ -326,7 +338,7 @@ describe('solver', () => {
       ...[33, 34, 35].map((id) => component('extra', { id })),
     ];
     const constraints: Constraint[] = [
-      { kind: 'pair', id: 'pair-33', label: 'Base 1 with 33 when 11', origin: 'rule', when: is('id', 1), of: is('id', 33), strength: 'must', inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'pair-33', label: 'Base 1 with 33 when 11', origin: 'rule', when: is('id', 1), of: is('id', 33), strength: 'must', inMeal: [all(placedIn('curry'), is('id', 11))] },
       { kind: 'pair', id: 'pair-34', label: 'Base 2 with 34', origin: 'rule', when: is('id', 2), of: is('id', 34), strength: 'must' },
       { kind: 'count', id: 'apart', label: '33 never on a day with 34', origin: 'rule', select: is('id', 33), when: { exists: is('id', 34) }, groupBy: 'day', bounds: { hardMax: 0 } },
       { kind: 'count', id: 'curry', label: 'A curry at every meal', origin: 'rule', select: is('componentType', 'curry'), groupBy: 'slot', bounds: { hardMin: 1 } },
@@ -338,12 +350,12 @@ describe('solver', () => {
       // Seeds where, without a retry, some base 1 and curry 11 meal ends without 33 although 33 fits.
       for (const seed of [16, 17, 20, 25]) {
         const m = buildModel({ library: lib, constraints });
-        const { plan } = solve(m, { ...quick, seed });
+        const { plan, raw } = solve(m, { ...quick, seed });
         plan.forEach((s, i) => {
           if (s.base !== 1 || s.curry !== 11 || s.extras.includes(33)) return;
-          const withSide = clonePlan(plan);
-          withSide[i].extras.push(33);
-          expect(score(m, withSide).hard, `seed ${seed}, slot ${i}`).toBeGreaterThan(score(m, plan).hard);
+          const withSide = clonePlan(raw);
+          withSide[i] = slotOf({ ...s, extras: [...s.extras, 33] });
+          expect(score(m, withSide).hard, `seed ${seed}, slot ${i}`).toBeGreaterThan(score(m, raw).hard);
         });
       }
     });
@@ -363,14 +375,14 @@ describe('lockNudge', () => {
     component('subzi', { id: 4 }), component('subzi', { id: 5 }),
     component('extra', { id: 6 }),
   ];
-  const curryIs = (id: number) => all(is('role', 'curry'), is('id', id));
-  const subziIs = (id: number) => all(is('role', 'subzi'), is('id', id));
+  const curryIs = (id: number) => all(placedIn('curry'), is('id', id));
+  const subziIs = (id: number) => all(placedIn('subzi'), is('id', id));
   const papad = (inMeal: Matcher[], p: Partial<Constraint> = {}): Constraint =>
     ({ kind: 'pair', id: 'papad', label: 'Rice with Papad', origin: 'rule', when: is('id', 1), of: is('id', 6), strength: 'must', inMeal, ...p }) as Constraint;
   const slot = slotIndex('monday', 'lunch');
-  const lunch = (s: Partial<SlotState>): PlanState => {
-    const plan = emptyPlan();
-    plan[slot] = { extras: [], ...s };
+  const lunch = (s: Partial<LegacyMeal>): PlanState => {
+    const plan = planOf();
+    plan[slot] = slotOf(s);
     return plan;
   };
 
@@ -460,7 +472,7 @@ describe('repair loop', () => {
     ...[14, 15, 16, 17, 18].map((id) => component('extra', { id, frequency: 'normal' })),
   ];
   const BASES = lib.filter((c) => c.componentType === 'base').map((c) => c.id);
-  const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('role', ['base', 'curry', 'subzi']));
+  const dishes = all(oneOf('componentType', ['base', 'curry', 'subzi']), oneOf('part', [1, 2, 3]));
   const rule = (c: Omit<CountConstraint, 'kind' | 'origin'>): CountConstraint => ({ kind: 'count', origin: 'rule', ...c });
   const prefer = (id: string, select: Matcher, weight: number, level: RuleLevel): Constraint => ({ kind: 'prefer', id, label: id, origin: 'rule', select, weight, level });
   const defaults: Constraint[] = [
@@ -483,12 +495,13 @@ describe('repair loop', () => {
     const p = clonePlan(plan);
     for (let i = 0; i < SLOT_COUNT; i++) {
       if (skip.includes(i)) continue;
-      const old = p[i].base;
+      const was = p[i].parts[0];
+      const old = was[0];
       for (const b of BASES) {
         if (b === old) continue;
-        p[i].base = b;
+        p[i].parts[0] = [b];
         const s = score(m, p);
-        p[i].base = old;
+        p[i].parts[0] = was;
         if (s.hard === 0 && compareScore(s, current) < 0) {
           return `${mealName(i)}: base ${old} -> ${b} gives soft ${s.soft} (plan has hard ${current.hard}, soft ${current.soft})`;
         }
@@ -500,7 +513,7 @@ describe('repair loop', () => {
   it.each(SEEDS)('returns a plan no single base change improves (seed %i)', (seed) => {
     const m = buildModel({ library: lib, constraints: defaults });
     const r = solve(m, { ...budget, seed });
-    expect(improvingBaseChange(m, r.plan, r.score)).toBeUndefined();
+    expect(improvingBaseChange(m, r.raw, r.score)).toBeUndefined();
   });
 
   it('keeps pinned bases even when changing one would help', () => {
@@ -510,8 +523,8 @@ describe('repair loop', () => {
     const r = solve(m, { ...budget, seed: 4, pins });
     const pinned = [slotIndex('monday', 'breakfast'), slotIndex('monday', 'lunch')];
     for (const i of pinned) expect(r.plan[i].base).toBe(1);
-    expect(improvingBaseChange(m, r.plan, r.score)).toMatch(/^monday-(breakfast|lunch)/);
-    expect(improvingBaseChange(m, r.plan, r.score, pinned)).toBeUndefined();
+    expect(improvingBaseChange(m, r.raw, r.score)).toMatch(/^monday-(breakfast|lunch)/);
+    expect(improvingBaseChange(m, r.raw, r.score, pinned)).toBeUndefined();
   });
 
   it.each(SEEDS)('keeps a base with its unit curry and leaves the curry nowhere else (seed %i)', (seed) => {
@@ -538,11 +551,11 @@ describe('repair loop', () => {
     // 31. Only round 2's descent can then take base 2.
     const lunch = slotIndex('monday', 'lunch');
     const breakfast = slotIndex('monday', 'breakfast');
-    const pins: Pins = {};
+    const pins: LegacyPins = {};
     for (let i = 0; i < SLOT_COUNT; i++) {
-      if (i === breakfast) pins[mealName(i) as keyof Pins] = { base_id: 1, curry_id: null, subzi_id: null };
-      else if (i === lunch) pins[mealName(i) as keyof Pins] = { curry_id: null, subzi_id: null, extra_ids: [] };
-      else pins[mealName(i) as keyof Pins] = { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
+      if (i === breakfast) pins[mealName(i) as keyof LegacyPins] = { base_id: 1, curry_id: null, subzi_id: null };
+      else if (i === lunch) pins[mealName(i) as keyof LegacyPins] = { curry_id: null, subzi_id: null, extra_ids: [] };
+      else pins[mealName(i) as keyof LegacyPins] = { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
     }
     const together = (id: string, other: number, cost: number) => rule({
       id, label: id, select: oneOf('id', [31, other]), groupBy: 'plan', bounds: { softMax: 1 }, costs: { min: cost, max: cost }, level: 'dish',
@@ -571,14 +584,14 @@ describe('repair loop', () => {
     // Each round sweep drops 31, polish drops 32 (no longer asked for), and retry brings both back at no cost
     // to the search score. Retry remembers the meal, so the loop ends; without that it would run every round.
     const breakfast = slotIndex('monday', 'breakfast');
-    const pins: Pins = {};
+    const pins: LegacyPins = {};
     for (let i = 0; i < SLOT_COUNT; i++) {
-      pins[mealName(i) as keyof Pins] = i === breakfast
+      pins[mealName(i) as keyof LegacyPins] = i === breakfast
         ? { base_id: 1, curry_id: 11, subzi_id: null }
         : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
     }
     const constraints: Constraint[] = [
-      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(placedIn('curry'), is('id', 11))] },
       { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
       rule({ id: 'one-extra', label: 'one-extra', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 1 }, level: 'rule' }),
       prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),
@@ -594,15 +607,15 @@ describe('repair loop', () => {
     // search) and sweep and polish drop them again. Re-pick remembers the want, so the loop ends.
     const lib = [...library, component('extra', { id: 33 }), component('extra', { id: 34 })];
     const breakfast = slotIndex('monday', 'breakfast');
-    const pins: Pins = {};
+    const pins: LegacyPins = {};
     for (let i = 0; i < SLOT_COUNT; i++) {
-      pins[mealName(i) as keyof Pins] = i === breakfast
+      pins[mealName(i) as keyof LegacyPins] = i === breakfast
         ? { base_id: 1, curry_id: 11, subzi_id: null }
         : { base_id: 4, curry_id: null, subzi_id: null, extra_ids: [] };
     }
     const constraints: Constraint[] = [
       { kind: 'pair', id: 'either', label: 'Base 1 with 33 or 34', origin: 'rule', when: is('id', 1), of: oneOf('id', [33, 34]), strength: 'prefer', cost: 1 },
-      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(is('role', 'curry'), is('id', 11))] },
+      { kind: 'pair', id: 'cond', label: 'Base 1 with 31 when curry 11', origin: 'rule', when: is('id', 1), of: is('id', 31), strength: 'prefer', cost: 1, inMeal: [all(placedIn('curry'), is('id', 11))] },
       { kind: 'pair', id: 'plain', label: '31 with 32', origin: 'rule', when: is('id', 31), of: is('id', 32), strength: 'prefer', cost: 1 },
       rule({ id: 'two-extras', label: 'two-extras', select: is('componentType', 'extra'), groupBy: 'slot', bounds: { hardMax: 2 }, level: 'rule' }),
       prefer('sides-only-when-asked', is('componentType', 'extra'), 2, 'frequency'),

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { all, is, TRUE, type ComponentLike } from '@/planner';
-import { newSpec, previewMatches, TEMPLATE_FORMS, validateDraft } from './form';
+import { all, is, TRUE } from '@/planner';
+import { newSpec, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
 import { RuleSpecSchema, TEMPLATE_IDS } from './templates';
 
 describe('rule forms', () => {
@@ -53,7 +53,7 @@ describe('rule forms', () => {
       { id: 1, name: 'Fish Curry', componentType: 'curry', protein_tag: 'fish', dietary_tags: ['non-veg'], regional_tags: [], occasion_tags: [] },
       { id: 2, name: 'Fish Fry', componentType: 'extra', protein_tag: 'fish', dietary_tags: ['non-veg'], regional_tags: [], occasion_tags: [] },
       { id: 3, name: 'Dal', componentType: 'curry', protein_tag: 'dal', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [] },
-    ] satisfies ComponentLike[];
+    ] satisfies StoredDish[];
     expect(previewMatches(all(is('componentType', 'curry'), is('protein_tag', 'fish')), lib).map((c) => c.name)).toEqual(['Fish Curry']);
     expect(previewMatches(is('role', 'extra'), lib).map((c) => c.name)).toEqual(['Fish Fry']);
   });

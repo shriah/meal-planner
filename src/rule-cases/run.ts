@@ -1,11 +1,13 @@
 // Runs a case through the real rule pipeline: compileRules, then planWeek on seeds 1-8.
-import { DAYS, MEALS, planWeek, type SolveOptions } from '@/planner';
+import { DAYS, MEALS, planWeek, type Justification, type SolveOptions } from '@/planner';
 import {
-  compileRules, defaultRules, describeSpec, parseSpec, specReferences,
-  type KnownIds, type Names, type RuleIssue, type RuleRecord,
+  capRules, compileRules, defaultRules, describeSpec, parseSpec, specReferences,
+  type KnownIds, type Names, type RuleIssue, type RuleParts, type RuleRecord,
 } from '@/rules';
+import { legacyPartIds } from '@/db/parts';
+import { legacySlotCaps, toLegacySlot, toWeekPartPins } from '@/services/legacy-slots';
 import { libraryOf, TEST_LIBRARY } from './library';
-import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseWeeks, PlanCase } from './types';
+import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseSuppressed, CaseWeeks, PlanCase } from './types';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
 export type CaseBudget = Pick<SolveOptions, 'maxIterations' | 'plateauIterations' | 'timeLimitMs'>;
@@ -18,13 +20,18 @@ export function statusOf(allPass: boolean, known?: string): CaseStatus {
   return allPass ? 'pass' : 'fail';
 }
 
+/** How `PlanCase.without` names each of `capRules()`, in order. */
+const CAP_KEYS = ['cap:curry', 'cap:subzi'] as const;
+
 /**
  * The stored form of a case's rules: ids 1..n in case order (its own, then the given ones), the defaults after,
- * less any default named in `drop`.
+ * then the curry and subzi caps (kept by a `defaults: false` case too, as every library has them), less any
+ * default or cap named in `drop`.
  */
 export function recordsOf(c: PlanCase, own: CaseRule[], given: CaseRule[] = [], drop: readonly string[] = []): RuleRecord[] {
   const defaults = c.defaults === false ? [] : defaultRules().filter((r) => !drop.includes(r.default_key));
-  const all = [...own, ...given, ...defaults];
+  const caps = capRules().filter((_, i) => !drop.includes(CAP_KEYS[i]));
+  const all = [...own, ...given, ...defaults, ...caps];
   return all.map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
 }
 
@@ -34,14 +41,31 @@ export const knownIds = (lib: CaseLibrary): KnownIds => ({
   extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
 });
 
+/** The library's parts as rules compile against them. */
+export const rulePartsOf = (lib: CaseLibrary): RuleParts => ({ list: lib.parts, legacy: legacyPartIds(lib.parts) });
+
+/** A suppressed pairing with the part it lost named by its type: every capped part of a case library is the Curry or Subzi. */
+function suppressedAs(j: Justification, s: NonNullable<Justification['suppressed']>, lib: CaseLibrary): CaseSuppressed {
+  const legacy = legacyPartIds(lib.parts);
+  const role = s.part === legacy.curry ? 'curry' : s.part === legacy.subzi ? 'subzi' : undefined;
+  if (!role) throw new Error(`a pairing lost part ${s.part}, which is neither the Curry nor the Subzi part`);
+  const suppressed: CaseSuppressed['suppressed'] & { part?: number } = { ...s, role };
+  delete suppressed.part;
+  return { ...j, suppressed };
+}
+
 function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins'], budget: CaseBudget = BUDGET): CaseWeeks & { issues: RuleIssue[] } {
-  const { constraints, issues } = compileRules(rules, knownIds(lib));
-  const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins }));
+  const { constraints, issues } = compileRules(rules, knownIds(lib), rulePartsOf(lib));
+  // Pins go in and weeks come out in today's shape, as the app stores them, with the app's caps for that shape.
+  const legacy = legacyPartIds(lib.parts);
+  const partPins = pins && toWeekPartPins(pins, legacy);
+  const model = { library: lib.dishes, parts: lib.parts, constraints: [...constraints, ...legacySlotCaps(lib.parts, legacy)] };
+  const results = SEEDS.map((seed) => planWeek(model, { ...budget, seed, pins: partPins }));
   return {
-    weeks: results.map((r) => r.slots),
+    weeks: results.map((r) => r.slots.map((s) => toLegacySlot(s, legacy))),
     hard: results.map((r) => r.justifications.filter((j) => j.level === 'hard')),
     soft: results.map((r) => r.justifications.filter((j) => j.level === 'soft')),
-    suppressed: results.map((r) => r.justifications.filter((j) => j.suppressed !== undefined)),
+    suppressed: results.map((r) => r.justifications.flatMap((j) => (j.suppressed ? [suppressedAs(j, j.suppressed, lib)] : []))),
     lib,
     issues,
   };

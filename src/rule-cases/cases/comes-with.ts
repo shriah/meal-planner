@@ -2,7 +2,7 @@ import { is } from '@/planner';
 import { linkRule, mealRule } from '@/rules';
 import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/types/component';
 import { atLeastPicked, eachPlanned, everyPicked, mealsPicked, mostPicked, nonePicked, someWeekPicks, type Pick, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
-import type { PlanSlotLike } from '@/planner';
+import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseRule, CaseWeeks, PlanExpectation, RuleCase } from '../types';
 import { TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
@@ -641,7 +641,7 @@ const avoidSambarStrongly = (lib: CaseLibrary): CaseRule => ({
 
 /** Monday lunch has Sambar in at least 6 of 8 weeks, and in more weeks than with the same pins and no case rules. */
 function mondayLunchSambarNudged(): PlanExpectation {
-  const isMondayLunch = (s: PlanSlotLike) => s.day === 'monday' && s.meal_slot === 'lunch';
+  const isMondayLunch = (s: PlanSlot) => s.day === 'monday' && s.meal_slot === 'lunch';
   const weeksWithSambar = (w: CaseWeeks) => w.weeks.filter((wk) => wk.some((s) => isMondayLunch(s) && curryIs('Sambar')(s, w.lib))).length;
   return {
     says: 'Monday lunch has Sambar in at least 6 of 8 weeks, and in more weeks than without the link',
@@ -662,7 +662,7 @@ const OWN_RULE_ID = 1;
  * that meal; at least one such meal exists, so the check is not empty.
  */
 function reportedWhereMissing(says: string, where: Pick, dish: string): PlanExpectation {
-  const missing = (s: PlanSlotLike, lib: CaseLibrary) => where(s, lib) && !idsOf(s).includes(dishId(lib, dish));
+  const missing = (s: PlanSlot, lib: CaseLibrary) => where(s, lib) && !idsOf(s).includes(dishId(lib, dish));
   return {
     says,
     check: (w) => {
@@ -685,7 +685,7 @@ function reportedWhereMissing(says: string, where: Pick, dish: string): PlanExpe
 
 /** The pinned Monday lunch has the dish in every week, or in none. */
 function mondayLunchHas(dish: string, has: boolean, meal = 'pinned Monday lunch'): PlanExpectation {
-  const at = (w: CaseWeeks, wk: PlanSlotLike[]) => {
+  const at = (w: CaseWeeks, wk: PlanSlot[]) => {
     const slot = wk.find((x) => x.day === 'monday' && x.meal_slot === 'lunch');
     return slot !== undefined && idsOf(slot).includes(w.lib.dish(dish).id);
   };

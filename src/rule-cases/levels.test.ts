@@ -4,7 +4,7 @@ import { compileRules, defaultRules, ruleLevel, type KnownIds, type RuleRecord }
 import type { RuleLevel } from '@/planner';
 import { ALL_CASES } from './cases';
 import { libraryOf, TEST_LIBRARY } from './library';
-import { recordsOf } from './run';
+import { recordsOf, rulePartsOf } from './run';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 const LEVELS: RuleLevel[] = ['rule', 'dish', 'frequency'];
@@ -16,7 +16,7 @@ function check(records: RuleRecord[], lib: typeof TEST_LIBRARY): number {
     extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
   };
   const byRule = new Map(records.map((r) => [r.id, r]));
-  const { constraints, issues } = compileRules(records, known);
+  const { constraints, issues } = compileRules(records, known, rulePartsOf(lib));
   expect(issues).toEqual([]);
   for (const c of constraints) {
     if (c.kind === 'pair') {
@@ -52,7 +52,7 @@ describe('rule levels', () => {
     const lib = TEST_LIBRARY;
     const known: KnownIds = { components: new Set(lib.dishes.map((d) => d.id)), baseCategories: new Set(lib.categories.map((k) => k.id)), extraCategories: new Set(lib.categories.map((k) => k.id)) };
     const records = defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
-    const { constraints } = compileRules(records, known);
+    const { constraints } = compileRules(records, known, rulePartsOf(lib));
     const levelsOf = (key: string): (RuleLevel | undefined)[] => {
       const ids = records.filter((r) => r.default_key === key).map((r) => r.id);
       return constraints.flatMap((c) => (c.kind !== 'pair' && ids.includes(c.ruleId ?? -1) ? [c.level] : []));
@@ -77,7 +77,7 @@ describe('rule levels', () => {
         extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
       };
       for (const r of records) {
-        const { constraints } = compileRules([{ ...r, enabled: true }], known);
+        const { constraints } = compileRules([{ ...r, enabled: true }], known, rulePartsOf(lib));
         if (constraints.length === 0) continue;
         const pair = constraints.some((c) => c.kind === 'pair');
         const levels = constraints.flatMap((c) => (c.kind === 'pair' ? [] : [c.level!]));

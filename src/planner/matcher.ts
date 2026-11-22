@@ -1,11 +1,11 @@
-// Typed predicate AST over assignments (component + role + day + meal).
+// Typed predicate AST over assignments (component + part + day + meal).
 // Serialisable, Zod-validated, compiled to plain closures (no eval).
 import { z } from 'zod';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, FREQUENCIES, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
   type ComponentType, type CurryCategory, type DietaryTag, type Frequency, type OccasionTag, type ProteinTag, type RegionalTag,
 } from '@/types/component';
-import { DAYS, MEALS, ROLES, type Assignment, type Day, type Meal, type Role } from './types';
+import { DAYS, MEALS, ROLES, type Assignment, type ComponentLike, type Day, type Meal, type Role } from './types';
 
 export type FieldKind = 'enum' | 'id' | 'set';
 
@@ -24,6 +24,11 @@ export interface FieldValues {
   regional_tags: RegionalTag;
   occasion_tags: OccasionTag;
   frequency: Frequency;
+  part: number;
+  category: number;
+  /** `"<groupId>:<valueId>"`. */
+  tags: string;
+  slot_part: number;
 }
 export type FieldKey = keyof FieldValues;
 
@@ -34,9 +39,16 @@ interface FieldDef<K extends FieldKind = FieldKind> {
   read: (a: Assignment) => unknown;
 }
 
+const TAG_VALUE = /^\d+:\d+$/;
+/** A dish's tags as `"<groupId>:<valueId>"` strings. */
+const flatTags = (tags: ComponentLike['tags']): string[] | undefined =>
+  tags && Object.entries(tags).flatMap(([group, values]) => values.map((v) => `${group}:${v}`));
+
 // `satisfies` keeps each field's kind as a literal so leaf types can be derived from it.
 export const FIELDS = {
-  role: { kind: 'enum', label: 'Role', options: ROLES, read: (a) => a.role },
+  // Stored-rule schemas only, until Stage 3: rules reach the planner rewritten to `part`, and `buildModel` rejects
+  // it. Read outside the planner (rule previews) on a dish in its own part, where it is the dish's type.
+  role: { kind: 'enum', label: 'Role', options: ROLES, read: (a) => a.c.componentType },
   day: { kind: 'enum', label: 'Day', options: DAYS, read: (a) => a.day },
   meal: { kind: 'enum', label: 'Meal', options: MEALS, read: (a) => a.meal },
   componentType: { kind: 'enum', label: 'Component type', options: COMPONENT_TYPES, read: (a) => a.c.componentType },
@@ -49,6 +61,11 @@ export const FIELDS = {
   regional_tags: { kind: 'set', label: 'Region', options: REGIONAL_TAGS, read: (a) => a.c.regional_tags },
   occasion_tags: { kind: 'set', label: 'Occasion', options: OCCASION_TAGS, read: (a) => a.c.occasion_tags },
   frequency: { kind: 'enum', label: 'Frequency', options: FREQUENCIES, read: (a) => a.c.frequency ?? 'normal' },
+  part: { kind: 'id', label: 'Part', read: (a) => a.c.part_id },
+  category: { kind: 'id', label: 'Category', read: (a) => a.c.category_id ?? undefined },
+  tags: { kind: 'set', label: 'Tags', read: (a) => flatTags(a.c.tags) },
+  /** The part the dish is placed in (planner-internal; `part` is the dish's own). */
+  slot_part: { kind: 'id', label: 'Placed in part', read: (a) => a.part },
 } as const satisfies Record<FieldKey, FieldDef>;
 export const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[];
 
@@ -74,6 +91,7 @@ const MANY_OPS: readonly string[] = ['in', 'hasAny', 'hasAll'];
 function valueSchema(key: FieldKey): z.ZodType<unknown> {
   const f: FieldDef = FIELDS[key];
   if (f.kind === 'id') return z.number().int();
+  if (key === 'tags') return z.string().regex(TAG_VALUE);
   return z.enum(f.options as [string, ...string[]]);
 }
 const VALUE_SCHEMAS = Object.fromEntries(FIELD_KEYS.map((k) => [k, valueSchema(k)])) as Record<FieldKey, z.ZodType<unknown>>;
@@ -115,7 +133,7 @@ export const not = (m: Matcher): Matcher => ({ not: m });
 export const TRUE: Matcher = { all: [] };
 
 const isSetKind = (field: FieldKey) => FIELDS[field].kind === 'set';
-/** `is('role', 'curry')`, `is('dietary_tags', 'non-veg')`: eq for scalars, has for sets. */
+/** `is('part', 2)`, `is('dietary_tags', 'non-veg')`: eq for scalars, has for sets. */
 export const is = <F extends FieldKey>(field: F, value: FieldValues[F]): Matcher =>
   ({ field, op: isSetKind(field) ? 'has' : 'eq', value }) as unknown as Leaf;
 /** In-list for scalars, has-any for sets. */

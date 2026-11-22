@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { db, type RuleRecord } from '@/db/client';
+import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { linkRule } from '@/rules';
 import { usePlanStore } from './plan-store';
 import { saveActivePlan, saveWeekPlan } from '@/services/plan-db';
@@ -27,6 +28,7 @@ function makePlan(): WeeklyPlan {
 // ─── beforeEach: reset store + clear DB ───────────────────────────────────────
 
 beforeEach(async () => {
+  await db.transaction('rw', db.parts, db.tag_groups, () => ensurePartsAndTagGroups()); // the app creates them at start
   await db.active_plan.clear();
   await db.saved_plans.clear();
   // Reset store to initial state

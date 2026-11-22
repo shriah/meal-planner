@@ -4,8 +4,11 @@ import { describe, it } from 'vitest';
 import { planWeek, type ComponentLike } from '@/planner';
 import { compileRules, linkRule } from '@/rules';
 import { ALL_CASES } from './cases';
-import { failsWithoutSubject, knownIds, libraryFor, recordsOf, runPlanCase, type CaseBudget } from './run';
+import { failsWithoutSubject, knownIds, libraryFor, recordsOf, rulePartsOf, runPlanCase, type CaseBudget } from './run';
 import { constraintsFor, seedDish, seededLibrary, seededLinks } from './seeded-library';
+import { CASE_PARTS } from './library';
+import { legacyPartIds } from '@/db/parts';
+import { toWeekPartPins } from '@/services/legacy-slots';
 import type { PlanCase } from './types';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -15,7 +18,7 @@ const at = (maxIterations: number): CaseBudget => ({ timeLimitMs: Infinity, maxI
 function measureCase(c: PlanCase) {
   const lib = libraryFor(c);
   const records = recordsOf(c, c.rules(lib), c.given?.(lib) ?? []);
-  const { constraints } = compileRules(records, knownIds(lib));
+  const { constraints } = compileRules(records, knownIds(lib), rulePartsOf(lib));
   const pairs = constraints.filter((k) => k.kind === 'pair').length;
   let need: number | 'none' = 'none';
   let used = 0;
@@ -23,7 +26,7 @@ function measureCase(c: PlanCase) {
     const budget = at(b);
     if (runPlanCase(c, budget).status === 'pass' && failsWithoutSubject(c, budget).fails) {
       need = b;
-      used = Math.max(...SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins: c.pins }).stats.iterations));
+      used = Math.max(...SEEDS.map((seed) => planWeek({ library: lib.dishes, parts: lib.parts, constraints }, { ...budget, seed, pins: c.pins && toWeekPartPins(c.pins, legacyPartIds(lib.parts)) }).stats.iterations));
       break;
     }
   }
@@ -73,7 +76,7 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
     };
     const measure = (lib: ComponentLike[], links: ReturnType<typeof light>, seeds: number[]) => {
       const { constraints, issues } = constraintsFor(lib, links);
-      const runs = seeds.map((seed) => planWeek({ library: lib, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 200_000, plateauIterations: 3000 }));
+      const runs = seeds.map((seed) => planWeek({ library: lib, parts: CASE_PARTS, constraints }, { seed, timeLimitMs: Infinity, maxIterations: 200_000, plateauIterations: 3000 }));
       const its = runs.map((r) => r.stats.iterations).sort((a, b) => a - b);
       const ms = runs.reduce((t, r) => t + r.stats.totalMs, 0);
       const stops = new Set(runs.map((r) => r.stats.stopReason));
@@ -103,7 +106,7 @@ describe.skipIf(!process.env.MEASURE_BUDGET)('measure search budget', () => {
     const { constraints } = constraintsFor(lib, seededLinks(lib));
     const rows = SEEDS.map((seed) => {
       const t = performance.now();
-      const r = planWeek({ library: lib, constraints }, { seed });
+      const r = planWeek({ library: lib, parts: CASE_PARTS, constraints }, { seed });
       return { seed, ms: Math.round(performance.now() - t), it: r.stats.iterations, stop: r.stats.stopReason };
     });
     const ms = rows.map((r) => r.ms).sort((a, b) => a - b);

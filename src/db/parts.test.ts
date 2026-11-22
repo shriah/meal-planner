@@ -7,6 +7,7 @@ import {
   convertDish,
   convertedValueIds,
   convertLibrary,
+  legacyPartIds,
   type ConvertIds,
   type ConvertLookup,
 } from './parts';
@@ -156,5 +157,19 @@ describe('convertLibrary', () => {
   it('creates no curry categories for a library without curries', () => {
     const out = convertLibrary({ categories, components: [dish({ componentType: 'base' })] }, ids);
     expect(out.newCategories).toEqual([]);
+  });
+});
+
+describe('legacyPartIds', () => {
+  const parts = [
+    { id: 7, name: 'Base' }, { id: 8, name: 'Curry' }, { id: 9, name: 'Subzi' }, { id: 10, name: 'Extras' },
+  ];
+
+  it('maps each component type to the part of its converted name', () => {
+    expect(legacyPartIds(parts)).toEqual({ base: 7, curry: 8, subzi: 9, extra: 10 });
+  });
+
+  it('throws when a converted part is missing', () => {
+    expect(() => legacyPartIds(parts.filter((p) => p.name !== 'Curry'))).toThrow(/Curry/);
   });
 });

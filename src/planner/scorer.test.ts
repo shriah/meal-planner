@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
-import { all, is, oneOf } from './matcher';
-import { bringsWith, compareScore, compileModel, explain, freePickLimited, mealBrings, mealHasConditional, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
-import { component } from './test-utils';
-import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
+import { all, is, oneOf, type Matcher } from './matcher';
+import { bringsWith, capped, compareScore, compileModel as compileBare, explain, freePickLimited, mealBrings, mealHasConditional, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
+import { capConstraints, component, PART_OF_TYPE, placedIn, planOf, slotOf, TEST_PARTS, type LegacyMeal } from './test-utils';
+import { slotIndex, type Day, type Meal, type PlanState } from './types';
+
+// Every model here is built as a library's would be: over TEST_PARTS, with its stored curry and subzi caps after
+// the other constraints.
+const compileModel = (library: Parameters<typeof compileBare>[0], constraints: readonly Constraint[]) =>
+  compileBare(library, [...constraints, ...capConstraints()], TEST_PARTS);
 
 const rice = component('base', { id: 1, name: 'Rice' });
 const dal = component('curry', { id: 2, name: 'Dal', protein_tag: 'dal' });
@@ -12,11 +17,11 @@ const raita = component('extra', { id: 4, name: 'Raita' });
 const library = [rice, dal, fish, raita];
 
 const count = (c: Partial<CountConstraint>): CountConstraint => ({
-  kind: 'count', id: 'c', label: 'Rule', origin: 'rule', select: is('role', 'curry'), groupBy: 'slot', bounds: { hardMax: 99 }, ...c,
+  kind: 'count', id: 'c', label: 'Rule', origin: 'rule', select: placedIn('curry'), groupBy: 'slot', bounds: { hardMax: 99 }, ...c,
 });
-const planWith = (entries: [Day, Meal, Partial<SlotState>][]): PlanState => {
-  const p = emptyPlan();
-  for (const [d, m, s] of entries) p[slotIndex(d, m)] = { extras: [], ...s };
+const planWith = (entries: [Day, Meal, Partial<LegacyMeal>][]): PlanState => {
+  const p = planOf();
+  for (const [d, m, s] of entries) p[slotIndex(d, m)] = slotOf(s);
   return p;
 };
 const run = (constraints: Constraint[], plan: PlanState) => score(compileModel(library, constraints), plan, true);
@@ -50,7 +55,7 @@ describe('scorer', () => {
 
   it('evaluates a group only when its trigger exists in the same time group', () => {
     const needRaitaWithFish = count({
-      select: is('role', 'extra'), groupBy: 'slot', when: { exists: is('protein_tag', 'fish') }, bounds: { hardMin: 1 },
+      select: placedIn('extra'), groupBy: 'slot', when: { exists: is('protein_tag', 'fish') }, bounds: { hardMin: 1 },
     });
     const r = run([needRaitaWithFish], planWith([
       ['friday', 'lunch', { base: 1, curry: 3 }],
@@ -70,9 +75,9 @@ describe('scorer', () => {
 
   it('charges soft costs outside soft bounds and applies severity to hard units', () => {
     const r = run([
-      count({ id: 'soft', select: all(is('role', 'curry'), is('protein_tag', 'dal')), groupBy: 'plan', bounds: { softMax: 0 }, costs: { max: 5 } }),
+      count({ id: 'soft', select: all(placedIn('curry'), is('protein_tag', 'dal')), groupBy: 'plan', bounds: { softMax: 0 }, costs: { max: 5 } }),
       count({ id: 'hard', select: is('protein_tag', 'dal'), groupBy: 'plan', bounds: { hardMax: 0 }, severity: 4 }),
-      { kind: 'prefer', id: 'p', label: 'Extras cost', origin: 'rule', select: is('role', 'extra'), weight: 2 },
+      { kind: 'prefer', id: 'p', label: 'Extras cost', origin: 'rule', select: placedIn('extra'), weight: 2 },
     ], planWith([['monday', 'lunch', { base: 1, curry: 2, extras: [4] }]]));
     expect(r).toMatchObject({ hard: 4, soft: 5 + 2 });
   });
@@ -110,12 +115,12 @@ describe('pairings', () => {
     kind: 'pair', id: `pair-${component}`, label: 'Served with', origin: 'rule', when: is('id', 1), of: is('id', component), strength: 'must', ...p,
   });
   const prefer = (p: Partial<PreferConstraint>): PreferConstraint => ({
-    kind: 'prefer', id: 'p', label: 'Sides cost', origin: 'rule', select: is('role', 'curry'), weight: 2, ...p,
+    kind: 'prefer', id: 'p', label: 'Sides cost', origin: 'rule', select: placedIn('curry'), weight: 2, ...p,
   });
   const sambarPair = pair(2);
   const chutneyPair = pair(4);
   const units = [sambarPair, chutneyPair];
-  const at = (meal: Meal, s: Partial<SlotState>, day: Day = 'monday') => planWith([[day, meal, s]]);
+  const at = (meal: Meal, s: Partial<LegacyMeal>, day: Day = 'monday') => planWith([[day, meal, s]]);
   const runLib = (constraints: Constraint[], plan: PlanState) => score(compileModel(lib, constraints), plan, true);
   const breakfastOnlySambar = (p: Partial<CountConstraint> = {}) =>
     count({ id: 'sambar-meals', select: is('id', 2), scope: { meals: ['lunch', 'dinner'] }, bounds: { hardMax: 0 }, ...p });
@@ -204,13 +209,23 @@ describe('pairings', () => {
     expect(r.hard).toBe(0);
     const soft = r.justifications.filter((j) => j.level === 'soft');
     expect(soft).toHaveLength(1);
-    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 } });
+    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, part: 2, heldBy: 2, heldMust: true, heldWith: 1 } });
     expect(slotPairs(m, plan, slot)).toEqual([
       { candidates: [2], component: 2, by: 1, unit: true },
       { candidates: [5], by: 1, unit: false, suppressed: true },
       { candidates: [4], component: 4, by: 1, unit: true },
     ]);
-    expect(bringsWith(m, 1, 'base', slot).wants).toEqual([{ of: [2], unit: true }, { of: [4], unit: true }]);
+    expect(bringsWith(m, 1, PART_OF_TYPE.base, slot).wants).toEqual([{ of: [2], unit: true }, { of: [4], unit: true }]);
+  });
+
+  it('two Always curries for one base are both kept without the curry cap, and the second gives way with it', () => {
+    const plan = at('lunch', { base: 1, curry: 2 });
+    const uncapped = score(compileBare(lib, [sambarPair, pair(5)], TEST_PARTS), plan, true);
+    expect(uncapped.justifications.filter((j) => j.suppressed)).toEqual([]);
+    expect(uncapped.justifications).toEqual([expect.objectContaining({ level: 'hard', group: expect.objectContaining({ componentId: 5 }) })]);
+    const withCap = score(compileBare(lib, [sambarPair, pair(5), capConstraints()[0]], TEST_PARTS), plan, true);
+    expect(withCap.hard).toBe(0);
+    expect(withCap.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, suppressed: { by: 1, part: 2, heldBy: 2, heldMust: true, heldWith: 1 } })]);
   });
 
   it('a prefer curry that cannot fit beside a must curry is suppressed, in either order', () => {
@@ -222,7 +237,7 @@ describe('pairings', () => {
       const r = score(m, meal, true);
       expect(r).toMatchObject({ hard: 0, soft: 0 });
       expect(r.justifications).toEqual([expect.objectContaining({ cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
-      expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [{ of: [2], unit: true }] });
+      expect(bringsWith(m, 1, PART_OF_TYPE.base, slot)).toEqual({ wants: [{ of: [2], unit: true }] });
       expect(slotPairs(m, meal, slot)).toContainEqual({ candidates: [5], by: 1, unit: false, suppressed: true });
     }
   });
@@ -243,7 +258,7 @@ describe('pairings', () => {
     const r = runLib([...units, chutneyNeedsRasam], at('lunch', { base: 1, curry: 2, extras: [4] }));
     expect(r).toMatchObject({ hard: 0, soft: 0 });
     expect(r.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
-    expect(r.justifications[0].suppressed).toEqual({ by: 4, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 });
+    expect(r.justifications[0].suppressed).toEqual({ by: 4, part: 2, heldBy: 2, heldMust: true, heldWith: 1 });
   });
 
   it('a missing pair that is enforced carries no suppressed mark', () => {
@@ -263,7 +278,7 @@ describe('pairings', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), sambarNever, breakfastOnlySambar({ owner: 2, level: 'dish' })]);
     const slot = slotIndex('monday', 'lunch');
     expect(score(m, at('lunch', { base: 1 }))).toMatchObject({ hard: 0, soft: 0 });
-    expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [] });
+    expect(bringsWith(m, 1, PART_OF_TYPE.base, slot)).toEqual({ wants: [] });
     expect(slotPairs(m, at('lunch', { base: 1 }), slot)).toEqual([]);
   });
 
@@ -271,7 +286,7 @@ describe('pairings', () => {
     const m = compileModel(lib, [pair(2, { strength: 'prefer' }), breakfastOnlySambar({ owner: 2, level: 'dish' })]);
     expect(score(m, at('lunch', { base: 1 })).soft).toBe(0);
     expect(score(m, at('breakfast', { base: 1 })).soft).toBe(10);
-    expect(bringsWith(m, 1, 'base', slotIndex('monday', 'breakfast')).wants).toEqual([{ of: [2], unit: false }]);
+    expect(bringsWith(m, 1, PART_OF_TYPE.base, slotIndex('monday', 'breakfast')).wants).toEqual([{ of: [2], unit: false }]);
   });
 
   it('a prefer pair still asks for a side forbidden only by a rule it does not own, or one with a trigger', () => {
@@ -298,11 +313,11 @@ describe('pairings', () => {
   });
 
   it('a pair does not trigger itself', () => {
-    const m = compileModel(lib, [pair(2, { when: is('role', 'curry') })]);
+    const m = compileModel(lib, [pair(2, { when: placedIn('curry') })]);
     const plan = at('lunch', { base: 6, curry: 2 });
     expect(score(m, plan).hard).toBe(0);
     expect(slotPairs(m, plan, slotIndex('monday', 'lunch'))).toEqual([]);
-    expect(bringsWith(m, 2, 'curry', slotIndex('monday', 'lunch'))).toEqual({ wants: [] });
+    expect(bringsWith(m, 2, PART_OF_TYPE.curry, slotIndex('monday', 'lunch'))).toEqual({ wants: [] });
   });
 
   it('scoring again gives the same result (no stale unit state)', () => {
@@ -315,12 +330,43 @@ describe('pairings', () => {
   });
 });
 
+describe('parts that hold one dish', () => {
+  const cap = (c: Partial<CountConstraint> = {}): CountConstraint => ({
+    kind: 'count', id: 'cap', label: 'At most one', origin: 'rule', select: is('part', 2), groupBy: 'slot', bounds: { hardMax: 1 }, ...c,
+  });
+  const cappedBy = (...constraints: Constraint[]) => [...capped(compileBare(library, constraints, TEST_PARTS))];
+
+  it('are the parts with a hard cap of 1 per meal', () => {
+    expect(cappedBy(...capConstraints())).toEqual([2, 3]);
+    expect(cappedBy(cap())).toEqual([2]);
+    expect(cappedBy(cap({ select: all(is('part', 2)) }))).toEqual([2]);
+    expect(cappedBy(cap({ select: oneOf('part', [3]) }))).toEqual([3]);
+    expect(cappedBy(cap({ select: all(oneOf('part', [3])) }))).toEqual([3]);
+    expect(cappedBy()).toEqual([]);
+  });
+
+  it('are not capped by a cap that is scoped, conditional, soft, above 1, over days or over other dishes', () => {
+    expect(cappedBy(
+      cap({ scope: { meals: ['lunch'] } }),
+      cap({ when: { exists: is('id', 1) } }),
+      cap({ bounds: { softMax: 1 } }),
+      cap({ bounds: { hardMax: 2 } }),
+      cap({ groupBy: 'day' }),
+      cap({ select: oneOf('part', [2, 3]) }),
+      cap({ select: all(is('part', 2), is('id', 2)) }),
+      cap({ select: { not: is('part', 2) } }),
+      cap({ select: { field: 'part', op: 'neq', value: 2 } as Matcher }),
+      cap({ select: is('slot_part', 2) }),
+    )).toEqual([]);
+  });
+});
+
 describe('pairs naming several candidates', () => {
   const lib = [component('base', { id: 1 }), ...[11, 12, 13].map((id) => component('curry', { id }))];
   const pair = (of: number[], p: Partial<PairConstraint> = {}): PairConstraint => ({
     kind: 'pair', id: `pair-${of.join('-')}`, label: 'Served with', origin: 'rule', when: is('id', 1), of: oneOf('id', of), strength: 'must', ...p,
   });
-  const lunch = (s: Partial<SlotState>) => planWith([['monday', 'lunch', s]]);
+  const lunch = (s: Partial<LegacyMeal>) => planWith([['monday', 'lunch', s]]);
   const runLib = (constraints: Constraint[], plan: PlanState) => score(compileModel(lib, constraints), plan, true);
 
   it('a pair of two candidates is met by either', () => {
@@ -346,11 +392,11 @@ describe('pairs naming several candidates', () => {
   it('a pair with no candidate in the library is ignored', () => {
     const m = compileModel(lib, [{ ...pair([]), of: is('id', 99) }]);
     expect(score(m, lunch({ base: 1 }))).toMatchObject({ hard: 0, soft: 0 });
-    expect(bringsWith(m, 1, 'base', 0)).toEqual({ wants: [] });
+    expect(bringsWith(m, 1, PART_OF_TYPE.base, 0)).toEqual({ wants: [] });
   });
 
   it('bringsWith lists the candidates of each want', () => {
-    expect(bringsWith(compileModel(lib, [pair([12, 11])]), 1, 'base', 0)).toEqual({ wants: [{ of: [11, 12], unit: true }] });
+    expect(bringsWith(compileModel(lib, [pair([12, 11])]), 1, PART_OF_TYPE.base, 0)).toEqual({ wants: [{ of: [11, 12], unit: true }] });
   });
 
   it('slotPairs names the candidate present', () => {
@@ -361,7 +407,7 @@ describe('pairs naming several candidates', () => {
   });
 
   it('a candidate does not trigger its own pair', () => {
-    const m = compileModel(lib, [pair([11, 12], { when: is('role', 'curry') })]);
+    const m = compileModel(lib, [pair([11, 12], { when: placedIn('curry') })]);
     expect(score(m, lunch({ base: 1, curry: 11 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 13 })).hard).toBe(1);
   });
@@ -378,10 +424,10 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
   const pair = (of: number, p: Partial<PairConstraint> = {}): PairConstraint => ({
     kind: 'pair', id: `pair-${of}`, label: 'Comes with', origin: 'rule', when: is('id', 1), of: is('id', of), strength: 'must', ...p,
   });
-  const curryIs = (...ids: number[]) => all(is('role', 'curry'), oneOf('id', ids));
-  const subziIs = (...ids: number[]) => all(is('role', 'subzi'), oneOf('id', ids));
+  const curryIs = (...ids: number[]) => all(placedIn('curry'), oneOf('id', ids));
+  const subziIs = (...ids: number[]) => all(placedIn('subzi'), oneOf('id', ids));
   const slot = slotIndex('monday', 'lunch');
-  const lunch = (s: Partial<SlotState>) => planWith([['monday', 'lunch', s]]);
+  const lunch = (s: Partial<LegacyMeal>) => planWith([['monday', 'lunch', s]]);
 
   // A missing conditional pair is a soft problem at the pair's cost, even for an Always link: it gives way to
   // whatever kept its dish out of the meal.
@@ -395,10 +441,10 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
 
   it('tells whether a dish of the meal has a conditional pair, met or not', () => {
     const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2)] })]);
-    expect(mealHasConditional(m, { base: 1, curry: 3, extras: [] }, slot)).toBe(true);
-    expect(mealHasConditional(m, { base: 1, curry: 2, extras: [] }, slot)).toBe(true);
-    expect(mealHasConditional(m, { curry: 2, extras: [6] }, slot)).toBe(false);
-    expect(mealHasConditional(compileModel(lib, [pair(6)]), { base: 1, curry: 2, extras: [] }, slot)).toBe(false);
+    expect(mealHasConditional(m, slotOf({ base: 1, curry: 3, extras: [] }), slot)).toBe(true);
+    expect(mealHasConditional(m, slotOf({ base: 1, curry: 2, extras: [] }), slot)).toBe(true);
+    expect(mealHasConditional(m, slotOf({ curry: 2, extras: [6] }), slot)).toBe(false);
+    expect(mealHasConditional(compileModel(lib, [pair(6)]), slotOf({ base: 1, curry: 2, extras: [] }), slot)).toBe(false);
   });
 
   it("a met conditional pair takes the subzi role from its dish's plain pair", () => {
@@ -418,10 +464,10 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
 
   it('mealBrings adds the conditional want only when the curry is there', () => {
     const m = compileModel(lib, [pair(6, { inMeal: [curryIs(2, 3)] })]);
-    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
-    expect(mealBrings(m, { base: 1, curry: 3, extras: [] }, slot, 1, 'base')).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
-    expect(mealBrings(m, { base: 1, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
-    expect(bringsWith(m, 1, 'base', slot)).toEqual({ wants: [] });
+    expect(mealBrings(m, slotOf({ base: 1, curry: 2, extras: [] }), slot, 1, PART_OF_TYPE.base)).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
+    expect(mealBrings(m, slotOf({ base: 1, curry: 3, extras: [] }), slot, 1, PART_OF_TYPE.base)).toEqual({ wants: [{ of: [6], unit: true, cond: true }] });
+    expect(mealBrings(m, slotOf({ base: 1, extras: [] }), slot, 1, PART_OF_TYPE.base)).toEqual({ wants: [] });
+    expect(bringsWith(m, 1, PART_OF_TYPE.base, slot)).toEqual({ wants: [] });
   });
 
   it('a curry-and-subzi pair needs both', () => {
@@ -430,7 +476,7 @@ describe('pairs that wait for a curry or subzi in the meal', () => {
     expect(score(m, lunch({ base: 1, curry: 2, subzi: 4, extras: [6] }))).toMatchObject({ hard: 0, soft: 0 });
     expect(score(m, lunch({ base: 1, curry: 2, subzi: 5 })).hard).toBe(0);
     expect(score(m, lunch({ base: 1, curry: 3, subzi: 4 })).hard).toBe(0);
-    expect(mealBrings(m, { base: 1, curry: 2, extras: [] }, slot, 1, 'base')).toEqual({ wants: [] });
+    expect(mealBrings(m, slotOf({ base: 1, curry: 2, extras: [] }), slot, 1, PART_OF_TYPE.base)).toEqual({ wants: [] });
   });
   it('a missing conditional pair is reported as a soft problem naming its rule', () => {
     const m = compileModel(lib, [pair(6, { ruleId: 7, inMeal: [curryIs(2)] })]);

@@ -28,6 +28,7 @@ import {
   updateComponent,
   updateRule,
 } from '@/services/food-db';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
 
 beforeEach(async () => {
   await db.components.clear();
@@ -161,7 +162,7 @@ describe('Phase 14 category services', () => {
     // The rule is kept unchanged; compiling it now reports the deleted category instead of applying it.
     expect(rule.enabled).toBe(true);
     const known = { components: new Set<number>(), baseCategories: new Set([riceId]), extraCategories: new Set([condimentId]) };
-    expect(compileRules([rule], known).issues).toEqual([
+    expect(compileRules([rule], known, TEST_RULE_PARTS).issues).toEqual([
       expect.objectContaining({ name: 'Bread dinner', message: `refers to base category #${breadId}, which no longer exists` }),
     ]);
   });
