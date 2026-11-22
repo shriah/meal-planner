@@ -73,6 +73,21 @@ describe('pairings', () => {
     expect(slotConflicts(data, plan, 'monday', 'breakfast', 'base', [10]).get(10)).toBeUndefined();
   });
 
+  it('does not count against a base the dish served with the curry it brings', () => {
+    const papad = dish(14, 'Papad', 'extra');
+    const comes = linkRule(pongal, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [11], strength: 'always' });
+    const served = linkRule(papad, { mode: 'serve', target: LINK_TARGET.curry_dish, values: [11], strength: 'always' });
+    const rules: RuleRecord[] = [
+      { id: 1, name: comes.name, spec: comes.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord,
+      { id: 2, name: served.name, spec: served.spec, enabled: true, created_at: '', owner_component_id: 14 } as RuleRecord,
+    ];
+    const chained = withParts({ library: [pongal, sambar, rasam, papad], categories: [], rules });
+    const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10 });
+    expect(slotConflicts(chained, plan, 'monday', 'breakfast', 'base', [10]).get(10)).toBeUndefined();
+    // Without the bring through Sambar, Papad's pair would be broken.
+    expect(explainPlan(chained, planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11 })).some((p) => p.level === 'hard' && p.ruleId === 2)).toBe(true);
+  });
+
   describe('the meal picker replacing a base that brought its sides', () => {
     const idli = dish(13, 'Idli', 'base');
     const never = exclusionRule(sambar);

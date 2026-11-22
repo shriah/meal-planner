@@ -4,7 +4,7 @@ import type { BaseRecord, ComponentRecord, CurryRecord, ExtraRecord } from '@/ty
 import { everyPartMeal, partDishes, ruleIssueNamed, atLeastPicked, eachPlanned, everyPicked, mealsPicked, mostPicked, nonePicked, someWeekPicks, type Pick, everyMealWith, everyMealWithOneOf, idsOf, nearNoRulesCount, neverWith, noHardProblems, notRarerThanNoRules, plannedAtLeast, yieldsTo } from '../expect';
 import type { PlanSlot } from '@/types/plan';
 import type { CaseLibrary, CaseRule, CaseWeeks, PlanExpectation, RuleCase } from '../types';
-import { caseLink, libraryOf, TEST_LIBRARY } from '../library';
+import { CASE_PARTS, caseLink, libraryOf, TEST_LIBRARY } from '../library';
 import { CURRY_AT_EVERY_MEAL } from './days-meals';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -726,6 +726,10 @@ const SPREAD_LIBRARY = libraryOf(
   { parts: SPREAD_PARTS },
 );
 
+/** The converted test library's Curry and Extras parts. */
+const CASE_CURRY = CASE_PARTS.find((p) => p.legacy === 'curry')!.id;
+const CASE_EXTRA = CASE_PARTS.find((p) => p.legacy === 'extra')!.id;
+
 const PART_LINK_CASES: RuleCase[] = [
   {
     kind: 'plan',
@@ -763,12 +767,10 @@ const PART_LINK_CASES: RuleCase[] = [
     id: 'upward-link-adds-the-extra-with-its-curry',
     group: 'Pairings',
     name: 'An extra that comes with a curry is in every meal with that curry',
-    why: 'Papad (an Extra) "comes with" Dal (a Curry): the link points up the parts, so it is stored as "when Dal is in the meal, Papad is added". Papad is in every meal that has Dal and in no other, though Kurma is the other curry in the library.',
+    why: 'Papad (an Extra) "comes with" Dal (a Curry): the link points up the parts, so it is stored as "when Dal is in the meal, Papad is added". Papad is in every meal that has Dal and in no other, though Kurma is the other curry in the library. With the default rules on, the planner never planned Dal: on a library with no cap on curries a curry is added like an extra, and it was added alone, so Dal without Papad broke the pair as surely as no Dal broke "Lunch has Dal", no single step improved, and every lunch went without. An added or removed dish now brings and takes what is served with it, as a base does.',
     library: SPREAD_LIBRARY,
-    defaults: false,
     // Dal is for lunch and Kurma for dinner, so some meals have each curry.
     given: () => [
-      { name: 'Extras only when asked', spec: { template: 'prefer', params: { match: is('part', EXTRA), direction: 'avoid', weight: 1 } } },
       mealRule({ id: 31, name: 'Dal' }, ['lunch']),
       { name: 'Lunch has Dal', spec: { template: 'require', params: { match: is('id', 31), min: 1, scope: { meals: ['lunch'] }, strength: 'must' } } },
       { name: 'Dinner has a curry', spec: { template: 'require', params: { match: is('part', CURRY), min: 1, scope: { meals: ['dinner'] }, strength: 'must' } } },
@@ -781,6 +783,21 @@ const PART_LINK_CASES: RuleCase[] = [
       everyPartMeal('Every meal with Dal has Papad', holds(CURRY, 31), holds(EXTRA, 41)),
       everyPartMeal('Every meal without Dal has no Papad', (s) => !holds(CURRY, 31)(s), (s) => !holds(EXTRA, 41)(s)),
       everyPartMeal('Meals with Kurma and not Dal exist and have no Papad', (s) => holds(CURRY, 32)(s) && !holds(CURRY, 31)(s), (s) => !holds(EXTRA, 41)(s)),
+      noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'served-with-a-brought-curry',
+    group: 'Pairings',
+    name: 'A dish served with a curry follows that curry into the meal',
+    why: 'Papad "comes with Sambar" from its own form, a link up the parts stored as "when Sambar is in the meal, Papad is added"; Rice always comes with Sambar. The upgrade turns upward "comes with" links into such links, and the planner had only ever brought a served dish for a base: Sambar, brought by Rice or placed on its own, must bring Papad in turn, or meals would have Sambar and no Papad, or no Sambar (where a curry is added like an extra, it did not: see the case above). Every Rice meal has Sambar and Papad, and Papad is in no meal without Sambar.',
+    given: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [lib.dish('Sambar').id] })],
+    rules: (lib) => [caseLink(lib.dish('Papad'), { mode: bringMode(CASE_EXTRA, CASE_CURRY, CASE_PARTS), to: 'curry', values: [lib.dish('Sambar').id] })],
+    expect: [
+      everyMealWith('Rice', ['Sambar', 'Papad']),
+      everyMealWith('Sambar', ['Papad']),
+      nonePicked('No meal without Sambar has Papad', (s, lib) => !idsOf(s).includes(lib.dish('Sambar').id), (s, lib) => idsOf(s).includes(lib.dish('Papad').id)),
       noHardProblems(),
     ],
   },

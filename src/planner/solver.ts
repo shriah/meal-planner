@@ -441,6 +441,12 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     fill(true);
   };
+  /**
+   * Whether dish `id` in part `k` of meal `s` at slot `i` brings anything there: a dish of a many-dish part (a
+   * curry on a library with no cap on curries) can bring the dishes served with it. Only such a dish's add or
+   * removal runs `bring`, so a week whose many-dish parts bring nothing plans exactly as before.
+   */
+  const bringsAny = (s: SlotState, id: number, k: number, i: number): boolean => broughtBy(s, id, k, i).length > 0;
   /** Sides brought by the dishes in two parts, for `bring`'s `prev`. */
   const both = (a: readonly number[], b: readonly number[]): readonly number[] => (!a.length ? b : !b.length ? a : [...a, ...b]);
 
@@ -501,18 +507,25 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     }
     for (const k of many) {
       if (!isFree(i, k)) continue;
-      // Many-dish parts (extras) are optional: add one only while it strictly improves the score.
+      // Many-dish parts (extras) are optional: add one only while it strictly improves the score. A dish that
+      // brings others (a curry with an extra served with it) is judged with them, as a base is.
       for (;;) {
         const before = s.parts[k];
+        const meal = snapshot(s);
+        const add = (id: number) => {
+          restore(s, meal);
+          s.parts[k] = [...before, id];
+          if (bringsAny(s, id, k, i)) bring(i, NOTHING);
+        };
         const current = evaluate(plan);
         const improving = sample(pool[k].filter((e) => !before.includes(e))).filter((id) => {
-          s.parts[k] = [...before, id];
+          add(id);
           const better = compareScore(evaluate(plan), current) < 0;
-          s.parts[k] = before;
+          restore(s, meal);
           return better;
         });
         if (!improving.length) break;
-        chooseBest(improving, (id) => { s.parts[k] = [...before, id]; });
+        chooseBest(improving, add);
       }
     }
   }
@@ -610,19 +623,28 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       const i = pick(remove ? withDishes : free[k]);
       const s = plan[i];
       const old = s.parts[k];
+      // A dish that brings others brings them as it comes and takes them as it goes (`bring`), as a base does.
+      let then: (() => void) | undefined;
       if (remove) {
         const x = Math.floor(rng() * old.length);
         // Nor does a side a pair waiting for the meal's curry or subzi brought: the search does not see it.
         if (isUnit(s, i, old[x]) || condOnly(s, i, old[x])) continue;
+        if (bringsAny(s, old[x], k, i)) {
+          const prev = broughtBy(s, old[x], k, i);
+          const gone = conditionalSides(s, i);
+          then = () => bring(i, prev, gone);
+        }
         s.parts[k] = old.filter((_, j) => j !== x);
       } else {
         const e = pick(pool[k]);
         if (old.includes(e)) continue;
         s.parts[k] = [...old, e];
+        if (bringsAny(s, e, k, i)) then = () => bring(i, NOTHING);
       }
       const snap = snapshot(s);
       snap.parts[k] = old;
       undo.push({ s, snap });
+      then?.();
     }
 
     const candidate = evaluate(plan);
