@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { planWeek } from '@/planner';
 import { compileRules } from '@/rules';
 import { ALL_CASES } from './cases';
-import { knownIds, libraryFor, recordsOf } from './run';
+import { knownIds, libraryFor, recordsOf, rulePartsOf } from './run';
 import { seededConstraints, seededLibrary } from './seeded-library';
 
 const SEEDS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -23,7 +23,7 @@ describe('repair: today\'s weeks', () => {
       const c = ALL_CASES.find((x) => x.id === id);
       if (!c) throw new Error(`no rule case ${id}`);
       const lib = libraryFor(c);
-      const { constraints } = compileRules(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), knownIds(lib));
+      const { constraints } = compileRules(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), knownIds(lib), rulePartsOf(lib));
       return { id, weeks: SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { seed, pins: c.pins, timeLimitMs: Infinity }).slots) };
     });
     expect(weeks).toMatchSnapshot();

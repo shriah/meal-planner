@@ -4,6 +4,7 @@ import { linkRule, ownedChanges, type DishLink, type LinkChange, type RuleRecord
 import type { ComponentRecord } from '@/types/component';
 import { planFromData, type PlanningInput, type PlanningOptions } from './plan-generation';
 import { compareRuleSets, pendingRules } from './compare-rules';
+import { withParts } from './test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -16,7 +17,7 @@ const rule = (id: number, owner: number | undefined, spec: RuleRecord['spec'], e
 
 describe('compareRuleSets', () => {
   it('reports identical when the rules are the same', async () => {
-    const input = { library, categories: [], rules: [] };
+    const input = withParts({ library, categories: [], rules: [] });
     const c = await compareRuleSets(input, [], { seed: 1 }, run);
     expect(c.identical).toBe(true);
     expect(c.changes).toEqual([]);
@@ -24,7 +25,7 @@ describe('compareRuleSets', () => {
   });
 
   it('marks changed slots holding the edited dish as touched', async () => {
-    const input = { library, categories: [], rules: [] };
+    const input = withParts({ library, categories: [], rules: [] });
     const after = [rule(-1, 2, { template: 'exclude', params: { match: is('id', 2) } } as RuleRecord['spec'])];
     const c = await compareRuleSets(input, after, { seed: 1, touches: (id) => id === 2 }, run);
     expect(c.identical).toBe(false);

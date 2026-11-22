@@ -10,13 +10,14 @@ import { dayRule, linkRule, HAND_TEMPLATE_IDS } from '@/rules';
 import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
 import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
+import { withParts } from '@/services/test-input';
 
 const dish = (id: number, name: string, extra: Partial<ComponentRecord> = {}): ComponentRecord =>
   ({ id, name, componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], notes: 'secret notes', created_at: '', ...extra } as ComponentRecord);
 const rule = (id: number, componentId: number): RuleRecord =>
   ({ id, name: `Rule ${id}`, enabled: id % 2 === 0, spec: { template: 'exclude', params: { match: is('id', componentId) } } as RuleRecord['spec'], created_at: '' });
 const ctxOf = (over: Partial<AssistantData> = {}): ToolContext => ({
-  data: { library: [], categories: [], rules: [], ...over },
+  data: withParts({ library: [], categories: [], rules: [], ...over }),
   compare: async () => { throw new Error('unused'); },
 });
 

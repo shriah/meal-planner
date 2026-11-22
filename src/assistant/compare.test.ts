@@ -4,11 +4,12 @@ import type { RuleSpecInput } from '@/rules';
 import { planFromData, type PlanningInput, type PlanningOptions } from '@/services/plan-generation';
 import type { ComponentRecord } from '@/types/component';
 import { COMPARE_SEED, makeCompare } from './compare';
+import { withParts } from '@/services/test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
 const library = [dish(1, 'Pulao', 'base'), dish(2, 'Paneer', 'curry'), dish(3, 'Dal', 'curry'), dish(4, 'Rajma', 'curry')];
-const data = { library, categories: [], rules: [] };
+const data = withParts({ library, categories: [], rules: [] });
 const run = async (input: PlanningInput, opts: PlanningOptions) => planFromData(input, opts);
 const exclude = (match: unknown) => ({ template: 'exclude', params: { match } }) as unknown as RuleSpecInput;
 

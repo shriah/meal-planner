@@ -3,6 +3,7 @@ import { buildModel, DAYS, emptyPlan, score, slotIndex, type ComponentLike, type
 import { defaultKeyForName, defaultRules, legacyOccasionDays } from './defaults';
 import { compileRules } from './record';
 import { RuleSpecSchema } from './templates';
+import { TEST_RULE_PARTS } from './test-parts';
 
 const WEEKEND: Day[] = ['saturday', 'sunday'];
 const CALENDAR = ['everyday', 'weekday', 'weekend', 'monday', 'friday', 'sunday', 'festive', 'fasting'];
@@ -36,10 +37,10 @@ describe('default rules', () => {
 
   it('enforce the per-meal extras limit', () => {
     const mk = (id: number, componentType: ComponentLike['componentType']): ComponentLike =>
-      ({ id, name: `#${id}`, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [] });
+      ({ id, name: `#${id}`, componentType, part_id: TEST_RULE_PARTS.legacy[componentType], dietary_tags: [], regional_tags: [], occasion_tags: [] });
     const library = [mk(1, 'base'), mk(2, 'extra'), mk(3, 'extra'), mk(4, 'extra')];
     const rules = defaultRules({ breakfast: 2, lunch: 3, dinner: 2 }).map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: '' }));
-    const { constraints } = compileRules(rules, { components: new Set([1, 2, 3, 4]), baseCategories: new Set(), extraCategories: new Set() });
+    const { constraints } = compileRules(rules, { components: new Set([1, 2, 3, 4]), baseCategories: new Set(), extraCategories: new Set() }, TEST_RULE_PARTS);
     const plan = emptyPlan();
     plan[slotIndex('monday', 'dinner')] = { base: 1, extras: [2, 3, 4] };
     plan[slotIndex('monday', 'lunch')] = { base: 1, extras: [2, 3, 4] };

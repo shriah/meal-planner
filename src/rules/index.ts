@@ -16,6 +16,7 @@ export {
   type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type ServeTarget, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkWhen, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type LinkChange, type DayMode,
 } from './owned';
 export { compileRules, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
+export { toPartMatcher, constraintOverParts, type RuleParts } from './legacy-parts';
 export {
   convertLegacyRule, LegacyCompiledRuleSchema,
   type LegacyRuleRow, type ConvertedRule, type DroppedRule, type ConversionContext, type ConversionResult,

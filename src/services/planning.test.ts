@@ -70,6 +70,26 @@ describe('planFromData', () => {
   });
 });
 
+describe('loadPlanningInput parts', () => {
+  it('gives the input the library parts, and a stored dish without a part the part of its type', async () => {
+    await runSeed();
+    const curry = (await db.components.toArray()).find((c) => c.componentType === 'curry')!;
+    await db.components.update(curry.id, { part_id: undefined });
+    expect((await db.components.get(curry.id))!.part_id).toBeUndefined();
+
+    const input = await loadPlanningInput();
+    expect(input.parts.map((p) => p.name)).toEqual(['Base', 'Curry', 'Subzi', 'Extras']);
+    const curryPart = input.parts.find((p) => p.name === 'Curry')!;
+    expect(input.library.find((c) => c.id === curry.id)!.part_id).toBe(curryPart.id);
+    expect(input.library.every((c) => c.part_id !== undefined)).toBe(true);
+  });
+
+  it('creates the parts when the library has none', async () => {
+    const input = await loadPlanningInput();
+    expect(input.parts.map((p) => p.name)).toEqual(['Base', 'Curry', 'Subzi', 'Extras']);
+  });
+});
+
 describe('sides', () => {
   it('leaves curries, subzis and extras out unless a rule asks for them', async () => {
     await runSeed();

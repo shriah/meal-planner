@@ -1,5 +1,6 @@
 // Stored rules and their compilation into planner constraints.
-import type { Bounds, Constraint, RuleLevel } from '@/planner';
+import { ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
+import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -97,11 +98,24 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
+/** The spec with a default's match replaced by the parts it is about; any other spec as it is. */
+function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
+  const match = rule.default_key === 'variety' || rule.default_key === 'spacing' ? variedPartsMatcher(parts)
+    : rule.default_key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
+    : undefined;
+  if (match === undefined || !('match' in spec.params)) return spec;
+  // `roles` restricts a no-repeat rule to types; the match now names the parts, so every role is let through.
+  const roles = 'roles' in spec.params ? { roles: [...ROLES] } : {};
+  return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;
+}
+
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
- * are skipped and reported, so the planner never runs a rule whose meaning has changed.
+ * are skipped and reported, so the planner never runs a rule whose meaning has changed. Constraints are about
+ * parts: the stored component-type matchers are rewritten, and the variety, spacing and sides-only defaults
+ * name the parts they apply to (the stored rows are not changed).
  */
-export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { constraints: Constraint[]; issues: RuleIssue[] } {
+export function compileRules(rules: readonly RuleRecord[], known: KnownIds, parts: RuleParts): { constraints: Constraint[]; issues: RuleIssue[] } {
   const constraints: Constraint[] = [];
   const issues: RuleIssue[] = [];
   // The scorer settles conflicts between pairs by constraint order, so compile in rule-id order.
@@ -118,11 +132,12 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds): { c
       continue;
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
-    compileSpec(parsed.spec).forEach((spec, i) => {
+    compileSpec(partsSpec(rule, parsed.spec, parts)).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };
-        constraints.push({ ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint);
+        const compiled = { ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint;
+        constraints.push(constraintOverParts(compiled, parts.legacy));
       }
     });
   }

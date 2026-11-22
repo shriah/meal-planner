@@ -6,6 +6,8 @@ import {
 import { compileRules, describeSpec, parseSpec, type Names, type RuleIssue, type RuleRecord } from '@/rules';
 import type { CategoryRecord } from '@/types/category';
 import type { ComponentRecord } from '@/types/component';
+import type { PartRecord } from '@/types/part';
+import { legacyPartIds } from '@/db/parts';
 import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { SlotChange } from '@/assistant/types';
 
@@ -13,6 +15,8 @@ export interface PlanningInput {
   library: ComponentRecord[];
   categories: CategoryRecord[];
   rules: RuleRecord[];
+  /** The library's parts, in meal order. */
+  parts: PartRecord[];
 }
 
 export interface PlanningOptions {
@@ -64,13 +68,13 @@ function whereText(g: Justification['group']): string {
 
 /** Planner input for the stored data, the rules that were skipped, and a way to word each problem. */
 function modelFromData(input: PlanningInput) {
-  const { library, categories, rules } = input;
+  const { library, categories, rules, parts } = input;
   const known = {
     components: new Set(library.map((c) => c.id)),
     baseCategories: new Set(categories.filter((c) => c.kind === 'base').map((c) => c.id)),
     extraCategories: new Set(categories.filter((c) => c.kind === 'extra').map((c) => c.id)),
   };
-  const { constraints, issues } = compileRules(rules, known);
+  const { constraints, issues } = compileRules(rules, known, { list: parts, legacy: legacyPartIds(parts) });
   const componentName = new Map(library.map((c) => [c.id, c.name]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
   const names: Names = {

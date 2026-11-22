@@ -1,9 +1,9 @@
 // The shipped seed library (ids from 100) with its default and conditional-link rules, as the search-budget measurements
 // and the repair snapshot build it.
-import { caseLookup } from './library';
+import { CASE_PARTS, caseLookup } from './library';
 import type { CategoryRecord } from '@/types/category';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
-import { convertDish } from '@/db/parts';
+import { convertDish, legacyPartIds } from '@/db/parts';
 import type { ComponentLike } from '@/planner';
 import { compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
 
@@ -43,7 +43,7 @@ export function constraintsFor(lib: ComponentLike[], links: ReturnType<typeof se
     components: new Set(lib.map((x) => x.id)),
     baseCategories: new Set([1, 2, 3]),
     extraCategories: new Set([11, 12, 13, 14, 15]),
-  });
+  }, { list: CASE_PARTS, legacy: legacyPartIds(CASE_PARTS) });
 }
 
 /** The seeded library's constraints: the defaults, plus the three measurement links when `withLinks`. */

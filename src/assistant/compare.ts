@@ -10,7 +10,7 @@ export { COMPARE_SEED };
 
 export function makeCompare(data: AssistantData, pins?: Pins, run = runPlanning): CompareFn {
   return async (spec: RuleSpecInput, name: string) => {
-    const input = { library: data.library, categories: data.categories, rules: data.rules };
+    const input = { library: data.library, categories: data.categories, rules: data.rules, parts: data.parts };
     const draft = { id: DRAFT_RULE_ID, name, spec, enabled: true, created_at: '' };
 
     const parsed = parseSpec(spec);

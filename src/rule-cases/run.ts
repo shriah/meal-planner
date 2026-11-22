@@ -2,8 +2,9 @@
 import { DAYS, MEALS, planWeek, type SolveOptions } from '@/planner';
 import {
   compileRules, defaultRules, describeSpec, parseSpec, specReferences,
-  type KnownIds, type Names, type RuleIssue, type RuleRecord,
+  type KnownIds, type Names, type RuleIssue, type RuleParts, type RuleRecord,
 } from '@/rules';
+import { legacyPartIds } from '@/db/parts';
 import { libraryOf, TEST_LIBRARY } from './library';
 import type { CaseLibrary, CaseResult, CaseRule, CaseStatus, CaseWeeks, PlanCase } from './types';
 
@@ -34,8 +35,11 @@ export const knownIds = (lib: CaseLibrary): KnownIds => ({
   extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
 });
 
+/** The library's parts as rules compile against them. */
+export const rulePartsOf = (lib: CaseLibrary): RuleParts => ({ list: lib.parts, legacy: legacyPartIds(lib.parts) });
+
 function planWeeks(c: PlanCase, lib: CaseLibrary, rules: RuleRecord[], pins: PlanCase['pins'], budget: CaseBudget = BUDGET): CaseWeeks & { issues: RuleIssue[] } {
-  const { constraints, issues } = compileRules(rules, knownIds(lib));
+  const { constraints, issues } = compileRules(rules, knownIds(lib), rulePartsOf(lib));
   const results = SEEDS.map((seed) => planWeek({ library: lib.dishes, constraints }, { ...budget, seed, pins }));
   return {
     weeks: results.map((r) => r.slots),

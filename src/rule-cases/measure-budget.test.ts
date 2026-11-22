@@ -4,7 +4,7 @@ import { describe, it } from 'vitest';
 import { planWeek, type ComponentLike } from '@/planner';
 import { compileRules, linkRule } from '@/rules';
 import { ALL_CASES } from './cases';
-import { failsWithoutSubject, knownIds, libraryFor, recordsOf, runPlanCase, type CaseBudget } from './run';
+import { failsWithoutSubject, knownIds, libraryFor, recordsOf, rulePartsOf, runPlanCase, type CaseBudget } from './run';
 import { constraintsFor, seedDish, seededLibrary, seededLinks } from './seeded-library';
 import type { PlanCase } from './types';
 
@@ -15,7 +15,7 @@ const at = (maxIterations: number): CaseBudget => ({ timeLimitMs: Infinity, maxI
 function measureCase(c: PlanCase) {
   const lib = libraryFor(c);
   const records = recordsOf(c, c.rules(lib), c.given?.(lib) ?? []);
-  const { constraints } = compileRules(records, knownIds(lib));
+  const { constraints } = compileRules(records, knownIds(lib), rulePartsOf(lib));
   const pairs = constraints.filter((k) => k.kind === 'pair').length;
   let need: number | 'none' = 'none';
   let used = 0;
