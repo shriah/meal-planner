@@ -5,7 +5,12 @@ import type { CaseLibrary, CaseWeeks, PlanExpectation } from './types';
 
 export const idsOf = (s: PlanSlot): number[] =>
   [s.base_id, s.curry_id, s.subzi_id, ...s.extra_ids].filter((x): x is number => x !== undefined);
-const slotsOf = (w: CaseWeeks): PlanSlot[] => w.weeks.flat();
+/** The weeks in today's shape. A case with its own library has part-keyed weeks (`w.parts`) these helpers cannot read. */
+const legacyWeeks = (w: CaseWeeks): PlanSlot[][] => {
+  if (w.parts) throw new Error('this expectation reads weeks in the converted shape; a case with its own library needs part-keyed expectations');
+  return w.weeks;
+};
+const slotsOf = (w: CaseWeeks): PlanSlot[] => legacyWeeks(w).flat();
 const countOf = (w: CaseWeeks, dishId: number): number => slotsOf(w).filter((s) => idsOf(s).includes(dishId)).length;
 const times = (n: number) => (n === 1 ? '1 time' : `${n} times`);
 export const mealCount = (n: number) => (n === 1 ? '1 meal' : `${n} meals`);
@@ -13,7 +18,7 @@ const list = (xs: string[], word = 'and') => (xs.length <= 1 ? xs.join('') : `${
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 /** The first week (index) in which `bad` holds, for the report's sample week. */
 const firstWeek = (w: CaseWeeks, bad: (week: PlanSlot[], i: number) => boolean): number | undefined => {
-  const i = w.weeks.findIndex(bad);
+  const i = legacyWeeks(w).findIndex(bad);
   return i < 0 ? undefined : i;
 };
 
@@ -21,14 +26,14 @@ const firstWeek = (w: CaseWeeks, bad: (week: PlanSlot[], i: number) => boolean):
 export const partDishes = (slot: PartSlot, partId: number): number[] => slot.parts[partId] ?? [];
 
 /** Every meal of a library with its own parts holds all these dish ids in the part. */
-export const everyMealHasInPart = (partId: number, ids: number[]): PlanExpectation => {
+export const everyMealHasInPart = (partId: number, ids: number[], partName = `part ${partId}`): PlanExpectation => {
   const lacks = (s: PartSlot) => !ids.every((id) => partDishes(s, partId).includes(id));
   const weeksOf = (w: CaseWeeks): PartSlot[][] => {
     if (!w.parts) throw new Error('everyMealHasInPart reads part-keyed weeks; the case needs its own library');
     return w.parts;
   };
   return {
-    says: `Every meal has ${ids.length === 1 ? 'dish' : 'dishes'} ${list(ids.map(String))} in part ${partId}`,
+    says: `Every meal has ${ids.length === 1 ? 'dish' : 'dishes'} ${list(ids.map(String))} in ${partName}`,
     check: (w) => {
       const meals = weeksOf(w).flat();
       const k = meals.filter((s) => !lacks(s)).length;
@@ -97,7 +102,7 @@ export const everyOtherMealWith = (dish: string, alsoHas: string[], except: `${D
   return {
     says: `Every other ${dish} meal (not the locked ${cap(except.replace('-', ' '))}) has ${list(alsoHas)}`,
     check: (w) => {
-      const all = w.weeks.flatMap((wk) => others(w, wk));
+      const all = legacyWeeks(w).flatMap((wk) => others(w, wk));
       const k = all.filter((s) => !lacks(w, s)).length;
       return { pass: all.length > 0 && k === all.length, got: `${k} of ${all.length}` };
     },
@@ -113,8 +118,8 @@ export const yieldsTo = (dish: string, holder: string): PlanExpectation => {
   return {
     says: `${dish}'s pairing is reported as left out in favour of ${holder}'s in every week`,
     check: (w) => {
-      const k = w.weeks.filter((_, i) => left(w, i) > 0).length;
-      return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
+      const k = legacyWeeks(w).filter((_, i) => left(w, i) > 0).length;
+      return { pass: k === legacyWeeks(w).length, got: `${k} of ${legacyWeeks(w).length} weeks` };
     },
     failingSeed: (w) => firstWeek(w, (_, i) => left(w, i) === 0),
   };
@@ -169,8 +174,8 @@ export const lockedMealKept = (key: `${Day}-${Meal}`, part: 'curry' | 'subzi' | 
     says: `The locked ${cap(key.replace('-', ' '))} keeps ${dish} as its ${part}`,
     check: (w) => {
       const id = w.lib.dish(dish).id;
-      const k = w.weeks.filter((wk) => wk.find((s) => s.day === day && s.meal_slot === meal)?.[field] === id).length;
-      return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length}` };
+      const k = legacyWeeks(w).filter((wk) => wk.find((s) => s.day === day && s.meal_slot === meal)?.[field] === id).length;
+      return { pass: k === legacyWeeks(w).length, got: `${k} of ${legacyWeeks(w).length}` };
     },
     failingSeed: (w) => firstWeek(w, (wk) => wk.find((s) => s.day === day && s.meal_slot === meal)?.[field] !== w.lib.dish(dish).id),
   };
@@ -231,7 +236,7 @@ export const eachPlanned = (names: string[], partner: string): PlanExpectation =
 
 /** Which meals an expectation looks at. */
 export type Pick = (s: PlanSlot, lib: CaseLibrary) => boolean;
-export const mealsPicked = (w: CaseWeeks, pick: Pick): PlanSlot[] => w.weeks.flat().filter((s) => pick(s, w.lib));
+export const mealsPicked = (w: CaseWeeks, pick: Pick): PlanSlot[] => legacyWeeks(w).flat().filter((s) => pick(s, w.lib));
 
 /** A check over the meals `where` picks: `pass` gets the count that also satisfy `then` and the meals picked. */
 const overPicked = (says: string, where: Pick, then: Pick, pass: (k: number, n: number) => boolean): PlanExpectation => ({
@@ -264,7 +269,7 @@ export const atLeastPicked = (says: string, where: Pick, min: number): PlanExpec
 export const someWeekPicks = (says: string, where: Pick, over: number): PlanExpectation => ({
   says,
   check: (w) => {
-    const counts = w.weeks.map((wk) => wk.filter((s) => where(s, w.lib)).length);
+    const counts = legacyWeeks(w).map((wk) => wk.filter((s) => where(s, w.lib)).length);
     return { pass: counts.some((c) => c > over), got: `weekly counts ${counts.join(', ')}` };
   },
   highlights: (slot, lib) => where(slot, lib),

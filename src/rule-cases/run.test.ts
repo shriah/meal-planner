@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { everyMealHasInPart, everyMealWith, partDishes, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
+import { everyMealHasInPart, everyMealWith, partDishes, plannedAtLeast, lockedMealKept, neverAt, nearNoRulesCount, noHardProblems, someMealWith } from './expect';
 import { capped, compileModel, is, type Constraint } from '@/planner';
 import { capConstraints } from '@/planner/test-utils';
 import { compileRules, exclusionRule, mealRule } from '@/rules';
@@ -9,7 +9,7 @@ import type { PartSlot } from '@/planner';
 import type { ComponentRecord } from '@/types/component';
 import { seededLibrary } from './seeded-library';
 import { failsWithoutSubject, knownIds, recordsOf, rulePartsOf, runPlanCase, statusOf } from './run';
-import type { CaseWeeks, PlanCase } from './types';
+import type { CaseRule, CaseWeeks, PlanCase } from './types';
 
 const weeks = (lib = TEST_LIBRARY): CaseWeeks => ({ weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib });
 /** Weeks where Pongal is planned `n` times in total. */
@@ -241,5 +241,37 @@ describe('cases on a library with its own parts', () => {
       parts: [[{ day: 'monday', meal_slot: 'lunch', parts: { [MAIN]: [1], [SIDE]: [], [DESSERT]: [] } }]],
     };
     expect(everyMealHasInPart(SIDE, [11]).check(w, { baseline: () => w })).toEqual({ pass: false, got: '0 of 1' });
+  });
+  it('names the part by its given name in the sentence', () => {
+    expect(everyMealHasInPart(SIDE, [11, 12], 'Side').says).toBe('Every meal has dishes 11 and 12 in Side');
+  });
+  it('throws on a custom library with default rules, and reads no converted-shape expectation', () => {
+    expect(() => runPlanCase({ ...trivial, defaults: undefined })).toThrow(/part-based defaults/);
+    const w: CaseWeeks = { weeks: [[]], hard: [[]], soft: [[]], suppressed: [[]], lib: library, parts: [[]] };
+    expect(() => plannedAtLeast('Biryani', 1).check(w, { baseline: () => w })).toThrow(/converted shape/);
+  });
+  it('lists a referenced custom dish by its part name', () => {
+    const limit = { name: 'One Biryani', spec: { template: 'limit', params: { match: is('id', 1), per: 'meal', max: 1, strength: 'must' } } } as CaseRule;
+    expect(runPlanCase({ ...trivial, rules: () => [limit] }).dishes).toEqual([{ name: 'Biryani', type: 'Main' }]);
+  });
+
+  describe('expected rule issues', () => {
+    // A rule over a component type cannot be read on parts that are not the converted four: it is skipped and named.
+    const oldRule = () => [{ name: 'Old shape', spec: { template: 'limit', params: { match: is('componentType', 'base'), per: 'meal', max: 1, strength: 'must' } } } as CaseRule];
+    const withRule: PlanCase = { ...trivial, rules: oldRule };
+    it('fails the case for a skipped rule it did not expect', () => {
+      const r = runPlanCase(withRule);
+      expect(r.status).toBe('fail');
+      expect(r.expectations[0]).toMatchObject({ says: 'Rule could not be applied: Old shape', pass: false });
+    });
+    it('passes when the issue is listed, and fails when a listed issue does not happen', () => {
+      expect(runPlanCase({ ...withRule, issues: ['Old shape: names the field'] }).status).toBe('pass');
+      const missing = runPlanCase({ ...trivial, issues: ['Old shape'] });
+      expect(missing.status).toBe('fail');
+      expect(missing.expectations[0]).toMatchObject({ says: 'Rule issue expected: Old shape', pass: false, got: 'no rule issue' });
+    });
+    it('still fails an issue the listed texts do not match', () => {
+      expect(runPlanCase({ ...withRule, issues: ['something else'] }).status).toBe('fail');
+    });
   });
 });

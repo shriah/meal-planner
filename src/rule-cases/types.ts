@@ -6,7 +6,7 @@ import type { PlanSlot } from '@/types/plan';
 import type { RuleRecord } from '@/rules';
 import type { DishWithPart } from '@/db/parts';
 import type { CategoryRecord } from '@/types/category';
-import type { ComponentRecord, ComponentType } from '@/types/component';
+import type { ComponentRecord } from '@/types/component';
 
 export type CaseGroup = 'Pairings' | 'Days and meals' | 'Variety' | 'Locks and picks' | 'Extras';
 
@@ -74,6 +74,8 @@ export interface PlanCase {
   /** Leave out the default rules. */
   defaults?: false;
   pins?: LegacyPins;
+  /** Rule issues the case expects (compileRules skipping a rule): each text must appear in an issue's name or message, and any other issue fails the case. */
+  issues?: string[];
   expect: PlanExpectation[];
   /** What is wrong, for a case that fails on today's code. */
   known?: string;
@@ -93,7 +95,8 @@ export interface CaseResult {
   known?: string;
   /** Whether the default rules were planned with the case's own. */
   defaults: boolean;
-  dishes: { name: string; type: ComponentType }[];
+  /** The dish's component type, or its part's name on a library with its own parts. */
+  dishes: { name: string; type: string }[];
   rules: string[];
   expectations: { says: string; pass: boolean; got: string }[];
   /** The seed the sample week was planned with: the first failing seed, else 1. */

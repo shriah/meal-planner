@@ -254,4 +254,16 @@ describe('compiled rules are about parts', () => {
     compileRules(records(rule), lib, TEST_RULE_PARTS);
     expect(JSON.stringify(rule)).toBe(before);
   });
+
+  it('skips and names a rule over a component type when there are no legacy part ids to read it by', () => {
+    const noLegacy = { list: TEST_RULE_PARTS.list };
+    const old = rule(1, { template: 'limit', params: { match: is('componentType', 'base'), per: 'meal', max: 1, strength: 'must' } });
+    const byPart = rule(2, { template: 'limit', params: { match: is('part', 1), per: 'meal', max: 1, strength: 'must' } });
+    const { constraints, issues } = compileRules([old, byPart], known, noLegacy);
+    expect(issues).toEqual([expect.objectContaining({ ruleId: 1, message: expect.stringContaining('"componentType"') })]);
+    expect(constraints.map((c) => c.ruleId)).toEqual([2]);
+    const category = rule(3, { template: 'limit', params: { match: is('base_category_id', 10), per: 'meal', max: 1, strength: 'must' } });
+    expect(compileRules([category], known, noLegacy).issues).toHaveLength(1);
+    expect(compileRules([old], known, TEST_RULE_PARTS).issues).toEqual([]);
+  });
 });

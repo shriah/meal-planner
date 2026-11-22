@@ -128,6 +128,9 @@ function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec
 /** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
 const UNPLANNED_FIELDS = ['role', 'slot_part'] as const;
 
+/** Fields that only mean something through a dish's type: with no type-to-part ids to read them against, they match nothing. */
+const TYPE_FIELDS = ['role', 'componentType', 'base_category_id', 'extra_category_id', 'curry_category'] as const;
+
 const constraintFields = (c: Constraint): Set<string> => {
   const matchers = c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
   return new Set(matchers.flatMap((m) => [...matcherFields(m)]));
@@ -166,7 +169,9 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
       }
     });
     // The rewrite turns role and componentType into parts; a field it leaves behind cannot be planned.
-    const unplanned = UNPLANNED_FIELDS.find((f) => compiledRule.some((c) => constraintFields(c).has(f)));
+    // With no legacy ids to rewrite by, every field named after a dish's type is left behind too.
+    const unplannedFields: readonly string[] = parts.legacy ? UNPLANNED_FIELDS : [...UNPLANNED_FIELDS, ...TYPE_FIELDS];
+    const unplanned = unplannedFields.find((f) => compiledRule.some((c) => (constraintFields(c) as Set<string>).has(f)));
     if (unplanned) {
       issues.push({ ruleId: rule.id, name: rule.name, message: `names the field "${unplanned}", which the planner does not use; name the part with "part"` });
       continue;

@@ -29,6 +29,7 @@ const CAP_KEYS = ['cap:curry', 'cap:subzi'] as const;
  * default or cap named in `drop`.
  */
 export function recordsOf(c: PlanCase, own: CaseRule[], given: CaseRule[] = [], drop: readonly string[] = []): RuleRecord[] {
+  if (c.library && c.defaults !== false) throw new Error('default rules on a custom library need part-based defaults: set `defaults: false`');
   const defaults = c.defaults === false ? [] : defaultRules().filter((r) => !drop.includes(r.default_key));
   // The caps are about the converted Curry and Subzi parts: a library with its own parts has none.
   const caps = c.library ? [] : capRules().filter((_, i) => !drop.includes(CAP_KEYS[i]));
@@ -113,7 +114,15 @@ export function runPlanCase(c: PlanCase, budget: CaseBudget = BUDGET): CaseResul
   const ctx = { baseline: () => (base ??= planWeeks(c, lib, recordsOf(c, [], given), c.pins, budget)) };
 
   // A rule that was left out of the plan would let a case pass for the wrong reason.
-  const unapplied = weeks.issues.map((i) => ({ says: `Rule could not be applied: ${i.name}`, pass: false, got: i.message }));
+  // A case may name the issues it expects (`PlanCase.issues`); any other issue, and any expected one missing, fails it.
+  const issueText = (i: RuleIssue) => `${i.name}: ${i.message}`;
+  const expected = c.issues ?? [];
+  const unapplied = [
+    ...weeks.issues.filter((i) => !expected.some((t) => issueText(i).includes(t)))
+      .map((i) => ({ says: `Rule could not be applied: ${i.name}`, pass: false, got: i.message })),
+    ...expected.filter((t) => !weeks.issues.some((i) => issueText(i).includes(t)))
+      .map((t) => ({ says: `Rule issue expected: ${t}`, pass: false, got: weeks.issues.length ? weeks.issues.map(issueText).join('; ') : 'no rule issue' })),
+  ];
   const expectations = [...unapplied, ...c.expect.map((e) => ({ says: e.says, ...e.check(weeks, ctx) }))];
   const allPass = expectations.every((e) => e.pass);
 
@@ -133,7 +142,9 @@ export function runPlanCase(c: PlanCase, budget: CaseBudget = BUDGET): CaseResul
     for (const id of specReferences(parsed.spec).components) referenced.add(id);
   }
   for (const d of c.dishes ?? []) referenced.add(d.id);
-  const dishes = lib.dishes.filter((d) => referenced.has(d.id)).map((d) => ({ name: d.name, type: d.componentType }));
+  // A library with its own parts names each dish's part; a converted one its component type.
+  const typeOf = (d: CaseLibrary['dishes'][number]) => (c.library ? lib.parts.find((p) => p.id === d.part_id)?.name ?? `part ${d.part_id}` : d.componentType);
+  const dishes = lib.dishes.filter((d) => referenced.has(d.id)).map((d) => ({ name: d.name, type: typeOf(d) }));
 
   // The first week an expectation fails in, so the sample shows the problem; seed 1 when none can tell.
   const failIdx = c.expect.flatMap((e, i) => {
