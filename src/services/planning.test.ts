@@ -57,6 +57,16 @@ describe('planFromData', () => {
     ]);
   });
 
+  it('still plans when a stored rule names slot_part: the rule is skipped and reported', async () => {
+    await runSeed();
+    await addRule({ name: 'Placed rule', enabled: true, created_at: '', spec: { template: 'exclude', params: { match: is('slot_part', 2) } } });
+
+    const outcome = planFromData(await loadPlanningInput(), { seed: 3 });
+
+    expect(outcome.plan.slots).toHaveLength(21);
+    expect(outcome.ruleIssues).toEqual([expect.objectContaining({ name: 'Placed rule', message: expect.stringContaining('"slot_part"') })]);
+  });
+
   it('applies the seeded per-meal extras limit, an ordinary rule the user can change', async () => {
     await runSeed();
     const lunchLimit = (await db.rules.toArray()).find((r) => r.name === 'Extras at lunch: at most 3')!;

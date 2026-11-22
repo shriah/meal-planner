@@ -22,6 +22,8 @@ route is `src/app/api/export-plan`. Read `docs/architecture.md` before changing 
 - **Owned rule**: a rule belonging to a dish, edited on that dish's form, not listed on the Rules page.
 - **Strength** words come only from `STRENGTH_WORDS` in `src/rules/levels.ts`: Always (`must`), Usually, Often, Sometimes.
   Prefer/avoid weights use `LEVELS`: Slightly, Moderately, Strongly. Don't invent other wording.
+- Until Stage 5 changes storage, the app still holds one curry and one subzi per meal through `legacySlotCaps`
+  (`src/services/legacy-slots.ts`), so editing or deleting the "at most one Curry/Subzi per meal" cap rules has no effect yet.
 - **Default rules** (`src/rules/defaults.ts`) sit below the user's own rules; "gives way" means a softer rule yields to a firmer one.
 
 ## Commands

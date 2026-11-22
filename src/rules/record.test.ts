@@ -36,6 +36,15 @@ describe('compileRules', () => {
     expect(issues[0].message).toBe('refers to component #3, base category #99, which no longer exists');
   });
 
+  it('skips and reports a rule naming slot_part, which the planner cannot match, and still compiles the others', () => {
+    const { constraints, issues } = compileRules([
+      rule(1, { template: 'exclude', params: { match: is('slot_part', 2) } }),
+      rule(2, { template: 'exclude', params: { match: is('id', 1) } }),
+    ], known, TEST_RULE_PARTS);
+    expect(issues).toEqual([{ ruleId: 1, name: 'Rule 1', message: expect.stringContaining('"slot_part"') }]);
+    expect(constraints.map((c) => c.ruleId)).toEqual([2]);
+  });
+
   describe('what gives way to a unit', () => {
     const skip = { template: 'skip_when', params: { when: is('id', 1), skip: ['curry', 'subzi'] } };
     const withKey = (r: RuleRecord, extra: Partial<RuleRecord>): RuleRecord => ({ ...r, ...extra });

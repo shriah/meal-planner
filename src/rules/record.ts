@@ -1,5 +1,5 @@
 // Stored rules and their compilation into planner constraints.
-import { ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
+import { matcherFields, ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
 import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
 import { defaultRules } from './defaults';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
@@ -125,6 +125,14 @@ function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec
   return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;
 }
 
+/** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
+const UNPLANNED_FIELDS = ['role', 'slot_part'] as const;
+
+const constraintFields = (c: Constraint): Set<string> => {
+  const matchers = c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
+  return new Set(matchers.flatMap((m) => [...matcherFields(m)]));
+};
+
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
  * are skipped and reported, so the planner never runs a rule whose meaning has changed. Constraints are about
@@ -148,14 +156,22 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
       continue;
     }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
+    const compiledRule: Constraint[] = [];
     compileSpec(partsSpec(rule, parsed.spec, parts)).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };
         const compiled = { ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint;
-        constraints.push(constraintOverParts(compiled, parts.legacy));
+        compiledRule.push(constraintOverParts(compiled, parts.legacy));
       }
     });
+    // The rewrite turns role and componentType into parts; a field it leaves behind cannot be planned.
+    const unplanned = UNPLANNED_FIELDS.find((f) => compiledRule.some((c) => constraintFields(c).has(f)));
+    if (unplanned) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `names the field "${unplanned}", which the planner does not use; name the part with "part"` });
+      continue;
+    }
+    constraints.push(...compiledRule);
   }
   return { constraints, issues };
 }

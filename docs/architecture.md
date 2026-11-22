@@ -124,13 +124,15 @@ visible changed except the two cap rules on the Rules page, and a converted libr
   is one dish list per part (`SlotState.parts`), `PartSlot` and `PartPins` are the same by part id. Each dish carries its derived `part_id`, and an
   assignment names the part it is placed in (`part`); the dish's own part is `c.part_id`. `loadPlanningInput` fills a missing `part_id` from `componentType`.
 - **Single and many.** A part is single (one dish) when the first part, or when a hard per-meal cap of 1 selects it (`cappedPart`, `capped` in
-  `builtinConstraints`); otherwise it holds many. Only many parts get the "no dish twice" built-in, and the pick, swap and polish moves change
+  `builtinConstraints`); otherwise it holds many. Only many parts get the "no dish twice" built-in, and the pick, swap and descent moves change
   single parts while add/remove moves change many parts.
 - **Rules reach the planner as rules about parts.** `src/rules/legacy-parts.ts` rewrites every `role` and `componentType` leaf of a compiled
   constraint to a `part` leaf (`constraintOverParts`); stored rules are not changed. The variety, spacing and sides-only defaults are the exception:
   when the stored row still equals the stock `defaultRules()` spec they are compiled over the parts' `varied` flag (variety, spacing) or every part
   after the first (sides only), so they follow the parts. An edited default gets the plain rewrite. This code and `src/db/parts.ts`,
-  `src/db/seed.tsx`, `src/services/legacy-slots.ts` and the v22 upgrade are the only places that name base, curry, subzi or extras.
+  `src/db/seed.tsx`, `src/services/legacy-slots.ts`, `src/services/plan-generation.ts` (`pinnedRole`, `'extras'`, `legacy.base`),
+  `src/services/pins.ts`, `src/rules/defaults.ts` (`capRules`), `src/rule-cases/run.ts` (`suppressedAs`, `CAP_KEYS`) and the v22 upgrade are the
+  only places that name base, curry, subzi or extras.
 - **Cap rules.** "At most one Curry per meal" and "At most one Subzi per meal" (`capRules` in `src/rules/defaults.ts`) replace the built-in one curry
   and one subzi. They are Always `limit` rules with no default key, added by the v22 upgrade (only when the library has dishes), the seed and the
   rule-case runner, and the user can edit, disable or delete them. Having no default key, "restore defaults" cannot bring a deleted cap back.
