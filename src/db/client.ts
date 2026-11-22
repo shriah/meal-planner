@@ -8,12 +8,13 @@ import type { WeeklyPlan } from '@/types/plan';
 import type { PartRecord } from '@/types/part';
 import type { TagGroupRecord } from '@/types/tags';
 import { CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertLibrary, convertedValueIds, type ConvertLookup } from './parts';
-import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
+import { duplicateIds, remapSlots } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
-import { convertLegacyRule, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
+import type { RuleRecord } from '@/rules';
+import { convertLegacyRule, type ConvertedRule, type DroppedRule } from './legacy-v14';
 import {
   capRules, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
-  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type LegacyRuleRecord } from './legacy-rules';
+  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, remapSpec, type IdMaps, type LegacyRuleRecord } from './legacy-rules';
 
 export type { RuleRecord };
 

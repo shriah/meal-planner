@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { linkRule } from '@/rules';
-import { remapSpec } from './dedupe';
+import { linkRule, remapSpec } from './legacy-rules';
 
 describe('remapSpec', () => {
   it("points a comes-with link's condition at the kept copy of a merged curry or subzi", () => {

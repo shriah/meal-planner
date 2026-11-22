@@ -18,10 +18,6 @@ export {
 export { compileRules, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export { toPartMatcher, constraintOverParts, type RuleParts } from './legacy-parts';
 export {
-  convertLegacyRule, LegacyCompiledRuleSchema,
-  type LegacyRuleRow, type ConvertedRule, type DroppedRule, type ConversionContext, type ConversionResult,
-} from './legacy';
-export {
   CONDITION_FIELDS, toMatcher, fromMatcher, groupProblems, emptyGroup,
   type Condition, type ConditionGroup, type ConditionField, type ConditionValue,
 } from './conditions';
