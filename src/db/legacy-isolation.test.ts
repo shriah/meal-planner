@@ -15,11 +15,12 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('frozen upgrade copies', () => {
-  it('are imported only by db/client.ts and tests under src/db', () => {
+  // v24's converter reads the old stock defaults, to know a default the user never edited.
+  it('are imported only by db/client.ts, v24\'s converter and tests under src/db', () => {
     const importers = sourceFiles(SRC)
       .filter((file) => FROZEN.test(readFileSync(file, 'utf8')))
       .map((file) => relative(SRC, file))
-      .filter((file) => file !== 'db/client.ts' && !(file.startsWith('db/') && file.endsWith('.test.ts')) && !/^db\/legacy-(rules|v14)\.ts$/.test(file));
+      .filter((file) => file !== 'db/client.ts' && file !== 'db/rules-over-parts.ts' && !(file.startsWith('db/') && file.endsWith('.test.ts')) && !/^db\/legacy-(rules|v14)\.ts$/.test(file));
     expect(importers).toEqual([]);
   });
 

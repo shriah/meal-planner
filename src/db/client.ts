@@ -12,6 +12,7 @@ import { duplicateIds, remapSlots } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
 import type { RuleRecord } from '@/rules';
 import { convertLegacyRule, type ConvertedRule, type DroppedRule } from './legacy-v14';
+import { convertRuleSpec, curryTypesNamed } from './rules-over-parts';
 import {
   capRules, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
   readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, remapSpec, type IdMaps, type LegacyRuleRecord } from './legacy-rules';
@@ -1233,6 +1234,65 @@ db.version(23).stores({
     const group = groups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name);
     if (group) await tx.table('tag_groups').update(group.id, { legacy: k });
   }
+});
+
+// v24: stored rules and links name parts and categories by id (see `convertRuleSpec`). Links run top to bottom: a dish
+// that "comes with" a dish of a higher part is now added when that dish is in the meal. A curry type a rule names gets
+// its Curry category first, as v21 made them, when no dish used it then. Only the spec changes, and only where it
+// converts; a spec that cannot be converted stays as it was, for `compileRules` to name. A library without the
+// converted parts (never seeded) is left alone.
+db.version(24).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  const rules = await tx.table('rules').toArray() as RuleRecord[];
+  const parts = (await tx.table('parts').toArray() as PartRecord[]).sort((a, b) => a.position - b.position);
+  const legacyId = (t: keyof typeof CONVERTED_PARTS) => parts.find((p) => p.legacy === t)?.id;
+  const [base, curry, subzi, extra] = (['base', 'curry', 'subzi', 'extra'] as const).map(legacyId);
+  if (rules.length === 0 || base === undefined || curry === undefined || subzi === undefined || extra === undefined) return;
+  const legacy = { base, curry, subzi, extra };
+
+  const components = await tx.table('components').toArray() as ComponentRecord[];
+  const categories = await tx.table('categories').toArray() as CategoryRecord[];
+  const curryCategories = new Map(categories.filter((c) => c.part_id === curry).map((c) => [c.id, c]));
+  // A curry type's category: the one its curries were given (it may since have been renamed), else the one of its name.
+  const curryCategory = new Map<CurryCategory, number>();
+  for (const c of components) {
+    if (c.componentType === 'curry' && c.curry_category && c.category_id != null && curryCategories.has(c.category_id) && !curryCategory.has(c.curry_category)) {
+      curryCategory.set(c.curry_category, c.category_id);
+    }
+  }
+  for (const c of curryCategories.values()) {
+    if (c.kind === 'curry' && (CURRY_CATEGORIES as readonly string[]).includes(c.name) && !curryCategory.has(c.name as CurryCategory)) curryCategory.set(c.name as CurryCategory, c.id);
+  }
+  const named = new Set(rules.flatMap((r) => curryTypesNamed(r.spec)));
+  const missing = CURRY_CATEGORIES.filter((t) => named.has(t) && !curryCategory.has(t));
+  if (missing.length) {
+    const created_at = new Date().toISOString();
+    const ids = await tx.table('categories').bulkAdd(missing.map((name) => ({ kind: 'curry', name, part_id: curry, created_at })), { allKeys: true }) as number[];
+    missing.forEach((t, i) => curryCategory.set(t, ids[i]));
+  }
+
+  const ctx = {
+    legacy,
+    parts: parts.map(({ id, name, varied, legacy: l }) => ({ id, name, varied, ...(l && { legacy: l }) })),
+    curryCategory,
+    partOf: new Map(components.map((c) => [c.id, c.part_id ?? legacy[c.componentType]])),
+  };
+  const changed = rules.flatMap((rule) => {
+    const out = convertRuleSpec(rule.spec, ctx, rule.default_key);
+    return 'spec' in out && !sameValue(out.spec, rule.spec) ? [{ ...rule, spec: out.spec }] : [];
+  });
+  await tx.table('rules').bulkPut(changed);
 });
 
 export { db, normalizeComponentCategoryRefs };
