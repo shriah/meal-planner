@@ -3,7 +3,7 @@
 // Sides a meal's dishes bring by PAIR constraints (unit members and asked-for sides) are worked out
 // per meal first; rules on the `dish` or `frequency` level give way to them.
 import { byComponent, timeOf, type Constraint, type CountConstraint, type RuleLevel, type Origin, type PairConstraint } from './constraints';
-import { compileMatcher, type MatchFn } from './matcher';
+import { compileMatcher, isLeaf, type MatchFn } from './matcher';
 import {
   DAYS, MEALS, ROLES, SLOT_COUNT, slotDay, slotMeal, titleCase,
   type Assignment, type ComponentLike, type Day, type Meal, type PlanState, type Role, type SlotState,
@@ -35,11 +35,11 @@ export interface Justification {
   /** On a pairing that names more than one dish: every candidate, in library order (`group.componentId` is the first). */
   candidates?: number[];
   /**
-   * Set on a pairing that is not enforced in this meal because another pairing holds the role
-   * (a meal holds one curry and one subzi): `by` triggered it; `heldBy`, if known, holds the role by a
-   * pairing on `heldWith`.
+   * Set on a pairing that is not enforced in this meal because another pairing holds its part, a part that
+   * holds one dish (see `capped`): `by` triggered it; `part` is the part's id; `heldBy`, if known, holds the
+   * part by a pairing on `heldWith`.
    */
-  suppressed?: { by: number; role: 'curry' | 'subzi'; heldBy?: number; heldMust?: boolean; heldWith?: number };
+  suppressed?: { by: number; part: number; heldBy?: number; heldMust?: boolean; heldWith?: number };
 }
 
 export interface Score {
@@ -86,8 +86,8 @@ interface CompiledPair {
   cis: Int32Array;
   /** Per library index, 1 for a candidate. */
   isCandidate: Uint8Array;
-  /** ROLE_CURRY or ROLE_SUBZI when the first candidate fills one of those roles, else 0. A meal holds one of each. */
-  roleBit: number;
+  /** Index in `ScoringState.capParts` of the first candidate's part when that part holds one dish (the part the pair claims), else -1. */
+  claim: number;
   must: boolean;
   cost: number;
   inScope: Uint8Array;
@@ -136,9 +136,6 @@ const COND = 4;
 /** What a rule gives way to: sides brought by a `must` pair (a dish-level rule), or by any pair (a frequency rule). */
 const GIVES_TO_ALWAYS = 1;
 const GIVES_TO_ANY = 2;
-const ROLE_CURRY = 1;
-const ROLE_SUBZI = 2;
-const roleBitOf = (r: Role): number => (r === 'curry' ? ROLE_CURRY : r === 'subzi' ? ROLE_SUBZI : 0);
 const givesWay = (l: RuleLevel | undefined): number => (l === 'dish' ? GIVES_TO_ALWAYS : l === 'frequency' ? GIVES_TO_ANY : 0);
 
 export interface CompiledModel {
@@ -151,6 +148,10 @@ export interface CompiledModel {
 
 interface ScoringState {
   idIndex: Map<number, number>;
+  /** The parts that hold one dish, in the order their caps come; a pair's `claim` indexes it. */
+  capParts: readonly number[];
+  /** The same parts as a set (`capped`). */
+  capped: ReadonlySet<number>;
   counts: CompiledCount[];
   matchers: MatchFn[];
   prefers: { idx: number; weight: number; yields: number }[];
@@ -183,7 +184,30 @@ const MAX_COND = 30;
 export const UNKNOWN_COMPONENT = 'builtin:unknown-component';
 const MAX_ASSIGNMENTS = SLOT_COUNT * 16;
 
+/**
+ * The part a count constraint caps at one dish per meal, or undefined: a hard maximum of 1 per meal, in every
+ * meal (no scope, no trigger), over exactly one part (`is('part', id)` or `oneOf` of one id, alone or as the
+ * only member of an `all`, as a per-meal `limit` rule compiles).
+ */
+function cappedPart(c: CountConstraint): number | undefined {
+  if (c.groupBy !== 'slot' || c.scope || c.when || c.bounds.hardMax !== 1) return undefined;
+  const m = 'all' in c.select && c.select.all.length === 1 ? c.select.all[0] : c.select;
+  if (!isLeaf(m) || m.field !== 'part') return undefined;
+  if (m.op === 'eq' && typeof m.value === 'number') return m.value;
+  if (m.op === 'in' && Array.isArray(m.value) && m.value.length === 1 && typeof m.value[0] === 'number') return m.value[0];
+  return undefined;
+}
+
+/** The parts that hold one dish in a meal: those a constraint caps at one per meal. A pair claims such a part. */
+export const capped = (m: CompiledModel): ReadonlySet<number> => m.state.capped;
+
 export function compileModel(library: readonly ComponentLike[], constraints: readonly Constraint[]): CompiledModel {
+  // Before the pairs, which claim these parts: the caps are usually the last rules.
+  const capParts: number[] = [];
+  for (const c of constraints) {
+    const part = c.kind === 'count' ? cappedPart(c) : undefined;
+    if (part !== undefined && !capParts.includes(part)) capParts.push(part);
+  }
   const matchers: MatchFn[] = [];
   const addMatcher = (fn: MatchFn) => matchers.push(fn) - 1;
   const counts: CompiledCount[] = [];
@@ -214,7 +238,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       }
       pairs.push({
         def: c, when: addMatcher(compileMatcher(c.when)), cis: Int32Array.from(cis), isCandidate,
-        roleBit: cis.length ? roleBitOf(library[cis[0]].componentType) : 0,
+        claim: cis.length ? capParts.indexOf(library[cis[0]].part_id ?? NaN) : -1,
         must: c.strength === 'must', cost: c.cost ?? 10, inScope,
         inMeal: Int32Array.from((c.inMeal ?? []).map((mt) => addMatcher(compileMatcher(mt)))),
       });
@@ -276,6 +300,7 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
     constraints,
     state: {
       idIndex,
+      capParts, capped: new Set(capParts),
       counts, matchers, prefers, pairs,
       memo: new Array(N * ROLES.length * SLOT_COUNT),
       bufCi: new Int32Array(MAX_ASSIGNMENTS),
@@ -320,16 +345,16 @@ function memoFor(m: CompiledModel, ci: number, role: number, slot: number): Memo
       if (bits[cc.sel] && cc.owner === a.c.id && cc.hardMax === 0 && cc.when < 0 && cc.yields === GIVES_TO_ALWAYS && groupInScope(cc, slot)) overrides++;
     });
     // Pairs this dish triggers (not those it is a candidate of). Conditional pairs depend on the rest of
-    // the meal, so they are resolved where the meal is known (`resolvePairs`). For the others: a meal holds
-    // one curry and one subzi, so the first pair to claim either role wins, `must` pairs before `prefer`
-    // ones, each in constraint order; a later pair for the same role is suppressed when it shares no
-    // candidate with the first. Extras never conflict.
+    // the meal, so they are resolved where the meal is known (`resolvePairs`). For the others: a capped part
+    // holds one dish, so the first pair to claim it wins, `must` pairs before `prefer` ones, each in
+    // constraint order; a later pair for the same part is suppressed when it shares no candidate with the
+    // first. Pairs for a part that holds many dishes (extras) never conflict.
     const triggered: number[] = [];
     const cond: number[] = [];
     st.pairs.forEach((p, pk) => {
       if (p.cis.length && p.inScope[slot] && bits[p.when] && !p.isCandidate[ci]) (p.inMeal.length ? cond : triggered).push(pk);
     });
-    const suppressed = claimRoles(st.pairs, triggered);
+    const suppressed = claimParts(st.pairs, triggered);
     const pairs = triggered.map((pk) => (pk << 1) | +suppressed.has(pk));
     const meets = Array.from(st.condMatchers).filter((mk) => bits[mk]);
     e = st.memo[key] = {
@@ -347,18 +372,18 @@ const sharesCandidate = (a: CompiledPair, b: CompiledPair): boolean => {
 };
 
 /**
- * Which of one dish's pairs (`pks`, constraint order) lose their role: the first pair to claim the curry
- * or subzi role wins, `must` pairs before `prefer` ones; a later pair for the same role is suppressed when it
- * shares no candidate with the first. Returns the suppressed pairs and, in `claimedBy`, each role's first.
+ * Which of one dish's pairs (`pks`, constraint order) lose their part: the first pair to claim a capped part
+ * wins, `must` pairs before `prefer` ones; a later pair for the same part is suppressed when it shares no
+ * candidate with the first. Returns the suppressed pairs and, in `claimedBy`, each claimed part's first (by `claim`).
  */
-function claimRoles(pairs: readonly CompiledPair[], pks: Iterable<number>, claimedBy = new Map<number, CompiledPair>()): Set<number> {
+function claimParts(pairs: readonly CompiledPair[], pks: Iterable<number>, claimedBy = new Map<number, CompiledPair>()): Set<number> {
   const suppressed = new Set<number>();
   for (const must of [true, false]) {
     for (const pk of pks) {
       const p = pairs[pk];
-      if (p.must !== must || !p.roleBit) continue;
-      const first = claimedBy.get(p.roleBit);
-      if (first === undefined) claimedBy.set(p.roleBit, p);
+      if (p.must !== must || p.claim < 0) continue;
+      const first = claimedBy.get(p.claim);
+      if (first === undefined) claimedBy.set(p.claim, p);
       else if (!sharesCandidate(first, p)) suppressed.add(pk);
     }
   }
@@ -368,8 +393,8 @@ function claimRoles(pairs: readonly CompiledPair[], pks: Iterable<number>, claim
 /**
  * One dish's pairs in its meal, as codes like `Memo.pairs`: the unconditional pairs, then the conditional
  * pairs whose condition the meal meets (every matcher met by another dish; `met(mk)` says whether one meets
- * matcher `mk`). A met conditional pair claims its role first (conditional pairs among themselves as in
- * `claimRoles`) and suppresses the dish's unconditional pairs for that role that share no candidate with it,
+ * matcher `mk`). A met conditional pair claims its part first (conditional pairs among themselves as in
+ * `claimParts`) and suppresses the dish's unconditional pairs for that part that share no candidate with it,
  * whatever their rule ids or strengths. Unmet conditional pairs are left out. Cached per set of met pairs.
  */
 function resolvePairs(st: ScoringState, memo: Memo, met: (mk: number) => boolean): Resolved {
@@ -389,11 +414,11 @@ function resolveWith(st: ScoringState, memo: Memo, condMet: (k: number) => boole
   for (let k = 0; k < memo.cond.length; k++) if (condMet(k)) met.push(memo.cond[k]);
   if (!met.length) return { codes: memo.pairs };
   const claimedBy = new Map<number, CompiledPair>();
-  const condSuppressed = claimRoles(st.pairs, met, claimedBy);
+  const condSuppressed = claimParts(st.pairs, met, claimedBy);
   const codes: number[] = [];
   for (const code of memo.pairs) {
     const p = st.pairs[code >> 1];
-    const holder = p.roleBit ? claimedBy.get(p.roleBit) : undefined;
+    const holder = p.claim >= 0 ? claimedBy.get(p.claim) : undefined;
     codes.push(holder && !sharesCandidate(holder, p) ? code | 1 : code);
   }
   for (const pk of met) codes.push((pk << 1) | +condSuppressed.has(pk));
@@ -554,7 +579,7 @@ export interface SlotPair {
   ruleId?: number;
   /** Brought by a `must` pair that is enforced. */
   unit: boolean;
-  /** Not enforced because another pair from the same dish claims the same role (curry or subzi). */
+  /** Not enforced because another pair from the same dish claims the same part (one that holds one dish). */
   suppressed?: boolean;
 }
 
@@ -665,9 +690,8 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
         if (v > pairState[pk]) pairState[pk] = v;
       }
     }
-    // Unit members first: the curry or subzi role a unit member holds is taken, so a missing pair
-    // (of any strength, from any dish in the meal) for that role is suppressed rather than charged.
-    let unitRoles = 0;
+    // Unit members first: the capped part a unit member holds is taken, so a missing pair (of any
+    // strength, from any dish in the meal) for that part is suppressed rather than charged.
     for (let q = 0; q < np; q++) {
       const pk = bufPairs[q];
       const p = pairs[pk];
@@ -675,33 +699,39 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       const k = present(p, start, end);
       if (k >= 0) {
         bufFlag[k] |= ignoreCond && p.inMeal.length ? COND : ASKED | UNIT;
-        unitRoles |= p.roleBit;
         pairUnit[pk] = 1;
       }
     }
-    // A missing pair gives way to a unit member holding its role only when no unit pair for that role
+    /** Whether a unit member holds capped part `claim`. */
+    const unitHolds = (claim: number): boolean => {
+      for (let q = 0; q < np; q++) if (pairUnit[bufPairs[q]] && pairs[bufPairs[q]].claim === claim) return true;
+      return false;
+    };
+    // A missing pair gives way to a unit member holding its part only when no unit pair for that part
     // shares a candidate with it: a shared candidate would meet both, so the gap is charged.
     const yieldsToUnit = (p: CompiledPair): boolean => {
-      if (!(p.roleBit & unitRoles)) return false;
+      if (p.claim < 0) return false;
+      let held = false;
       for (let q = 0; q < np; q++) {
         const u = pairs[bufPairs[q]];
-        if (pairUnit[bufPairs[q]] && u.roleBit === p.roleBit && sharesCandidate(u, p)) return false;
+        if (!pairUnit[bufPairs[q]] || u.claim !== p.claim) continue;
+        if (sharesCandidate(u, p)) return false;
+        held = true;
       }
-      return true;
+      return held;
     };
-    // For explanations: which enforced pair holds each role, a unit member present first, then any
-    // `must`, then any other. Worked out before the loop below clears the pair states.
-    let holders: [number, number] | undefined;
+    // For explanations: which enforced pair holds each capped part (by `claim`), a unit member present
+    // first, then any `must`, then any other. Worked out before the loop below clears the pair states.
+    let holders: number[] | undefined;
     if (justify) {
-      holders = [-1, -1];
-      const rank = [0, 0];
+      holders = st.capParts.map(() => -1);
+      const rank = st.capParts.map(() => 0);
       for (let q = 0; q < np; q++) {
         const pk = bufPairs[q];
         const p = pairs[pk];
-        if (!p.roleBit || pairState[pk] !== 2) continue;
-        const r = p.must ? (p.roleBit & unitRoles && present(p, start, end) >= 0 ? 3 : 2) : 1;
-        const h = p.roleBit === ROLE_CURRY ? 0 : 1;
-        if (r > rank[h]) { rank[h] = r; holders[h] = pk; }
+        if (p.claim < 0 || pairState[pk] !== 2) continue;
+        const r = p.must ? (unitHolds(p.claim) && present(p, start, end) >= 0 ? 3 : 2) : 1;
+        if (r > rank[p.claim]) { rank[p.claim] = r; holders[p.claim] = pk; }
       }
     }
     for (let q = 0; q < np; q++) {
@@ -725,13 +755,13 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
         const level = isHard ? 'hard' : 'soft';
         const cost = enforced ? (isHard ? 1 : p.cost) : 0;
         let suppressed: Justification['suppressed'];
-        if (!enforced && p.roleBit) {
-          const holder = holders![p.roleBit === ROLE_CURRY ? 0 : 1];
+        if (!enforced && p.claim >= 0) {
+          const holder = holders![p.claim];
           const held = holder >= 0 && !sharesCandidate(pairs[holder], p) ? pairs[holder] : undefined;
           // The holder's candidate in the meal, else its first.
           const heldAt = held ? present(held, start, end) : -1;
           suppressed = {
-            by: m.library[pairBy[pk]].id, role: p.roleBit === ROLE_CURRY ? 'curry' : 'subzi',
+            by: m.library[pairBy[pk]].id, part: st.capParts[p.claim],
             ...(held && {
               heldBy: m.library[heldAt >= 0 ? bufCi[heldAt] : held.cis[0]].id, heldMust: held.must, heldWith: m.library[pairBy[holder]].id,
             }),

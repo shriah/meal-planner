@@ -77,6 +77,7 @@ function modelFromData(input: PlanningInput) {
   const { constraints, issues } = compileRules(rules, known, { list: parts, legacy: legacyPartIds(parts) });
   const componentName = new Map(library.map((c) => [c.id, c.name]));
   const categoryName = new Map(categories.map((c) => [c.id, c.name]));
+  const partName = new Map(parts.map((p) => [p.id, p.name.toLowerCase()]));
   const names: Names = {
     component: (id) => componentName.get(id),
     baseCategory: (id) => categoryName.get(id),
@@ -118,7 +119,7 @@ function modelFromData(input: PlanningInput) {
         const servedWith = s.heldWith === undefined || s.heldWith === s.by ? 'it' : name(s.heldWith);
         const holder = s.heldBy !== undefined && s.heldMust ? ` and ${name(s.heldBy)} is always served with ${servedWith}` : '';
         const sides = (j.candidates ?? [j.group.componentId!]).map(name).join(' or ');
-        const reason = `${sides} is not served with ${name(s.by)}: a meal holds one ${s.role}${holder}.`;
+        const reason = `${sides} is not served with ${name(s.by)}: a meal holds one ${partName.get(s.part) ?? 'dish in that part'}${holder}.`;
         p = { level: 'soft', reason, message: reason, ...(j.ruleId !== undefined && { ruleId: j.ruleId }), slots: [] };
         collapsed.set(key, p);
         out.push(p);

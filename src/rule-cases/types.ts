@@ -19,6 +19,11 @@ export interface CaseLibrary {
 /** A rule as a case writes it: the app's owned rules (`linkRule`, `dayRule`, ...) fit. */
 export type CaseRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>;
 
+/** A pairing a week left out of a meal, with the part another pairing held named as today's type. */
+export type CaseSuppressed = Omit<Justification, 'suppressed'> & {
+  suppressed: Omit<NonNullable<Justification['suppressed']>, 'part'> & { role: 'curry' | 'subzi' };
+};
+
 /** The planned weeks of one case: one entry per seed. */
 export interface CaseWeeks {
   weeks: PlanSlotLike[][];
@@ -27,7 +32,7 @@ export interface CaseWeeks {
   /** The soft problems each week was left with. */
   soft: Justification[][];
   /** The pairings each week left out of a meal because another pairing already held the curry or subzi. */
-  suppressed: Justification[][];
+  suppressed: CaseSuppressed[][];
   lib: CaseLibrary;
 }
 
@@ -56,7 +61,7 @@ export interface PlanCase {
   rules(lib: CaseLibrary): CaseRule[];
   /** Supporting rules the case needs but is not about; kept when the subject is taken away. */
   given?(lib: CaseLibrary): CaseRule[];
-  /** Default rules (by `default_key`) the case is about, taken away with its own rules. */
+  /** Default rules (by `default_key`) the case is about, taken away with its own rules; `cap:curry` and `cap:subzi` name the caps. */
   without?: string[];
   /** Leave out the default rules. */
   defaults?: false;

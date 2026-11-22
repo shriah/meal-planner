@@ -9,7 +9,7 @@ export { LEVELS, nearestLevel, STRENGTH_COST, STRENGTH_WORDS, type Level } from 
 export { describeLink, shortLink } from './link-text';
 export { linkWarnings, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, describeWhen, type Names } from './describe';
-export { defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
+export { capRules, defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
   pairingRule, pairingCategories, curryClashRule, clashCurryCategories, cleanWhen, linkRule, readLink, offersServe, offersComes, isServeTarget, isSideTarget, SERVE_TARGETS, linkSlotOf, strengthOf, LINK_STRENGTHS, isDishTarget, dishTypeOf, ownedSlot, offersLink, addableSlots, LINK_TARGETS, LINK_SLOTS, isLinkSlot, LINK_LABEL, OWNED_SLOTS, dayRule, ruleDays, mealRule, ruleMeals, exclusionRule, ownedRuleName, OWNED_TEMPLATES,
   readOwned, ownedChanges, linkChanges, sameLink, PLAIN_OWNED_SLOTS, dayModeOf, daysOfMode, describeDays, describeMeals,

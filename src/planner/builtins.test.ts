@@ -15,9 +15,10 @@ describe('built-in constraints', () => {
     expect(ids).toContain('builtin:one-base'); // the other 20 slots have no base
   });
 
+  // One curry and one subzi per meal are stored rules (`capRules`), which the user can edit.
   it('are only the structure of a meal', () => {
     expect(builtinConstraints().map((c) => c.id)).toEqual([
-      'builtin:one-base', 'builtin:max-curry', 'builtin:max-subzi', 'builtin:role-type', 'builtin:extra-twice',
+      'builtin:one-base', 'builtin:role-type', 'builtin:extra-twice',
     ]);
   });
 });

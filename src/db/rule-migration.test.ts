@@ -3,7 +3,7 @@ import Dexie from 'dexie';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, RULE_MIGRATION_NOTICE_ID } from '@/db/client';
 import { all, is, oneOf } from '@/planner';
-import { defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
+import { capRules, defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
 
 const V13_STORES = {
   categories: '++id, kind, name',
@@ -43,8 +43,8 @@ describe('v14 rule migration', () => {
 
     await db.open();
 
-    // v16 also adds the default rules; this test is about the converted ones.
-    const defaults = new Set(defaultRules().map((r) => r.name));
+    // v16 also adds the default rules, and v22 the curry and subzi caps; this test is about the converted ones.
+    const defaults = new Set([...defaultRules(), ...capRules()].map((r) => r.name));
     const rules = (await db.rules.toArray()).filter((r) => !defaults.has(r.name));
     expect(rules.map((r) => [r.name, r.enabled, r.spec.template])).toEqual([
       ['Rice-based: lunch only', true, 'allowed_meals'],
@@ -457,7 +457,8 @@ describe('v21 parts and tag groups', () => {
     expect(dishes[2].tags?.[protein.id]).toEqual([valueId(protein, 'dal')]);
     expect(dishes[4].tags?.[occasion.id]).toEqual([valueId(occasion, 'festive')]);
 
-    expect(await db.rules.toArray()).toEqual(before.rules);
+    // v22 adds the curry and subzi caps after them (tested below).
+    expect((await db.rules.toArray()).slice(0, before.rules.length)).toEqual(before.rules);
     expect(await db.active_plan.toArray()).toEqual(before.active);
     expect(await db.saved_plans.toArray()).toEqual(before.saved);
   });
@@ -476,5 +477,69 @@ describe('v21 parts and tag groups', () => {
     expect((await db.tag_groups.toArray()).map((g) => g.name)).toEqual(['Dietary', 'Protein', 'Region', 'Occasion']);
     expect(await db.categories.count()).toBe(0);
     expect(await db.components.count()).toBe(0);
+  });
+});
+
+const V21_STORES = {
+  ...V20_STORES,
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  parts: '++id',
+  tag_groups: '++id',
+};
+
+describe('v22 one curry and one subzi per meal', () => {
+  afterAll(() => db.close());
+  const now = '2026-01-01T00:00:00.000Z';
+
+  /** A v21 database with its parts, holding `components` and `rules`. */
+  async function openV21(components: object[], rules: object[]) {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v21 = new Dexie('FoodPlannerDB');
+    v21.version(21).stores(V21_STORES);
+    await v21.open();
+    await v21.table('parts').bulkAdd([
+      { id: 1, name: 'Base', position: 0, varied: true, created_at: now },
+      { id: 2, name: 'Curry', position: 1, varied: true, created_at: now },
+      { id: 3, name: 'Subzi', position: 2, varied: true, created_at: now },
+      { id: 4, name: 'Extras', position: 3, varied: false, created_at: now },
+    ]);
+    await v21.table('components').bulkAdd(components);
+    await v21.table('rules').bulkAdd(rules);
+    const before = await v21.table('rules').toArray();
+    v21.close();
+    return before;
+  }
+
+  it('adds the two rules once, enabled, after the stored rules, and leaves the stored rules alone', async () => {
+    const dish = (id: number, name: string, componentType: string, part_id: number) =>
+      ({ id, name, componentType, part_id, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now });
+    const before = await openV21(
+      [dish(1, 'Rice', 'base', 1), dish(2, 'Sambar', 'curry', 2), dish(3, 'Aloo gobi', 'subzi', 3)],
+      [
+        ...defaultRules().map((r) => ({ ...r, enabled: true, created_at: now })),
+        { ...linkRule({ id: 2, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [1] }), enabled: true, created_at: now },
+        { name: 'No sambar', enabled: false, created_at: now, spec: { template: 'exclude', params: { match: is('id', 2), strength: 'must' } } },
+      ],
+    );
+
+    await db.open();
+
+    const rules = await db.rules.orderBy('id').toArray();
+    expect(rules.slice(0, before.length)).toEqual(before);
+    const added = rules.slice(before.length);
+    expect(added.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules().map((r) => ({ ...r, enabled: true })));
+    expect(added.map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
+    expect(added.every((r) => r.default_key === undefined && r.owner_component_id === undefined)).toBe(true);
+    expect(added.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
+  });
+
+  it('adds nothing to a library that was never seeded (the seed adds them)', async () => {
+    await openV21([], []);
+
+    await db.open();
+
+    expect(await db.rules.count()).toBe(0);
   });
 });

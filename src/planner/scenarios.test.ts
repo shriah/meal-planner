@@ -6,7 +6,8 @@ import type { Constraint, CountConstraint, PairConstraint } from './constraints'
 import { all, is, not, oneOf, type Matcher } from './matcher';
 import { planWeek, type PlanResult, type PlanSlotLike } from './plan';
 import { explain } from './scorer';
-import type { ComponentLike, Pins } from './types';
+import { capConstraints, TEST_PARTS } from './test-utils';
+import { ROLES, type ComponentLike, type Pins } from './types';
 
 const CAT = {
   base: { 'rice-based': 1, 'bread-based': 2, other: 3 },
@@ -16,6 +17,7 @@ const CAT = {
 const library: ComponentLike[] = [...materializeSeedComponents(CAT), materializePooriSeed(CAT)].map((c, i) => ({
   ...c,
   id: 100 + i,
+  part_id: TEST_PARTS[ROLES.indexOf(c.componentType)].id,
   frequency: i % 7 === 0 ? 'frequent' : i % 11 === 0 ? 'rare' : 'normal',
 }));
 const byName = (name: string) => {
@@ -44,6 +46,7 @@ const DEFAULTS: Constraint[] = [
   prefer('default:extra-cost', is('componentType', 'extra'), 1),
   prefer('default:frequent', is('frequency', 'frequent'), -1),
   prefer('default:rare', is('frequency', 'rare'), 1),
+  ...capConstraints(),
 ];
 const run = (constraints: CountConstraint[], seed: number, pins?: Pins) =>
   planWeek({ library, constraints: [...DEFAULTS, ...constraints] }, { ...BUDGET, seed, pins });
@@ -63,6 +66,7 @@ const CURRENT_DEFAULTS: Constraint[] = [
   { ...prefer('default:sides-only-when-asked', oneOf('componentType', ['curry', 'subzi', 'extra']), 2), level: 'frequency' } as Constraint,
   { ...prefer('default:prefer-frequent', is('frequency', 'frequent'), -1), level: 'dish' } as Constraint,
   { ...prefer('default:avoid-rare', is('frequency', 'rare'), 1), level: 'dish' } as Constraint,
+  ...capConstraints(),
 ];
 
 describe('planner scenarios (seed library)', () => {

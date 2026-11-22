@@ -5,7 +5,7 @@ import type { CategoryRecord } from '@/types/category';
 import { materializePooriSeed, materializeSeedComponents, type SeedCategoryLookup } from '@/db/seed-data';
 import { convertDish, legacyPartIds } from '@/db/parts';
 import type { ComponentLike } from '@/planner';
-import { compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
+import { capRules, compileRules, defaultRules, linkRule, type RuleRecord } from '@/rules';
 
 const CAT = { base: { 'rice-based': 1, 'bread-based': 2, other: 3 }, extra: { liquid: 11, crunchy: 12, condiment: 13, dairy: 14, sweet: 15 } } satisfies SeedCategoryLookup;
 const CREATED = '2026-01-01T00:00:00.000Z';
@@ -36,9 +36,9 @@ export function seededLinks(lib: ComponentLike[]) {
   ];
 }
 
-/** Compiled constraints (and issues) for `links` ahead of the default rules, over a seeded-library cut. */
+/** Compiled constraints (and issues) for `links` ahead of the default rules and the caps, over a seeded-library cut. */
 export function constraintsFor(lib: ComponentLike[], links: ReturnType<typeof seededLinks>) {
-  const records: RuleRecord[] = [...links, ...defaultRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
+  const records: RuleRecord[] = [...links, ...defaultRules(), ...capRules()].map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
   return compileRules(records, {
     components: new Set(lib.map((x) => x.id)),
     baseCategories: new Set([1, 2, 3]),

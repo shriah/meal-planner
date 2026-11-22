@@ -4,7 +4,7 @@ import { dayRule, defaultRules, exclusionRule, linkRule, type RuleRecord } from 
 import type { ComponentRecord } from '@/types/component';
 import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { diffPlans, explainPlan, missingDishIds, planFromData, slotConflicts, type PlanningInput } from './plan-generation';
-import { withParts } from './test-input';
+import { capRecords, withParts } from './test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -90,7 +90,7 @@ describe('pairings', () => {
   describe('a stored conflict (a second Always curry for Pongal)', () => {
     const rasamLink = linkRule(rasam, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
     const rasamRule: RuleRecord = { id: 8, name: rasamLink.name, spec: rasamLink.spec, enabled: true, created_at: '', owner_component_id: 12 } as RuleRecord;
-    const conflicted: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule] });
+    const conflicted: PlanningInput = withParts({ library: [pongal, sambar, rasam], categories: [], rules: [rule, rasamRule, ...capRecords()] });
     const reason = 'Rasam is not served with Pongal: a meal holds one curry and Sambar is always served with it.';
 
     it('is reported once, as one soft problem worded as the conflict, not per meal', () => {
@@ -114,7 +114,7 @@ describe('pairings', () => {
         spec: { template: 'require_with', params: { when: is('id', 14), components: [12], strength: 'must' } },
       } as RuleRecord;
       const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 10, curry_id: 11, extra_ids: [14] });
-      const problems = explainPlan(withParts({ library: [pongal, sambar, rasam, chutney], categories: [], rules: [rule, withChutney] }), plan);
+      const problems = explainPlan(withParts({ library: [pongal, sambar, rasam, chutney], categories: [], rules: [rule, withChutney, ...capRecords()] }), plan);
       expect(problems.filter((p) => p.ruleId === 9).map((p) => p.reason)).toEqual([
         'Rasam is not served with Chutney: a meal holds one curry and Sambar is always served with Pongal.',
       ]);
@@ -225,7 +225,7 @@ describe('pairings', () => {
       const sambarWith = record(5, linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [20], strength: 'always' }));
       const comes = record(8, linkRule(idiyappam, { mode: 'comes', target: 'curry_dish', values: [21, 22], strength: 'always' }));
       const plan = planOf({ day: 'monday', meal_slot: 'breakfast', base_id: 20, curry_id: 11 });
-      const problems = explainPlan(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes] }), plan);
+      const problems = explainPlan(withParts({ library: [idiyappam, sambar, stewVeg, stewNonVeg], categories: [], rules: [sambarWith, comes, ...capRecords()] }), plan);
       expect(problems.filter((p) => p.ruleId === 8).map((p) => p.reason)).toEqual([
         'Kerala Stew (Veg) or Kerala Stew (Non-Veg) is not served with Idiyappam: a meal holds one curry and Sambar is always served with it.',
       ]);

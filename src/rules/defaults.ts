@@ -56,6 +56,18 @@ export function defaultRules(extraLimits: Record<Meal, number> = DEFAULT_EXTRA_L
 }
 
 /**
+ * A meal holds one curry and one subzi: hand-written Always rules (no default key, no owner), so they never give
+ * way and the user can see, edit or delete them. The planner treats a part with such a cap as holding one dish.
+ */
+export function capRules(): Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>[] {
+  const caps = [['Curry', 'curry'], ['Subzi', 'subzi']] as const;
+  return caps.map(([name, type]) => ({
+    name: `At most one ${name} per meal`,
+    spec: { template: 'limit', params: { match: is('componentType', type), per: 'meal', max: 1, strength: 'must' } },
+  }));
+}
+
+/**
  * The default a stored rule was created as, recognised by its name, for rules stored before keys
  * existed. The extras limit names carry a number that users may have changed.
  */

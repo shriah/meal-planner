@@ -198,8 +198,9 @@ Every step that places a dish brings its pairings with it (see below), so a base
   same group, and bound the count with hard and/or soft min/max.
 - **Prefer** constraint: soft cost or reward per matching assignment.
 - **Score** is lexicographic: any hard violation outweighs every soft cost.
-- **Built-ins** are only the structure of a meal: one base, at most one curry and one subzi, each
-  component in its own role, no extra twice. Everything else is a stored rule.
+- **Built-ins** are only the structure of a meal: one base, each component in its own role, no extra twice.
+  Everything else is a stored rule, including "At most one Curry per meal" and "At most one Subzi per meal"
+  (`capRules`, added by v22 and the seed). A part with a hard per-meal cap of 1 holds one dish (`capped`).
 - **Pair** constraint: when a meal holds a dish matching `when`, it should also hold a dish matching `of` (a set of candidates);
   missing it is a hard violation (`must`) or costs `cost` (`prefer`).
 - Locked parts of the plan are **pins** the search never moves; rules they break are reported.
@@ -245,7 +246,7 @@ side along when it fits and give way otherwise. Either way, a pairing never make
 - **Scoring.** Each score works out every meal's unit members and asked-for sides from the `pair` constraints whose trigger is
   present. A unit member is not counted by `dish` and `frequency` constraints (its own days, meals, links, never-auto, the defaults);
   an asked-for side is not counted by `frequency` ones, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
-  `rule`-level constraints and built-ins never give way. Where one role (curry or subzi) is wanted by several pairs of a base, the first
+  `rule`-level constraints and built-ins never give way. Where one capped part (curry or subzi) is wanted by several pairs of a base, the first
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.

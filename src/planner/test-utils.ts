@@ -1,4 +1,5 @@
 // Small builders shared by planner tests.
+import type { CountConstraint } from './constraints';
 import type { ComponentLike, PlannerPart, Role } from './types';
 
 /** The four converted parts as the planner sees them, in meal order. */
@@ -24,4 +25,20 @@ export function component(componentType: Role, overrides: Partial<ComponentLike>
     occasion_tags: [],
     ...overrides,
   };
+}
+
+/**
+ * "At most one Curry per meal" and "At most one Subzi per meal" as `compileRules` gives them to the planner (the
+ * stored `capRules()`): a hard cap of 1 per meal on the Curry and Subzi parts. A model built by hand includes them
+ * where a library would.
+ */
+export function capConstraints(parts: readonly PlannerPart[] = TEST_PARTS): CountConstraint[] {
+  return ['Curry', 'Subzi'].map((name) => {
+    const part = parts.find((p) => p.name === name);
+    if (!part) throw new Error(`no ${name} part`);
+    return {
+      kind: 'count', id: `cap:${name.toLowerCase()}`, label: `At most one ${name} per meal`, origin: 'rule', level: 'rule',
+      select: { field: 'part', op: 'eq', value: part.id }, groupBy: 'slot', bounds: { hardMax: 1 },
+    };
+  });
 }

@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { Constraint, CountConstraint, PairConstraint, PreferConstraint } from './constraints';
-import { all, is, oneOf } from './matcher';
-import { bringsWith, compareScore, compileModel, explain, freePickLimited, mealBrings, mealHasConditional, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
-import { component } from './test-utils';
+import { all, is, oneOf, type Matcher } from './matcher';
+import { bringsWith, capped, compareScore, compileModel as compileBare, explain, freePickLimited, mealBrings, mealHasConditional, score, slotPairs, UNKNOWN_COMPONENT } from './scorer';
+import { capConstraints, component } from './test-utils';
 import { emptyPlan, slotIndex, type Day, type Meal, type PlanState, type SlotState } from './types';
+
+// Every model here is built as a library's would be: with its stored curry and subzi caps after the other constraints.
+const compileModel = (library: Parameters<typeof compileBare>[0], constraints: readonly Constraint[]) =>
+  compileBare(library, [...constraints, ...capConstraints()]);
 
 const rice = component('base', { id: 1, name: 'Rice' });
 const dal = component('curry', { id: 2, name: 'Dal', protein_tag: 'dal' });
@@ -204,13 +208,23 @@ describe('pairings', () => {
     expect(r.hard).toBe(0);
     const soft = r.justifications.filter((j) => j.level === 'soft');
     expect(soft).toHaveLength(1);
-    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 } });
+    expect(soft[0]).toMatchObject({ cost: 0, group: { componentId: 5 }, suppressed: { by: 1, part: 2, heldBy: 2, heldMust: true, heldWith: 1 } });
     expect(slotPairs(m, plan, slot)).toEqual([
       { candidates: [2], component: 2, by: 1, unit: true },
       { candidates: [5], by: 1, unit: false, suppressed: true },
       { candidates: [4], component: 4, by: 1, unit: true },
     ]);
     expect(bringsWith(m, 1, 'base', slot).wants).toEqual([{ of: [2], unit: true }, { of: [4], unit: true }]);
+  });
+
+  it('two Always curries for one base are both kept without the curry cap, and the second gives way with it', () => {
+    const plan = at('lunch', { base: 1, curry: 2 });
+    const uncapped = score(compileBare(lib, [sambarPair, pair(5)]), plan, true);
+    expect(uncapped.justifications.filter((j) => j.suppressed)).toEqual([]);
+    expect(uncapped.justifications).toEqual([expect.objectContaining({ level: 'hard', group: expect.objectContaining({ componentId: 5 }) })]);
+    const withCap = score(compileBare(lib, [sambarPair, pair(5), capConstraints()[0]]), plan, true);
+    expect(withCap.hard).toBe(0);
+    expect(withCap.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, suppressed: { by: 1, part: 2, heldBy: 2, heldMust: true, heldWith: 1 } })]);
   });
 
   it('a prefer curry that cannot fit beside a must curry is suppressed, in either order', () => {
@@ -243,7 +257,7 @@ describe('pairings', () => {
     const r = runLib([...units, chutneyNeedsRasam], at('lunch', { base: 1, curry: 2, extras: [4] }));
     expect(r).toMatchObject({ hard: 0, soft: 0 });
     expect(r.justifications).toEqual([expect.objectContaining({ level: 'soft', cost: 0, group: expect.objectContaining({ componentId: 5 }) })]);
-    expect(r.justifications[0].suppressed).toEqual({ by: 4, role: 'curry', heldBy: 2, heldMust: true, heldWith: 1 });
+    expect(r.justifications[0].suppressed).toEqual({ by: 4, part: 2, heldBy: 2, heldMust: true, heldWith: 1 });
   });
 
   it('a missing pair that is enforced carries no suppressed mark', () => {
@@ -312,6 +326,37 @@ describe('pairings', () => {
     expect(score(m, unit).hard).toBe(0);
     expect(score(m, free).hard).toBe(1);
     expect(score(m, unit).hard).toBe(0);
+  });
+});
+
+describe('parts that hold one dish', () => {
+  const cap = (c: Partial<CountConstraint> = {}): CountConstraint => ({
+    kind: 'count', id: 'cap', label: 'At most one', origin: 'rule', select: is('part', 2), groupBy: 'slot', bounds: { hardMax: 1 }, ...c,
+  });
+  const cappedBy = (...constraints: Constraint[]) => [...capped(compileBare(library, constraints))];
+
+  it('are the parts with a hard cap of 1 per meal', () => {
+    expect(cappedBy(...capConstraints())).toEqual([2, 3]);
+    expect(cappedBy(cap())).toEqual([2]);
+    expect(cappedBy(cap({ select: all(is('part', 2)) }))).toEqual([2]);
+    expect(cappedBy(cap({ select: oneOf('part', [3]) }))).toEqual([3]);
+    expect(cappedBy(cap({ select: all(oneOf('part', [3])) }))).toEqual([3]);
+    expect(cappedBy()).toEqual([]);
+  });
+
+  it('are not capped by a cap that is scoped, conditional, soft, above 1, over days or over other dishes', () => {
+    expect(cappedBy(
+      cap({ scope: { meals: ['lunch'] } }),
+      cap({ when: { exists: is('id', 1) } }),
+      cap({ bounds: { softMax: 1 } }),
+      cap({ bounds: { hardMax: 2 } }),
+      cap({ groupBy: 'day' }),
+      cap({ select: oneOf('part', [2, 3]) }),
+      cap({ select: all(is('part', 2), is('id', 2)) }),
+      cap({ select: { not: is('part', 2) } }),
+      cap({ select: { field: 'part', op: 'neq', value: 2 } as Matcher }),
+      cap({ select: is('role', 'curry') }),
+    )).toEqual([]);
   });
 });
 
