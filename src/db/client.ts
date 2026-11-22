@@ -10,9 +10,10 @@ import type { TagGroupRecord } from '@/types/tags';
 import { CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertLibrary, convertedValueIds, type ConvertLookup } from './parts';
 import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
+import { convertLegacyRule, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
 import {
-  capRules, convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
-  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
+  capRules, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
+  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type LegacyRuleRecord } from './legacy-rules';
 
 export type { RuleRecord };
 
@@ -811,7 +812,7 @@ db.version(15).stores({
     (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
   );
   const now = new Date().toISOString();
-  const pairings: Omit<RuleRecord, 'id'>[] = [];
+  const pairings: Omit<LegacyRuleRecord, 'id'>[] = [];
   const isCurryCategory = (c: string): c is CurryCategory => (CURRY_CATEGORIES as readonly string[]).includes(c);
   await tx.table('components').toCollection().modify((component: LegacyComponent & { id: number }) => {
     const ids = component.compatible_base_category_ids?.filter((id) => baseCategories.has(id));
@@ -848,8 +849,8 @@ db.version(16).stores({
 }).upgrade(async (tx) => {
   const now = new Date().toISOString();
   const rulesTable = tx.table('rules');
-  const added: Omit<RuleRecord, 'id'>[] = [];
-  const add = (r: Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>) => added.push({ ...r, enabled: true, created_at: now });
+  const added: Omit<LegacyRuleRecord, 'id'>[] = [];
+  const add = (r: Omit<LegacyRuleRecord, 'id' | 'enabled' | 'created_at'>) => added.push({ ...r, enabled: true, created_at: now });
 
   // A library that was never seeded gets the defaults from runSeed instead.
   if ((await tx.table('components').count()) > 0) {
@@ -858,7 +859,7 @@ db.version(16).stores({
   }
   await tx.table('preferences').clear();
 
-  const rules: RuleRecord[] = await rulesTable.toArray();
+  const rules: LegacyRuleRecord[] = await rulesTable.toArray();
   const names = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c.name]));
   const owns = (id: number, template: string) => rules.some((r) => r.owner_component_id === id && r.spec.template === template);
 
@@ -908,7 +909,7 @@ db.version(17).stores({
   active_plan: 'id',
   notices: 'id',
 }).upgrade((tx) =>
-  tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+  tx.table('rules').toCollection().modify((rule: LegacyRuleRecord) => {
     if (rule.default_key !== undefined || rule.owner_component_id !== undefined) return;
     const key = defaultKeyForName(rule.name);
     if (key) rule.default_key = key;
@@ -930,7 +931,7 @@ db.version(18).stores({
   notices: 'id',
 }).upgrade((tx) => {
   const sides = defaultRules().find((r) => r.default_key === 'sides-only-when-asked')!;
-  return tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+  return tx.table('rules').toCollection().modify((rule: LegacyRuleRecord) => {
     if (rule.owner_component_id !== undefined) return;
     if (rule.default_key === 'want-curry' || rule.default_key === 'want-subzi') rule.enabled = false;
     if (rule.default_key === 'extras-only-when-asked') {
@@ -969,14 +970,14 @@ db.version(19).stores({
   notices: 'id',
 }).upgrade(async (tx) => {
   const rulesTable = tx.table('rules');
-  const rules = (await rulesTable.toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const rules = (await rulesTable.toArray() as LegacyRuleRecord[]).sort((a, b) => a.id - b.id);
   const components = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c]));
   const baseCategories = new Set(
     (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
   );
   const removed = new Set<number>();
-  const changed = new Map<number, RuleRecord>();
-  const added: Omit<RuleRecord, 'id'>[] = [];
+  const changed = new Map<number, LegacyRuleRecord>();
+  const added: Omit<LegacyRuleRecord, 'id'>[] = [];
   const now = new Date().toISOString();
   const unowned = () => rules.filter((r) => r.owner_component_id === undefined && !removed.has(r.id));
 
@@ -999,7 +1000,7 @@ db.version(19).stores({
   }
 
   // Served-with links by owner and slot; a dish owns at most one per slot, so new values merge into it.
-  const links = new Map<string, RuleRecord | Omit<RuleRecord, 'id'>>();
+  const links = new Map<string, LegacyRuleRecord | Omit<LegacyRuleRecord, 'id'>>();
   for (const rule of rules) {
     const slot = rule.owner_component_id === undefined ? undefined : ownedSlot(rule);
     if (slot?.startsWith('serve:')) links.set(`${rule.owner_component_id}:${slot}`, rule);
@@ -1008,7 +1009,7 @@ db.version(19).stores({
   for (const rule of unowned()) {
     if (rule.spec.template !== 'require_with') continue;
     const p = rule.spec.params;
-    const dishes = [...new Set(p.components ?? [])];
+    const dishes = [...new Set<number>(p.components ?? [])];
     if ((p.extraCategories ?? []).length > 0 || dishes.length === 0 || !dishes.every(isSide)) continue;
     const when = p.when as Matcher;
     if (!isLeaf(when) || (when.op !== 'eq' && when.op !== 'in')) continue;
@@ -1086,7 +1087,7 @@ db.version(20).stores({
   await tx.table('components').bulkDelete([...maps.component.keys()]);
   await tx.table('categories').bulkDelete([...categoryMap.keys()]);
 
-  const rules = (await tx.table('rules').toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const rules = (await tx.table('rules').toArray() as LegacyRuleRecord[]).sort((a, b) => a.id - b.id);
   const removed = new Set<number>();
   const slotsOf = new Map<number, Set<string>>();
   for (const rule of rules) {

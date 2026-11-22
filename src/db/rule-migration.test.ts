@@ -5,7 +5,8 @@ import { db, RULE_MIGRATION_NOTICE_ID } from '@/db/client';
 import { all, is, oneOf } from '@/planner';
 import { legacyPartIds } from '@/db/parts';
 import { runSeed } from '@/db/seed';
-import { capRules, defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
+import { RuleSpecSchema } from '@/rules';
+import { capRules, defaultRules, linkRule, readLink } from '@/db/legacy-rules';
 
 const V13_STORES = {
   categories: '++id, kind, name',
