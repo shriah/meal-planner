@@ -15,7 +15,7 @@ export {
   readOwned, ownedChanges, linkChanges, sameLink, PLAIN_OWNED_SLOTS, dayModeOf, daysOfMode, describeDays, describeMeals,
   type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkKind, type LinkParts, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkWhen, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type LinkChange, type DayMode,
 } from './owned';
-export { compileRules, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
+export { compileRules, cappedParts, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export { toPartMatcher, constraintOverParts, libraryNames, type RuleParts } from './legacy-parts';
 export {
   CONDITION_FIELDS, toMatcher, fromMatcher, groupProblems, emptyGroup,

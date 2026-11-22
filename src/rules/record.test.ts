@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { all, is, matcherFields, not, oneOf, type Constraint, type Matcher } from '@/planner';
-import { compileRules, missingReferences, ruleLevel, type KnownIds, type RuleRecord } from './record';
+import { cappedParts, compileRules, missingReferences, ruleLevel, type KnownIds, type RuleRecord } from './record';
 import { RuleSpecSchema } from './templates';
-import { defaultRules } from './defaults';
+import { capRules, defaultRules } from './defaults';
 import { linkRule } from './owned';
 import { TEST_RULE_PARTS } from './test-parts';
 
@@ -354,5 +354,22 @@ describe('links over parts', () => {
     ]);
     // Without the categories' parts, nothing is checked.
     expect(compileRules([at(1, pairing)], { ...known, categoryPart: undefined }, TEST_RULE_PARTS).issues).toEqual([]);
+  });
+});
+
+describe('cappedParts', () => {
+  const stored = (r: { name: string; spec: RuleRecord['spec'] }, id: number, enabled = true): RuleRecord => ({ ...r, id, enabled, created_at: '' });
+
+  it('reads the parts capped at one per meal as the planner does: enabled, hard, unscoped', () => {
+    const caps = capRules(TEST_RULE_PARTS.list).map((r, i) => stored(r, i + 1));
+    expect([...cappedParts(caps, TEST_RULE_PARTS)].sort()).toEqual([2, 3]);
+    expect([...cappedParts([{ ...caps[0], enabled: false }, caps[1]], TEST_RULE_PARTS)]).toEqual([3]);
+    const soft = stored({ name: 'soft', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 1, strength: 'prefer' } } }, 9);
+    const two = stored({ name: 'two', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 2 } } }, 10);
+    const lunch = stored({ name: 'lunch', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 1, scope: { meals: ['lunch'] } } } }, 11);
+    expect([...cappedParts([soft, two, lunch], TEST_RULE_PARTS)]).toEqual([]);
+    // An old rule over a component type is read through the converted parts.
+    const old = stored({ name: 'old', spec: { template: 'limit', params: { match: is('componentType', 'extra'), per: 'meal', max: 1 } } }, 12);
+    expect([...cappedParts([old], TEST_RULE_PARTS)]).toEqual([4]);
   });
 });

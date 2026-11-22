@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { addableSlots, describeLink, linkTargets, linkWarnings, type DishLink, type LinkWarning } from '@/rules'
 import type { ComponentType } from '@/types/component'
-import { linkNames, ownerPartOf, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
+import { cappedOf, linkNames, ownerPartOf, ShareLibraryLookup, useLibraryLookup } from '../LibraryLookup'
 import { LinkEditor } from './LinkEditor'
 
 interface LinkListProps {
@@ -53,7 +53,7 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
   const name = dishName.trim() || 'This dish'
   const firstPart = lookup.parts[0]?.id
   const targets = linkTargets(lookup.parts, (part) => lookup.categories.some((c) => c.part_id === part))
-  const slotsLeft = ownerPart !== undefined && addableSlots(ownerPart, links, targets, lookup.parts).length > 0
+  const slotsLeft = ownerPart !== undefined && addableSlots(ownerPart, links, targets, lookup.parts, cappedOf(lookup)).length > 0
 
   // The editor reads this lookup rather than starting its own, which would open with no options.
   const editor = (initial?: DishLink, index?: number) => (

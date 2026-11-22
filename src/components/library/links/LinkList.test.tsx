@@ -9,7 +9,7 @@ import { db } from '@/db/client';
 import { legacyPartIds, type LegacyParts } from '@/db/parts';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import { addCategory } from '@/services/category-db';
-import type { DishLink, LinkKind } from '@/rules';
+import { capRules, type DishLink, type LinkKind, type RuleRecord } from '@/rules';
 import type { ComponentType } from '@/types/component';
 import { LinkList } from './LinkList';
 import { LibraryLookupProvider, useLibraryLookup } from '../LibraryLookup';
@@ -26,11 +26,13 @@ const targetValue = (type: ComponentType, kind: LinkKind) => `${P[type]}:${kind}
 const curryType = (name: string) => addCategory({ kind: 'curry', name });
 
 beforeEach(async () => {
-  // The app creates the parts at start.
-  P = legacyPartIds((await ensurePartsAndTagGroups()).parts);
+  // The app creates the parts at start, and a converted library caps the curry and the subzi at one per meal.
+  const { parts } = await ensurePartsAndTagGroups();
+  P = legacyPartIds(parts);
   await db.categories.clear();
   await db.components.clear();
   await db.rules.clear();
+  await db.rules.bulkAdd(capRules(parts).map((r) => ({ ...r, enabled: true, created_at: '' })) as RuleRecord[]);
 });
 
 /** A button once it can be used: the link buttons wait for the library lookup to load. */
@@ -112,11 +114,10 @@ describe('LinkList', () => {
     expect(targets).toContain('Curry types');
     await userEvent.selectOptions(linkTo, 'Curry types');
     expect(within(screen.getByRole('group', { name: 'Mode' })).getAllByRole('button').map((b) => b.textContent)).toEqual(['Comes with']);
-    // An extra's own part: only never with.
     await userEvent.selectOptions(linkTo, 'Extra categories');
     expect(screen.queryByRole('button', { name: 'Only with' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Comes with' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Never with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Never with' })).toBeInTheDocument();
 
     await userEvent.selectOptions(linkTo, 'Base categories');
     await userEvent.click(screen.getByRole('button', { name: 'Only with' }));
@@ -176,9 +177,9 @@ describe('LinkList', () => {
 
     await userEvent.click(await readyButton('Add link'));
     const linkTo = screen.getByRole('combobox', { name: 'Link to' });
-    // Each part's categories, then each part's dishes, in part order; its own part for never with only.
+    // Each part's categories, then each part's dishes, in part order; not its own part, which holds one curry.
     expect(within(linkTo).getAllByRole('option').map((o) => o.textContent)).toEqual([
-      'Base categories', 'Curry types', 'Extra categories', 'Specific bases', 'Specific curries', 'Specific subzis', 'Specific extras',
+      'Base categories', 'Extra categories', 'Specific bases', 'Specific subzis', 'Specific extras',
     ]);
     expect(linkTo).toHaveValue(targetValue('base', 'category'));
     expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
@@ -242,7 +243,8 @@ describe('LinkList', () => {
   it('limits a link to days and meals', async () => {
     const soup = await curryType('soup');
     const onChange = vi.fn();
-    render(<Harness initial={[]} onChange={onChange} />);
+    // An extra may keep away from curry types; a curry is not offered its own.
+    render(<Harness initial={[]} componentType="extra" onChange={onChange} />);
 
     await userEvent.click(await readyButton('Add link'));
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Curry types');
@@ -375,13 +377,13 @@ describe('LinkList', () => {
       expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: to('subzi', 'dish'), values: [aloo], strength: 'always', when: { [P.curry]: [sambar] } }]);
     });
 
-    it('offers the pickers on a curry\'s comes-with link too, and none on a link served with a higher part', async () => {
+    it('offers a curry\'s comes-with link a picker for every part but the first, the target\'s and its own, and none on a link served with a higher part', async () => {
       await library();
       render(<Harness initial={[]} componentType="curry" />);
       await userEvent.click(await readyButton('Add link'));
       await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
       expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
-      expect(curryPicker()).toBeInTheDocument();
+      expect(curryPicker()).not.toBeInTheDocument();
       expect(subziPicker()).toBeInTheDocument();
       expect(extraPicker()).not.toBeInTheDocument();
       await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific bases');

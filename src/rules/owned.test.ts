@@ -12,6 +12,8 @@ import { TEST_RULE_PARTS } from './test-parts';
 const PARTS = TEST_RULE_PARTS.list;
 const BASE = 1, CURRY = 2, SUBZI = 3, EXTRAS = 4;
 const dishes = (part: number): LinkTarget => ({ part, kind: 'dish' });
+/** The converted library caps the Curry and Subzi at one per meal. */
+const CAPS = new Set([CURRY, SUBZI]);
 const categories = (part: number): LinkTarget => ({ part, kind: 'category' });
 const dish = { id: 7, name: 'Sambar', part_id: CURRY };
 const NONE = { days: [], meals: [], neverAuto: false };
@@ -95,12 +97,20 @@ describe('links to specific dishes', () => {
 });
 
 describe('which links a dish is offered', () => {
-  it('offers never with to any part, and only with and comes with to any part but its own', () => {
-    for (const target of [dishes(CURRY), categories(CURRY), dishes(BASE)]) expect(offersLink(CURRY, target, PARTS, 'never')).toBe(true);
-    expect(offersLink(CURRY, dishes(CURRY), PARTS, 'comes')).toBe(false);
-    expect(offersLink(CURRY, dishes(CURRY), PARTS, 'with')).toBe(false);
-    expect(offersLink(CURRY, dishes(EXTRAS), PARTS, 'comes')).toBe(true);
-    expect(offersLink(CURRY, dishes(BASE), PARTS, 'with')).toBe(true);
+  it('offers every mode to another part, and its own part only where a meal may hold two: not the first part, nor a capped one', () => {
+    for (const target of [dishes(EXTRAS), categories(CURRY), dishes(BASE)]) expect(offersLink(SUBZI, target, PARTS, 'never', CAPS)).toBe(true);
+    expect(offersLink(CURRY, dishes(EXTRAS), PARTS, 'comes', CAPS)).toBe(true);
+    expect(offersLink(CURRY, dishes(BASE), PARTS, 'with', CAPS)).toBe(true);
+    for (const mode of ['comes', 'never', 'with'] as const) {
+      expect(offersLink(CURRY, dishes(CURRY), PARTS, mode, CAPS)).toBe(false);
+      expect(offersLink(CURRY, categories(CURRY), PARTS, mode, CAPS)).toBe(false);
+      expect(offersLink(BASE, dishes(BASE), PARTS, mode, CAPS)).toBe(false);
+    }
+    expect(offersLink(EXTRAS, dishes(EXTRAS), PARTS, 'comes', CAPS)).toBe(true);
+    expect(offersLink(EXTRAS, dishes(EXTRAS), PARTS, 'never', CAPS)).toBe(true);
+    expect(offersLink(EXTRAS, dishes(EXTRAS), PARTS, 'with', CAPS)).toBe(false);
+    // Without its cap, a meal may hold two curries, so a curry may bring another.
+    expect(offersLink(CURRY, dishes(CURRY), PARTS, 'comes')).toBe(true);
     expect(offersLink(CURRY, dishes(99), PARTS, 'never')).toBe(false);
   });
 
@@ -109,14 +119,41 @@ describe('which links a dish is offered', () => {
     expect(bringMode(CURRY, EXTRAS, PARTS)).toBe('comes');
     expect(bringMode(EXTRAS, CURRY, PARTS)).toBe('serve');
     expect(bringMode(CURRY, BASE, PARTS)).toBe('serve');
+    // A sibling of the same part is brought: the same part is neither above nor below.
+    expect(bringMode(EXTRAS, EXTRAS, PARTS)).toBe('comes');
   });
 
-  it('offers the modes of today: served with, only with and never with to the first part; comes with and never with below; never with to its own part', () => {
-    expect(linkModes(CURRY, categories(BASE), PARTS)).toEqual(['serve', 'with', 'never']);
-    expect(linkModes(CURRY, dishes(EXTRAS), PARTS)).toEqual(['comes', 'never']);
-    expect(linkModes(EXTRAS, dishes(CURRY), PARTS)).toEqual(['serve', 'never']);
-    expect(linkModes(CURRY, categories(CURRY), PARTS)).toEqual(['never']);
-    expect(linkModes(BASE, dishes(BASE), PARTS)).toEqual(['never']);
+  it('offers the modes of today: served with, only with and never with to the first part; comes with and never with elsewhere', () => {
+    expect(linkModes(CURRY, categories(BASE), PARTS, CAPS)).toEqual(['serve', 'with', 'never']);
+    expect(linkModes(CURRY, dishes(EXTRAS), PARTS, CAPS)).toEqual(['comes', 'never']);
+    expect(linkModes(EXTRAS, dishes(CURRY), PARTS, CAPS)).toEqual(['serve', 'never']);
+    expect(linkModes(EXTRAS, dishes(EXTRAS), PARTS, CAPS)).toEqual(['comes', 'never']);
+    expect(linkModes(CURRY, categories(CURRY), PARTS, CAPS)).toEqual([]);
+    expect(linkModes(BASE, dishes(BASE), PARTS, CAPS)).toEqual([]);
+  });
+
+  it('offers each converted type exactly today\'s links, by button and target, but no curry its own curry types', () => {
+    // Today's offers (owned.ts before parts), by the button the editor shows and the old target name.
+    const sides = ['extra_category', 'curry_category', 'curry_dish', 'subzi_dish', 'extra_dish'];
+    const toBase = ['Served with:base_category', 'Served with:base_dish', 'Only with:base_category', 'Only with:base_dish', 'Never with:base_category', 'Never with:base_dish'];
+    const today: Record<'base' | 'curry' | 'subzi' | 'extra', string[]> = {
+      base: sides.flatMap((t) => [`Comes with:${t}`, `Never with:${t}`]),
+      // Today a curry was also offered its own curry types (comes with and never with); a capped part offers no links to itself.
+      curry: [...toBase, ...['extra_category', 'subzi_dish', 'extra_dish'].flatMap((t) => [`Comes with:${t}`, `Never with:${t}`])],
+      subzi: [...toBase, ...['extra_category', 'curry_category', 'curry_dish', 'extra_dish'].flatMap((t) => [`Comes with:${t}`, `Never with:${t}`])],
+      extra: [...toBase, ...sides.flatMap((t) => [`Comes with:${t}`, `Never with:${t}`])],
+    };
+    const OLD: Record<string, string> = {
+      '1:category': 'base_category', '2:category': 'curry_category', '4:category': 'extra_category',
+      '1:dish': 'base_dish', '2:dish': 'curry_dish', '3:dish': 'subzi_dish', '4:dish': 'extra_dish',
+    };
+    const label = (mode: DishLink['mode'], t: LinkTarget) =>
+      mode === 'with' ? 'Only with' : mode === 'never' ? 'Never with' : mode === 'serve' && t.part === BASE ? 'Served with' : 'Comes with';
+    const targets = linkTargets(PARTS, (p) => p !== SUBZI);
+    for (const [type, owner] of [['base', BASE], ['curry', CURRY], ['subzi', SUBZI], ['extra', EXTRAS]] as const) {
+      const offered = targets.flatMap((t) => linkModes(owner, t, PARTS, CAPS).map((m) => `${label(m, t)}:${OLD[`${t.part}:${t.kind}`]}`));
+      expect(offered.sort(), type).toEqual([...today[type]].sort());
+    }
   });
 
   it('lists every part\'s categories, then every part\'s dishes', () => {
@@ -269,9 +306,9 @@ describe('addableSlots', () => {
   const targets = linkTargets(PARTS, (p) => p !== SUBZI);
 
   it('offers a curry served with bases, only with bases, never with every target and comes with every lower one', () => {
-    expect(addableSlots(CURRY, [], targets, PARTS)).toEqual([
-      'serve:1:category', 'with:1:category', 'never:1:category', 'never:2:category', 'comes:4:category', 'never:4:category',
-      'serve:1:dish', 'with:1:dish', 'never:1:dish', 'never:2:dish', 'comes:3:dish', 'never:3:dish', 'comes:4:dish', 'never:4:dish',
+    expect(addableSlots(CURRY, [], targets, PARTS, CAPS)).toEqual([
+      'serve:1:category', 'with:1:category', 'never:1:category', 'comes:4:category', 'never:4:category',
+      'serve:1:dish', 'with:1:dish', 'never:1:dish', 'comes:3:dish', 'never:3:dish', 'comes:4:dish', 'never:4:dish',
     ]);
   });
 

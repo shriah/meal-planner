@@ -1,5 +1,5 @@
 // Stored rules and their compilation into planner constraints.
-import { isLeaf, matcherFields, type Bounds, type Constraint, type Matcher, type RuleLevel } from '@/planner';
+import { cappedPart, isLeaf, matcherFields, type Bounds, type Constraint, type CountConstraint, type Matcher, type RuleLevel } from '@/planner';
 import { constraintOverParts, type RuleParts } from './legacy-parts';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
@@ -104,6 +104,26 @@ export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
 /** Whether a leave-out rule names the first part, which holds every meal's one main dish and is never left out. */
 function leavesOutFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
   return spec.template === 'skip_when' && parts.list.length > 0 && spec.params.skip.includes(parts.list[0].id);
+}
+
+/**
+ * The parts the stored rules cap at one dish per meal, read as the planner reads them (`cappedPart`: an enabled hard
+ * per-meal maximum of 1 over one part, unscoped). On the converted parts these are the Curry and Subzi caps.
+ */
+export function cappedParts(rules: readonly RuleRecord[], parts: RuleParts): Set<number> {
+  const out = new Set<number>();
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    const parsed = parseSpec(rule.spec);
+    if (!parsed.ok) continue;
+    for (const body of compileSpec(parsed.spec, { firstPart: parts.list[0]?.id })) {
+      if (body.kind !== 'count') continue;
+      const c = (parts.legacy ? constraintOverParts(body as Constraint, parts.legacy) : body) as CountConstraint;
+      const part = cappedPart(c);
+      if (part !== undefined) out.add(part);
+    }
+  }
+  return out;
 }
 
 /** Whether a comes link waits for the first part, which every meal holds, so the wait means nothing. */

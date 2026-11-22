@@ -13,7 +13,7 @@ export {
   type Constraint, type CountConstraint, type PreferConstraint, type PairConstraint, type RuleLevel, type GroupBy, type TimeGroup, type Bounds, type Origin,
 } from './constraints';
 export {
-  capped, compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, partPosition, slotPairs, UNKNOWN_COMPONENT,
+  capped, cappedPart, compileModel, score, compareScore, explain, groupText, bringsWith, mealBrings, partPosition, slotPairs, UNKNOWN_COMPONENT,
   type CompiledModel, type SlotPair, type Brings, type Want, type Score, type ScoreResult, type Justification, type GroupKey, type BoundKind, type ExplainNames,
 } from './scorer';
 export { builtinConstraints } from './builtins';

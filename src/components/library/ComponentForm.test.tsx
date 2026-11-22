@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { is } from '@/planner';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { readLink as readLinkOver, linkRule as buildLink, pairingCategories, pairingRule as buildPairing, ruleDays, ruleMeals, type DishLink, type LinkKind, type RuleRecord } from '@/rules';
+import { capRules, readLink as readLinkOver, linkRule as buildLink, pairingCategories, pairingRule as buildPairing, ruleDays, ruleMeals, type DishLink, type LinkKind, type RuleRecord } from '@/rules';
 import { legacyPartIds, type LegacyParts } from '@/db/parts';
 import { ensurePartsAndTagGroups } from '@/db/parts-store';
 import type { ComponentType } from '@/types/component';
@@ -41,12 +41,13 @@ afterEach(() => {
 });
 
 beforeEach(async () => {
-  // The app creates the parts at start.
+  // The app creates the parts at start, and a converted library caps the curry and the subzi at one per meal.
   PARTS = (await ensurePartsAndTagGroups()).parts;
   P = legacyPartIds(PARTS);
   await db.categories.clear();
   await db.components.clear();
   await db.rules.clear();
+  await db.rules.bulkAdd(capRules(PARTS).map((r) => ({ ...r, enabled: true, created_at: '' })) as RuleRecord[]);
 });
 
 /** A button once it can be used: the link buttons wait for the library lookup to load. */
@@ -601,9 +602,8 @@ describe('ComponentForm links', () => {
     let targets = within(linkTo()).getAllByRole('option').map((o) => o.textContent);
     expect(targets).toContain('Extra categories');
     expect(targets).toContain('Curry types');
-    // A base may keep away from other bases, and that is all.
-    await userEvent.selectOptions(linkTo(), 'Specific bases');
-    expect(modes()).toEqual(['Never with']);
+    expect(targets).not.toContain('Base categories');
+    expect(targets).not.toContain('Specific bases');
     await userEvent.selectOptions(linkTo(), 'Specific curries');
     expect(modes()).toEqual(['Comes with', 'Never with']);
 
@@ -611,8 +611,14 @@ describe('ComponentForm links', () => {
     await userEvent.click(await readyButton('Add link'));
     targets = within(linkTo()).getAllByRole('option').map((o) => o.textContent);
     expect(targets).toContain('Specific bases');
-    await userEvent.selectOptions(linkTo(), 'Specific curries');
-    expect(modes()).toEqual(['Never with']);
+    expect(targets).not.toContain('Specific curries');
+    expect(targets).not.toContain('Curry types');
+
+    // An extra may bring another extra: a meal may hold several.
+    rerender(<ComponentForm key="extra" componentType="extra" mode="add" onSave={() => {}} onDiscard={() => {}} />);
+    await userEvent.click(await readyButton('Add link'));
+    await userEvent.selectOptions(linkTo(), 'Specific extras');
+    expect(modes()).toEqual(['Comes with', 'Never with']);
   });
 
   it('saves both modes of one target', async () => {
@@ -725,13 +731,14 @@ describe('ComponentForm links', () => {
     const stored = (await getOwnedRule(curryId, `with:${P.base}:category`))!;
     await db.rules.update(stored.id, { spec: { ...stored.spec, params: { ...stored.spec.params, cost: 5 } } as typeof stored.spec });
 
-    await curryType('soup');
+    // A curry is not offered its own curry types (a meal holds one curry), so the new link keeps away from extras.
+    await addCategory({ kind: 'extra', name: 'soup' });
     render(<LiveEditForm componentId={curryId} />);
     await screen.findByText(/often planned only with Rice Plates/);
-    await addLink('Curry types', 'Never with', ['soup']);
+    await addLink('Extra categories', 'Never with', ['soup']);
     await userEvent.click(screen.getByRole('button', { name: 'Save Curry' }));
 
-    await waitFor(async () => expect(await getOwnedRule(curryId, `never:${P.curry}:category`)).toBeDefined());
+    await waitFor(async () => expect(await getOwnedRule(curryId, `never:${P.extra}:category`)).toBeDefined());
     expect((await getOwnedRule(curryId, `with:${P.base}:category`))?.spec.params).toMatchObject({ strength: 'prefer', cost: 5 });
   });
 

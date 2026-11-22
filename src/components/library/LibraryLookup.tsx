@@ -5,7 +5,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { getAllComponents, getRules } from '@/services/food-db'
 import { getAllCategories, getCategoriesByKind } from '@/services/category-db'
 import { getParts } from '@/services/parts-db'
-import { libraryNames, type Names, type RuleRecord } from '@/rules'
+import { cappedParts, libraryNames, type Names, type RuleRecord } from '@/rules'
+import { legacyPartIds } from '@/db/parts'
 import type { ComponentRecord } from '@/types/component'
 import type { CategoryRecord } from '@/types/category'
 import type { PartRecord } from '@/types/part'
@@ -76,4 +77,13 @@ export function dishPart(lookup: Pick<LibraryLookup, 'parts'>, dish: Pick<Compon
 export function ownerPartOf(lookup: Pick<LibraryLookup, 'parts' | 'dishes'>, componentType: ComponentRecord['componentType'], selfId?: number): number | undefined {
   const stored = selfId === undefined ? undefined : lookup.dishes.find((d) => d.id === selfId)
   return dishPart(lookup, stored ?? { componentType })
+}
+
+/**
+ * The parts the stored rules cap at one dish per meal (on a converted library, the Curry and Subzi caps), read from the
+ * lookup's parts and rules as the planner reads them. A dish is offered links to its own part only where two may meet.
+ */
+export function cappedOf(lookup: Pick<LibraryLookup, 'parts' | 'rules'>): Set<number> {
+  const converted = (['base', 'curry', 'subzi', 'extra'] as const).every((t) => lookup.parts.some((p) => p.legacy === t))
+  return cappedParts(lookup.rules, { list: lookup.parts, ...(converted && { legacy: legacyPartIds(lookup.parts) }) })
 }

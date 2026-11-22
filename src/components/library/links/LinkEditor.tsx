@@ -10,7 +10,7 @@ import {
   singularNoun, STRENGTH_WORDS, type DishLink, type LinkMode, type LinkScope, type LinkSlot, type LinkStrength, type LinkTarget,
   type LinkValue, type LinkWhen,
 } from '@/rules'
-import { dishPart, linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
+import { cappedOf, dishPart, linkNames, useLibraryLookup, type LibraryLookup } from '../LibraryLookup'
 import { OptionPicker, type Option } from './OptionPicker'
 
 type Lookup = Pick<LibraryLookup, 'dishes' | 'categories' | 'parts'>
@@ -53,10 +53,10 @@ export function cleanScope(scope: LinkScope | undefined): LinkScope | undefined 
   return out.days || out.meals ? out : undefined
 }
 
-/** The parts a comes link may wait for: every part but the one it brings into and the first. */
-export function waitParts(lookup: Pick<LibraryLookup, 'parts'>, mode: LinkMode, target: LinkTarget): number[] {
+/** The parts a comes link may wait for: every part but the first, the one it brings into and the dish's own. */
+export function waitParts(lookup: Pick<LibraryLookup, 'parts'>, mode: LinkMode, target: LinkTarget, ownerPart: number): number[] {
   if (mode !== 'comes') return []
-  return lookup.parts.slice(1).map((p) => p.id).filter((id) => id !== target.part)
+  return lookup.parts.slice(1).map((p) => p.id).filter((id) => id !== target.part && id !== ownerPart)
 }
 
 interface LinkEditorProps {
@@ -76,17 +76,18 @@ export function LinkEditor({ ownerPart, selfId, dishName, initial, links, onDone
   const lookup = useLibraryLookup()
   const parts = lookup.parts
   const firstPart = parts[0]?.id
+  const capped = cappedOf(lookup)
   // An old "only with" link to a part below the first only limited the dish; it opens as the link that brings it.
   const shownMode = (link: Pick<DishLink, 'mode' | 'target'>): LinkMode =>
     link.mode === 'with' && link.target.part !== firstPart ? bringMode(ownerPart, link.target.part, parts) : link.mode
   const allTargets = linkTargets(parts, (part) => lookup.categories.some((c) => c.part_id === part))
   // What Add offers, plus the link being edited, so a stored link stays editable even where Add would not offer it.
   const offered: LinkSlot[] = [
-    ...addableSlots(ownerPart, links, allTargets, parts),
+    ...addableSlots(ownerPart, links, allTargets, parts, capped),
     ...(initial ? [linkSlotOf({ mode: shownMode(initial), target: initial.target })] : []),
   ]
   const modesFor = (t: LinkTarget): LinkMode[] => {
-    const modes = linkModes(ownerPart, t, parts).filter((m) => offered.includes(linkSlotOf({ mode: m, target: t })))
+    const modes = linkModes(ownerPart, t, parts, capped).filter((m) => offered.includes(linkSlotOf({ mode: m, target: t })))
     // A stored link stays editable in its own mode even where the editor would not offer that mode now.
     if (initial && sameTarget(initial.target, t) && !modes.includes(shownMode(initial))) modes.push(shownMode(initial))
     return modes
@@ -120,12 +121,12 @@ export function LinkEditor({ ownerPart, selfId, dishName, initial, links, onDone
   }
 
   const scope = cleanScope({ days, meals })
-  const waits = waitParts(lookup, mode, target)
+  const waits = waitParts(lookup, mode, target, ownerPart)
   const kept = cleanWhen(Object.fromEntries(waits.map((part) => [part, when[part] ?? []])))
   const link: DishLink = { mode, target, values, strength, ...(scope ? { scope } : {}), ...(kept ? { when: kept } : {}) }
   // A part the link no longer waits for drops what was picked for it, so coming back to it starts empty.
   const keepWaits = (nextMode: LinkMode, nextTarget: LinkTarget) => {
-    const still = waitParts(lookup, nextMode, nextTarget)
+    const still = waitParts(lookup, nextMode, nextTarget, ownerPart)
     setWhen((w) => Object.fromEntries(Object.entries(w).filter(([part]) => still.includes(Number(part)))))
   }
   const pickTarget = (next: LinkTarget) => {

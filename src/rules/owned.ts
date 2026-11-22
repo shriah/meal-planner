@@ -70,26 +70,36 @@ export const isDishTarget = (t: LinkTarget): boolean => t.kind === 'dish';
 export const sameTarget = (a: LinkTarget, b: LinkTarget): boolean => a.part === b.part && a.kind === b.kind;
 const position = (parts: LinkParts, id: number) => parts.findIndex((p) => p.id === id);
 
-/** What "comes with" stores from a dish of `ownerPart` to `targetPart`: a lower part is brought (comes), a higher one brings the dish (serve). */
+/**
+ * What "comes with" stores from a dish of `ownerPart` to `targetPart`: a lower part is brought (comes), a higher one
+ * brings the dish (serve). A dish of the same part brings its sibling (comes): the same part is neither above nor below,
+ * so a link pointing the wrong way (Task 7) is only ever one between different parts.
+ */
 export function bringMode(ownerPart: number, targetPart: number, parts: LinkParts): 'comes' | 'serve' {
-  return position(parts, targetPart) > position(parts, ownerPart) ? 'comes' : 'serve';
+  return position(parts, targetPart) >= position(parts, ownerPart) ? 'comes' : 'serve';
 }
 
-/** Whether a dish of `ownerPart` may hold a link of this mode to `target`: "never with" to any part, the others to any part but its own. */
-export function offersLink(ownerPart: number, target: LinkTarget, parts: LinkParts, mode: LinkMode = 'never'): boolean {
+/**
+ * Whether a dish of `ownerPart` may hold a link of this mode to `target`. Another part: "never with" always, the others
+ * too. Its own part: "comes with" and "never with" only, and only where a meal may hold two of it: not the first part,
+ * nor a part `capped` at one per meal (see `cappedParts`).
+ */
+export function offersLink(ownerPart: number, target: LinkTarget, parts: LinkParts, mode: LinkMode = 'never', capped: ReadonlySet<number> = new Set()): boolean {
   if (position(parts, target.part) < 0) return false;
-  return mode === 'never' || target.part !== ownerPart;
+  if (target.part !== ownerPart) return true;
+  return (mode === 'comes' || mode === 'never') && target.part !== parts[0]?.id && !capped.has(target.part);
 }
 
 /**
  * The modes the link editor offers from a dish of `ownerPart` to `target`, in button order: to the first part, the
  * bring mode (served with), only with and never with; to any other part the bring mode (comes with, or served with
- * above) and never with, as a link to a lower part brings its dish rather than limiting; to its own part never with.
+ * above) and never with, as a link to a lower part brings its dish rather than limiting; to its own part comes with and
+ * never with where `offersLink` allows.
  */
-export function linkModes(ownerPart: number, target: LinkTarget, parts: LinkParts): LinkMode[] {
+export function linkModes(ownerPart: number, target: LinkTarget, parts: LinkParts, capped: ReadonlySet<number> = new Set()): LinkMode[] {
   const bring = bringMode(ownerPart, target.part, parts);
   const modes: LinkMode[] = target.part === parts[0]?.id ? [bring, 'with', 'never'] : [bring, 'never'];
-  return modes.filter((m) => offersLink(ownerPart, target, parts, m));
+  return modes.filter((m) => offersLink(ownerPart, target, parts, m, capped));
 }
 
 /** Every target a link may name: each part's categories (where `hasCategories` says it has any), then each part's dishes. */
@@ -360,11 +370,11 @@ export function readOwned(rules: readonly (Pick<RuleRecord, 'spec'> & { id?: num
  * slot the dish already fills is left out, except a bring slot below the first part: a dish may bring, or be added
  * with, several dishes of one part.
  */
-export const addableSlots = (ownerPart: number, links: readonly DishLink[], targets: readonly LinkTarget[], parts: LinkParts): LinkSlot[] => {
+export const addableSlots = (ownerPart: number, links: readonly DishLink[], targets: readonly LinkTarget[], parts: LinkParts, capped: ReadonlySet<number> = new Set()): LinkSlot[] => {
   const repeatable = (l: Pick<DishLink, 'mode' | 'target'>) => l.mode === 'comes' || (l.mode === 'serve' && l.target.part !== parts[0]?.id);
   const taken = links.filter((l) => !repeatable(l)).map(linkSlotOf);
   return targets
-    .flatMap((target) => linkModes(ownerPart, target, parts).map((mode) => ({ mode, target })))
+    .flatMap((target) => linkModes(ownerPart, target, parts, capped).map((mode) => ({ mode, target })))
     .filter((l) => repeatable(l) || !taken.includes(linkSlotOf(l)))
     .map(linkSlotOf);
 };
