@@ -774,6 +774,25 @@ describe('v24 stored rules and links name parts', () => {
     expect(issues.map((x) => x.message)).toEqual(['refers to component #999, which no longer exists']);
   });
 
+  it('a link to a deleted category is kept and named by compileRules', async () => {
+    const old = linkRule(rice, { mode: 'comes', target: 'extra_category', values: [777] });
+    const link = stored(old);
+    await openV23([link]);
+    await db.open();
+
+    const rules = await db.rules.toArray();
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe(old.name);
+    const known = {
+      components: new Set((await db.components.toArray()).map((c) => c.id)),
+      categories: new Set((await db.categories.toArray()).map((c) => c.id)),
+      parts: new Set(PARTS.map((p) => p.id)),
+      partOf: new Map<number, number>(),
+    };
+    const { issues } = compileRules(rules, known, { list: NEW_PARTS, legacy: legacyPartIds(NEW_PARTS) });
+    expect(issues.map((x) => x.message)).toEqual(['refers to category #777, which no longer exists']);
+  });
+
   it('leaves a library without its parts alone', async () => {
     db.close();
     await Dexie.delete('FoodPlannerDB');
