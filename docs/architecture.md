@@ -155,13 +155,15 @@ change except where an upward link flips (below); `repair.snapshot.test.ts` is u
   Descriptions and the editor read part names from the stored parts. A rule naming a deleted category reads "category #n".
 - **Every rule is planned as stored.** The Stage 2 stock-default substitution (`partsSpec`: a default equal to the stock spec followed `varied`) is
   gone. A default plans over the parts it lists. Stage 4 must rewrite never-edited stock defaults when parts are added, removed or `varied` is toggled.
-- **Link shapes.** `LinkTarget` is `{ part, kind }` (kind: category, category type or dish; `src/rules/owned.ts`). Any part may link to any part in the UI;
+- **Link shapes.** `LinkTarget` is `{ part, kind }` (kind: category or dish; `src/rules/owned.ts`). Any part may link to any part in the UI;
   the rule is always modelled top to bottom, a higher dish decides and a lower one follows:
   - **comes** (`comes:<target>`, `comes_with`): the owner brings a dish of a lower part.
   - **serve** (`serve:<target>`, `require_with`): the owner is added when a dish of a higher part is in the meal. Today's "served with bases" is the serve
     link to the first part. "Papad comes with Sambar" (Extras over Curry) is stored as "when Sambar is in a meal, Papad is added".
   - A comes link into the owner's own part (a sibling) exists only for a part that is not the first and is not capped at one per meal (today, extras).
-    It is never wrong-way, and a comes link may name a `when` for any part except the part it brings into and the first part.
+    It is never wrong-way, and a comes link may name a `when` for any part except the part it brings into and the first part (the model allows this; the link editor offers a
+    wait only to a first-part owner's link, on the capped parts after the first that sit above the target's part: extras wait on curry and subzi, subzi on
+    curry, curry on nothing, and a stored wait stays editable).
   - `offersLink` and `addableSlots` take the parts and the capped parts (read from the cap rules), so a dish is offered only links that mean something.
 - **v24.** Converts stored rules and links to these shapes in one transaction (`src/db/rules-over-parts.ts`, `convertRuleSpec`), keeping every rule. A stock
   default becomes `defaultRules(parts)`'s spec for its key; an edited one gets the plain leaf conversion. Existing upward links flip: a subzi or extra that
@@ -175,12 +177,13 @@ change except where an upward link flips (below); `repair.snapshot.test.ts` is u
 - **Solver.** A dish placed in any part brings its pairings: a base brings Sambar, Sambar's serve link brings Papad (chained, up to `BRING_ROUNDS`). Adding or
   removing a dish in a many-dish part brings or takes its pairings in other parts. A link within one part keeps the old add-and-remove-alone path, and a dish
   that brings nothing across parts takes the old path.
-- **Rule-case runner.** A case may carry its own parts (`PlanCase.library`, `CaseWeeks.parts`), so cases run on any parts (Main, Side, Dessert); defaults and
-  caps work on them. A case may declare `issues` it expects (rule issues such as a wrong-way link); unexpected issues still fail it. Helpers that read the
+- **Rule-case runner.** A case may carry its own parts (`PlanCase.library`, `CaseWeeks.parts`), so cases run on any parts (Main, Side, Dessert); the default rules
+  are built over the parts the library has, but a custom library gets no default cap rules (they exist only for the converted Curry and Subzi), so a case that
+  needs a cap writes it as a rule. A case may declare `issues` it expects (rule issues such as a wrong-way link); unexpected issues still fail it. Helpers that read the
   legacy weeks throw on a custom library.
 - **Files that still name base, curry, subzi or extras** (the legacy list): `src/db/parts.ts`, `src/db/seed.tsx`, `src/db/seed-data.ts`,
-  `src/db/legacy-rules.ts`, `src/db/legacy-v14.ts`, `src/db/rules-over-parts.ts`, `src/rules/legacy-parts.ts`, `src/rules/legacy.ts`, `src/rules/presets.ts`
-  (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), the upgrades,
+  `src/db/legacy-rules.ts`, `src/db/legacy-v14.ts`, `src/db/rules-over-parts.ts`, `src/rules/legacy-parts.ts`, `src/rules/defaults.ts`, `src/rule-cases/run.ts`,
+  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), the upgrades,
   and Stage 3b's `link-warnings.ts` and `src/assistant`.
 - **Stage 3b owns:** link warnings over cap rules (`link-warnings.ts` still reasons about one curry and one subzi); the assistant (it drafts old fields, and
   an upward comes becomes a serve link); condition editor fields and presets over parts; the planner's joint part; a flipped subzi to curry link bringing its
@@ -215,7 +218,7 @@ side is the dish type plus the (negated) categories; a comes link is a `comes_wi
 
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
-option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` lists the slots Add may still fill (served with for every dish but one of the first part; "with" for base targets and "never" for every target `offersLink` allows, specific dishes included; never "with" for a side target, which is made as "comes with"; comes links never count as taken). `LinkEditor` then offers "Comes with" and "Never with" for side targets and "Served with", "Only with" and "Never with" for base targets, and "Comes with" wherever `offersComes` allows, as often as wanted, so a dish may hold several. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+option picker and optional day and meal limits. `addableSlots(ownerPart, links, targets, parts, capped)` in `src/rules/owned.ts` lists the slots Add may still fill: every mode `linkModes` offers from the owner's part to each target (`linkTargets` lists them), except a slot the dish already fills. A bring slot below the first part ("comes with", or "served with" a higher part) may be repeated, so a dish may hold several. `LinkEditor` offers, per target, the modes `linkModes` returns: to the first part the bring mode ("Served with" or "Comes with"), "Only with" and "Never with"; to any other part the bring mode and "Never with"; to the owner's own part "Comes with" and "Never with", only where `offersLink` allows (not the first part, not a part capped at one per meal). Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links are tracked by rule id (`DishLink.ruleId`; `readOwned` keeps every link, `linkChanges` diffs the form's links against the stored ones, and `saveComponent(..., links)` and `pendingRules(..., links)` take them), so links left untouched are never rewritten on save. `link-warnings.ts` shows
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
