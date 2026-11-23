@@ -7,7 +7,9 @@ import {
   convertDish,
   convertedValueIds,
   convertLibrary,
+  areCurryTypes,
   dishesWithParts,
+  hasConvertedParts,
   legacyPartIds,
   type ConvertIds,
   type ConvertLookup,
@@ -195,5 +197,23 @@ describe('dishesWithParts', () => {
     const d = [dish({ componentType: 'curry' })];
     expect(dishesWithParts(d, undefined)[0].part_id).toBeUndefined();
     expect(dishesWithParts(d, parts.slice(0, 3))[0].part_id).toBeUndefined();
+  });
+});
+
+describe('legacy-type checks', () => {
+  const part = (legacy?: ComponentType) => ({ legacy });
+
+  it('hasConvertedParts needs one part per component type', () => {
+    expect(hasConvertedParts([part('base'), part('curry'), part('subzi'), part('extra')])).toBe(true);
+    expect(hasConvertedParts([part('base'), part('curry'), part('subzi')])).toBe(false);
+    expect(hasConvertedParts([part('base'), part('curry'), part('subzi'), part()])).toBe(false);
+    expect(hasConvertedParts([])).toBe(false);
+  });
+
+  it('areCurryTypes is true only for a non-empty list of curry-kind categories', () => {
+    expect(areCurryTypes([cat(1, 'curry', 'Lentil'), cat(2, 'curry', 'Veg')])).toBe(true);
+    expect(areCurryTypes([cat(1, 'curry', 'Lentil'), cat(2, 'base', 'Rice')])).toBe(false);
+    expect(areCurryTypes([cat(1, 'extra', 'Crunchy')])).toBe(false);
+    expect(areCurryTypes([])).toBe(false);
   });
 });

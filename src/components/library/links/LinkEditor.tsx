@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { areCurryTypes } from '@/db/parts'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
 import {
   addableSlots, bringMode, cleanWhen, describeLink, linkModes, linkSlotOf, linkTargets, LINK_STRENGTHS, pluralNoun, sameTarget,
@@ -31,7 +32,7 @@ export function targetLabel(lookup: Lookup, target: LinkTarget): string {
   if (target.kind === 'dish') return `specific ${pluralNoun(name)}`
   const categories = lookup.categories.filter((c) => c.part_id === target.part)
   // The Curry part's categories are curry types, as `Names.categoryIsType` reads them.
-  const types = categories.length > 0 && categories.every((c) => c.kind === 'curry')
+  const types = areCurryTypes(categories)
   return `${singularNoun(name)} ${types ? 'types' : 'categories'}`
 }
 
@@ -53,10 +54,16 @@ export function cleanScope(scope: LinkScope | undefined): LinkScope | undefined 
   return out.days || out.meals ? out : undefined
 }
 
-/** The parts a comes link may wait for: every part but the first, the one it brings into and the dish's own. */
-export function waitParts(lookup: Pick<LibraryLookup, 'parts'>, mode: LinkMode, target: LinkTarget, ownerPart: number): number[] {
-  if (mode !== 'comes') return []
-  return lookup.parts.slice(1).map((p) => p.id).filter((id) => id !== target.part && id !== ownerPart)
+/**
+ * The parts a comes link may wait for. Only a first-part owner's link waits, and only on the capped parts after the first
+ * that sit above the part it brings into (on a converted library: extras wait on curry and subzi, subzi on curry, curry on
+ * nothing). `capped` is what `cappedOf` reads from the stored rules.
+ */
+export function waitParts(lookup: Pick<LibraryLookup, 'parts'>, capped: ReadonlySet<number>, mode: LinkMode, target: LinkTarget, ownerPart: number): number[] {
+  const { parts } = lookup
+  if (mode !== 'comes' || parts.length === 0 || ownerPart !== parts[0].id) return []
+  const into = parts.findIndex((p) => p.id === target.part)
+  return parts.slice(1, into < 0 ? 1 : into).map((p) => p.id).filter((id) => capped.has(id))
 }
 
 interface LinkEditorProps {
@@ -100,6 +107,12 @@ export function LinkEditor({ ownerPart, selfId, dishName, initial, links, onDone
   // A new link starts at the first target it can do more than keep away from (a dish's own part offers only that).
   const startTarget = targets.find((t) => modesFor(t).some((m) => m !== 'never')) ?? targets[0]
 
+  // What a link may wait for, plus what a stored link already waits for, so opening and saving it never drops that.
+  const waitsFor = (m: LinkMode, t: LinkTarget): number[] => {
+    const stored = m === 'comes' && initial && sameTarget(initial.target, t) ? Object.keys(initial.when ?? {}).map(Number) : []
+    return [...new Set([...waitParts(lookup, capped, m, t, ownerPart), ...stored])]
+  }
+
   const [target, setTarget] = useState<LinkTarget | undefined>(initial?.target ?? startTarget)
   const [mode, setMode] = useState<DishLink['mode']>(initial ? shownMode(initial) : (startTarget ? firstMode(startTarget) : 'never'))
   // Until a mode is picked (or a stored link opened), changing the target starts from that target's first mode.
@@ -121,12 +134,12 @@ export function LinkEditor({ ownerPart, selfId, dishName, initial, links, onDone
   }
 
   const scope = cleanScope({ days, meals })
-  const waits = waitParts(lookup, mode, target, ownerPart)
+  const waits = waitsFor(mode, target)
   const kept = cleanWhen(Object.fromEntries(waits.map((part) => [part, when[part] ?? []])))
   const link: DishLink = { mode, target, values, strength, ...(scope ? { scope } : {}), ...(kept ? { when: kept } : {}) }
   // A part the link no longer waits for drops what was picked for it, so coming back to it starts empty.
   const keepWaits = (nextMode: LinkMode, nextTarget: LinkTarget) => {
-    const still = waitParts(lookup, nextMode, nextTarget, ownerPart)
+    const still = waitsFor(nextMode, nextTarget)
     setWhen((w) => Object.fromEntries(Object.entries(w).filter(([part]) => still.includes(Number(part)))))
   }
   const pickTarget = (next: LinkTarget) => {

@@ -33,6 +33,16 @@ export function legacyPartIds(parts: readonly Pick<PartRecord, 'id' | 'legacy'>[
   return { base: idOf('base'), curry: idOf('curry'), subzi: idOf('subzi'), extra: idOf('extra') };
 }
 
+/** Whether every converted part (one per legacy component type) is among `parts`. */
+export function hasConvertedParts(parts: readonly Pick<PartRecord, 'legacy'>[]): boolean {
+  return (Object.keys(CONVERTED_PARTS) as ComponentType[]).every((t) => parts.some((p) => p.legacy === t));
+}
+
+/** Whether a part's categories are curry types: some, and all of the curry kind (what a converted Curry part holds). */
+export function areCurryTypes(categories: readonly Pick<CategoryRecord, 'kind'>[]): boolean {
+  return categories.length > 0 && categories.every((c) => c.kind === 'curry');
+}
+
 /** A dish whose part is known. */
 export type DishWithPart = ComponentRecord & { part_id: number };
 
@@ -45,8 +55,7 @@ export const withPart = <C extends ComponentRecord>(c: C, legacy: LegacyParts): 
  * treats a dish saved without one as the planner does. Unchanged while the converted parts are not all there (not yet loaded).
  */
 export function dishesWithParts<C extends ComponentRecord>(dishes: readonly C[], parts: readonly Pick<PartRecord, 'id' | 'legacy'>[] | undefined): C[] {
-  const types = Object.keys(CONVERTED_PARTS) as ComponentType[];
-  if (!parts || !types.every((t) => parts.some((p) => p.legacy === t))) return [...dishes];
+  if (!parts || !hasConvertedParts(parts)) return [...dishes];
   const legacy = legacyPartIds(parts);
   return dishes.map((c) => withPart(c, legacy));
 }

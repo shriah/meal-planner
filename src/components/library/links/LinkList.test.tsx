@@ -346,7 +346,7 @@ describe('LinkList', () => {
       expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: to('extra', 'dish'), values: [papad], strength: 'always' }]);
     });
 
-    it('offers a picker for every part but the first and the target\'s, and none for a never-with link', async () => {
+    it('offers a picker for the capped parts between the first and the target, and none for a never-with link', async () => {
       const { sambar, aloo } = await library();
       const onChange = vi.fn();
       render(<Harness initial={[]} componentType="base" onChange={onChange} />);
@@ -356,14 +356,18 @@ describe('LinkList', () => {
       await userEvent.selectOptions(linkTo, 'Specific subzis');
       expect(curryPicker()).toBeInTheDocument();
       expect(subziPicker()).not.toBeInTheDocument();
-      expect(extraPicker()).toBeInTheDocument();
+      expect(extraPicker()).not.toBeInTheDocument();
       await userEvent.click(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' }));
 
       // A target without the picker clears it, so coming back starts empty.
       await userEvent.selectOptions(linkTo, 'Specific curries');
       expect(curryPicker()).not.toBeInTheDocument();
+      expect(subziPicker()).not.toBeInTheDocument();
+      expect(extraPicker()).not.toBeInTheDocument();
+      await userEvent.selectOptions(linkTo, 'Specific extras');
+      expect(curryPicker()).toBeInTheDocument();
       expect(subziPicker()).toBeInTheDocument();
-      expect(extraPicker()).toBeInTheDocument();
+      expect(extraPicker()).not.toBeInTheDocument();
       await userEvent.selectOptions(linkTo, 'Specific subzis');
       expect(within(curryPicker()!).getByRole('checkbox', { name: 'Sambar' })).not.toBeChecked();
 
@@ -377,14 +381,14 @@ describe('LinkList', () => {
       expect(onChange).toHaveBeenLastCalledWith([{ mode: 'comes', target: to('subzi', 'dish'), values: [aloo], strength: 'always', when: { [P.curry]: [sambar] } }]);
     });
 
-    it('offers a curry\'s comes-with link a picker for every part but the first, the target\'s and its own, and none on a link served with a higher part', async () => {
+    it('offers a curry\'s comes-with link no picker, as only a first-part owner\'s link waits, and none on a link served with a higher part', async () => {
       await library();
       render(<Harness initial={[]} componentType="curry" />);
       await userEvent.click(await readyButton('Add link'));
       await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific extras');
       expect(screen.getByRole('button', { name: 'Comes with' })).toHaveAttribute('aria-pressed', 'true');
       expect(curryPicker()).not.toBeInTheDocument();
-      expect(subziPicker()).toBeInTheDocument();
+      expect(subziPicker()).not.toBeInTheDocument();
       expect(extraPicker()).not.toBeInTheDocument();
       await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Link to' }), 'Specific bases');
       expect(screen.getByRole('button', { name: 'Served with' })).toHaveAttribute('aria-pressed', 'true');
