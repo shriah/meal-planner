@@ -13,6 +13,7 @@ import {
 import { addRule, updateRule } from '@/services/food-db'
 import { getParts } from '@/services/parts-db'
 import { checkDraftRule, type DraftCheck } from '@/services/planning'
+import { cappedOf } from '@/components/library/LibraryLookup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,6 +44,7 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
   // Undefined until loaded: the form waits for the parts, so it never shows "part #n" for a moment.
   const loadedParts = useLiveQuery(getParts)
+  const rules = useLiveQuery(() => db.rules.toArray(), [], [])
   const data: EditorData = useMemo(() => {
     const parts = loadedParts ?? []
     return {
@@ -84,7 +86,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
 
   /** Switching type keeps the main condition when both types have one. */
   const changeTemplate = (template: TemplateId) => {
-    const next = newSpec(template) as { template: TemplateId; params: Record<string, unknown> }
+    // A new rule starts as it did when the parts were fixed: the varied parts counted, the capped parts left out.
+    const next = newSpec(template, { parts: data.parts, capped: cappedOf({ parts: data.parts, rules }) }) as { template: TemplateId; params: Record<string, unknown> }
     for (const key of ['match', 'when'] as const) {
       const carried = params.match ?? params.when
       if (key in next.params && carried) next.params[key] = carried

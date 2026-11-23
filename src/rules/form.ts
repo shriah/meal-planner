@@ -32,10 +32,20 @@ export interface FormField {
 
 type ParamsInput<T extends TemplateId> = Extract<RuleSpecInput, { template: T }>['params'];
 
+/** What a new rule's defaults read: the parts in meal order, and which of them the stored rules cap at one dish per meal. */
+export interface FormContext {
+  parts: readonly { id: number; varied: boolean }[];
+  capped: ReadonlySet<number>;
+}
+
 export interface TemplateForm<T extends TemplateId> {
   fields: FormField[];
-  defaults: () => ParamsInput<T>;
+  /** Without a context (the parts not known) the part lists start empty. */
+  defaults: (ctx?: FormContext) => ParamsInput<T>;
 }
+
+/** The capped parts after the first, in meal order. */
+const cappedAfterFirst = (ctx?: FormContext): number[] => (ctx?.parts.slice(1).map((p) => p.id).filter((id) => ctx.capped.has(id))) ?? [];
 
 const strength: FormField = {
   key: 'strength', kind: 'strength', label: 'How strict',
@@ -58,7 +68,8 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'match', kind: 'match', label: 'Only allow' },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, parts: [], strength: 'must' }),
+    // Today's default: only the first capped part after the first (on a converted library, Curry).
+    defaults: (ctx) => ({ match: TRUE, parts: cappedAfterFirst(ctx).slice(0, 1), strength: 'must' }),
   },
   require: {
     fields: [
@@ -85,7 +96,11 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'parts', kind: 'parts', label: 'Counting these parts of a meal', help: 'Leave empty for every part.', optional: true },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, within: 'week', strength: 'must' }),
+    // Today's default counts the varied parts (Base, Curry, Subzi); with none known, every part.
+    defaults: (ctx) => {
+      const varied = ctx?.parts.filter((p) => p.varied).map((p) => p.id) ?? [];
+      return { match: TRUE, within: 'week', ...(varied.length > 0 && { parts: varied }), strength: 'must' };
+    },
   },
   allowed_meals: {
     fields: [
@@ -102,7 +117,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'skip', kind: 'skip', label: 'Leave out' },
       scope, strength, cost,
     ],
-    defaults: () => ({ when: TRUE, skip: [], strength: 'must' }),
+    defaults: (ctx) => ({ when: TRUE, skip: cappedAfterFirst(ctx), strength: 'must' }),
   },
   require_with: {
     fields: [
@@ -156,9 +171,9 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   },
 };
 
-export function newSpec<T extends TemplateId>(template: T): Extract<RuleSpecInput, { template: T }> {
+export function newSpec<T extends TemplateId>(template: T, ctx?: FormContext): Extract<RuleSpecInput, { template: T }> {
   // Params are typed per template by the form table; the union cannot see that link.
-  return { template, params: TEMPLATE_FORMS[template].defaults() } as unknown as Extract<RuleSpecInput, { template: T }>;
+  return { template, params: TEMPLATE_FORMS[template].defaults(ctx) } as unknown as Extract<RuleSpecInput, { template: T }>;
 }
 
 /** Errors keyed by param key (`match`, `max`, …), `name`, or `rule` for the whole rule. */

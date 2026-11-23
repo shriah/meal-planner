@@ -23,6 +23,6 @@ export {
 } from './conditions';
 export {
   TEMPLATE_FORMS, newSpec, validateDraft, previewMatches, matchesDish, type StoredDish,
-  type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
+  type FormContext, type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
 export { allowedMealsOf } from './meals';

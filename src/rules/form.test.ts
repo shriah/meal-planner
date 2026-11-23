@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { all, is, TRUE } from '@/planner';
-import { newSpec, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
+import { newSpec, type FormContext, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
 import { RuleSpecSchema, TEMPLATE_IDS } from './templates';
 
 describe('rule forms', () => {
@@ -70,5 +70,37 @@ describe('rule forms', () => {
     ] satisfies StoredDish[];
     expect(previewMatches(all(is('componentType', 'curry'), is('protein_tag', 'fish')), lib).map((c) => c.name)).toEqual(['Fish Curry']);
     expect(previewMatches(is('role', 'extra'), lib).map((c) => c.name)).toEqual(['Fish Fry']);
+  });
+
+  describe('a new rule on the converted parts', () => {
+    // Base, Curry, Subzi, Extras in meal order; Curry and Subzi capped at one per meal; Extras not varied.
+    const ctx: FormContext = {
+      parts: [{ id: 1, varied: true }, { id: 2, varied: true }, { id: 3, varied: true }, { id: 4, varied: false }],
+      capped: new Set([2, 3]),
+    };
+
+    it("counts the varied parts for a don't-repeat rule", () => {
+      expect(newSpec('no_repeat', ctx).params).toMatchObject({ parts: [1, 2, 3] });
+    });
+
+    it('limits an only-allow rule to the first capped part after the first (Curry)', () => {
+      expect(newSpec('only_allow', ctx).params).toMatchObject({ parts: [2] });
+    });
+
+    it('leaves out the capped parts after the first (Curry and Subzi)', () => {
+      expect(newSpec('skip_when', ctx).params).toMatchObject({ skip: [2, 3] });
+    });
+
+    it('starts the part lists empty when the parts are not known', () => {
+      expect(newSpec('no_repeat').params).not.toHaveProperty('parts');
+      expect(newSpec('only_allow').params).toMatchObject({ parts: [] });
+      expect(newSpec('skip_when').params).toMatchObject({ skip: [] });
+    });
+
+    it('never preselects a part the rules do not cap', () => {
+      const none = { ...ctx, capped: new Set<number>() };
+      expect(newSpec('only_allow', none).params).toMatchObject({ parts: [] });
+      expect(newSpec('skip_when', none).params).toMatchObject({ skip: [] });
+    });
   });
 });
