@@ -117,7 +117,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'skip', kind: 'skip', label: 'Leave out' },
       scope, strength, cost,
     ],
-    defaults: (ctx) => ({ when: TRUE, skip: cappedAfterFirst(ctx), strength: 'must' }),
+    defaults: (ctx) => ({ when: TRUE, skip: cappedAfterFirst(ctx).slice(-1), strength: 'must' }),
   },
   require_with: {
     fields: [

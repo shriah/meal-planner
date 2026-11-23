@@ -87,8 +87,8 @@ describe('rule forms', () => {
       expect(newSpec('only_allow', ctx).params).toMatchObject({ parts: [2] });
     });
 
-    it('leaves out the capped parts after the first (Curry and Subzi)', () => {
-      expect(newSpec('skip_when', ctx).params).toMatchObject({ skip: [2, 3] });
+    it('leaves out the last capped part after the first (Subzi)', () => {
+      expect(newSpec('skip_when', ctx).params).toMatchObject({ skip: [3] });
     });
 
     it('starts the part lists empty when the parts are not known', () => {
