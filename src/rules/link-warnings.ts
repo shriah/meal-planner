@@ -29,12 +29,22 @@ interface Roles {
   /** A part's place in the meal; a lower number is higher up. */
   place: (part: number) => number;
 }
+/**
+ * The parts after the first that a meal holds one dish of: those a stored cap rule caps (`cappedParts`), and until Stage 5
+ * the Curry and Subzi parts (`appSingleParts`). `parts` are in meal order.
+ */
+export function singleParts(parts: readonly PlannerPart[], rules: readonly RuleRecord[]): Set<number> {
+  const legacy = convertedPartIds(parts);
+  const capped = new Set([...cappedParts(rules, { list: parts, ...(legacy && { legacy }) }), ...appSingleParts(parts)]);
+  if (parts.length > 0) capped.delete(parts[0].id);
+  return capped;
+}
+
 function rolesOf(parts: readonly PlannerPart[], rules: readonly RuleRecord[]): Roles | undefined {
   if (parts.length === 0) return undefined;
   const legacy = convertedPartIds(parts);
   const first = parts[0].id;
-  const capped = new Set([...cappedParts(rules, { list: parts, ...(legacy && { legacy }) }), ...appSingleParts(parts)]);
-  capped.delete(first);
+  const capped = singleParts(parts, rules);
   return {
     parts, first, capped, legacy,
     name: (part) => (parts.find((p) => p.id === part)?.name ?? `part ${part}`).toLowerCase(),

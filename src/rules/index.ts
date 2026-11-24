@@ -7,7 +7,7 @@ export {
 export { groupRules, type RuleGroups } from './groups';
 export { LEVELS, nearestLevel, STRENGTH_COST, STRENGTH_WORDS, type Level } from './levels';
 export { describeLink, shortLink } from './link-text';
-export { linkWarnings, type LinkWarning } from './link-warnings';
+export { linkWarnings, singleParts, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, describeWhen, pluralNoun, singularNoun, whenParts, type Names } from './describe';
 export { capRules, defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {

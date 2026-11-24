@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, partsOfDishes, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, TYPE_FIELDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
+import { bringMode, describeLink, describeWhen, offersLink, pluralNoun, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, partsOfDishes, readOwned, RuleSpecSchema, singleParts, singularNoun, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, TYPE_FIELDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -10,7 +10,8 @@ import {
 import { ALL_DAYS, type DayOfWeek, type PlanSlot, type WeeklyPlan } from '@/types/plan';
 import type { ToolDeclaration } from './gemini';
 import { MAX_LIST_ITEMS } from './limits';
-import { dishesWithParts, legacyPartIds } from '@/db/parts';
+import { dishesWithParts } from '@/db/parts';
+import type { PartRecord } from '@/types/part';
 import { namesFor, searchLibrary, type AssistantData } from './retrieve';
 import type { AssistantEffect, ToolContext } from './types';
 
@@ -31,16 +32,16 @@ const SERVE_STRENGTH = Object.fromEntries(
   (Object.keys(STRENGTH_WORDS) as LinkStrength[]).map((s) => [STRENGTH_WORDS[s].word, s]),
 ) as Record<(typeof SERVE_STRENGTHS)[number], LinkStrength>;
 
-// Each entry is one "comes with" link on the dish itself.
-const COMES_WITH_PARAM = {
+// Each entry is one link from the dish to the dishes or categories of one part.
+const LINKS_PARAM = {
   type: 'array',
-  description: 'Sides this dish brings along. Each entry is one link: name dishes (all curries, all subzis or all extras), or curry_types, or extra_categories; two entries bring both. A curry cannot come with curries, nor a subzi with subzis.',
+  description: 'Links from this dish, each to the dishes or categories of one part (a part name or id from summary.parts). To a part above the dish\'s own, the dish is added whenever one of them is in the meal (served with); to a part below, the dish brings one of them along (comes with). Each entry is one link, and two entries make two links. A dish links to its own part only where a meal may hold two of it, never in the first part.',
   items: obj({
-    dishes: { type: 'array', items: { type: 'string' }, description: 'Existing curry, subzi or extra names (one brought along)' },
-    curry_types: { type: 'array', items: { type: 'string', enum: [...CURRY_CATEGORIES] }, description: 'Curry types (one brought along)' },
-    extra_categories: { type: 'array', items: { type: 'string' }, description: 'Existing extra category names (one brought along)' },
+    part: { type: 'string', description: 'Part name or id, from summary.parts' },
+    dishes: { type: 'array', items: { type: 'string' }, description: 'Existing dish names or ids of that part (any one of them will do)' },
+    categories: { type: 'array', items: { type: 'string' }, description: 'Existing category names of that part, as summary.parts lists them' },
     strength: { type: 'string', enum: [...SERVE_STRENGTHS], description: 'How firmly: always (default), usually, often or sometimes' },
-  }),
+  }, ['part']),
 };
 
 export const TOOL_DECLARATIONS: ToolDeclaration[] = [
@@ -86,7 +87,7 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
   },
   {
     name: 'propose_dish',
-    description: 'Draft a new dish for the user to review and save. Does not save anything itself and never creates categories: base_category and extra_category must name an existing category. For a curry, subzi or extra, served_with_bases / served_with_base_categories pair it with bases: whenever one of them is the meal\'s base, the dish is added too. comes_with makes the dish bring sides along.',
+    description: 'Draft a new dish for the user to review and save. Does not save anything itself and never creates categories: base_category and extra_category must name an existing category. links pairs it with the dishes of other parts: served with those of a part above it, bringing one of a part below it.',
     parameters: obj({
       name: { type: 'string', description: 'Dish name' },
       componentType: { type: 'string', enum: [...COMPONENT_TYPES], description: 'Dish type' },
@@ -97,21 +98,15 @@ export const TOOL_DECLARATIONS: ToolDeclaration[] = [
       protein_tag: { type: 'string', enum: [...PROTEIN_TAGS] },
       regional_tags: { type: 'array', items: { type: 'string', enum: [...REGIONAL_TAGS] } },
       occasion_tags: { type: 'array', items: { type: 'string', enum: [...OCCASION_TAGS] } },
-      served_with_bases: { type: 'array', items: { type: 'string' }, description: 'Existing base dish names to serve this dish with (not for base dishes)' },
-      served_with_base_categories: { type: 'array', items: { type: 'string' }, description: 'Existing base category names to serve this dish with (not for base dishes)' },
-      served_with_strength: { type: 'string', enum: [...SERVE_STRENGTHS], description: 'How firmly: always (default), usually, often or sometimes' },
-      comes_with: COMES_WITH_PARAM,
+      links: LINKS_PARAM,
     }, ['name', 'componentType']),
   },
   {
     name: 'propose_pairing',
-    description: 'Pair a dish already in the library, for the user to review and save. A curry, subzi or extra can be served with bases: whenever one of them is the meal\'s base, the dish is added too. Any dish (a base too) can come with sides (comes_with): when the dish is in a meal, one of them is added. Does not save anything itself. Bases the dish is already served with are kept.',
+    description: 'Pair a dish already in the library, for the user to review and save. links works as in propose_dish: a link to a part above the dish adds the dish whenever one of them is in the meal; a link to a part below makes the dish bring one of them. Does not save anything itself. The first-part dishes and categories it is already served with are kept.',
     parameters: obj({
       dish: { type: 'string', description: 'Name or id of the dish' },
-      served_with_bases: { type: 'array', items: { type: 'string' }, description: 'Existing base dish names or ids to serve it with' },
-      served_with_base_categories: { type: 'array', items: { type: 'string' }, description: 'Existing base category names to serve it with' },
-      served_with_strength: { type: 'string', enum: [...SERVE_STRENGTHS], description: 'How firmly: always (default), usually, often or sometimes' },
-      comes_with: COMES_WITH_PARAM,
+      links: LINKS_PARAM,
     }, ['dish']),
   },
   {
@@ -136,10 +131,10 @@ const ExplainArgs = z.object({
 const SpecArg = z.union([z.string(), z.record(z.string(), z.unknown())]);
 const SimulateArgs = z.object({ name: z.string().trim().min(1), spec: SpecArg });
 const ProposeRuleArgs = z.object({ name: z.string().trim().min(1), spec: SpecArg });
-const ComesWithArgs = z.array(z.object({
+const LinksArgs = z.array(z.object({
+  part: z.union([z.string().trim().min(1), z.number().int()]),
   dishes: z.array(z.union([z.string().trim().min(1), z.number().int()])).optional(),
-  curry_types: z.array(z.string().trim().min(1)).optional(),
-  extra_categories: z.array(z.string().trim().min(1)).optional(),
+  categories: z.array(z.string().trim().min(1)).optional(),
   strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
 }));
 const ProposeDishArgs = z.object({
@@ -152,17 +147,11 @@ const ProposeDishArgs = z.object({
   protein_tag: z.string().optional(),
   regional_tags: z.array(z.string()).optional(),
   occasion_tags: z.array(z.string()).optional(),
-  served_with_bases: z.array(z.string().trim().min(1)).optional(),
-  served_with_base_categories: z.array(z.string().trim().min(1)).optional(),
-  served_with_strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
-  comes_with: ComesWithArgs.optional(),
+  links: LinksArgs.optional(),
 });
 const ProposePairingArgs = z.object({
   dish: z.union([z.string().trim().min(1), z.number().int()]),
-  served_with_bases: z.array(z.union([z.string().trim().min(1), z.number().int()])).optional(),
-  served_with_base_categories: z.array(z.string().trim().min(1)).optional(),
-  served_with_strength: z.preprocess(lower, z.enum(SERVE_STRENGTHS)).optional(),
-  comes_with: ComesWithArgs.optional(),
+  links: LinksArgs.optional(),
 });
 const MAX_CHANGES = 21;
 const NoArgs = z.object({}).passthrough();
@@ -215,7 +204,7 @@ function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; er
   if (!r.success) return { ok: false, error: `invalid rule: ${r.error.issues.map((i) => i.message).join('; ')}` };
   // A comes-with link is drafted on its dish, where the form checks it against the dish's other links.
   if (OWNED_ONLY_TEMPLATES.includes(r.data.template)) {
-    return { ok: false, error: `${r.data.template} is not a rule you can draft here; use comes_with on propose_pairing (or propose_dish) for the dish that brings the side` };
+    return { ok: false, error: `${r.data.template} is not a rule you can draft here; use links on propose_pairing (or propose_dish) for the dish that brings the side` };
   }
   const old = [...leafFields(r.data.params)].filter((f) => (TYPE_FIELDS as readonly string[]).includes(f));
   if (old.length) {
@@ -313,8 +302,6 @@ function resolveDish(wanted: string | number, data: AssistantData): { ok: true; 
   return { ok: false, error: `several dishes match "${wanted}": ${names}. Call again with one id.` };
 }
 
-const BASE_SERVED_WITH_BASES = 'a base cannot be served with bases; draft the curry, subzi or extra that goes with it instead';
-
 /** An existing category of this kind by name; categories are never created by the assistant. */
 function resolveCategory(kind: 'base' | 'extra', wanted: string | undefined, data: AssistantData): { id?: number; error?: string } {
   if (wanted === undefined) return {};
@@ -324,115 +311,104 @@ function resolveCategory(kind: 'base' | 'extra', wanted: string | undefined, dat
   return { error: `no ${kind} category named "${wanted}". Existing ${kind} categories: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
 }
 
-/** Served-with links to existing bases (by name or id) and base categories (by name). */
-function servedWithLinks(
-  data: AssistantData,
-  wantedBases: (string | number)[],
-  wantedCategories: string[],
-  strength: LinkStrength,
-): { ok: true; links: DishLink[] } | { ok: false; error: string } {
-  const bases = data.library.filter((c) => c.componentType === 'base');
-  const baseIds: number[] = [];
-  for (const wanted of wantedBases) {
-    const asId = typeof wanted === 'number' ? wanted : /^\d+$/.test(wanted) ? Number(wanted) : undefined;
-    const hit = bases.find((c) => (asId !== undefined ? c.id === asId : normName(c.name) === normName(String(wanted))));
-    if (!hit) return { ok: false, error: `no base named "${wanted}". Existing bases: ${bases.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
-    baseIds.push(hit.id);
-  }
-  const categoryIds: number[] = [];
-  for (const wanted of wantedCategories) {
-    const hit = resolveCategory('base', wanted, data);
-    if (hit.error) return { ok: false, error: hit.error };
-    categoryIds.push(hit.id!);
-  }
-  const base = legacyPartIds(data.parts).base;
-  return {
-    ok: true,
-    links: [
-      ...(baseIds.length ? [{ mode: 'serve' as const, target: { part: base, kind: 'dish' as const }, values: [...new Set(baseIds)], strength }] : []),
-      ...(categoryIds.length ? [{ mode: 'serve' as const, target: { part: base, kind: 'category' as const }, values: [...new Set(categoryIds)], strength }] : []),
-    ],
-  };
+/** The parts in meal order: the first is the one every meal holds one dish of. */
+const mealParts = (data: AssistantData): PartRecord[] => [...data.parts].sort((a, b) => a.position - b.position);
+const asNumber = (wanted: string | number) => (typeof wanted === 'number' ? wanted : /^\d+$/.test(wanted) ? Number(wanted) : undefined);
+
+/** A part by id (number or numeric text) or name. */
+function resolvePart(wanted: string | number, parts: readonly PartRecord[]): { ok: true; part: PartRecord } | { ok: false; error: string } {
+  const id = asNumber(wanted);
+  const hit = parts.find((p) => (id !== undefined ? p.id === id : normName(p.name) === normName(String(wanted))));
+  return hit ? { ok: true, part: hit } : { ok: false, error: `no part named "${wanted}". Parts: ${parts.map((p) => p.name).join(', ') || '(none)'}` };
 }
 
-type ComesTarget = { type: Exclude<ComponentType, 'base'>; kind: 'dish' | 'category' };
+/** Why a dish of `part` may not link to its own part (`offersLink`): the first part, or one a meal holds one dish of. */
+const ownPartRefusal = (part: PartRecord, first: number | undefined) => {
+  const one = singularNoun(part.name), many = pluralNoun(part.name);
+  return part.id === first
+    ? `a ${one} cannot be served with ${many}; link the dish that goes with it instead`
+    : `a meal holds one ${one}, so a ${one} does not come with ${many}`;
+};
 
-/** One "comes with" link per entry, on a dish of this type: dishes of one type, curry types, or extra categories. */
-function comesLinks(
+/** Whether a link adds its dish when a dish of the first part is in the meal: the dish form's "served with". */
+const servesFirst = (l: Pick<DishLink, 'mode' | 'target'>, data: AssistantData) => l.mode === 'serve' && l.target.part === mealParts(data)[0]?.id;
+
+/** A drafted link; its strength is left out when the model gave none, so a stored strength can be kept. */
+type DraftedLink = Omit<DishLink, 'strength'> & { strength?: LinkStrength };
+
+/**
+ * One link per entry and kind (dishes, then categories) from a dish of `owner.part`, by part: to a lower part the dish
+ * brings one of them (comes), to a higher part it is added when one of them is in the meal (serve), as the dish form
+ * stores them. Its own part only where `offersLink` allows. Links served with the first part are one link per kind,
+ * as the dish form holds them; `servedWith` lists their names as asked.
+ */
+function draftLinks(
   data: AssistantData,
-  componentType: ComponentType,
-  entries: z.infer<typeof ComesWithArgs>,
-  selfId?: number,
-): { ok: true; links: DishLink[] } | { ok: false; error: string } {
-  const sides = data.library.filter((c) => c.componentType !== 'base');
-  const links: DishLink[] = [];
+  owner: { id?: number; part: number },
+  entries: z.infer<typeof LinksArgs>,
+): { ok: true; links: DraftedLink[]; servedWith: string[] } | { ok: false; error: string } {
+  const parts = mealParts(data);
+  const first = parts[0]?.id;
+  const capped = singleParts(parts, data.rules);
+  const placed = dishesWithParts(data.library, data.parts);
+  const links: DraftedLink[] = [];
+  const servedWith: string[] = [];
+  const add = (link: DraftedLink) => {
+    const same = link.mode === 'serve' && link.target.part === first ? links.find((l) => linkSlotOf(l) === linkSlotOf(link)) : undefined;
+    if (!same) return void links.push(link);
+    same.values = [...new Set([...same.values, ...link.values])];
+    same.strength = link.strength ?? same.strength;
+  };
   for (const entry of entries) {
-    const kinds = [entry.dishes?.length, entry.curry_types?.length, entry.extra_categories?.length].filter(Boolean).length;
-    if (kinds === 0) return { ok: false, error: 'each comes_with entry needs dishes, curry_types or extra_categories' };
-    if (kinds > 1) return { ok: false, error: 'each comes_with entry is one kind of link: dishes, curry_types or extra_categories; use a separate entry for each' };
-    const strength = SERVE_STRENGTH[entry.strength ?? 'always'];
-    const legacy = legacyPartIds(data.parts);
-    // A meal holds one curry and one subzi, so neither comes with specific dishes of its own type. A link to a higher
-    // part is stored the other way round (the dish is added when that dish is in the meal), as the dish form stores it.
-    const add = (target: ComesTarget, values: number[]): string | undefined => {
-      if (target.type === componentType && target.kind === 'dish' && (componentType === 'curry' || componentType === 'subzi')) {
-        return `a ${componentType} does not come with ${componentType === 'curry' ? 'curries' : 'subzis'}`;
-      }
-      const part = legacy[target.type];
-      const mode = part === legacy[componentType] ? 'comes' : bringMode(legacy[componentType], part, data.parts);
-      links.push({ mode, target: { part, kind: target.kind }, values: [...new Set(values)], strength });
-      return undefined;
-    };
-    let error: string | undefined;
+    const found = resolvePart(entry.part, parts);
+    if (!found.ok) return found;
+    const { part } = found;
+    if (!entry.dishes?.length && !entry.categories?.length) return { ok: false, error: `each links entry needs dishes or categories of its part (${part.name})` };
+    const mode = part.id === owner.part ? 'comes' : bringMode(owner.part, part.id, parts);
+    if (!offersLink(owner.part, { part: part.id, kind: 'dish' }, parts, mode, capped)) return { ok: false, error: ownPartRefusal(part, first) };
+    const strength = entry.strength && SERVE_STRENGTH[entry.strength];
+    const one = singularNoun(part.name);
     if (entry.dishes?.length) {
-      const found: ComponentRecord[] = [];
-      for (const wanted of entry.dishes) {
-        const hit = resolveDish(wanted, { ...data, library: sides });
-        if (!hit.ok) {
-          const any = resolveDish(wanted, data);
-          return { ok: false, error: any.ok && any.dish.componentType === 'base' ? `${any.dish.name} is a base; only curries, subzis and extras can come along` : hit.error };
-        }
-        if (hit.dish.id === selfId) return { ok: false, error: `${hit.dish.name} cannot come with itself` };
-        found.push(hit.dish);
-      }
-      const types = new Set(found.map((c) => c.componentType));
-      if (types.size > 1) return { ok: false, error: 'the dishes of one comes_with entry must be of the same type (all curries, all subzis or all extras); use a separate entry for each type' };
-      const type = found[0].componentType as ComesTarget['type'];
-      error = add({ type, kind: 'dish' }, found.map((c) => c.id));
-    } else if (entry.curry_types?.length) {
-      const bad = badValues('curry_types', entry.curry_types, CURRY_CATEGORIES);
-      if (bad) return { ok: false, error: bad };
-      // A curry type is a category of the Curry part, made when a curry of that type is first saved.
-      const curryPart = legacyPartIds(data.parts).curry;
+      const inPart = placed.filter((c) => c.part_id === part.id);
       const ids: number[] = [];
-      for (const type of entry.curry_types) {
-        const hit = data.categories.find((c) => c.part_id === curryPart && c.name === type);
-        if (!hit) return { ok: false, error: `no curry in the library is of type "${type}"` };
+      for (const wanted of entry.dishes) {
+        const hit = resolveDish(wanted, { ...data, library: inPart });
+        if (!hit.ok) {
+          const elsewhere = resolveDish(wanted, { ...data, library: placed });
+          if (elsewhere.ok) {
+            const its = parts.find((p) => p.id === elsewhere.dish.part_id);
+            return { ok: false, error: `${elsewhere.dish.name} is not a ${one}; it is in ${its?.name ?? 'another part'}. Name it in an entry for its own part.` };
+          }
+          if (hit.error.startsWith('several')) return hit;
+          return { ok: false, error: `no ${one} named "${wanted}". Existing ${pluralNoun(part.name)}: ${inPart.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
+        }
+        if (hit.dish.id === owner.id) return { ok: false, error: `${hit.dish.name} cannot come with itself` };
+        ids.push(hit.dish.id);
+      }
+      add({ mode, target: { part: part.id, kind: 'dish' }, values: [...new Set(ids)], ...(strength && { strength }) });
+    }
+    if (entry.categories?.length) {
+      const options = data.categories.filter((c) => c.part_id === part.id);
+      const ids: number[] = [];
+      for (const wanted of entry.categories) {
+        const hit = options.find((c) => normName(c.name) === normName(wanted));
+        if (!hit) return { ok: false, error: `no ${one} category named "${wanted}". Categories of ${part.name}: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
         ids.push(hit.id);
       }
-      error = add({ type: 'curry', kind: 'category' }, ids);
-    } else {
-      const ids: number[] = [];
-      for (const wanted of entry.extra_categories ?? []) {
-        const hit = resolveCategory('extra', wanted, data);
-        if (hit.error) return { ok: false, error: hit.error };
-        ids.push(hit.id!);
-      }
-      error = add({ type: 'extra', kind: 'category' }, ids);
+      add({ mode, target: { part: part.id, kind: 'category' }, values: [...new Set(ids)], ...(strength && { strength }) });
     }
-    if (error) return { ok: false, error };
+    if (mode === 'serve' && part.id === first) servedWith.push(...(entry.dishes ?? []).map(String), ...(entry.categories ?? []));
   }
-  return { ok: true, links };
+  return { ok: true, links, servedWith };
 }
 
 /**
- * The error for links that cannot all hold: two curries (or subzis) in one base's always-served unit, or a clash with a
- * comes-with link. `stored` are the dish's links in force; they are judged with the new ones, but only a clash that
- * lands on a new link is the draft's doing.
+ * The error for links that cannot all hold, in `linkWarnings`' words: two dishes of a part a meal holds one of, always
+ * brought or served together. `stored` are the dish's links in force; they are judged with the new ones, but only a
+ * clash that lands on a new link is the draft's doing.
  */
-function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType; part_id?: number }, links: DishLink[], stored: DishLink[] = []): string | undefined {
-  const part_id = self.part_id ?? data.parts.find((p) => p.legacy === self.componentType)?.id;
-  return linkWarnings({ id: self.id, name: self.name, part_id }, [...stored, ...links], { dishes: data.library, rules: data.rules, parts: data.parts }, namesFor(data))
+function pairingConflict(data: AssistantData, self: { id?: number; name: string; part_id: number }, links: DishLink[], stored: DishLink[] = []): string | undefined {
+  return linkWarnings({ id: self.id, name: self.name, part_id: self.part_id }, [...stored, ...links], { dishes: data.library, rules: data.rules, parts: mealParts(data) }, namesFor(data))
     .find((w) => w.blocking && w.link >= stored.length)?.message;
 }
 
@@ -475,11 +451,11 @@ function whyNot(dish: ComponentRecord, day: DayOfWeek, meal: Meal, plan: WeeklyP
   };
 }
 
-/** How a pairing brought a side; a comes-with link that waits for a curry or subzi says which. */
+/** How a pairing brought a side: by a link of the side's (served with) or of the dish that brought it (comes with, and what it waits for). */
 function howBrought(rule: RuleRecord | undefined, by: string, side: string, name: (id: number) => string, data: AssistantData): string {
-  if (rule?.spec.template !== 'comes_with') return `${side} is served with ${by}`;
-  const when = readLink(rule, data.parts)?.when;
-  return `${by} comes with ${side}${when ? ` when ${describeWhen(when, name, namesFor(data))}` : ''}`;
+  const link = rule && readLink(rule, mealParts(data));
+  if (link?.mode !== 'comes') return `${side} is served with ${by}`;
+  return `${by} comes with ${side}${link.when ? ` when ${describeWhen(link.when, name, namesFor(data))}` : ''}`;
 }
 
 /** The dishes in one slot that a pairing brought, named with the dish that brought each. */
@@ -627,18 +603,14 @@ const HANDLERS: Record<string, Handler> = {
     const dup = data.library.find((c) => c.componentType === componentType && normName(c.name) === key);
     if (dup) return { ok: false, error: `already in the library: ${dup.name} (${componentType}). Do not propose it again.` };
 
-    // Bases the dish is served with, by name; a base is never served with another base.
-    const servedBases = v.served_with_bases ?? [];
-    const servedCategories = v.served_with_base_categories ?? [];
-    if ((servedBases.length || servedCategories.length) && componentType === 'base') {
-      return { ok: false, error: BASE_SERVED_WITH_BASES };
-    }
-    const served = servedWithLinks(data, servedBases, servedCategories, SERVE_STRENGTH[v.served_with_strength ?? 'always']);
-    if (!served.ok) return served;
-    const comes = comesLinks(data, componentType, v.comes_with ?? []);
-    if (!comes.ok) return comes;
-    const links = [...served.links, ...comes.links];
-    const conflict = pairingConflict(data, { name: v.name, componentType }, links);
+    // The draft is saved with its type (until Stage 4), so it goes in the part of its type.
+    const part = data.parts.find((p) => p.legacy === componentType)?.id;
+    const wanted = v.links ?? [];
+    if (wanted.length && part === undefined) return { ok: false, error: `no part holds ${componentType} dishes, so this dish cannot be linked here` };
+    const drafted = part === undefined ? { ok: true as const, links: [], servedWith: [] } : draftLinks(data, { part }, wanted);
+    if (!drafted.ok) return drafted;
+    const links: DishLink[] = drafted.links.map((l) => ({ ...l, strength: l.strength ?? 'always' }));
+    const conflict = part === undefined ? undefined : pairingConflict(data, { name: v.name, part_id: part }, links);
     if (conflict) return { ok: false, error: conflict };
 
     const draft: Partial<ComponentRecord> & { componentType: ComponentType } = {
@@ -652,10 +624,11 @@ const HANDLERS: Record<string, Handler> = {
       ...(v.regional_tags ? { regional_tags: v.regional_tags as ComponentRecord['regional_tags'] } : {}),
       ...(v.occasion_tags ? { occasion_tags: v.occasion_tags as ComponentRecord['occasion_tags'] } : {}),
     };
-    const servedWith = [...servedBases, ...servedCategories];
+    const { servedWith } = drafted;
+    const others = links.filter((l) => !servesFirst(l, data));
     return {
       ok: true,
-      data: { similarExisting: similarNames(v.name, data.library), ...(servedWith.length ? { servedWith } : {}), ...(comes.links.length ? { comesWith: comes.links.map((l) => describeLink(v.name, l, namesFor(data))) } : {}) },
+      data: { similarExisting: similarNames(v.name, data.library), ...(servedWith.length ? { servedWith } : {}), ...(others.length ? { comesWith: others.map((l) => describeLink(v.name, l, namesFor(data))) } : {}) },
       effect: { kind: 'dish-draft', draft, ...(links.length ? { links } : {}) },
     };
   },
@@ -663,52 +636,56 @@ const HANDLERS: Record<string, Handler> = {
     const a = parse(ProposePairingArgs, args);
     if (!a.ok) return a;
     const v = a.value;
-    const wantedBases = v.served_with_bases ?? [];
-    const wantedCategories = v.served_with_base_categories ?? [];
-    const wantedComes = v.comes_with ?? [];
-    const wantsServed = wantedBases.length > 0 || wantedCategories.length > 0;
-    if (!wantsServed && !wantedComes.length) {
-      return { ok: false, error: 'name at least one base in served_with_bases, base category in served_with_base_categories, or side in comes_with' };
+    const wanted = v.links ?? [];
+    if (!wanted.length) return { ok: false, error: 'name at least one link in links: a part and some of its dishes or categories' };
+    const parts = mealParts(data);
+    const first = parts[0]?.id;
+    let wantsFirst = false;
+    for (const entry of wanted) {
+      const part = resolvePart(entry.part, parts);
+      if (!part.ok) return part;
+      wantsFirst ||= part.part.id === first;
     }
-    // Served-with links belong to sides, but a base may come with sides, so a comes-only draft looks at every dish.
-    // Look among the sides first, so a side that shares its name with a base is not ambiguous.
-    const sides = data.library.filter((c) => c.componentType !== 'base');
-    // An exact base name is that base, not a side whose name merely contains it ("Idli" is not "Idli podi").
+    const firstRefusal = () => ({ ok: false as const, error: ownPartRefusal(parts[0], first) });
+    // A dish of the first part is never served with that part, so look first among the other parts' dishes: a dish
+    // there that shares its name with one of the first part is not ambiguous.
+    const placed = dishesWithParts(data.library, data.parts);
+    const others = placed.filter((c) => c.part_id !== first);
+    // An exact first-part name is that dish, not one of another part whose name merely contains it ("Idli" is not "Idli podi").
     const exactly = (c: ComponentRecord) => typeof v.dish === 'string' && normName(c.name) === normName(v.dish);
-    const exactBase = !sides.some(exactly) && data.library.some((c) => c.componentType === 'base' && exactly(c));
-    if (wantsServed && exactBase) return { ok: false, error: BASE_SERVED_WITH_BASES };
-    let found = exactBase ? resolveDish(v.dish, data) : resolveDish(v.dish, { ...data, library: sides });
+    const exactFirst = !others.some(exactly) && placed.some((c) => c.part_id === first && exactly(c));
+    if (wantsFirst && exactFirst) return firstRefusal();
+    let found = exactFirst ? resolveDish(v.dish, { ...data, library: placed }) : resolveDish(v.dish, { ...data, library: others });
     if (!found.ok) {
-      const any = resolveDish(v.dish, data);
-      if (!any.ok || any.dish.componentType !== 'base') return found;
-      if (wantsServed) return { ok: false, error: BASE_SERVED_WITH_BASES };
+      const any = resolveDish(v.dish, { ...data, library: placed });
+      if (!any.ok || any.dish.part_id !== first) return found;
+      if (wantsFirst) return firstRefusal();
       found = any;
     }
-    const { dish } = found;
-    if (wantsServed && dish.componentType === 'base') return { ok: false, error: BASE_SERVED_WITH_BASES };
-    const comes = comesLinks(data, dish.componentType, wantedComes, dish.id);
-    if (!comes.ok) return comes;
-    const requested = v.served_with_strength && SERVE_STRENGTH[v.served_with_strength];
-    const served = servedWithLinks(data, wantedBases, wantedCategories, requested ?? 'always');
-    if (!served.ok) return served;
-    // The drafted served-with link replaces the stored one in its slot, so carry over the bases already there and their limits.
-    // A switched-off link is not in force: nothing is carried over from it, and saving the draft switches the slot on.
+    const dish = found.dish as ComponentRecord & { part_id: number };
+    const drafted = draftLinks(data, { id: dish.id, part: dish.part_id }, wanted);
+    if (!drafted.ok) return drafted;
+    // Links served with the first part are one link per kind, so the drafted one replaces the stored one in its slot:
+    // carry over the dishes or categories already there and their limits. A switched-off link is not in force: nothing
+    // is carried over from it, and saving the draft switches the slot on. Every other link is added beside the stored ones.
     const owned = data.rules.filter((r) => r.owner_component_id === dish.id);
-    const stored = readOwned(owned.filter((r) => r.enabled), data.parts).links;
-    const off = readOwned(owned.filter((r) => !r.enabled), data.parts).links.map(linkSlotOf);
+    const stored = readOwned(owned.filter((r) => r.enabled), parts).links;
+    const off = readOwned(owned.filter((r) => !r.enabled), parts).links.map(linkSlotOf);
     const already: number[] = [];
     let replacesOff = false;
     // Only what this proposal adds or firms up is checked; a conflict already stored is not made worse by being kept.
     const changed: DishLink[] = [];
-    const links = served.links.map((link) => {
+    const served = drafted.links.filter((l) => servesFirst(l, data)).map((link): DishLink => {
+      const requested = link.strength;
       const before = stored.find((l) => linkSlotOf(l) === linkSlotOf(link));
       if (!before) {
         if (off.includes(linkSlotOf(link))) replacesOff = true;
-        changed.push(link);
-        return link;
+        const fresh = { ...link, strength: requested ?? 'always' };
+        changed.push(fresh);
+        return fresh;
       }
       const values = [...new Set([...before.values, ...link.values])];
-      // A new strength applies to every base in the link, the stored ones too, so all of them are checked.
+      // A new strength applies to every value in the link, the stored ones too, so all of them are checked.
       const firmer = (requested ?? before.strength) !== before.strength;
       const added = firmer ? values : link.values.filter((v) => !before.values.includes(v));
       if (added.length) changed.push({ ...link, values: added, strength: requested ?? before.strength });
@@ -720,19 +697,20 @@ const HANDLERS: Record<string, Handler> = {
         ...(before.scope ? { scope: before.scope } : {}),
       };
     });
-    // A drafted comes-with link is always a new link, so all of it is checked.
-    const conflict = pairingConflict(data, dish, [...changed, ...comes.links], stored);
+    const rest: DishLink[] = drafted.links.filter((l) => !servesFirst(l, data)).map((l) => ({ ...l, strength: l.strength ?? 'always' }));
+    // Every other drafted link is a new link, so all of it is checked.
+    const conflict = pairingConflict(data, dish, [...changed, ...rest], stored);
     if (conflict) return { ok: false, error: conflict };
     return {
       ok: true,
       data: {
         dish: dish.name,
-        ...(wantsServed ? { servedWith: [...wantedBases.map(String), ...wantedCategories] } : {}),
-        ...(comes.links.length ? { comesWith: comes.links.map((l) => describeLink(dish.name, l, namesFor(data))) } : {}),
+        ...(drafted.servedWith.length ? { servedWith: drafted.servedWith } : {}),
+        ...(rest.length ? { comesWith: rest.map((l) => describeLink(dish.name, l, namesFor(data))) } : {}),
         ...(already.length ? { alreadyServedWith: already.map((id) => dishLabel(id, data)) } : {}),
         ...(replacesOff ? { replacesSwitchedOffLink: true } : {}),
       },
-      effect: { kind: 'dish-links', dishId: dish.id, dishName: dish.name, links: [...links, ...comes.links] },
+      effect: { kind: 'dish-links', dishId: dish.id, dishName: dish.name, links: [...served, ...rest] },
     };
   },
   async simulate_with_rule(args, ctx) {

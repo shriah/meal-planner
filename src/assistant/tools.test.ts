@@ -562,8 +562,8 @@ describe('simulate_with_rule over old fields', () => {
 
 describe('propose_dish', () => {
   const categories = [
-    { id: 1, kind: 'base' as const, name: 'rice-based', created_at: '' },
-    { id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' },
+    { id: 1, kind: 'base' as const, name: 'rice-based', part_id: 1, created_at: '' },
+    { id: 2, kind: 'extra' as const, name: 'crunchy', part_id: 4, created_at: '' },
   ];
   const library = [dish(1, 'Sambar'), dish(2, 'Sambar', { componentType: 'base' })];
   const ctx = () => ctxOf({ library, categories });
@@ -580,7 +580,7 @@ describe('propose_dish', () => {
 
   it('drafts a dish with the bases it is served with, resolved by name', async () => {
     const lib = [...library, dish(3, 'Idli', { componentType: 'base' })];
-    const r = await runTool('propose_dish', { name: 'Coconut Chutney', componentType: 'extra', served_with_bases: ['idli'], served_with_base_categories: ['Rice-Based'], served_with_strength: 'Often' }, ctxOf({ library: lib, categories }));
+    const r = await runTool('propose_dish', { name: 'Coconut Chutney', componentType: 'extra', links: [{ part: 'Base', dishes: ['idli'], categories: ['Rice-Based'], strength: 'Often' }] }, ctxOf({ library: lib, categories }));
     expect(r.ok).toBe(true);
     expect((r as { effect: { links: unknown } }).effect.links).toEqual([
       { mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'moderately' },
@@ -590,10 +590,10 @@ describe('propose_dish', () => {
   });
 
   it('refuses unknown bases, and serving a base with bases', async () => {
-    const unknown = await runTool('propose_dish', { name: 'Chutney', componentType: 'extra', served_with_bases: ['Pesarattu'] }, ctx());
+    const unknown = await runTool('propose_dish', { name: 'Chutney', componentType: 'extra', links: [{ part: 'Base', dishes: ['Pesarattu'] }] }, ctx());
     expect(unknown.ok).toBe(false);
     expect((unknown as { error: string }).error).toContain('no base named "Pesarattu"');
-    const base = await runTool('propose_dish', { name: 'Upma', componentType: 'base', served_with_bases: ['Sambar'] }, ctx());
+    const base = await runTool('propose_dish', { name: 'Upma', componentType: 'base', links: [{ part: 'Base', dishes: ['Sambar'] }] }, ctx());
     expect(base.ok).toBe(false);
   });
 
@@ -657,12 +657,12 @@ describe('propose_dish', () => {
 });
 
 describe('propose_pairing', () => {
-  const categories = [{ id: 1, kind: 'base' as const, name: 'rice-based', created_at: '' }];
+  const categories = [{ id: 1, kind: 'base' as const, name: 'rice-based', part_id: 1, created_at: '' }];
   const library = [dish(1, 'Sambar'), dish(2, 'Sambar', { componentType: 'base' }), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Dosa', { componentType: 'base' })];
   const ctx = (over: Partial<AssistantData> = {}) => ctxOf({ library, categories, ...over });
 
   it('pairs an existing dish with bases and base categories, resolved by name or id', async () => {
-    const r = await runTool('propose_pairing', { dish: 'sambar', served_with_bases: ['IDLI', '4'], served_with_base_categories: ['Rice-Based'], served_with_strength: 'usually' }, ctx());
+    const r = await runTool('propose_pairing', { dish: 'sambar', links: [{ part: 'base', dishes: ['IDLI', '4'], categories: ['Rice-Based'], strength: 'usually' }] }, ctx());
     expect(r.ok).toBe(true);
     expect((r as { effect: unknown }).effect).toEqual({
       kind: 'dish-links',
@@ -673,13 +673,13 @@ describe('propose_pairing', () => {
         { mode: 'serve', target: LINK_TARGET.base_category, values: [1], strength: 'usually' },
       ],
     });
-    const byId = await runTool('propose_pairing', { dish: 1, served_with_bases: ['Idli'] }, ctx());
+    const byId = await runTool('propose_pairing', { dish: 1, links: [{ part: 'Base', dishes: ['Idli'] }] }, ctx());
     expect((byId as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }]);
   });
 
   it('keeps the bases the dish is already served with', async () => {
     const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
-    const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
+    const r = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['Idli'] }] }, ctx({ rules: [stored] }));
     expect((r as { effect: { links: unknown } }).effect.links).toEqual([
       { mode: 'serve', target: LINK_TARGET.base_dish, values: [4, 3], strength: 'sometimes', scope: { meals: ['breakfast'] } },
     ]);
@@ -688,7 +688,7 @@ describe('propose_pairing', () => {
 
   it('replaces a switched-off link instead of keeping its bases', async () => {
     const stored = { id: 9, enabled: false, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
-    const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
+    const r = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['Idli'] }] }, ctx({ rules: [stored] }));
     expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }]);
     const data = (r as { data: Record<string, unknown> }).data;
     expect(data.alreadyServedWith).toBeUndefined();
@@ -700,19 +700,19 @@ describe('propose_pairing', () => {
     const sambarIdli = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }) };
     const message = 'Sambar is already always served with Idli, and a meal holds one curry.';
     const c = () => ctxOf({ library: lib, categories, rules: [sambarIdli] });
-    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toEqual({ ok: false, error: message });
-    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'], served_with_strength: 'always' }, c())).toEqual({ ok: false, error: message });
-    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
-    expect(await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('is already always served with Idli') });
-    expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', served_with_bases: ['Idli'], served_with_strength: 'usually' }, c())).ok).toBe(true);
+    expect(await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Idli'] }] }, c())).toEqual({ ok: false, error: message });
+    expect(await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Idli'], strength: 'always' }] }, c())).toEqual({ ok: false, error: message });
+    expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Idli'], strength: 'usually' }] }, c())).ok).toBe(true);
+    expect(await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', links: [{ part: 'Base', dishes: ['Idli'] }] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('is already always served with Idli') });
+    expect((await runTool('propose_dish', { name: 'Kootu', componentType: 'curry', links: [{ part: 'Base', dishes: ['Idli'], strength: 'usually' }] }, c())).ok).toBe(true);
   });
 
   it('propose_pairing refuses a pairing clashing with a comes-with link', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
     const comes = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 3, name: 'Idli' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [1], strength: 'always' }) };
     const c = () => ctxOf({ library: lib, categories, rules: [comes] });
-    expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('Idli always comes with Sambar') });
-    expect((await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
+    expect(await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Idli'] }] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('Idli always comes with Sambar') });
+    expect((await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['Idli'] }] }, c())).ok).toBe(true);
   });
 
   it('checks every base a firmer strength applies to, not only the bases asked for', async () => {
@@ -721,10 +721,10 @@ describe('propose_pairing', () => {
       ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: LINK_TARGET.base_dish, values, strength }) });
     const c = () => ctxOf({ library: lib, categories, rules: [link(9, 1, 'Sambar', [3], 'always'), link(10, 5, 'Rasam', [3, 4], 'usually')] });
     // Rasam always with Pongal would also make Rasam always served with Idli, beside Sambar.
-    const r = await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Pongal'], served_with_strength: 'always' }, c());
+    const r = await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Pongal'], strength: 'always' }] }, c());
     expect(r).toMatchObject({ ok: false, error: expect.stringContaining('Idli') });
     // Asking for nothing firmer keeps the stored strength, which is fine.
-    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Pongal'] }, c())).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Pongal'] }] }, c())).ok).toBe(true);
   });
 
   it('does not refuse a conflict that is already stored, only what the proposal adds', async () => {
@@ -733,27 +733,27 @@ describe('propose_pairing', () => {
       ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: LINK_TARGET.base_dish, values, strength: 'always' }) });
     const rules = [rule(9, 1, 'Sambar', [3]), rule(10, 5, 'Rasam', [3])];
     const c = () => ctxOf({ library: lib, categories, rules });
-    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
-    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Dosa'] }, c())).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Idli'] }] }, c())).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Dosa'] }] }, c())).ok).toBe(true);
     const sambarDosa = ctxOf({ library: lib, categories, rules: [...rules, rule(11, 1, 'Sambar', [4])] });
-    expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Dosa'] }, sambarDosa)).ok).toBe(false);
+    expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Dosa'] }] }, sambarDosa)).ok).toBe(false);
   });
 
   it('takes an exact base name as that base, not a side that contains it', async () => {
-    const r = await runTool('propose_pairing', { dish: 'idli', served_with_bases: ['Dosa'] }, ctx({ library: [...library, dish(5, 'Idli podi', { componentType: 'extra' })] }));
+    const r = await runTool('propose_pairing', { dish: 'idli', links: [{ part: 'Base', dishes: ['Dosa'] }] }, ctx({ library: [...library, dish(5, 'Idli podi', { componentType: 'extra' })] }));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain('a base cannot be served with bases');
   });
 
   it('rejects bases, unknown names and a pairing with nothing to pair', async () => {
-    const base = await runTool('propose_pairing', { dish: 'Idli', served_with_bases: ['Dosa'] }, ctx());
+    const base = await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Base', dishes: ['Dosa'] }] }, ctx());
     expect(base.ok).toBe(false);
     expect((base as { error: string }).error).toContain('a base cannot be served with bases');
-    const unknownDish = await runTool('propose_pairing', { dish: 'Pesarattu', served_with_bases: ['Idli'] }, ctx());
+    const unknownDish = await runTool('propose_pairing', { dish: 'Pesarattu', links: [{ part: 'Base', dishes: ['Idli'] }] }, ctx());
     expect((unknownDish as { error: string }).error).toContain('no dish named "Pesarattu"');
-    const unknownBase = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Pesarattu'] }, ctx());
+    const unknownBase = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['Pesarattu'] }] }, ctx());
     expect((unknownBase as { error: string }).error).toContain('no base named "Pesarattu"');
-    const unknownCategory = await runTool('propose_pairing', { dish: 'Sambar', served_with_base_categories: ['grainy'] }, ctx());
+    const unknownCategory = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', categories: ['grainy'] }] }, ctx());
     expect((unknownCategory as { error: string }).error).toContain('no base category named "grainy"');
     expect((await runTool('propose_pairing', { dish: 'Sambar' }, ctx())).ok).toBe(false);
   });
@@ -761,7 +761,7 @@ describe('propose_pairing', () => {
 
 describe('comes-with drafts', () => {
   // The curry type soup is a category of the Curry part (2).
-  const categories = [{ id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' }, { id: 7, kind: 'curry' as const, name: 'soup', part_id: 2, created_at: '' }];
+  const categories = [{ id: 2, kind: 'extra' as const, name: 'crunchy', part_id: 4, created_at: '' }, { id: 7, kind: 'curry' as const, name: 'soup', part_id: 2, created_at: '' }];
   const library = [
     dish(1, 'Idli', { componentType: 'base' }),
     dish(2, 'Sambar'),
@@ -776,7 +776,7 @@ describe('comes-with drafts', () => {
   it('propose_pairing drafts two comes-with links on one dish', async () => {
     const r = await runTool('propose_pairing', {
       dish: 'Idli',
-      comes_with: [{ dishes: ['Sambar'], strength: 'usually' }, { extra_categories: ['crunchy'] }],
+      links: [{ part: 'Curry', dishes: ['Sambar'], strength: 'usually' }, { part: 'Extras', categories: ['crunchy'] }],
     }, ctx());
     expect(r.ok).toBe(true);
     expect(effectOf(r)).toEqual({
@@ -789,15 +789,15 @@ describe('comes-with drafts', () => {
   });
 
   it('propose_dish drafts Mutton Curry coming with Rasam', async () => {
-    const r = await runTool('propose_dish', { name: 'Mutton Kuzhambu', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
+    const r = await runTool('propose_dish', { name: 'Mutton Kuzhambu', componentType: 'curry', links: [{ part: 'Extras', dishes: ['Rasam'] }] }, ctx());
     expect(r.ok).toBe(true);
     expect((effectOf(r) as { links: unknown }).links).toEqual([{ mode: 'comes', target: LINK_TARGET.extra_dish, values: [3], strength: 'always' }]);
-    const named = await runTool('propose_dish', { name: 'Mutton Curry 2', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
+    const named = await runTool('propose_dish', { name: 'Mutton Curry 2', componentType: 'curry', links: [{ part: 'Extras', dishes: ['Rasam'] }] }, ctx());
     expect(named.ok).toBe(true);
   });
 
   it('draws the dish type of each entry from the dishes named, and curry types from their own list', async () => {
-    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }, { curry_types: ['soup'] }] }, ctx());
+    const r = await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Subzi', dishes: ['Beans Poriyal'] }, { part: 'Curry', categories: ['soup'] }] }, ctx());
     expect((effectOf(r) as { links: unknown }).links).toEqual([
       { mode: 'comes', target: LINK_TARGET.subzi_dish, values: [5], strength: 'always' },
       { mode: 'comes', target: LINK_TARGET.curry_category, values: [7], strength: 'always' },
@@ -810,24 +810,25 @@ describe('comes-with drafts', () => {
       expect(r.ok).toBe(false);
       return (r as { error: string }).error;
     };
-    expect(await msg('Idli', { comes_with: [{ dishes: ['Pesarattu'] }] })).toMatch(/Pesarattu/);
-    expect(await msg('Idli', { comes_with: [{ extra_categories: ['grainy'] }] })).toMatch(/grainy/);
-    expect(await msg('Idli', { comes_with: [{ curry_types: ['gravy-ish'] }] })).toMatch(/gravy-ish/);
+    expect(await msg('Idli', { links: [{ part: 'Curry', dishes: ['Pesarattu'] }] })).toMatch(/Pesarattu/);
+    expect(await msg('Idli', { links: [{ part: 'Extras', categories: ['grainy'] }] })).toMatch(/grainy/);
+    expect(await msg('Idli', { links: [{ part: 'Curry', categories: ['gravy-ish'] }] })).toMatch(/gravy-ish/);
     // a curry never comes with curries, a subzi never with subzis, and a base is not a side
-    expect(await msg('Mutton Curry', { comes_with: [{ dishes: ['Sambar'] }] })).toMatch(/curr/);
-    expect(await msg('Beans Poriyal', { comes_with: [{ dishes: ['Cabbage Thoran'] }] })).toMatch(/subzi/);
-    expect(await msg('Sambar', { comes_with: [{ dishes: ['Idli'] }] })).toMatch(/base/);
-    expect(await msg('Idli', { comes_with: [{}] })).toMatch(/comes_with/);
-    expect(await msg('Idli', { comes_with: [{ dishes: ['Sambar'], curry_types: ['soup'] }] })).toMatch(/one kind/);
-    expect(await msg('Idli', { comes_with: [{ dishes: ['Sambar', 'Rasam'] }] })).toMatch(/same type|one type/);
+    expect(await msg('Mutton Curry', { links: [{ part: 'Curry', dishes: ['Sambar'] }] })).toMatch(/curr/);
+    expect(await msg('Beans Poriyal', { links: [{ part: 'Subzi', dishes: ['Cabbage Thoran'] }] })).toMatch(/subzi/);
+    // a base is never served with bases (a side linking up to a base is its served-with link, which is allowed)
+    expect(await msg('Idli', { links: [{ part: 'Base', dishes: ['Idli'] }] })).toMatch(/a base cannot be served with bases/);
+    expect(await msg('Idli', { links: [{ part: 'Curry' }] })).toMatch(/links/);
+    expect(await msg('Idli', { links: [{ part: 'Mains', dishes: ['Sambar'] }] })).toMatch(/no part named "Mains".*Base, Curry, Subzi, Extras/);
+    expect(await msg('Idli', { links: [{ part: 'Curry', dishes: ['Sambar', 'Rasam'] }] })).toMatch(/Rasam/);
   });
 
   it('refuses a comes-with draft that cannot hold with what is stored', async () => {
     const serve = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 4, name: 'Mutton Curry' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [1] }) } as RuleRecord;
-    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx({ rules: [serve] }));
+    const r = await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Curry', dishes: ['Sambar'] }] }, ctx({ rules: [serve] }));
     // Idli would bring Sambar and Mutton Curry, two curries in one meal
     expect(r.ok).toBe(false);
-    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx())).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Curry', dishes: ['Sambar'] }] }, ctx())).ok).toBe(true);
   });
 
   it('refuses a comes-with draft that clashes with the dish\'s own stored links', async () => {
@@ -839,14 +840,14 @@ describe('comes-with drafts', () => {
       owned(21, { id: 2, name: 'Sambar' }, { mode: 'comes', target: LINK_TARGET.subzi_dish, values: [5], strength: 'always' }),
     ];
     // Idli always brings Sambar, which always brings Beans Poriyal: no room for Cabbage Thoran.
-    const subzi = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Cabbage Thoran'] }] }, ctx({ rules }));
+    const subzi = await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Subzi', dishes: ['Cabbage Thoran'] }] }, ctx({ rules }));
     expect(subzi.ok).toBe(false);
     expect((subzi as { error: string }).error).toBe('Sambar always comes with Beans Poriyal, which leaves no room for Cabbage Thoran, and a meal holds one subzi.');
-    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctx({ rules }))).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Subzi', dishes: ['Beans Poriyal'] }] }, ctx({ rules }))).ok).toBe(true);
     // A second Always curry beside the stored one.
-    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules }))).ok).toBe(false);
+    expect((await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Curry', dishes: ['Mutton Curry'] }] }, ctx({ rules }))).ok).toBe(false);
     // A stored clash is not the draft's doing: switched off, the stored link is not in force.
-    expect((await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Mutton Curry'] }] }, ctx({ rules: [{ ...rules[0], enabled: false }] }))).ok).toBe(true);
+    expect((await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Curry', dishes: ['Mutton Curry'] }] }, ctx({ rules: [{ ...rules[0], enabled: false }] }))).ok).toBe(true);
   });
 
   describe('a base with a conditional comes-with link', () => {
@@ -857,7 +858,7 @@ describe('comes-with drafts', () => {
     const stored = { id: 5, name: conditional.name, spec: conditional.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
 
     it('propose_pairing drafts only the new link and leaves the stored conditional one alone', async () => {
-      const r = await runTool('propose_pairing', { dish: 'Rice', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctxOf({ library: lib, rules: [stored] }));
+      const r = await runTool('propose_pairing', { dish: 'Rice', links: [{ part: 'Subzi', dishes: ['Beans Poriyal'] }] }, ctxOf({ library: lib, rules: [stored] }));
       expect(r.ok).toBe(true);
       expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'comes', target: LINK_TARGET.subzi_dish, values: [13], strength: 'always' }]);
       expect(stored.spec).toEqual(conditional.spec);
@@ -896,10 +897,11 @@ describe('comes-with drafts', () => {
     expect(HAND_TEMPLATE_IDS).not.toContain('comes_with');
   });
 
-  it('declares comes_with on both draft tools', () => {
+  it('declares one links parameter by part on both draft tools, and no served-with or comes-with parameters', () => {
     for (const name of ['propose_dish', 'propose_pairing']) {
-      const d = TOOL_DECLARATIONS.find((t) => t.name === name)!;
-      expect(JSON.stringify(d.parameters)).toContain('comes_with');
+      const params = (TOOL_DECLARATIONS.find((t) => t.name === name)!.parameters as { properties: Record<string, unknown> }).properties;
+      expect(Object.keys(params)).toContain('links');
+      for (const gone of ['served_with_bases', 'served_with_base_categories', 'served_with_strength', 'comes_with']) expect(params).not.toHaveProperty(gone);
     }
   });
 
@@ -923,10 +925,68 @@ describe('comes-with drafts', () => {
   it('propose_pairing appends a comes link beside a stored one instead of merging into it', async () => {
     const lib = [dish(1, 'Idli', { componentType: 'base' }), dish(2, 'Sambar'), dish(3, 'Rasam', { componentType: 'extra' })];
     const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Idli' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2], strength: 'always' }) } as RuleRecord;
-    const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Rasam'] }] }, ctxOf({ library: lib, categories, rules: [stored] }));
+    const r = await runTool('propose_pairing', { dish: 'Idli', links: [{ part: 'Extras', dishes: ['Rasam'] }] }, ctxOf({ library: lib, categories, rules: [stored] }));
     expect(effectOf(r)).toEqual({
       kind: 'dish-links', dishId: 1, dishName: 'Idli',
       links: [{ mode: 'comes', target: LINK_TARGET.extra_dish, values: [3], strength: 'always' }],
     });
+  });
+});
+
+describe('links by part on Main, Side and Dessert', () => {
+  // Main 1, Side 2, Dessert 3: no converted parts, so only a cap rule makes a part hold one dish.
+  const parts = [
+    { id: 1, name: 'Main', position: 0, varied: true, created_at: '' },
+    { id: 2, name: 'Side', position: 1, varied: true, created_at: '' },
+    { id: 3, name: 'Dessert', position: 2, varied: true, created_at: '' },
+  ];
+  const library = [
+    dish(1, 'Biryani', { componentType: 'base', part_id: 1 }),
+    dish(2, 'Raita', { componentType: 'extra', part_id: 2 }),
+    dish(3, 'Salan', { componentType: 'curry', part_id: 2 }),
+    dish(4, 'Kheer', { componentType: 'extra', part_id: 3 }),
+  ];
+  const sideCap = { id: 50, name: 'At most one Side per meal', enabled: true, created_at: '', spec: { template: 'limit', params: { match: is('part', 2), per: 'meal', max: 1, strength: 'must' } } } as RuleRecord;
+  const ctx = (rules: RuleRecord[] = []): ToolContext => ({ data: { library, categories: [], rules, parts }, compare: async () => { throw new Error('unused'); } });
+  const effectOf = (r: unknown) => (r as { effect?: unknown }).effect;
+  const own = (owner: { id: number; name: string }, link: DishLink, id: number) => ({ id, enabled: true, created_at: '', ...buildLink(owner, link, parts) }) as RuleRecord;
+
+  it('stores "Raita comes with Biryani" from Raita as served with Biryani', async () => {
+    const r = await runTool('propose_pairing', { dish: 'Raita', links: [{ part: 'Main', dishes: ['Biryani'] }] }, ctx());
+    expect(effectOf(r)).toEqual({ kind: 'dish-links', dishId: 2, dishName: 'Raita', links: [{ mode: 'serve', target: { part: 1, kind: 'dish' }, values: [1], strength: 'always' }] });
+  });
+
+  it('stores "Biryani comes with Raita and Salan" as two comes links', async () => {
+    const r = await runTool('propose_pairing', { dish: 'Biryani', links: [{ part: 'Side', dishes: ['Raita'] }, { part: 'side', dishes: ['Salan'] }] }, ctx());
+    expect(effectOf(r)).toEqual({
+      kind: 'dish-links', dishId: 1, dishName: 'Biryani',
+      links: [
+        { mode: 'comes', target: { part: 2, kind: 'dish' }, values: [2], strength: 'always' },
+        { mode: 'comes', target: { part: 2, kind: 'dish' }, values: [3], strength: 'always' },
+      ],
+    });
+  });
+
+  it('lets a dish bring a sibling of a part nothing caps, and refuses one of a capped part', async () => {
+    expect(effectOf(await runTool('propose_pairing', { dish: 'Raita', links: [{ part: 'Side', dishes: ['Salan'] }] }, ctx()))).toMatchObject({
+      links: [{ mode: 'comes', target: { part: 2, kind: 'dish' }, values: [3], strength: 'always' }],
+    });
+    expect(await runTool('propose_pairing', { dish: 'Raita', links: [{ part: 'Side', dishes: ['Salan'] }] }, ctx([sideCap]))).toEqual({
+      ok: false, error: 'a meal holds one side, so a side does not come with sides',
+    });
+  });
+
+  it('refuses a main served with mains', async () => {
+    expect(await runTool('propose_pairing', { dish: 'Biryani', links: [{ part: 'Main', dishes: ['Biryani'] }] }, ctx())).toEqual({
+      ok: false, error: 'a main cannot be served with mains; link the dish that goes with it instead',
+    });
+  });
+
+  it('refuses a clash with the link warnings\' message', async () => {
+    const raita = own({ id: 1, name: 'Biryani' }, { mode: 'comes', target: { part: 2, kind: 'dish' }, values: [2], strength: 'always' }, 60);
+    const r = await runTool('propose_pairing', { dish: 'Biryani', links: [{ part: 'Side', dishes: ['Salan'] }] }, ctx([sideCap, raita]));
+    expect(r).toEqual({ ok: false, error: 'Biryani already always comes with Raita, and a meal holds one side.' });
+    // Without the cap a meal holds both.
+    expect((await runTool('propose_pairing', { dish: 'Biryani', links: [{ part: 'Side', dishes: ['Salan'] }] }, ctx([raita]))).ok).toBe(true);
   });
 });

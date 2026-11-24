@@ -256,7 +256,7 @@ describe('AssistantPanel: drafts and comparisons', () => {
     const base = all.find((c) => c.componentType === 'base')!;
     const rulesBefore = await db.rules.toArray();
     const { gemini } = fakeGemini([
-      callTool('propose_pairing', { dish: side.id, served_with_bases: [String(base.id)], served_with_strength: 'sometimes' }),
+      callTool('propose_pairing', { dish: side.id, links: [{ part: 'Base', dishes: [String(base.id)], strength: 'sometimes' }] }),
       say('Pairing drafted.'),
     ]);
     render(<AssistantPanel gemini={gemini} />);
