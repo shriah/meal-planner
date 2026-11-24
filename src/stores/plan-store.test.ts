@@ -181,6 +181,68 @@ describe('plan-store', () => {
     slots().forEach((s, i) => { if (i !== 0 && i !== 3) expect(s).toBe(before[i]); });
   }, 10_000);
 
+  describe('a dish picked by hand brings the dishes it brings', () => {
+    // Rice meals with Dal; Sambar is served with Papad; Idli always brings Kootu.
+    async function setup() {
+      const now = '';
+      const add = async (name: string, componentType: 'base' | 'curry' | 'extra') =>
+        await db.components.add({ name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now }) as number;
+      const ids = {
+        rice: await add('Rice', 'base'), idli: await add('Idli', 'base'),
+        dal: await add('Dal', 'curry'), sambar: await add('Sambar', 'curry'), rasam: await add('Rasam', 'curry'), kootu: await add('Kootu', 'curry'),
+        papad: await add('Papad', 'extra'), chutney: await add('Chutney', 'extra'),
+      };
+      const store = async (rule: Awaited<ReturnType<typeof linkRule>>) => { await db.rules.add({ ...rule, enabled: true, created_at: now } as RuleRecord); };
+      await store(await linkRule({ id: ids.papad, name: 'Papad' }, { mode: 'serve', target: LINK_TARGET.curry_dish, values: [ids.sambar] }));
+      const plan = makePlan();
+      plan.slots = plan.slots.map(s => ({ ...s, base_id: ids.rice, curry_id: ids.dal, extra_ids: [ids.chutney] }));
+      usePlanStore.setState({ plan, locks: {} });
+      return { ids, plan, store };
+    }
+    const meal = () => usePlanStore.getState().plan!.slots[0];
+    const othersAsBefore = (before: WeeklyPlan) =>
+      usePlanStore.getState().plan!.slots.forEach((s, i) => { if (i !== 0) expect(s).toBe(before.slots[i]); });
+
+    it('a curry served with an extra brings it, and the meal keeps its other dishes', async () => {
+      const { ids, plan } = await setup();
+      usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', ids.sambar);
+      await vi.waitFor(() => expect(new Set(meal().extra_ids)).toEqual(new Set([ids.chutney, ids.papad])), { timeout: 5000 });
+      expect(meal()).toMatchObject({ base_id: ids.rice, curry_id: ids.sambar });
+      othersAsBefore(plan);
+    }, 10_000);
+
+    it('a dish that brings nothing leaves the meal as it was', async () => {
+      const { ids, plan } = await setup();
+      const spy = vi.spyOn(planningService, 'generatePlan');
+      usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', ids.rasam);
+      await vi.waitFor(() => expect(spy).toHaveBeenCalled(), { timeout: 5000 });
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      expect(meal()).toEqual({ day: 'monday', meal_slot: 'breakfast', base_id: ids.rice, curry_id: ids.rasam, extra_ids: [ids.chutney] });
+      othersAsBefore(plan);
+    }, 10_000);
+
+    it('keeps a curry picked beside a base that always brings another, and reports the base link', async () => {
+      const { ids, plan, store } = await setup();
+      await store(await linkRule({ id: ids.kootu, name: 'Kootu' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [ids.idli] }));
+      usePlanStore.setState({ plan: { slots: plan.slots.map((s, i) => (i === 0 ? { ...s, base_id: ids.idli, curry_id: ids.kootu } : s)) } });
+      const before = usePlanStore.getState().plan!;
+      usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', ids.rasam);
+      await vi.waitFor(() => expect(usePlanStore.getState().ruleIssues.length + usePlanStore.getState().problems.length).toBeGreaterThan(0), { timeout: 5000 });
+      expect(meal()).toMatchObject({ base_id: ids.idli, curry_id: ids.rasam });
+      othersAsBefore(before);
+    }, 10_000);
+
+    it('keeps a locked part beside the pick', async () => {
+      const { ids, plan } = await setup();
+      usePlanStore.setState({ locks: { 'monday-breakfast-extras': true } });
+      usePlanStore.getState().swapComponent('monday', 'breakfast', 'curry', ids.sambar);
+      await vi.waitFor(() => expect(usePlanStore.getState().plan!.slots[0].curry_id).toBe(ids.sambar));
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      expect(meal().extra_ids).toEqual([ids.chutney]);
+      othersAsBefore(plan);
+    }, 10_000);
+  });
+
   it('keeps a curry picked by hand while its meal is being re-planned', async () => {
     let finish!: () => void;
     const planned = makePlan();
@@ -229,6 +291,7 @@ describe('plan-store', () => {
   });
 
   it('swapComponent persists an explicitly selected incompatible curry unchanged', async () => {
+    vi.spyOn(planningService, 'generatePlan').mockRejectedValue(new Error('no re-plan here')); // 999 is no stored dish
     const plan = makePlan();
     usePlanStore.setState({ plan });
 

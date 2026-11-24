@@ -29,4 +29,20 @@ describe('pinsForMeal', () => {
         'tuesday-dinner': { base_id: 3, curry_id: null, subzi_id: 4, extra_ids: [] },
       });
   });
+
+  it.each([
+    ['curry', { base_id: 1, curry_id: 9 }],
+    ['subzi', { base_id: 1, subzi_id: 9 }],
+    ['extras', { base_id: 1, extra_ids: [9] }],
+    ['base', { base_id: 9 }],
+  ] as const)('pins a %s picked by hand with the base and leaves the other parts free', (part, mine) => {
+    const pins = pinsForMeal(plan, {}, 'monday', 'lunch', { part, id: 9 });
+    expect(pins['monday-lunch']).toEqual(mine);
+    expect(pins['tuesday-dinner']).toEqual({ base_id: 3, curry_id: null, subzi_id: 4, extra_ids: [] });
+  });
+
+  it('keeps the locked parts beside a pick, and the pick wins over its own lock', () => {
+    expect(pinsForMeal(plan, { 'monday-lunch-extras': true, 'monday-lunch-curry': true }, 'monday', 'lunch', { part: 'curry', id: 9 })['monday-lunch'])
+      .toEqual({ base_id: 1, curry_id: 9, extra_ids: [5] });
+  });
 });

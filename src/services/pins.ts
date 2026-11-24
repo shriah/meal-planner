@@ -29,9 +29,13 @@ export function pinsFromLocks(plan: WeeklyPlan, locks: Record<string, boolean>):
 
 /**
  * Pins for re-planning one meal: every other meal is pinned exactly as it is (an empty curry or subzi
- * held empty), and in this meal only the base and the locked parts are pinned.
+ * held empty), and in this meal only the base and the locked parts are pinned. A dish picked by hand is pinned in
+ * its part too (`extras` as the one extra, as a swap writes it); the meal's other unlocked parts stay free.
  */
-export function pinsForMeal(plan: WeeklyPlan, locks: Record<string, boolean>, day: DayOfWeek, meal: MealSlot): LegacyPins {
+export function pinsForMeal(
+  plan: WeeklyPlan, locks: Record<string, boolean>, day: DayOfWeek, meal: MealSlot,
+  picked?: { part: 'base' | 'curry' | 'subzi' | 'extras'; id: number },
+): LegacyPins {
   const pins: LegacyPins = {};
   for (const s of plan.slots) {
     const prefix = `${s.day}-${s.meal_slot}` as const;
@@ -43,6 +47,10 @@ export function pinsForMeal(plan: WeeklyPlan, locks: Record<string, boolean>, da
     if (locks[`${prefix}-curry`]) slotPins.curry_id = s.curry_id ?? null;
     if (locks[`${prefix}-subzi`]) slotPins.subzi_id = s.subzi_id ?? null;
     if (locks[`${prefix}-extras`]) slotPins.extra_ids = [...s.extra_ids];
+    if (picked?.part === 'base') slotPins.base_id = picked.id;
+    else if (picked?.part === 'curry') slotPins.curry_id = picked.id;
+    else if (picked?.part === 'subzi') slotPins.subzi_id = picked.id;
+    else if (picked?.part === 'extras') slotPins.extra_ids = [picked.id];
     pins[prefix] = slotPins;
   }
   return pins;

@@ -69,8 +69,10 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     set({ paired })
   }
 
-  // A base picked by hand re-plans its meal, so the sides follow every rule. Other meals and locked parts stay.
-  async function replanMeal(day: DayOfWeek, slot: MealSlot) {
+  // A dish picked by hand re-plans its meal with the pick pinned, so the dishes it brings follow every rule. Other
+  // meals and locked parts stay. A picked base frees the meal's other parts. Any other pick keeps them as they were
+  // and adds only what the pick brings: a first pass finds what it brings, a second pins the meal as settled.
+  async function replanMeal(day: DayOfWeek, slot: MealSlot, pick: { part: 'base' | 'curry' | 'subzi' | 'extras'; id: number }) {
     const { plan, locks, currentWeekStart } = get()
     if (!plan) return
     const i = plan.slots.findIndex(s => s.day === day && s.meal_slot === slot)
@@ -79,7 +81,20 @@ export const usePlanStore = create<PlanStore>((set, get) => {
     if (!picked) return
     let outcome: PlanningOutcome
     try {
-      outcome = await generatePlan({ pins: pinsForMeal(plan, locks, day, slot) })
+      outcome = await generatePlan({ pins: pinsForMeal(plan, locks, day, slot, pick) })
+      if (pick.part !== 'base') {
+        const prefix = `${day}-${slot}`
+        const found = outcome.plan.slots.find(s => s.day === day && s.meal_slot === slot)
+        const brought = new Set(outcome.paired.filter(p => p.day === day && p.meal === slot).map(p => p.component))
+        const settled = { ...picked }
+        if (found) {
+          if (pick.part !== 'curry' && found.curry_id !== undefined && brought.has(found.curry_id)) settled.curry_id = found.curry_id
+          if (pick.part !== 'subzi' && found.subzi_id !== undefined && brought.has(found.subzi_id)) settled.subzi_id = found.subzi_id
+          if (pick.part !== 'extras') settled.extra_ids = [...picked.extra_ids, ...found.extra_ids.filter(id => brought.has(id) && !picked.extra_ids.includes(id))]
+        }
+        const held = { ...locks, [`${prefix}-curry`]: true, [`${prefix}-subzi`]: true, [`${prefix}-extras`]: true }
+        outcome = await generatePlan({ pins: pinsForMeal({ slots: plan.slots.map((s, j) => (j === i ? settled : s)) }, held, day, slot) })
+      }
     } catch {
       return
     }
@@ -175,7 +190,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       const newPlan = { slots: updatedSlots }
       set({ plan: newPlan, paired: get().paired.filter(p => !(p.day === day && p.meal === slot)) })
       saveWeekPlan(currentWeekStart, newPlan, locks)
-      if (componentType === 'base') void replanMeal(day, slot)
+      void replanMeal(day, slot, { part: componentType, id: componentId })
     },
 
     regenerate: async () => {
