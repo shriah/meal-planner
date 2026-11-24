@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { WeeklyPlan } from '@/types/plan';
-import { pinsForMeal, pinsFromLocks } from './pins';
+import { pinsForMeal, pinsFromLocks, settleMeal } from './pins';
 
 const plan: WeeklyPlan = {
   slots: [
@@ -44,5 +44,32 @@ describe('pinsForMeal', () => {
   it('keeps the locked parts beside a pick, and the pick wins over its own lock', () => {
     expect(pinsForMeal(plan, { 'monday-lunch-extras': true, 'monday-lunch-curry': true }, 'monday', 'lunch', { part: 'curry', id: 9 })['monday-lunch'])
       .toEqual({ base_id: 1, curry_id: 9, extra_ids: [5] });
+  });
+});
+
+describe('settleMeal', () => {
+  const picked = { day: 'monday', meal_slot: 'lunch', base_id: 1, curry_id: 20, extra_ids: [5] } as const;
+  const pair = (component: number, by: number) => ({ day: 'monday', meal: 'lunch', component, by }) as const;
+  const found = (over: object) => ({ ...picked, ...over }) as never;
+
+  it('adds a side the pick brings and keeps the rest', () => {
+    expect(settleMeal(picked, { part: 'curry', id: 20 }, found({ extra_ids: [5, 7] }), [pair(7, 20)]).extra_ids).toEqual([5, 7]);
+  });
+
+  it('follows the chain: a side brought by a side the pick brought', () => {
+    const settled = settleMeal(picked, { part: 'curry', id: 20 }, found({ subzi_id: 30, extra_ids: [8] }), [pair(30, 20), pair(8, 30)]);
+    expect(settled).toMatchObject({ curry_id: 20, subzi_id: 30, extra_ids: [5, 8] });
+  });
+
+  it('leaves out a side the base brings that the user had removed (a)', () => {
+    expect(settleMeal(picked, { part: 'curry', id: 20 }, found({ extra_ids: [5, 7] }), [pair(7, 1)])).toEqual(picked);
+  });
+
+  it('leaves out a side brought by a dish the pass chose freely, and keeps the old dish (b)', () => {
+    expect(settleMeal(picked, { part: 'curry', id: 20 }, found({ subzi_id: 31, extra_ids: [5, 7] }), [pair(7, 31)])).toEqual(picked);
+  });
+
+  it('ignores the pairs of other meals', () => {
+    expect(settleMeal(picked, { part: 'curry', id: 20 }, found({ extra_ids: [5, 7] }), [{ ...pair(7, 20), day: 'tuesday' }])).toEqual(picked);
   });
 });

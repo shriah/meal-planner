@@ -7,7 +7,7 @@ import { saveWeekPlan, getWeekPlan } from '@/services/plan-db'
 import { getISOWeekStart, addWeeks, formatWeekLabel } from '@/services/week-utils'
 import { generatePlan, loadPlanningInput } from '@/services/planning'
 import { pairedSides, type PlanningOutcome, type PlanProblem, type PairedSide } from '@/services/plan-generation'
-import { pinsForMeal, pinsFromLocks } from '@/services/pins'
+import { pinsForMeal, pinsFromLocks, settleMeal, type MealPick } from '@/services/pins'
 import type { RuleIssue } from '@/rules'
 import type { ExportPlanPayload } from '@/services/export-template'
 
@@ -72,7 +72,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
   // A dish picked by hand re-plans its meal with the pick pinned, so the dishes it brings follow every rule. Other
   // meals and locked parts stay. A picked base frees the meal's other parts. Any other pick keeps them as they were
   // and adds only what the pick brings: a first pass finds what it brings, a second pins the meal as settled.
-  async function replanMeal(day: DayOfWeek, slot: MealSlot, pick: { part: 'base' | 'curry' | 'subzi' | 'extras'; id: number }) {
+  async function replanMeal(day: DayOfWeek, slot: MealSlot, pick: MealPick) {
     const { plan, locks, currentWeekStart } = get()
     if (!plan) return
     const i = plan.slots.findIndex(s => s.day === day && s.meal_slot === slot)
@@ -85,13 +85,7 @@ export const usePlanStore = create<PlanStore>((set, get) => {
       if (pick.part !== 'base') {
         const prefix = `${day}-${slot}`
         const found = outcome.plan.slots.find(s => s.day === day && s.meal_slot === slot)
-        const brought = new Set(outcome.paired.filter(p => p.day === day && p.meal === slot).map(p => p.component))
-        const settled = { ...picked }
-        if (found) {
-          if (pick.part !== 'curry' && found.curry_id !== undefined && brought.has(found.curry_id)) settled.curry_id = found.curry_id
-          if (pick.part !== 'subzi' && found.subzi_id !== undefined && brought.has(found.subzi_id)) settled.subzi_id = found.subzi_id
-          if (pick.part !== 'extras') settled.extra_ids = [...picked.extra_ids, ...found.extra_ids.filter(id => brought.has(id) && !picked.extra_ids.includes(id))]
-        }
+        const settled = found ? settleMeal(picked, pick, found, outcome.paired) : picked
         const held = { ...locks, [`${prefix}-curry`]: true, [`${prefix}-subzi`]: true, [`${prefix}-extras`]: true }
         outcome = await generatePlan({ pins: pinsForMeal({ slots: plan.slots.map((s, j) => (j === i ? settled : s)) }, held, day, slot) })
       }
