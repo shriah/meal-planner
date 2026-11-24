@@ -8,7 +8,7 @@ import { linkKey, LinkList, useLinkWarnings } from './links/LinkList'
 import { LinkPreview } from './links/LinkPreview'
 import { cleanScope, linkOptions } from './links/LinkEditor'
 import { DAYS, MEALS, type Day, type Meal } from '@/planner'
-import { linkNames, ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
+import { linkNames, ownerPartOf, ShareLibraryLookup, useLibraryLookup } from './LibraryLookup'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -207,9 +207,9 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
   // Until the user picks one, default to the first category of the matching kind.
   const baseCategoryId =
     form.base_category_id || (componentType === 'base' ? String(baseCategories?.[0]?.id ?? '') : '')
-  const self = { id: component?.id, name: form.name, componentType }
+  const self = { id: component?.id, name: form.name, part_id: ownerPartOf(lookup, componentType, component?.id) }
   // A base is judged by the category chosen in the form; the baseline by the one stored, so moving it is an edit too.
-  const editedSelf = { ...self, ...(componentType === 'base' && baseCategoryId ? { base_category_id: Number(baseCategoryId) } : {}) }
+  const editedSelf = { ...self, ...(componentType === 'base' && baseCategoryId ? { category_id: Number(baseCategoryId) } : {}) }
   const blockingOf = (list: DishLink[], warnings: { link: number; message: string; blocking?: boolean }[]) =>
     warnings.filter((w) => w.blocking).map((w) => `${linkKey(list[w.link], w.link)}|${w.message}`)
   const storedBlocking = blockingOf(form.linksBase ?? storedLinks, useLinkWarnings(self, form.linksBase ?? storedLinks))
@@ -541,7 +541,7 @@ export function ComponentForm({ component, componentType, onSave, onDiscard, mod
             dishName={form.name}
             componentType={componentType}
             selfId={component?.id}
-            baseCategoryId={editedSelf.base_category_id}
+            baseCategoryId={editedSelf.category_id}
             links={links}
             offRuleIds={shownOff}
             onEditingChange={setEditingLink}

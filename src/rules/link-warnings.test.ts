@@ -3,6 +3,8 @@ import type { ComponentRecord, ComponentType } from '@/types/component';
 import { exclusionRule, linkRule as buildLink, mealRule, dayRule, type DishLink } from './owned';
 import { linkWarnings as warningsOver } from './link-warnings';
 import type { RuleRecord } from './record';
+import { is } from '@/planner';
+import { capRules } from './defaults';
 import { TEST_RULE_PARTS } from './test-parts';
 
 // The converted parts: Base 1, Curry 2, Subzi 3, Extras 4.
@@ -12,8 +14,10 @@ const T = {
   base_category: { part: 1, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
 } as const;
 const linkRule = (owner: { id: number; name: string }, l: Parameters<typeof buildLink>[1]) => buildLink(owner, l, PARTS);
-const linkWarnings = (self: Parameters<typeof warningsOver>[0], links: DishLink[], lookup: Omit<Parameters<typeof warningsOver>[2], 'parts'>, names?: Parameters<typeof warningsOver>[3]) =>
-  warningsOver(self, links, { ...lookup, parts: PARTS }, names);
+// The dish under edit is described by its type here; the warnings read its part and category.
+type TestSelf = { id?: number; name?: string; componentType: ComponentType; base_category_id?: number };
+const linkWarnings = (self: TestSelf, links: DishLink[], lookup: Omit<Parameters<typeof warningsOver>[2], 'parts'>, names?: Parameters<typeof warningsOver>[3]) =>
+  warningsOver({ id: self.id, name: self.name, part_id: TEST_RULE_PARTS.legacy[self.componentType], category_id: self.base_category_id }, links, { ...lookup, parts: PARTS }, names);
 
 const names = {
   component: (id: number) => ({ 1: 'Idli', 2: 'Dosa', 3: 'Poori', 10: 'Sambar' } as Record<number, string>)[id],
@@ -319,5 +323,49 @@ describe('conditional comes-with clashes', () => {
     // Waiting for another curry, it never meets Sambar.
     const other = [rules[0], rec(linkRule({ id: 900, name: 'Rice' }, subzi([906], when([902]))), 81)];
     expect(blocking(linkWarnings(sambar, [subzi([905])], { dishes: lib, rules: other }, nm))).toEqual([]);
+  });
+});
+
+describe('link warnings over the parts a rule caps', () => {
+  // Main 1, Side 2, Dessert 3: no converted parts, so only a cap rule makes a part hold one dish.
+  const parts = [{ id: 1, name: 'Main', varied: true }, { id: 2, name: 'Side', varied: true }, { id: 3, name: 'Dessert', varied: true }];
+  const nm = { component: (id: number) => ({ 1: 'Rice', 2: 'Raita', 3: 'Pickle', 4: 'Kheer' } as Record<number, string>)[id] };
+  const inPart = (id: number, part_id: number) => dish(id, 'base', { part_id, name: nm.component(id) });
+  const lib = [inPart(1, 1), inPart(2, 2), inPart(3, 2), inPart(4, 3)];
+  const sideCap = rec({ name: 'At most one Side per meal', spec: { template: 'limit', params: { match: is('part', 2), per: 'meal', max: 1, strength: 'must' } } } as ReturnType<typeof exclusionRule>, 50);
+  const sides = (values: number[]): DishLink => ({ mode: 'comes', target: { part: 2, kind: 'dish' }, values, strength: 'always' });
+  const rice = { id: 1, name: 'Rice', part_id: 1 };
+  const over = (links: DishLink[], rules: RuleRecord[]) => warningsOver(rice, links, { dishes: lib, rules, parts }, nm);
+
+  it('two Always links to different sides block when a rule caps the Side part', () => {
+    expect(over([sides([2]), sides([3])], [sideCap])).toEqual([{ link: 1, blocking: true, message: 'Rice already always comes with Raita, and a meal holds one side.' }]);
+  });
+
+  it('gives no warning without that cap, and none for a part nothing caps', () => {
+    expect(over([sides([2]), sides([3])], [])).toEqual([]);
+    expect(over([sides([2]), { ...sides([4]), target: { part: 3, kind: 'dish' } }], [sideCap])).toEqual([]);
+  });
+
+  it('a disabled cap does not count', () => {
+    expect(over([sides([2]), sides([3])], [{ ...sideCap, enabled: false }])).toEqual([]);
+  });
+
+  it('on converted parts, two Always curries still block with the curry cap rule deleted', () => {
+    const w = warningsOver({ id: 900, name: 'Idiyappam', part_id: 1 }, [
+      { mode: 'comes', target: T.curry_dish, values: [901], strength: 'always' }, { mode: 'comes', target: T.curry_dish, values: [903], strength: 'always' },
+    ], { dishes: [dish(901, 'curry', { name: 'Stew' }), dish(903, 'curry', { name: 'Egg Curry' })], rules: capRules(PARTS).slice(1).map((c, i) => rec(c as ReturnType<typeof exclusionRule>, i + 1)), parts: PARTS }, { component: (id) => ({ 901: 'Stew', 903: 'Egg Curry' } as Record<number, string>)[id] });
+    expect(w.map((x) => x.message)).toEqual(['Idiyappam already always comes with Stew, and a meal holds one curry.']);
+  });
+
+  it('judges a dish in a capped part by its own part', () => {
+    // Raita is a Side; a link that makes it always served with the same Main as Pickle (also a Side) clashes.
+    const serves = (id: number, name: string) => rec(linkRule({ id, name }, { mode: 'serve', target: { part: 1, kind: 'dish' }, values: [1], strength: 'always' }), 60 + id);
+    const w = warningsOver({ id: 2, name: 'Raita', part_id: 2 }, [{ mode: 'serve', target: { part: 1, kind: 'dish' }, values: [1], strength: 'always' }], { dishes: lib, rules: [sideCap, serves(3, 'Pickle')], parts }, nm);
+    expect(w).toEqual([{ link: 0, blocking: true, message: 'Pickle is already always served with Rice, and a meal holds one side.' }]);
+  });
+
+  it('does not throw with no parts or no part for the dish', () => {
+    expect(warningsOver(rice, [sides([2])], { dishes: lib, rules: [], parts: [] }, nm)).toEqual([]);
+    expect(warningsOver({ name: 'New' }, [sides([2])], { dishes: lib, rules: [sideCap], parts }, nm)).toEqual([]);
   });
 });

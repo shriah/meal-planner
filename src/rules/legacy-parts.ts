@@ -15,6 +15,20 @@ export interface RuleParts {
   legacy?: LegacyParts;
 }
 
+/** The part id of each component type, when every converted part is among `parts` (matched by `legacy`, as `legacyPartIds` does). */
+export function convertedPartIds(parts: readonly Pick<PlannerPart, 'id' | 'legacy'>[]): LegacyParts | undefined {
+  const idOf = (t: ComponentType) => parts.find((p) => p.legacy === t)?.id;
+  const [base, curry, subzi, extra] = (['base', 'curry', 'subzi', 'extra'] as const).map(idOf);
+  return base === undefined || curry === undefined || subzi === undefined || extra === undefined ? undefined : { base, curry, subzi, extra };
+}
+
+/**
+ * The parts the app keeps at one dish per meal whatever the cap rules say: Curry and Subzi, because a stored plan holds
+ * one of each (`legacySlotCaps`). Until Stage 5, when a deleted cap rule starts to mean "many".
+ */
+export const appSingleParts = (parts: readonly Pick<PlannerPart, 'id' | 'legacy'>[]): number[] =>
+  parts.filter((p) => p.legacy === 'curry' || p.legacy === 'subzi').map((p) => p.id);
+
 /** Rewrites every `role` and `componentType` leaf (eq, neq, in) to the same op on `part`. Other leaves are unchanged. */
 export function toPartMatcher(m: Matcher, legacy: LegacyParts): Matcher {
   if (isLeaf(m)) {

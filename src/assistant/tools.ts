@@ -413,8 +413,9 @@ function comesLinks(
  * comes-with link. `stored` are the dish's links in force; they are judged with the new ones, but only a clash that
  * lands on a new link is the draft's doing.
  */
-function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType }, links: DishLink[], stored: DishLink[] = []): string | undefined {
-  return linkWarnings(self, [...stored, ...links], { dishes: data.library, rules: data.rules, parts: data.parts }, namesFor(data))
+function pairingConflict(data: AssistantData, self: { id?: number; name: string; componentType: ComponentType; part_id?: number }, links: DishLink[], stored: DishLink[] = []): string | undefined {
+  const part_id = self.part_id ?? data.parts.find((p) => p.legacy === self.componentType)?.id;
+  return linkWarnings({ id: self.id, name: self.name, part_id }, [...stored, ...links], { dishes: data.library, rules: data.rules, parts: data.parts }, namesFor(data))
     .find((w) => w.blocking && w.link >= stored.length)?.message;
 }
 
