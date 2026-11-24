@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { WeeklyPlan } from '@/types/plan';
+import type { PlanSlot, WeeklyPlan } from '@/types/plan';
 import { pinsForMeal, pinsFromLocks, settleMeal } from './pins';
 
 const plan: WeeklyPlan = {
@@ -48,7 +48,7 @@ describe('pinsForMeal', () => {
 });
 
 describe('settleMeal', () => {
-  const picked = { day: 'monday', meal_slot: 'lunch', base_id: 1, curry_id: 20, extra_ids: [5] } as const;
+  const picked: PlanSlot = { day: 'monday', meal_slot: 'lunch', base_id: 1, curry_id: 20, extra_ids: [5] };
   const pair = (component: number, by: number) => ({ day: 'monday', meal: 'lunch', component, by }) as const;
   const found = (over: object) => ({ ...picked, ...over }) as never;
 
