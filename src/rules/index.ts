@@ -22,7 +22,7 @@ export {
   type Condition, type ConditionGroup, type ConditionField, type ConditionValue, type ReadableField,
 } from './conditions';
 export {
-  TEMPLATE_FORMS, newSpec, validateDraft, previewMatches, matchesDish, type StoredDish,
-  type FormContext, type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
+  TEMPLATE_FORMS, categoryChoices, newSpec, validateDraft, previewMatches, matchesDish, type StoredDish,
+  type CategoryPart, type FormContext, type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
 export { allowedMealsOf } from './meals';

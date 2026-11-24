@@ -243,4 +243,61 @@ describe('RuleEditor', () => {
       expect((await db.rules.get(id))?.name).toBe('No fish');
     });
   });
+
+  describe('category fields', () => {
+    const optionsOf = async (name: string) => {
+      await userEvent.click(screen.getByRole('combobox', { name }));
+      return (await screen.findAllByRole('option')).map((o) => o.textContent);
+    };
+
+    it('on the converted parts, offers the base categories for a pairing and the categories of every part for a requirement', async () => {
+      const { parts } = await ensurePartsAndTagGroups();
+      const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
+      await db.categories.bulkAdd([
+        { kind: 'base', name: 'Rice-based', part_id: partOf('base'), created_at: '' },
+        { kind: 'extra', name: 'Liquid', part_id: partOf('extra'), created_at: '' },
+      ]);
+      const pairing: RuleSpecInput = { template: 'pairs_with', params: { match: is('id', 1), categories: [], strength: 'must' } };
+      await renderLoaded(<RuleEditor initial={{ name: 'P', spec: pairing }} onSaved={vi.fn()} />);
+      expect(await optionsOf('Add only with a base from')).toEqual(['Rice-based']);
+      cleanup();
+
+      const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
+      await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
+      expect(await optionsOf('Add and an extra from')).toEqual(['Rice-based (Base)', 'Liquid (Extras)']);
+    });
+
+    it('on renamed parts, offers the first part for a pairing and every part, labelled, for a requirement', async () => {
+      await db.parts.clear();
+      const ids = (await db.parts.bulkAdd([
+        { name: 'Main', position: 1, varied: true, created_at: '' },
+        { name: 'Side', position: 2, varied: true, created_at: '' },
+        { name: 'Dessert', position: 3, varied: false, created_at: '' },
+      ] as never, { allKeys: true })) as number[];
+      await db.categories.bulkAdd([
+        { kind: 'base', name: 'Rice-based', part_id: ids[0], created_at: '' },
+        { kind: 'extra', name: 'Crunchy', part_id: ids[1], created_at: '' },
+        { kind: 'extra', name: 'Sweet', part_id: ids[2], created_at: '' },
+      ]);
+      const pairing: RuleSpecInput = { template: 'pairs_with', params: { match: is('id', 1), categories: [], strength: 'must' } };
+      await renderLoaded(<RuleEditor initial={{ name: 'P', spec: pairing }} onSaved={vi.fn()} />);
+      expect(await optionsOf('Add only with a base from')).toEqual(['Rice-based']);
+      cleanup();
+
+      const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
+      await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
+      expect(await optionsOf('Add and an extra from')).toEqual(['Rice-based (Main)', 'Crunchy (Side)', 'Sweet (Dessert)']);
+    });
+
+    it('saves a stored requirement unchanged when nothing was edited', async () => {
+      const { parts } = await ensurePartsAndTagGroups();
+      const cat = (await db.categories.add({ kind: 'extra', name: 'Liquid', part_id: parts.find((p) => p.legacy === 'extra')!.id, created_at: '' })) as number;
+      const spec: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [cat], strength: 'must' } };
+      const id = (await db.rules.add({ name: 'Rasam', enabled: true, created_at: '', spec })) as number;
+      await renderLoaded(<RuleEditor ruleId={id} initial={{ name: 'Rasam', spec }} onSaved={vi.fn()} />);
+      expect(await screen.findByText('Liquid (Extras)')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+      await waitFor(async () => expect((await db.rules.get(id))?.spec).toEqual(spec));
+    });
+  });
 });
