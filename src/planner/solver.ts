@@ -185,6 +185,19 @@ const sameDishes = (a: Readonly<SlotState>, b: Readonly<SlotState>) =>
 /** A one-dish part's new array: `[id]`, or empty. */
 const one = (id: number | undefined): number[] => (id === undefined ? [] : [id]);
 
+/**
+ * The pivot part: the first part after the first that holds one dish (on a converted library, the Curry), or
+ * undefined when there is none. The planner treats it apart in three places, kept as they were so no week moves:
+ * - the joint move changes it together with the first part, so pairings that depend on the base stay reachable;
+ * - a dish the user locked in it never nudges its meal toward what a conditional link waits for (`lockNudge`);
+ * - the clean-up after the search (`sweep`) never takes its dish out, even one only a conditional link brought.
+ * Which part plays this role, if any, is for the meal-parts project to decide. Uses no randomness.
+ */
+function pivotPart(single: readonly boolean[]): number | undefined {
+  const k = single.findIndex((holdsOne, i) => i > 0 && holdsOne);
+  return k < 0 ? undefined : k;
+}
+
 export const clonePlan = (p: PlanState): PlanState => p.map((s) => ({ parts: s.parts.map((d) => [...d]) }));
 
 export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
@@ -221,8 +234,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const many = range(P).filter((k) => !single[k]);
   /** Parts the pick and swap moves change. */
   const pickParts = [FIRST, ...singles];
-  /** The part the joint move changes with the first: the first single part after it (the curry), if any. */
-  const jointPart: number | undefined = singles[0];
+  /** The part the joint move changes with the first, which lock nudges and the sweep also pass over (`pivotPart`). */
+  const jointPart = pivotPart(single);
   /** Position of each dish's own part, or -1 for a part the meal does not have. */
   const partOfDish = new Map(m.library.map((c) => [c.id, partPosition(m, c.part_id)]));
   const ownPart = (id: number): number => partOfDish.get(id) ?? -1;
@@ -241,9 +254,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const pinOf = (i: number, k: number): readonly number[] | undefined => pins[i][m.parts[k].id];
   /** Whether the part at position `k` of meal `i` is not pinned. */
   const isFree = (i: number, k: number) => pinOf(i, k) === undefined;
-  // Meals where the user locked a part after the first, other than the joint part (the curry), with the locked
-  // dishes: there a link waiting for a curry or subzi that brings a locked dish pulls the meal toward that curry
-  // or subzi (`lockNudge`). A locked curry has never pulled; on a converted library these are the subzi and extras.
+  // Meals where the user locked a part after the first, other than the pivot part (`pivotPart`, the curry), with
+  // the locked dishes: there a link waiting for a curry or subzi that brings a locked dish pulls the meal toward
+  // that curry or subzi (`lockNudge`). A locked curry has never pulled; on a converted library these are the subzi and extras.
   const locks: { slot: number; ids: readonly number[] }[] = [];
   if (hasConditional) {
     pins.forEach((_, slot) => {
@@ -786,9 +799,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     runMeal(i) {
       const s = plan[i];
       let kept = false;
-      // Every part but the first, except the curry: sweep has never removed a curry, even one a pair waiting
-      // for a subzi brought. Kept (as the first one-dish part after the first part) so this refactor changes no
-      // week; the meal-parts project decides.
+      // Every part but the first, except the pivot part (`pivotPart`, the curry): sweep has never removed a curry,
+      // even one a pair waiting for a subzi brought, though that leaves the hard problem in the meal (rule case
+      // `sweep-spares-a-brought-curry`). Kept so no week moves; the meal-parts project decides.
       for (const [c, k] of dishesOf(s)) {
         if (k === FIRST || k === jointPart || !condOnly(s, i, c)) continue;
         if (!isFree(i, k)) continue;

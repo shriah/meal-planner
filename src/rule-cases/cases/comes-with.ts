@@ -817,4 +817,100 @@ const PART_LINK_CASES: RuleCase[] = [
   },
 ];
 
-export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES];
+// ─── Which part decides ──────────────────────────────────────────────────────────
+
+/** A subzi for the case where two links each bring one (id 908, case-only). */
+const AVIAL: ComponentRecord = { ...fields(), id: 908, name: 'Avial', componentType: 'subzi' };
+const CASE_BASE = CASE_PARTS.find((p) => p.legacy === 'base')!.id;
+const CASE_SUBZI = CASE_PARTS.find((p) => p.legacy === 'subzi')!.id;
+
+/** Every meal `where` picks with a hard problem in that meal: how many there are, and how many such weeks. */
+function hardProblemIn(says: string, where: Pick): PlanExpectation {
+  return {
+    says,
+    check: (w) => {
+      let n = 0;
+      let reported = 0;
+      w.weeks.forEach((wk, k) => {
+        for (const s of wk) {
+          if (!where(s, w.lib)) continue;
+          n++;
+          if (w.hard[k].some((j) => j.group.day === s.day && j.group.meal === s.meal_slot)) reported++;
+        }
+      });
+      return { pass: n > 0 && reported === n, got: `${reported} of ${n} meals have one` };
+    },
+    highlights: (slot, lib) => where(slot, lib),
+  };
+}
+
+/** Every meal `where` picks names, among the pairings left out of it, the one that would have brought `dish`. */
+function leftOutIn(says: string, where: Pick, dish: (s: PlanSlot, lib: CaseLibrary) => number): PlanExpectation {
+  return {
+    says,
+    check: (w) => {
+      let n = 0;
+      let reported = 0;
+      w.weeks.forEach((wk, k) => {
+        for (const s of wk) {
+          if (!where(s, w.lib)) continue;
+          n++;
+          const id = dish(s, w.lib);
+          if (w.suppressed[k].some((j) => j.group.componentId === id && j.group.day === s.day && j.group.meal === s.meal_slot)) reported++;
+        }
+      });
+      return { pass: n > 0 && reported === n, got: `${reported} of ${n} meals report it` };
+    },
+    highlights: (slot, lib) => where(slot, lib),
+  };
+}
+
+const riceBeans = allOf(baseIs('Rice'), subziIs('Beans Poriyal'));
+
+const PART_ORDER_CASES: RuleCase[] = [
+  {
+    kind: 'plan',
+    id: 'sweep-spares-a-brought-curry',
+    group: 'Pairings',
+    name: 'The clean-up never takes out a curry a conditional link brought',
+    // Pins today's planner. The planner's last part exemption: `sweep` skips the pivot part (`pivotPart`, the curry).
+    why: 'Rice comes with Sambar when the subzi is Beans Poriyal, Sambar always comes with Papad, and no meal with Sambar may hold an extra. The search is blind to a dish only a conditional link brought, so it can leave Sambar where its Papad breaks the hard rule; the clean-up after the search ("sweep") takes out such a dish, but never a curry, so today the Sambar stays and the hard problem stays with it. Taking the curry out would clear the problem; whether the clean-up may take out a curry, and so how a meal\'s parts rank, is for the meal-parts project to decide. Some Rice and Beans Poriyal meal keeps Sambar, every such meal holds Papad, and each has a hard problem.',
+    rules: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar')], when: { subzi: [dishId(lib, 'Beans Poriyal')] } })],
+    given: (lib) => [
+      SUBZI_AT_EVERY_MEAL,
+      caseLink(lib.dish('Sambar'), { mode: 'comes', to: 'extra', values: [dishId(lib, 'Papad')] }),
+      { name: 'No extras with Sambar', spec: { template: 'skip_when', params: { when: is('id', dishId(lib, 'Sambar')), skip: [CASE_EXTRA], strength: 'must' } } },
+    ],
+    expect: [
+      someWeekPicks('Some week has a Rice and Beans Poriyal meal that kept Sambar', allOf(riceBeans, curryIs('Sambar')), 0),
+      everyPicked('Every Rice, Beans Poriyal and Sambar meal holds Papad', allOf(riceBeans, curryIs('Sambar')), papad),
+      hardProblemIn('Every Rice, Beans Poriyal and Sambar meal has a hard problem', allOf(riceBeans, curryIs('Sambar'))),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'two-links-bring-a-subzi',
+    group: 'Pairings',
+    name: 'A base and its curry each bring a subzi: one holds it, the other is reported',
+    // Pins today's planner: the brief expected the base's subzi (Avial) to win every meal.
+    why: 'Idli always comes with Avial; Beans Poriyal is served with Sambar (stored on Beans Poriyal as "when Sambar is in the meal, Beans Poriyal is added"); Sambar is served with Idli. A meal holds one subzi, so every Idli meal has Sambar and either Avial or Beans Poriyal, and the link left out is reported as held by the other, never a hard problem. Today the higher part does not always decide: when the search picks Beans Poriyal for the subzi first, Idli\'s Avial cannot take a part a must link already holds, so Avial is in most Idli meals but not all.',
+    dishes: [AVIAL],
+    rules: (lib) => [
+      caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id] }),
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+    ],
+    given: (lib) => [caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] })],
+    expect: [
+      everyPicked('Every Idli meal has Sambar and one of Avial or Beans Poriyal', baseIs('Idli'), allOf(curryIs('Sambar'), (s, lib) => subziIs('Avial')(s, lib) || subziIs('Beans Poriyal')(s, lib))),
+      mostPicked('Avial is in at least half the Idli meals', baseIs('Idli'), subziIs('Avial'), 1, 2),
+      leftOutIn(
+        'Every Idli meal reports the link it left out: Beans Poriyal where Avial holds the subzi, Avial where Beans Poriyal does',
+        baseIs('Idli'),
+        (s, lib) => dishId(lib, subziIs('Avial')(s, lib) ? 'Beans Poriyal' : 'Avial'),
+      ),
+      noHardProblems(),
+    ],
+  },
+];
+
+export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES, ...PART_ORDER_CASES];
