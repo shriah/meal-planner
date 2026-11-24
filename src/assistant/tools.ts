@@ -311,6 +311,14 @@ function resolveCategory(kind: 'base' | 'extra', wanted: string | undefined, dat
   return { error: `no ${kind} category named "${wanted}". Existing ${kind} categories: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
 }
 
+/** A dish of `pool` by id (number or numeric text) or exact name, ignoring case and spacing; never by a search hit. */
+function exactDish(wanted: string | number, pool: readonly ComponentRecord[]): { ok: true; dish: ComponentRecord } | { ok: false; several?: ComponentRecord[] } {
+  const id = asNumber(wanted);
+  const hits = pool.filter((c) => (id !== undefined ? c.id === id : normName(c.name) === normName(String(wanted))));
+  if (hits.length === 1) return { ok: true, dish: hits[0] };
+  return hits.length > 1 ? { ok: false, several: hits } : { ok: false };
+}
+
 /** The parts in meal order: the first is the one every meal holds one dish of. */
 const mealParts = (data: AssistantData): PartRecord[] => [...data.parts].sort((a, b) => a.position - b.position);
 const asNumber = (wanted: string | number) => (typeof wanted === 'number' ? wanted : /^\d+$/.test(wanted) ? Number(wanted) : undefined);
@@ -340,7 +348,7 @@ type DraftedLink = Omit<DishLink, 'strength'> & { strength?: LinkStrength };
  * One link per entry and kind (dishes, then categories) from a dish of `owner.part`, by part: to a lower part the dish
  * brings one of them (comes), to a higher part it is added when one of them is in the meal (serve), as the dish form
  * stores them. Its own part only where `offersLink` allows. Links served with the first part are one link per kind,
- * as the dish form holds them; `servedWith` lists their names as asked.
+ * as the dish form holds them; `servedWith` lists the names of the dishes and categories they resolved to.
  */
 function draftLinks(
   data: AssistantData,
@@ -371,33 +379,45 @@ function draftLinks(
     if (entry.dishes?.length) {
       const inPart = placed.filter((c) => c.part_id === part.id);
       const ids: number[] = [];
+      const names: string[] = [];
       for (const wanted of entry.dishes) {
-        const hit = resolveDish(wanted, { ...data, library: inPart });
+        // Only an exact name or an id: a link must not land on a dish the user did not name.
+        const hit = exactDish(wanted, inPart);
         if (!hit.ok) {
-          const elsewhere = resolveDish(wanted, { ...data, library: placed });
+          if (hit.several) return { ok: false, error: `several ${pluralNoun(part.name)} are named "${wanted}": ${hit.several.map((c) => `${c.name} (id ${c.id})`).join(', ')}. Call again with one id.` };
+          const elsewhere = exactDish(wanted, placed);
           if (elsewhere.ok) {
             const its = parts.find((p) => p.id === elsewhere.dish.part_id);
             return { ok: false, error: `${elsewhere.dish.name} is not a ${one}; it is in ${its?.name ?? 'another part'}. Name it in an entry for its own part.` };
           }
-          if (hit.error.startsWith('several')) return hit;
-          return { ok: false, error: `no ${one} named "${wanted}". Existing ${pluralNoun(part.name)}: ${inPart.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}` };
+          const close = searchLibrary(String(wanted), { ...data, library: inPart }).slice(0, MAX_LIST_ITEMS_SIMILAR).map((c) => c.name);
+          return {
+            ok: false,
+            error: close.length
+              ? `no ${one} named exactly "${wanted}". Close matches: ${close.join(', ')}. Call again with the exact name or id.`
+              : `no ${one} named "${wanted}". Existing ${pluralNoun(part.name)}: ${inPart.slice(0, MAX_LIST_ITEMS).map((c) => c.name).join(', ') || '(none)'}`,
+          };
         }
         if (hit.dish.id === owner.id) return { ok: false, error: `${hit.dish.name} cannot come with itself` };
         ids.push(hit.dish.id);
+        names.push(hit.dish.name);
       }
+      if (mode === 'serve' && part.id === first) servedWith.push(...names);
       add({ mode, target: { part: part.id, kind: 'dish' }, values: [...new Set(ids)], ...(strength && { strength }) });
     }
     if (entry.categories?.length) {
       const options = data.categories.filter((c) => c.part_id === part.id);
       const ids: number[] = [];
+      const names: string[] = [];
       for (const wanted of entry.categories) {
         const hit = options.find((c) => normName(c.name) === normName(wanted));
         if (!hit) return { ok: false, error: `no ${one} category named "${wanted}". Categories of ${part.name}: ${options.map((c) => c.name).join(', ') || '(none)'}. Categories cannot be created here.` };
         ids.push(hit.id);
+        names.push(hit.name);
       }
+      if (mode === 'serve' && part.id === first) servedWith.push(...names);
       add({ mode, target: { part: part.id, kind: 'category' }, values: [...new Set(ids)], ...(strength && { strength }) });
     }
-    if (mode === 'serve' && part.id === first) servedWith.push(...(entry.dishes ?? []).map(String), ...(entry.categories ?? []));
   }
   return { ok: true, links, servedWith };
 }
@@ -662,8 +682,10 @@ const HANDLERS: Record<string, Handler> = {
       if (wantsFirst) return firstRefusal();
       found = any;
     }
-    const dish = found.dish as ComponentRecord & { part_id: number };
-    const drafted = draftLinks(data, { id: dish.id, part: dish.part_id }, wanted);
+    const { dish } = found;
+    const part = dish.part_id;
+    if (part === undefined || !parts.some((p) => p.id === part)) return { ok: false, error: `${dish.name} has no part, so it cannot be linked yet` };
+    const drafted = draftLinks(data, { id: dish.id, part }, wanted);
     if (!drafted.ok) return drafted;
     // Links served with the first part are one link per kind, so the drafted one replaces the stored one in its slot:
     // carry over the dishes or categories already there and their limits. A switched-off link is not in force: nothing
@@ -699,7 +721,7 @@ const HANDLERS: Record<string, Handler> = {
     });
     const rest: DishLink[] = drafted.links.filter((l) => !servesFirst(l, data)).map((l) => ({ ...l, strength: l.strength ?? 'always' }));
     // Every other drafted link is a new link, so all of it is checked.
-    const conflict = pairingConflict(data, dish, [...changed, ...rest], stored);
+    const conflict = pairingConflict(data, { id: dish.id, name: dish.name, part_id: part }, [...changed, ...rest], stored);
     if (conflict) return { ok: false, error: conflict };
     return {
       ok: true,

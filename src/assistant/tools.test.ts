@@ -586,7 +586,7 @@ describe('propose_dish', () => {
       { mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'moderately' },
       { mode: 'serve', target: LINK_TARGET.base_category, values: [1], strength: 'moderately' },
     ]);
-    expect((r as { data: { servedWith: string[] } }).data.servedWith).toEqual(['idli', 'Rice-Based']);
+    expect((r as { data: { servedWith: string[] } }).data.servedWith).toEqual(['Idli', 'rice-based']);
   });
 
   it('refuses unknown bases, and serving a base with bases', async () => {
@@ -737,6 +737,15 @@ describe('propose_pairing', () => {
     expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Dosa'] }] }, c())).ok).toBe(true);
     const sambarDosa = ctxOf({ library: lib, categories, rules: [...rules, rule(11, 1, 'Sambar', [4])] });
     expect((await runTool('propose_pairing', { dish: 'Rasam', links: [{ part: 'Base', dishes: ['Dosa'] }] }, sambarDosa)).ok).toBe(false);
+  });
+
+  it('links only a dish named exactly or by id, and says which dish it linked', async () => {
+    const lib = [dish(1, 'Sambar'), dish(6, 'Lemon Rice', { componentType: 'base' })];
+    const r = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['Rice'] }] }, ctxOf({ library: lib, categories }));
+    expect(r).toEqual({ ok: false, error: 'no base named exactly "Rice". Close matches: Lemon Rice. Call again with the exact name or id.' });
+    const exact = await runTool('propose_pairing', { dish: 'Sambar', links: [{ part: 'Base', dishes: ['lemon rice'] }] }, ctxOf({ library: lib, categories }));
+    expect((exact as { data: { servedWith: string[] } }).data.servedWith).toEqual(['Lemon Rice']);
+    expect((exact as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: LINK_TARGET.base_dish, values: [6], strength: 'always' }]);
   });
 
   it('takes an exact base name as that base, not a side that contains it', async () => {
@@ -974,6 +983,19 @@ describe('links by part on Main, Side and Dessert', () => {
     expect(await runTool('propose_pairing', { dish: 'Raita', links: [{ part: 'Side', dishes: ['Salan'] }] }, ctx([sideCap]))).toEqual({
       ok: false, error: 'a meal holds one side, so a side does not come with sides',
     });
+  });
+
+  it('propose_dish refuses links when no part holds the draft\'s type, as drafts keep their type until Stage 4', async () => {
+    expect(await runTool('propose_dish', { name: 'Pickle', componentType: 'extra', links: [{ part: 'Main', dishes: ['Biryani'] }] }, ctx())).toEqual({
+      ok: false, error: 'no part holds extra dishes, so this dish cannot be linked here',
+    });
+    expect((await runTool('propose_dish', { name: 'Pickle', componentType: 'extra' }, ctx())).ok).toBe(true);
+  });
+
+  it('refuses to link a dish that has no part', async () => {
+    const data = { library: [...library, dish(5, 'Papad', { componentType: 'extra' })], categories: [], rules: [], parts };
+    const r = await runTool('propose_pairing', { dish: 'Papad', links: [{ part: 'Main', dishes: ['Biryani'] }] }, { data, compare: async () => { throw new Error('unused'); } });
+    expect(r).toEqual({ ok: false, error: 'Papad has no part, so it cannot be linked yet' });
   });
 
   it('refuses a main served with mains', async () => {
