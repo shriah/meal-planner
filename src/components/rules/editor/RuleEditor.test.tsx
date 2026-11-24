@@ -250,7 +250,7 @@ describe('RuleEditor', () => {
       return (await screen.findAllByRole('option')).map((o) => o.textContent);
     };
 
-    it('on the converted parts, offers the base categories for a pairing and the categories of every part for a requirement', async () => {
+    it('on the converted parts, offers the base categories for a pairing and the the extras categories for a requirement', async () => {
       const { parts } = await ensurePartsAndTagGroups();
       const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
       await db.categories.bulkAdd([
@@ -264,10 +264,10 @@ describe('RuleEditor', () => {
 
       const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
       await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
-      expect(await optionsOf('Add and an extra from')).toEqual(['Rice-based (Base)', 'Liquid (Extras)']);
+      expect(await optionsOf('Add and an extra from')).toEqual(['Liquid']);
     });
 
-    it('on renamed parts, offers the first part for a pairing and every part, labelled, for a requirement', async () => {
+    it('on renamed parts, offers the first part for a pairing and the later parts, labelled, for a requirement', async () => {
       await db.parts.clear();
       const ids = (await db.parts.bulkAdd([
         { name: 'Main', position: 1, varied: true, created_at: '' },
@@ -286,7 +286,7 @@ describe('RuleEditor', () => {
 
       const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
       await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
-      expect(await optionsOf('Add and an extra from')).toEqual(['Rice-based (Main)', 'Crunchy (Side)', 'Sweet (Dessert)']);
+      expect(await optionsOf('Add and an extra from')).toEqual(['Crunchy (Side)', 'Sweet (Dessert)']);
     });
 
     it('saves a stored requirement unchanged when nothing was edited', async () => {
@@ -295,7 +295,7 @@ describe('RuleEditor', () => {
       const spec: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [cat], strength: 'must' } };
       const id = (await db.rules.add({ name: 'Rasam', enabled: true, created_at: '', spec })) as number;
       await renderLoaded(<RuleEditor ruleId={id} initial={{ name: 'Rasam', spec }} onSaved={vi.fn()} />);
-      expect(await screen.findByText('Liquid (Extras)')).toBeInTheDocument();
+      expect(await screen.findByText('Liquid')).toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
       await waitFor(async () => expect((await db.rules.get(id))?.spec).toEqual(spec));
     });

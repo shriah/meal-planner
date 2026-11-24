@@ -222,7 +222,7 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
       case 'categories':
         return (
           <MultiPicker label={field.label} value={(v as number[]) ?? []} onChange={(x) => setParam(field.key, x)}
-            options={categoryChoices(field.part ?? 'any', data.parts, data.categories).map((c) => ({ value: c.id, label: c.label }))} />
+            options={categoryChoices(field.part ?? 'uncapped', data.parts, data.categories, cappedOf({ parts: data.parts, rules })).map((c) => ({ value: c.id, label: c.label }))} />
         )
     }
   }

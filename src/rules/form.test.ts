@@ -119,23 +119,25 @@ describe('rule forms', () => {
 
     it('has the pairing and requirement fields choose categories by part', () => {
       expect(TEMPLATE_FORMS.pairs_with.fields.find((f) => f.key === 'categories')).toMatchObject({ kind: 'categories', part: 'first', label: 'Only with a base from' });
-      expect(TEMPLATE_FORMS.require_with.fields.find((f) => f.key === 'categories')).toMatchObject({ kind: 'categories', part: 'any', label: 'And an extra from' });
+      expect(TEMPLATE_FORMS.require_with.fields.find((f) => f.key === 'categories')).toMatchObject({ kind: 'categories', part: 'uncapped', label: 'And an extra from' });
     });
 
     it('offers the first part\'s categories as they are named', () => {
-      expect(categoryChoices('first', parts, categories)).toEqual([{ id: 1, label: 'Rice-based' }, { id: 3, label: 'Bread-based' }]);
+      expect(categoryChoices('first', parts, categories, new Set())).toEqual([{ id: 1, label: 'Rice-based' }, { id: 3, label: 'Bread-based' }]);
     });
 
-    it('offers every part\'s categories labelled by part, in meal order', () => {
-      expect(categoryChoices('any', parts, categories)).toEqual([
-        { id: 1, label: 'Rice-based (Main)' }, { id: 3, label: 'Bread-based (Main)' },
-        { id: 2, label: 'Crunchy (Side)' }, { id: 4, label: 'Sweet (Dessert)' },
-      ]);
+    it('offers the uncapped later parts\' categories, labelled by part when several offer them', () => {
+      expect(categoryChoices('uncapped', parts, categories, new Set())).toEqual([{ id: 2, label: 'Crunchy (Side)' }, { id: 4, label: 'Sweet (Dessert)' }]);
+    });
+
+    it('shows plain names when one part offers categories, and never offers a capped part or the first', () => {
+      expect(categoryChoices('uncapped', parts, categories, new Set([9]))).toEqual([{ id: 2, label: 'Crunchy' }]);
+      expect(categoryChoices('uncapped', parts, categories, new Set([8, 9]))).toEqual([]);
     });
 
     it('offers nothing before the parts are known', () => {
-      expect(categoryChoices('first', [], categories)).toEqual([]);
-      expect(categoryChoices('any', [], categories)).toEqual([]);
+      expect(categoryChoices('first', [], categories, new Set())).toEqual([]);
+      expect(categoryChoices('uncapped', [], categories, new Set())).toEqual([]);
     });
   });
 });
