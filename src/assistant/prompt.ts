@@ -1,6 +1,6 @@
 // The system prompt (a constant, never built from user text), the injection-safe data wrapper,
 // and a cheap off-topic shortcut.
-import { TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
+import { CONDITION_FIELDS, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
 import { TOOL_DECLARATIONS } from './tools';
 import type { Slice } from './retrieve';
 
@@ -13,13 +13,6 @@ const templateLines = TEMPLATE_GROUPS.map((g) => {
   });
   return `${g.label}:\n${lines.join('\n')}`;
 }).join('\n');
-
-// The match fields the assistant drafts with: dish types and the old category fields, which still compile. It learns to
-// name parts and categories by id in Stage 3b.
-const MATCH_FIELDS = [
-  'componentType', 'id', 'base_category_id', 'extra_category_id', 'curry_category',
-  'dietary_tags', 'protein_tag', 'regional_tags', 'occasion_tags', 'frequency',
-];
 
 const toolLines = TOOL_DECLARATIONS.map((t) => `- ${t.name}: ${t.description}`).join('\n');
 
@@ -55,7 +48,7 @@ Pairings: a meal is only its base unless a rule asks for a curry, subzi or extra
 - To pair a dish that is not in the library yet, call propose_dish with served_with_bases (or served_with_base_categories): the draft adds the dish and its pairing together, so whenever that base is planned the dish comes with it. Use served_with_strength "usually" when the user wants it most of the time.
 - To pair a dish already in the library, call propose_pairing with the dish and served_with_bases (or served_with_base_categories): the user reviews the pairing in that dish's form. Bases it is already served with are kept.
 - When a dish should bring its own sides ("Idiyappam comes with Kerala Stew"), use comes_with on the dish that brings them: propose_dish (a new dish) or propose_pairing (one in the library; a base too). A side never brings a base. Each entry is one link and two entries bring both. A curry cannot come with curries, nor a subzi with subzis. In a plan, the pairedWith "how" text says which dish brought which. A base's link can wait for a curry or subzi ("Rice comes with Papad when the curry is Sambar"); you cannot draft those, but saving a pairing keeps them, and the "how" text names the condition.
-- A meal holds one curry and one subzi: do not pair two curries (or two subzis) "always" with the same base.
+- A part capped by an "At most one … per meal" rule holds one dish (today the curry and the subzi): do not pair two of its dishes "always" with the same base.
 
 Strength: "never" or "no" means strength "must"; "try" or "prefer" means strength "prefer". If the request is ambiguous, ask ONE short question before drafting.
 
@@ -65,7 +58,7 @@ ${toolLines}
 Rule drafts use only these templates. In propose_rule and simulate_with_rule, spec is JSON text of { template, params }, like the examples below. A "?" marks an optional param.
 ${templateLines}
 
-A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${MATCH_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them.
+A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${CONDITION_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them. A meal is made of parts: take part and category ids from summary.parts in the context (a part's categories are listed under it), and match a part with { field: "part", op: "eq", value: <part id> } or a category with { field: "category", ... }. Never use componentType, role, base_category_id, extra_category_id or curry_category. The parts and skip params take part ids from summary.parts too.
 EXAMPLE: ${EXAMPLE}
 
 scope is optional and strict: { days?: [...], meals?: [...] } with lowercase values (monday..sunday; breakfast, lunch, dinner) and no other keys. Leave it out for every day and meal.
@@ -88,11 +81,15 @@ const VOCABULARY = [
   'curry', 'subzi', 'base', 'extra', 'veg', 'vegetarian', 'paneer', 'rice', 'dal', 'tag', 'category', 'recipe', 'food',
 ];
 
+const latinWords = (s: string) => s.toLowerCase().match(/[a-z]+/g) ?? [];
+
 /** Cheap shortcut to skip the model call; conservative: false whenever unsure. */
 export function looksOffTopic(message: string, slice: Slice): boolean {
   if (slice.mentionsAnything) return false;
-  const words = message.toLowerCase().match(/[a-z]+/g) ?? [];
+  const words = latinWords(message);
   // The vocabulary is English only, so a message in another script is left to Gemini.
   if (words.length === 0) return false;
-  return !words.some((w) => VOCABULARY.includes(w));
+  // The library's own part and category names ("dessert") are app words too.
+  const own = new Set(slice.summary.parts.flatMap((p) => [p.name, ...p.categories.map((c) => c.name)]).flatMap(latinWords));
+  return !words.some((w) => VOCABULARY.includes(w) || own.has(w));
 }

@@ -1,4 +1,5 @@
 // Before-and-after sample week: plans with and without a draft rule, same seed and pins.
+import { dishesWithParts } from '@/db/parts';
 import { compileMatcher, type Matcher } from '@/planner';
 import { matchesDish, parseSpec, type RuleSpecInput } from '@/rules';
 import type { LegacyPins } from '@/services/pins';
@@ -17,7 +18,8 @@ export function makeCompare(data: AssistantData, pins?: LegacyPins, run = runPla
     const parsed = parseSpec(spec);
     const match = parsed.ok && 'match' in parsed.spec.params ? (parsed.spec.params.match as Matcher) : undefined;
     const test = match ? compileMatcher(match) : undefined;
-    const library = new Map(data.library.map((c) => [c.id, c]));
+    // A dish saved without a part is matched in the part planning gives it.
+    const library = new Map(dishesWithParts(data.library, data.parts).map((c) => [c.id, c]));
     const touches = (id: number) => {
       const c = library.get(id);
       return !!(test && c && matchesDish(test, c));

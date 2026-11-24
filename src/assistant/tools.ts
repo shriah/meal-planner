@@ -1,7 +1,7 @@
 // Tool registry for the rules assistant: declarations sent to the model plus a never-throwing dispatcher.
 import { z } from 'zod';
 import { MEALS, type Meal } from '@/planner';
-import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, partsOfDishes, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
+import { bringMode, describeLink, describeWhen, readLink, describeSpec, linkSlotOf, linkWarnings, missingReferences, parseSpec, partsOfDishes, readOwned, RuleSpecSchema, STRENGTH_WORDS, HAND_TEMPLATE_IDS, OWNED_ONLY_TEMPLATES, TYPE_FIELDS, validateDraft, type DishLink, type KnownIds, type LinkStrength, type RuleRecord, type RuleSpec } from '@/rules';
 import { explainPlan, missingDishIds, broughtByBase, pairedSides, slotConflicts, type PlanProblem, type SlotPart } from '@/services/plan-generation';
 import {
   COMPONENT_TYPES, CURRY_CATEGORIES, DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS,
@@ -188,7 +188,20 @@ const parse = <S extends z.ZodType>(schema: S, args: unknown): { ok: true; value
   return r.success ? { ok: true, value: r.data } : { ok: false, error: `invalid arguments: ${r.error.issues.map((i) => i.message).join('; ')}` };
 };
 
-/** Shared by simulate_with_rule and propose_rule: the spec must satisfy the template schema and not be one only a dish owns. */
+/** Fields named by any matcher leaf in `value`, however deeply nested in the params. */
+function leafFields(value: unknown, out = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) value.forEach((v) => leafFields(v, out));
+  else if (value && typeof value === 'object') {
+    if ('field' in value && 'op' in value && typeof value.field === 'string') out.add(value.field);
+    else Object.values(value).forEach((v) => leafFields(v, out));
+  }
+  return out;
+}
+
+/**
+ * Shared by simulate_with_rule and propose_rule: the spec must satisfy the template schema, not be one only a dish
+ * owns, and name parts and categories rather than dish types or the old category fields.
+ */
 function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; error: string } {
   let spec = raw;
   if (typeof raw === 'string') {
@@ -203,6 +216,10 @@ function checkSpec(raw: unknown): { ok: true; spec: RuleSpec } | { ok: false; er
   // A comes-with link is drafted on its dish, where the form checks it against the dish's other links.
   if (OWNED_ONLY_TEMPLATES.includes(r.data.template)) {
     return { ok: false, error: `${r.data.template} is not a rule you can draft here; use comes_with on propose_pairing (or propose_dish) for the dish that brings the side` };
+  }
+  const old = [...leafFields(r.data.params)].filter((f) => (TYPE_FIELDS as readonly string[]).includes(f));
+  if (old.length) {
+    return { ok: false, error: `${old.join(', ')} cannot be drafted; use part and category ids from summary.parts in the context (fields part and category)` };
   }
   return { ok: true, spec: r.data };
 }
@@ -577,7 +594,9 @@ const HANDLERS: Record<string, Handler> = {
     const draft = validateDraft({ name: a.value.name, spec: spec.spec });
     if (!draft.ok) return { ok: false, error: `invalid rule: ${Object.values(draft.errors).join('; ')}` };
     const missing = missingReferences(draft.spec, knownIds(data));
-    if (missing.length) return { ok: false, error: `the rule refers to things that do not exist: ${missing.join(', ')}. Use search_dishes to find real ids.` };
+    if (missing.length) {
+      return { ok: false, error: `the rule refers to ${missing.join(', ')}, which no longer exists. Use search_dishes for dish ids, and summary.parts in the context for part and category ids.` };
+    }
     return { ok: true, data: { name: draft.name, description: describeSpec(draft.spec, namesFor(data)) }, effect: { kind: 'rule-draft', draft: { name: draft.name, spec: draft.spec } } };
   },
   propose_dish(args, { data }) {

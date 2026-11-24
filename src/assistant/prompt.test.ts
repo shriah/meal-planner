@@ -4,8 +4,8 @@ import { TOOL_DECLARATIONS } from './tools';
 import { looksOffTopic, REFUSAL, SYSTEM_PROMPT, wrapData } from './prompt';
 import type { Slice } from './retrieve';
 
-const slice = (mentionsAnything: boolean): Slice =>
-  ({ dishes: [], rules: [], summary: { categories: [], dishCount: 0, ruleCount: 0, templates: [] }, mentionsAnything });
+const slice = (mentionsAnything: boolean, parts: Slice['summary']['parts'] = []): Slice =>
+  ({ dishes: [], rules: [], summary: { categories: [], dishCount: 0, ruleCount: 0, templates: [], parts }, mentionsAnything });
 
 describe('wrapData', () => {
   it('keeps exactly one closing tag even when the value contains one', () => {
@@ -38,6 +38,16 @@ describe('looksOffTopic', () => {
     expect(looksOffTopic('swap paneer for dal', slice(false))).toBe(false);
     expect(looksOffTopic('remove it please', slice(false))).toBe(false);
     expect(looksOffTopic('something for Dinner', slice(false))).toBe(false);
+  });
+  it('is false on a part or category name of the library (Main, Side, Dessert)', () => {
+    const parts = [
+      { id: 10, name: 'Main', categories: [] },
+      { id: 11, name: 'Side', categories: [{ id: 20, name: 'Cold-drinks' }] },
+      { id: 12, name: 'Dessert', categories: [] },
+    ];
+    expect(looksOffTopic('no dessert on weekdays', slice(false))).toBe(true);
+    expect(looksOffTopic('no dessert on weekdays', slice(false, parts))).toBe(false);
+    expect(looksOffTopic('too many drinks', slice(false, parts))).toBe(false);
   });
 });
 
@@ -74,5 +84,16 @@ describe('SYSTEM_PROMPT', () => {
   it('keeps day and meal out of match fields', () => {
     expect(SYSTEM_PROMPT).toMatch(/Match fields: [^.]*\./);
     expect(SYSTEM_PROMPT.match(/Match fields: ([^.]*)\./)![1]).not.toMatch(/\b(day|meal|role)\b/);
+  });
+  it('drafts with part and category ids from the context, not dish types or old category fields', () => {
+    const fields = SYSTEM_PROMPT.match(/Match fields: ([^.]*)\./)![1].split(', ');
+    expect(fields).toEqual(expect.arrayContaining(['part', 'id', 'category', 'frequency']));
+    for (const old of ['componentType', 'base_category_id', 'extra_category_id', 'curry_category']) expect(fields).not.toContain(old);
+    expect(SYSTEM_PROMPT).toMatch(/part and category ids from summary\.parts/);
+    expect(SYSTEM_PROMPT).toMatch(/parts and skip params take part ids/);
+  });
+  it('says a capped part holds one dish instead of one curry and one subzi', () => {
+    expect(SYSTEM_PROMPT).not.toMatch(/A meal holds one curry and one subzi/);
+    expect(SYSTEM_PROMPT).toMatch(/A part capped by an "At most one … per meal" rule holds one dish/);
   });
 });

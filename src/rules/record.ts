@@ -175,7 +175,7 @@ export function misplacedCategories(spec: RuleSpec, categoryPart: ReadonlyMap<nu
 const UNPLANNED_FIELDS = ['role', 'slot_part'] as const;
 
 /** Fields that only mean something through a dish's type: with no type-to-part ids to read them against, they match nothing. */
-const TYPE_FIELDS = ['role', 'componentType', 'base_category_id', 'extra_category_id', 'curry_category'] as const;
+export const TYPE_FIELDS = ['role', 'componentType', 'base_category_id', 'extra_category_id', 'curry_category'] as const;
 
 const constraintFields = (c: Constraint): Set<string> => {
   const matchers = c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];

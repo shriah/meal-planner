@@ -516,6 +516,48 @@ describe('propose_rule', () => {
   it('rejects a blank name', async () => {
     expect((await runTool('propose_rule', { name: '  ', spec: good }, ctxOf({ library }))).ok).toBe(false);
   });
+
+  it('refuses a draft over dish types or old category fields, asking for part and category ids', async () => {
+    const old = [
+      is('componentType', 'curry'), is('role', 'curry'), is('base_category_id', 5), is('extra_category_id', 6), is('curry_category', 'lentil'),
+    ];
+    for (const leaf of old) {
+      // Nested in a when matcher too, not only at the top of match.
+      const spec = { template: 'skip_when', params: { when: { all: [is('id', 1), { not: leaf }] }, skip: [3], strength: 'must' } };
+      const r = await runTool('propose_rule', { name: 'x', spec }, ctxOf({ library }));
+      expect(r.ok, JSON.stringify(leaf)).toBe(false);
+      expect((r as { error: string }).error).toMatch(/use part and category ids/);
+      expect(r).not.toHaveProperty('effect');
+    }
+  });
+
+  it('accepts a draft over a part and a category', async () => {
+    const categories = [{ id: 5, kind: 'base' as const, name: 'rice-based', part_id: 1, created_at: '' }];
+    const spec = { template: 'exclude', params: { match: { all: [is('part', 1), is('category', 5)] }, strength: 'must' } };
+    const r = await runTool('propose_rule', { name: 'No rice-based', spec }, ctxOf({ library, categories }));
+    expect(r.ok).toBe(true);
+    expect((r as { data: { description: string } }).data.description).toContain('rice-based');
+  });
+
+  it('refuses a draft naming a deleted category or part, saying it no longer exists', async () => {
+    const byCategory = { template: 'exclude', params: { match: is('category', 77), strength: 'must' } };
+    const r = await runTool('propose_rule', { name: 'x', spec: byCategory }, ctxOf({ library }));
+    expect(r.ok).toBe(false);
+    expect((r as { error: string }).error).toMatch(/refers to category #77, which no longer exists/);
+    const byPart = { template: 'no_repeat', params: { match: is('id', 1), parts: [9], strength: 'must' } };
+    const p = await runTool('propose_rule', { name: 'x', spec: byPart }, ctxOf({ library }));
+    expect((p as { error: string }).error).toMatch(/refers to part #9, which no longer exists/);
+  });
+});
+
+describe('simulate_with_rule over old fields', () => {
+  it('refuses a draft over a dish type without comparing', async () => {
+    const calls: unknown[] = [];
+    const ctx: ToolContext = { ...ctxOf(), compare: async () => { calls.push(1); throw new Error('compared'); } };
+    const r = await runTool('simulate_with_rule', { name: 'x', spec: { template: 'exclude', params: { match: is('componentType', 'curry') } } }, ctx);
+    expect((r as { error: string }).error).toMatch(/use part and category ids/);
+    expect(calls).toHaveLength(0);
+  });
 });
 
 describe('propose_dish', () => {

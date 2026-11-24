@@ -5,7 +5,7 @@ import type { RuleSpecInput } from '@/rules';
 import { planFromData, type PlanningInput, type PlanningOptions } from '@/services/plan-generation';
 import type { ComponentRecord } from '@/types/component';
 import { COMPARE_SEED, makeCompare } from './compare';
-import { capRecords, withParts } from '@/services/test-input';
+import { capRecords, TEST_PART_RECORDS, withParts } from '@/services/test-input';
 
 const dish = (id: number, name: string, componentType: string): ComponentRecord =>
   ({ id, name, componentType, dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], created_at: '' } as ComponentRecord);
@@ -53,5 +53,15 @@ describe('makeCompare', () => {
     expect(calls[1].opts).toEqual({ seed: COMPARE_SEED, pins });
     expect(calls[0].input.rules).toEqual(data.rules);
     expect(calls[1].input.rules).toEqual([...data.rules, expect.objectContaining({ id: -1, enabled: true, name: 'No paneer' })]);
+  });
+
+  it('marks a dish saved without a part as touched by a rule over its type\'s part', async () => {
+    // Raw dishes, as stored before a part was derived: the draft names the Curry part (id 2).
+    const raw = { library, categories: [], rules: capRecords(), parts: TEST_PART_RECORDS };
+    expect(raw.library.every((c) => c.part_id === undefined)).toBe(true);
+    const c = await makeCompare(raw, undefined, run)(exclude(is('part', 2)), 'No curry');
+    const removed = c.changes.filter((x) => x.before.includes('Paneer') && !x.after.includes('Paneer'));
+    expect(removed.length).toBeGreaterThan(0);
+    expect(removed.every((x) => x.touchedByRule)).toBe(true);
   });
 });
