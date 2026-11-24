@@ -8,6 +8,7 @@ import { CONVERTED_TAG_GROUP_KEYS, CONVERTED_TAG_GROUPS } from '@/db/parts';
 import { resolveSeededCurryCompatibilityIds } from '@/db/seed-data';
 import { getCategoriesByKind } from '@/services/category-db';
 import { getComponentsByType, getOwnedRule, getOwnedRules } from '@/services/food-db';
+import { getParts } from '@/services/parts-db';
 import type { CurryRecord, ExtraRecord } from '@/types/component';
 
 describe('runSeed', () => {
@@ -84,12 +85,12 @@ describe('runSeed', () => {
 
     // Curated pairings are seeded as rules each curry owns, not as component fields.
     expect(sambar).not.toHaveProperty('compatible_base_category_ids');
-    expect(pairingCategories((await getOwnedRule(sambar!.id, 'with:base_category'))!)).toEqual([
+    expect(pairingCategories((await getOwnedRule(sambar!.id, `with:${(await getParts())[0].id}:category`))!)).toEqual([
       baseIdsByName['rice-based'],
       baseIdsByName['other'],
     ]);
     // Rasam's curated list is empty: it is never planned automatically.
-    expect(await getOwnedRule(rasam!.id, 'with:base_category')).toBeUndefined();
+    expect(await getOwnedRule(rasam!.id, `with:${(await getParts())[0].id}:category`)).toBeUndefined();
     expect(await getOwnedRule(rasam!.id, 'exclude')).toBeDefined();
     // Every seeded curry has a curated pairing or is never planned automatically.
     for (const curry of curries) {
@@ -149,16 +150,25 @@ describe('runSeed', () => {
     ]);
 
     expect(await db.preferences.count()).toBe(0);
-    const names = new Set(rules.map((r) => r.name));
-    for (const r of defaultRules({ breakfast: 2, lunch: 3, dinner: 3 })) expect(names, r.name).toContain(r.name);
-    expect(rules.filter((r) => r.default_key).map((r) => r.default_key).sort()).toEqual(defaultRules().map((r) => r.default_key).sort());
+    const parts = await getParts();
+    for (const r of defaultRules(parts, { breakfast: 2, lunch: 3, dinner: 3 })) {
+      expect(rules.find((s) => s.default_key === r.default_key), r.name).toMatchObject({ name: r.name, spec: r.spec });
+    }
+    expect(rules.filter((r) => r.default_key).map((r) => r.default_key).sort()).toEqual(defaultRules(parts).map((r) => r.default_key).sort());
 
     for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
       expect(rule.spec).toMatchObject({
         template: 'allowed_meals',
-        params: { match: { field: 'base_category_id', op: 'eq', value: expect.any(Number) } },
+        params: { match: { field: 'category', op: 'eq', value: expect.any(Number) } },
       });
     }
+    // Each window names a base category, which the seeded bases carry.
+    const bases = (await db.components.toArray()).filter((c) => c.componentType === 'base');
+    for (const rule of rules.filter((candidate) => categoryRuleNames.has(candidate.name))) {
+      const category = (rule.spec.params as { match: { value: number } }).match.value;
+      expect(bases.some((b) => b.category_id === category && b.base_category_id === category), rule.name).toBe(true);
+    }
+    expect(JSON.stringify(rules.filter((r) => r.owner_component_id === undefined).map((r) => r.spec))).not.toMatch(/componentType|base_category_id|extra_category_id|curry_category/);
 
     const pooriRule = rules.find((rule) => rule.name === 'Poori: breakfast only');
     expect(pooriRule?.spec).toMatchObject({ template: 'allowed_meals', params: { match: { field: 'id' }, meals: ['breakfast'] } });
@@ -170,10 +180,11 @@ describe('runSeed', () => {
     await runSeed();
 
     const rules = await db.rules.orderBy('id').toArray();
-    const defaults = defaultRules().length;
+    const parts = await getParts();
+    const defaults = defaultRules(parts).length;
     expect(rules.slice(0, defaults).every((r) => r.default_key)).toBe(true);
     const caps = rules.slice(defaults, defaults + 2);
-    expect(caps.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules().map((r) => ({ ...r, enabled: true })));
+    expect(caps.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules(parts).map((r) => ({ ...r, enabled: true })));
     expect(caps.map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
     expect(rules.filter((r) => r.name.startsWith('At most one '))).toHaveLength(2);
   });
@@ -245,11 +256,11 @@ describe('runSeed', () => {
       expect(again.tagGroups.map((g) => g.id)).toEqual(first.tagGroups.map((g) => g.id));
     });
 
-    it('matches stored parts by name: a short, reordered parts table gets the missing parts and every dish its own', async () => {
+    it('matches stored parts by legacy: a short, reordered parts table gets the missing parts and every dish its own', async () => {
       const at = new Date().toISOString();
       const [curryId, baseId] = (await db.parts.bulkAdd([
-        { name: 'Curry', position: 0, varied: true, created_at: at },
-        { name: 'Base', position: 1, varied: true, created_at: at },
+        { name: 'Curry', position: 0, varied: true, legacy: 'curry', created_at: at },
+        { name: 'Base', position: 1, varied: true, legacy: 'base', created_at: at },
       ] as never[], { allKeys: true })) as number[];
 
       await runSeed();
@@ -261,6 +272,33 @@ describe('runSeed', () => {
       const idOf = Object.fromEntries(parts.map((p) => [p.name, p.id]));
       const partName = { base: 'Base', curry: 'Curry', subzi: 'Subzi', extra: 'Extras' } as const;
       for (const c of await db.components.toArray()) expect(c.part_id).toBe(idOf[partName[c.componentType]]);
+    });
+
+    it('creates no fifth part or fifth tag group when the converted ones were renamed', async () => {
+      const { parts, tagGroups } = await ensurePartsAndTagGroups();
+      await db.parts.update(parts[0].id, { name: 'Mains' });
+      await db.tag_groups.update(tagGroups[2].id, { name: 'Where from' });
+
+      await runSeed();
+
+      expect((await db.parts.toArray()).map((p) => [p.name, p.legacy])).toEqual([
+        ['Mains', 'base'], ['Curry', 'curry'], ['Subzi', 'subzi'], ['Extras', 'extra'],
+      ]);
+      expect(await db.tag_groups.count()).toBe(4);
+      const idOfBase = parts[0].id;
+      const dishes = await db.components.toArray();
+      for (const c of dishes.filter((d) => d.componentType === 'base')) expect(c.part_id).toBe(idOfBase);
+    });
+
+    it('creates a missing part with its legacy set', async () => {
+      await ensurePartsAndTagGroups();
+      const extras = (await db.parts.toArray()).find((p) => p.legacy === 'extra')!;
+      await db.parts.delete(extras.id);
+
+      const { parts } = await ensurePartsAndTagGroups();
+
+      expect(parts.find((p) => p.legacy === 'extra')).toMatchObject({ name: 'Extras', varied: false });
+      expect(parts).toHaveLength(4);
     });
 
     it('creates a tag group that is missing and gives dishes its tags', async () => {

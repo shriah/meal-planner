@@ -2,10 +2,11 @@
 // or the planner do. It holds no days, meals or never-auto rules; a case adds those. Case-only dishes use
 // ids from 900 up.
 import type { CategoryRecord } from '@/types/category';
-import { CONVERTED_PARTS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertedValueIds, type ConvertLookup } from '@/db/parts';
+import { CONVERTED_PARTS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertedValueIds, type ConvertLookup, type DishWithPart } from '@/db/parts';
 import type { PlannerPart } from '@/planner';
 import { CURRY_CATEGORIES, type BaseType, type ComponentRecord, type CurryCategory, type ExtraCategory } from '@/types/component';
-import type { CaseLibrary } from './types';
+import { linkRule, type LinkKind, type LinkMode, type LinkScope, type LinkStrength } from '@/rules';
+import type { CaseLibrary, CaseRule } from './types';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 
@@ -15,8 +16,28 @@ const cat = (id: number, kind: CategoryRecord['kind'], name: string): CategoryRe
 const PART_KEYS = ['base', 'curry', 'subzi', 'extra'] as const;
 const PART_ID = { base: 1, curry: 2, subzi: 3, extra: 4 };
 export const CASE_PARTS: PlannerPart[] = PART_KEYS.map((k) => ({
-  id: PART_ID[k], name: CONVERTED_PARTS[k].name, varied: CONVERTED_PARTS[k].varied,
+  id: PART_ID[k], name: CONVERTED_PARTS[k].name, varied: CONVERTED_PARTS[k].varied, legacy: k,
 }));
+type PartKey = (typeof PART_KEYS)[number];
+
+/** A link as a converted case writes it: `to` names the part it points at (its dishes, unless `kind` says categories), and `when` waits by part. */
+export interface CaseLinkInput {
+  mode: LinkMode;
+  to: PartKey;
+  kind?: LinkKind;
+  values: number[];
+  strength?: LinkStrength;
+  scope?: LinkScope;
+  when?: Partial<Record<PartKey, number[]>>;
+}
+
+/** A dish's link over the converted parts, built by the app's `linkRule`. */
+export function caseLink(owner: { id: number; name: string }, link: CaseLinkInput): CaseRule {
+  const { to, kind = 'dish', when, ...rest } = link;
+  const waits = when && Object.fromEntries(Object.entries(when).map(([k, ids]) => [PART_ID[k as PartKey], ids!]));
+  return linkRule(owner, { ...rest, target: { part: PART_ID[to], kind }, ...(waits && { when: waits }) }, CASE_PARTS);
+}
+
 /** Curry categories as the converter creates them: one per curry type, ids from 21, named by the type. */
 const CURRY_CATEGORY_IDS = new Map(CURRY_CATEGORIES.map((name, i) => [name, 21 + i]));
 
@@ -62,12 +83,23 @@ const DISHES: ComponentRecord[] = [
   extra(18, 'Tomato Chutney', 11, 'condiment'),
 ];
 
-/** A library of these dishes and categories, with lookups by name. */
-export function libraryOf(dishes: ComponentRecord[], categories: CategoryRecord[]): CaseLibrary {
+/**
+ * A library of these dishes and categories, with lookups by name. By default the dishes are converted against the four
+ * converted parts (ids 1 to 4). With `parts`, the dishes are taken as they are and each must already name one of them.
+ */
+export function libraryOf(
+  dishes: ComponentRecord[],
+  { parts, categories = [] }: { parts?: PlannerPart[]; categories?: CategoryRecord[] } = {},
+): CaseLibrary {
   const lookup = caseLookup(categories);
-  const converted = dishes.map((d) => convertDish(d, lookup));
+  const converted = parts
+    ? dishes.map((d) => {
+      if (d.part_id === undefined || !parts.some((p) => p.id === d.part_id)) throw new Error(`dish "${d.name}" has no part among ${parts.map((p) => p.id).join(', ')}`);
+      return d as DishWithPart;
+    })
+    : dishes.map((d) => convertDish(d, lookup));
   return {
-    parts: CASE_PARTS,
+    parts: parts ?? CASE_PARTS,
     dishes: converted,
     categories,
     dish(name) {
@@ -83,4 +115,4 @@ export function libraryOf(dishes: ComponentRecord[], categories: CategoryRecord[
   };
 }
 
-export const TEST_LIBRARY: CaseLibrary = libraryOf(DISHES, CATEGORIES);
+export const TEST_LIBRARY: CaseLibrary = libraryOf(DISHES, { categories: CATEGORIES });

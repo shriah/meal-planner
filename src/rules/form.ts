@@ -1,14 +1,14 @@
 // Form metadata for rule templates, draft validation, and match previews. Lets any UI render
 // an editor for every template without template-specific code.
-import { all, compileMatcher, is, TRUE, type ComponentLike, type Matcher, type MatchFn } from '@/planner';
+import { compileMatcher, TRUE, type ComponentLike, type Matcher, type MatchFn } from '@/planner';
 import { fromMatcher, groupProblems } from './conditions';
 import { RuleSpecSchema, type RuleSpec, type RuleSpecInput, type TemplateId } from './templates';
 
 export type FormFieldKind =
   | 'match'            // a condition group (Matcher)
   | 'scope'            // optional days and meals
-  | 'roles'            // base / curry / subzi / extra
-  | 'skip'             // curry / subzi / extra
+  | 'parts'            // part ids
+  | 'skip'             // part ids, every part but the first
   | 'meals'            // one or more meals
   | 'days'             // one or more days
   | 'count'            // a whole number
@@ -19,7 +19,7 @@ export type FormFieldKind =
   | 'strength'         // must / prefer
   | 'cost'             // 1–10, for prefer rules
   | 'components'       // component ids
-  | 'baseCategories'   // base category ids
+  | 'baseCategories'   // category ids of the first part
   | 'extraCategories'; // extra category ids
 
 export interface FormField {
@@ -32,10 +32,20 @@ export interface FormField {
 
 type ParamsInput<T extends TemplateId> = Extract<RuleSpecInput, { template: T }>['params'];
 
+/** What a new rule's defaults read: the parts in meal order, and which of them the stored rules cap at one dish per meal. */
+export interface FormContext {
+  parts: readonly { id: number; varied: boolean }[];
+  capped: ReadonlySet<number>;
+}
+
 export interface TemplateForm<T extends TemplateId> {
   fields: FormField[];
-  defaults: () => ParamsInput<T>;
+  /** Without a context (the parts not known) the part lists start empty. */
+  defaults: (ctx?: FormContext) => ParamsInput<T>;
 }
+
+/** The capped parts after the first, in meal order. */
+const cappedAfterFirst = (ctx?: FormContext): number[] => (ctx?.parts.slice(1).map((p) => p.id).filter((id) => ctx.capped.has(id))) ?? [];
 
 const strength: FormField = {
   key: 'strength', kind: 'strength', label: 'How strict',
@@ -54,11 +64,12 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   },
   only_allow: {
     fields: [
-      { key: 'roles', kind: 'roles', label: 'For these parts of a meal' },
+      { key: 'parts', kind: 'parts', label: 'For these parts of a meal' },
       { key: 'match', kind: 'match', label: 'Only allow' },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, roles: ['curry'], strength: 'must' }),
+    // Today's default: only the first capped part after the first (on a converted library, Curry).
+    defaults: (ctx) => ({ match: TRUE, parts: cappedAfterFirst(ctx).slice(0, 1), strength: 'must' }),
   },
   require: {
     fields: [
@@ -82,10 +93,14 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'match', kind: 'match', label: "Don't repeat" },
       { key: 'within', kind: 'within', label: 'Not again within' },
-      { key: 'roles', kind: 'roles', label: 'Counting these parts of a meal' },
+      { key: 'parts', kind: 'parts', label: 'Counting these parts of a meal', help: 'Leave empty for every part.', optional: true },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, within: 'week', roles: ['base', 'curry', 'subzi'], strength: 'must' }),
+    // Today's default counts the varied parts (Base, Curry, Subzi); with none known, every part.
+    defaults: (ctx) => {
+      const varied = ctx?.parts.filter((p) => p.varied).map((p) => p.id) ?? [];
+      return { match: TRUE, within: 'week', ...(varied.length > 0 && { parts: varied }), strength: 'must' };
+    },
   },
   allowed_meals: {
     fields: [
@@ -102,24 +117,24 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'skip', kind: 'skip', label: 'Leave out' },
       scope, strength, cost,
     ],
-    defaults: () => ({ when: TRUE, skip: ['subzi'], strength: 'must' }),
+    defaults: (ctx) => ({ when: TRUE, skip: cappedAfterFirst(ctx).slice(-1), strength: 'must' }),
   },
   require_with: {
     fields: [
       { key: 'when', kind: 'match', label: 'When a meal contains' },
       { key: 'components', kind: 'components', label: 'Also include these dishes', optional: true },
-      { key: 'extraCategories', kind: 'extraCategories', label: 'And an extra from', optional: true },
+      { key: 'categories', kind: 'extraCategories', label: 'And an extra from', optional: true },
       scope, strength, cost,
     ],
-    defaults: () => ({ when: TRUE, components: [], extraCategories: [], strength: 'must' }),
+    defaults: () => ({ when: TRUE, components: [], categories: [], strength: 'must' }),
   },
   pairs_with: {
     fields: [
       { key: 'match', kind: 'match', label: 'Dishes' },
-      { key: 'baseCategories', kind: 'baseCategories', label: 'Only with a base from' },
+      { key: 'categories', kind: 'baseCategories', label: 'Only with a base from' },
       scope, strength, cost,
     ],
-    defaults: () => ({ match: TRUE, baseCategories: [], strength: 'must' }),
+    defaults: () => ({ match: TRUE, categories: [], strength: 'must' }),
   },
   comes_with: {
     fields: [
@@ -127,8 +142,8 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
       { key: 'of', kind: 'match', label: 'Also include one of' },
       scope, strength, cost,
     ],
-    // The dishes brought along must pin one kind of dish, so the default does.
-    defaults: () => ({ match: TRUE, of: all(is('componentType', 'curry')), strength: 'must' }),
+    // The dishes brought along must pin one part; it is chosen with them, as the parts of an only-allow are.
+    defaults: () => ({ match: TRUE, of: TRUE, strength: 'must' }),
   },
   allowed_days: {
     fields: [
@@ -156,9 +171,9 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   },
 };
 
-export function newSpec<T extends TemplateId>(template: T): Extract<RuleSpecInput, { template: T }> {
+export function newSpec<T extends TemplateId>(template: T, ctx?: FormContext): Extract<RuleSpecInput, { template: T }> {
   // Params are typed per template by the form table; the union cannot see that link.
-  return { template, params: TEMPLATE_FORMS[template].defaults() } as unknown as Extract<RuleSpecInput, { template: T }>;
+  return { template, params: TEMPLATE_FORMS[template].defaults(ctx) } as unknown as Extract<RuleSpecInput, { template: T }>;
 }
 
 /** Errors keyed by param key (`match`, `max`, …), `name`, or `rule` for the whole rule. */

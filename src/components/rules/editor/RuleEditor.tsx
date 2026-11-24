@@ -5,13 +5,15 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { toast } from 'sonner'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { db } from '@/db/client'
-import { ROLES, type Matcher } from '@/planner'
+import type { Matcher } from '@/planner'
 import {
-  describeSpec, newSpec, previewMatches, RuleSpecSchema, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES, validateDraft,
-  type Draft, type FormField, type Names, type RuleSpecInput, type Scope, type TemplateId,
+  describeSpec, libraryNames, newSpec, previewMatches, RuleSpecSchema, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES, validateDraft,
+  type Draft, type FormField, type RuleSpecInput, type Scope, type TemplateId,
 } from '@/rules'
 import { addRule, updateRule } from '@/services/food-db'
+import { getParts } from '@/services/parts-db'
 import { checkDraftRule, type DraftCheck } from '@/services/planning'
+import { cappedOf } from '@/components/library/LibraryLookup'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,9 +21,6 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { ConditionEditor, type EditorData } from './ConditionEditor'
 import { DAY_OPTIONS, LevelSelect, MEAL_OPTIONS, MultiPicker, ScopePicker, ToggleGroup } from './widgets'
-
-const ROLE_OPTIONS = ROLES.map((r) => ({ value: r, label: r === 'subzi' ? 'Subzi' : r.charAt(0).toUpperCase() + r.slice(1) }))
-const SKIP_OPTIONS = ROLE_OPTIONS.filter((o) => o.value !== 'base')
 
 /** How long editing must pause before the draft is checked against the library. */
 const CHECK_DELAY_MS = 600
@@ -43,17 +42,21 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
 
   const components = useLiveQuery(() => db.components.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
+  // Undefined until loaded: the form waits for the parts, so it never shows "part #n" for a moment.
+  const loadedParts = useLiveQuery(getParts)
+  const rules = useLiveQuery(() => db.rules.toArray(), [], [])
   const data: EditorData = useMemo(() => {
-    const componentName = new Map(components.map((c) => [c.id, c.name]))
-    const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-    const names: Names = { component: (id) => componentName.get(id), baseCategory: (id) => categoryName.get(id), extraCategory: (id) => categoryName.get(id) }
+    const parts = loadedParts ?? []
     return {
       components,
+      parts,
+      categories,
       baseCategories: categories.filter((c) => c.kind === 'base'),
       extraCategories: categories.filter((c) => c.kind === 'extra'),
-      names,
+      names: libraryNames({ dishes: components, categories, parts }),
     }
-  }, [components, categories])
+  }, [components, categories, loadedParts])
+  const partOptions = data.parts.map((p) => ({ value: p.id, label: p.name }))
 
   // An empty name falls back to what the rule says, so a name is never needed.
   const parsedSpec = RuleSpecSchema.safeParse(spec)
@@ -83,7 +86,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
 
   /** Switching type keeps the main condition when both types have one. */
   const changeTemplate = (template: TemplateId) => {
-    const next = newSpec(template) as { template: TemplateId; params: Record<string, unknown> }
+    // A new rule starts as it did when the parts were fixed: the varied parts counted, the capped parts left out.
+    const next = newSpec(template, { parts: data.parts, capped: cappedOf({ parts: data.parts, rules }) }) as { template: TemplateId; params: Record<string, unknown> }
     for (const key of ['match', 'when'] as const) {
       const carried = params.match ?? params.when
       if (key in next.params && carried) next.params[key] = carried
@@ -138,10 +142,13 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
       }
       case 'scope':
         return <ScopePicker value={v as Scope | undefined} onChange={(s) => setParam(field.key, s)} />
-      case 'roles':
-        return <ToggleGroup label={field.label} options={ROLE_OPTIONS} value={(v as string[]) ?? []} onChange={(x) => setParam(field.key, x)} />
+      case 'parts':
+        // An optional list left empty means every part.
+        return <ToggleGroup label={field.label} options={partOptions} value={(v as number[]) ?? []}
+          onChange={(x) => setParam(field.key, x.length || !field.optional ? x : undefined)} />
       case 'skip':
-        return <ToggleGroup label={field.label} options={SKIP_OPTIONS} value={(v as string[]) ?? []} onChange={(x) => setParam(field.key, x)} />
+        // Every meal holds a dish of the first part, so it is never left out.
+        return <ToggleGroup label={field.label} options={partOptions.slice(1)} value={(v as number[]) ?? []} onChange={(x) => setParam(field.key, x)} />
       case 'meals':
         return <ToggleGroup label={field.label} options={MEAL_OPTIONS} value={(v as string[]) ?? []} onChange={(x) => setParam(field.key, x)} />
       case 'days':
@@ -224,6 +231,8 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
         )
     }
   }
+
+  if (!loadedParts) return null
 
   return (
     <form className="space-y-5" onSubmit={(e) => { e.preventDefault(); void save() }}>

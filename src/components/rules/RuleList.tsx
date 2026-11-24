@@ -3,9 +3,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '@/db/client'
+import { dishesWithParts } from '@/db/parts'
 import { getRules, restoreDefaultRules } from '@/services/food-db'
 import { parseHash, useUrlHash } from '@/lib/hash-target'
-import { describeSpec, groupRules, parseSpec, type KnownIds, type Names } from '@/rules'
+import { describeSpec, groupRules, libraryNames, partsOfDishes, parseSpec, type KnownIds, type Names } from '@/rules'
 import type { RuleRecord } from '@/db/client'
 import { RuleRow } from './RuleRow'
 import { RuleEmptyState } from './RuleEmptyState'
@@ -20,25 +21,23 @@ export function RuleList() {
   const rules = useLiveQuery(getRules)
   const components = useLiveQuery(() => db.components.toArray(), [], [])
   const categories = useLiveQuery(() => db.categories.toArray(), [], [])
+  // Undefined until loaded, so the defaults (which name parts) are never flagged as referring to missing ones.
+  const parts = useLiveQuery(() => db.parts.toArray())
   const [query, setQuery] = useState('')
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null)
 
   // Names for descriptions, and the ids that exist, so rules pointing at deleted items are flagged.
   const { names, known } = useMemo(() => {
-    const componentName = new Map(components.map((c) => [c.id, c.name]))
-    const categoryName = new Map(categories.map((c) => [c.id, c.name]))
-    const names: Names = {
-      component: (id) => componentName.get(id),
-      baseCategory: (id) => categoryName.get(id),
-      extraCategory: (id) => categoryName.get(id),
-    }
+    const names: Names = libraryNames({ dishes: components, categories, parts: parts ?? [] })
     const known: KnownIds = {
       components: new Set(components.map((c) => c.id)),
-      baseCategories: new Set(categories.filter((c) => c.kind === 'base').map((c) => c.id)),
-      extraCategories: new Set(categories.filter((c) => c.kind === 'extra').map((c) => c.id)),
+      categories: new Set(categories.map((c) => c.id)),
+      parts: new Set((parts ?? []).map((p) => p.id)),
+      // A dish saved without a part has the part planning gives it.
+      partOf: partsOfDishes(dishesWithParts(components, parts)),
     }
     return { names, known }
-  }, [components, categories])
+  }, [components, categories, parts])
 
   const groups = useMemo(() => groupRules(rules ?? []), [rules])
 
@@ -55,7 +54,7 @@ export function RuleList() {
     if (targetOwner !== undefined) window.location.replace(`/library#dish-${targetOwner}`)
   }, [targetOwner])
 
-  if (!rules) return null
+  if (!rules || !parts) return null
 
   const needle = query.trim().toLowerCase()
   const searching = needle !== ''

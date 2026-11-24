@@ -4,20 +4,17 @@ import { compileRules, defaultRules, ruleLevel, type KnownIds, type RuleRecord }
 import type { RuleLevel } from '@/planner';
 import { ALL_CASES } from './cases';
 import { libraryOf, TEST_LIBRARY } from './library';
-import { recordsOf, rulePartsOf } from './run';
+import { knownIds, libraryFor, recordsOf, rulePartsOf } from './run';
 
 const CREATED = '2026-01-01T00:00:00.000Z';
 const LEVELS: RuleLevel[] = ['rule', 'dish', 'frequency'];
 
-function check(records: RuleRecord[], lib: typeof TEST_LIBRARY): number {
-  const known: KnownIds = {
-    components: new Set(lib.dishes.map((d) => d.id)),
-    baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
-    extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
-  };
+/** `skipped` are the texts of the rule issues the case expects (a rule left out of the plan has no level to check). */
+function check(records: RuleRecord[], lib: typeof TEST_LIBRARY, skipped: readonly string[] = []): number {
+  const known: KnownIds = knownIds(lib);
   const byRule = new Map(records.map((r) => [r.id, r]));
   const { constraints, issues } = compileRules(records, known, rulePartsOf(lib));
-  expect(issues).toEqual([]);
+  expect(issues.filter((i) => !skipped.some((t) => `${i.name}: ${i.message}`.includes(t)))).toEqual([]);
   for (const c of constraints) {
     if (c.kind === 'pair') {
       expect(c, c.id).not.toHaveProperty('level');
@@ -40,18 +37,18 @@ function check(records: RuleRecord[], lib: typeof TEST_LIBRARY): number {
 
 describe('rule levels', () => {
   it('every constraint of every case rule, and the defaults, has a level', () => {
-    let total = check(defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
+    let total = check(defaultRules(TEST_LIBRARY.parts).map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
     for (const c of ALL_CASES) {
-      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
-      total += check(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), lib);
+      const lib = libraryFor(c);
+      total += check(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), lib, c.issues);
     }
     expect(total).toBeGreaterThan(100);
   });
 
   it('defaults sit on the level their key names', () => {
     const lib = TEST_LIBRARY;
-    const known: KnownIds = { components: new Set(lib.dishes.map((d) => d.id)), baseCategories: new Set(lib.categories.map((k) => k.id)), extraCategories: new Set(lib.categories.map((k) => k.id)) };
-    const records = defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
+    const known: KnownIds = knownIds(lib);
+    const records = defaultRules(TEST_LIBRARY.parts).map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED }));
     const { constraints } = compileRules(records, known, rulePartsOf(lib));
     const levelsOf = (key: string): (RuleLevel | undefined)[] => {
       const ids = records.filter((r) => r.default_key === key).map((r) => r.id);
@@ -71,11 +68,7 @@ describe('rule levels', () => {
     const STRENGTH = { rule: 0, dish: 1, frequency: 2 };
     let checked = 0;
     const verify = (records: RuleRecord[], lib: typeof TEST_LIBRARY) => {
-      const known: KnownIds = {
-        components: new Set(lib.dishes.map((d) => d.id)),
-        baseCategories: new Set(lib.categories.filter((k) => k.kind === 'base').map((k) => k.id)),
-        extraCategories: new Set(lib.categories.filter((k) => k.kind === 'extra').map((k) => k.id)),
-      };
+      const known: KnownIds = knownIds(lib);
       for (const r of records) {
         const { constraints } = compileRules([{ ...r, enabled: true }], known, rulePartsOf(lib));
         if (constraints.length === 0) continue;
@@ -86,9 +79,9 @@ describe('rule levels', () => {
         checked++;
       }
     };
-    verify(defaultRules().map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
+    verify(defaultRules(TEST_LIBRARY.parts).map((r, i) => ({ ...r, id: i + 1, enabled: true, created_at: CREATED })), TEST_LIBRARY);
     for (const c of ALL_CASES) {
-      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], TEST_LIBRARY.categories) : TEST_LIBRARY;
+      const lib = c.dishes?.length ? libraryOf([...TEST_LIBRARY.dishes, ...c.dishes], { categories: TEST_LIBRARY.categories }) : TEST_LIBRARY;
       verify(recordsOf(c, c.rules(lib), c.given?.(lib) ?? []), lib);
     }
     expect(checked).toBeGreaterThan(100);

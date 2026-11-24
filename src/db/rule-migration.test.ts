@@ -2,8 +2,14 @@
 import Dexie from 'dexie';
 import { afterAll, describe, expect, it } from 'vitest';
 import { db, RULE_MIGRATION_NOTICE_ID } from '@/db/client';
-import { all, is, oneOf } from '@/planner';
-import { capRules, defaultRules, linkRule, readLink, RuleSpecSchema } from '@/rules';
+import { all, is, not, oneOf } from '@/planner';
+import { legacyPartIds } from '@/db/parts';
+import { runSeed } from '@/db/seed';
+import {
+  capRules as newCapRules, compileRules, defaultRules as newDefaultRules, describeLink, describeSpec, libraryNames, linkRule as newLinkRule,
+  pairingRule as newPairingRule, parseSpec, readLink as newReadLink, RuleSpecSchema, type RuleRecord,
+} from '@/rules';
+import { capRules, defaultRules, linkRule, pairingRule } from '@/db/legacy-rules';
 
 const V13_STORES = {
   categories: '++id, kind, name',
@@ -18,6 +24,14 @@ const V13_STORES = {
 
 const oldRule = (name: string, compiled_filter: unknown, enabled = true) =>
   ({ name, enabled, compiled_filter, created_at: '2026-01-01T00:00:00.000Z' });
+
+// Every test here opens the database at today's version, so the rules each upgrade wrote are seen as v24 converted them
+// (parts and categories by id); v21 makes the parts Base, Curry, Subzi and Extras with ids 1 to 4.
+const PART = { base: 1, curry: 2, subzi: 3, extra: 4 } as const;
+const TODAY_PARTS = [
+  { id: 1, name: 'Base', varied: true, legacy: 'base' }, { id: 2, name: 'Curry', varied: true, legacy: 'curry' },
+  { id: 3, name: 'Subzi', varied: true, legacy: 'subzi' }, { id: 4, name: 'Extras', varied: false, legacy: 'extra' },
+] as const;
 
 describe('v14 rule migration', () => {
   afterAll(() => db.close());
@@ -53,7 +67,9 @@ describe('v14 rule migration', () => {
       ['Rice with rasam — Also include when', true, 'require_with'],
     ]);
     expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
-    expect(rules[3].spec).toMatchObject({ params: { extraCategories: [liquidId] } });
+    // v14 named the roles a no-repeat counts and an also-include's extra categories; v24 names the parts and categories.
+    expect(rules[2].spec).toMatchObject({ params: { parts: [PART.base, PART.curry, PART.subzi] } });
+    expect(rules[3].spec).toMatchObject({ params: { categories: [liquidId] } });
 
     const notice = await db.notices.get(RULE_MIGRATION_NOTICE_ID);
     expect(notice).toMatchObject({ converted: 4, dismissed: false });
@@ -89,14 +105,16 @@ describe('v14 rule migration', () => {
     await db.open();
 
     const rules = (await db.rules.toArray()).filter((r) => r.owner_component_id !== undefined);
+    // No curry had a type, so v24 gives "soup" its Curry category.
+    const soupId = (await db.categories.toArray()).find((c) => c.kind === 'curry' && c.name === 'soup')?.id;
     expect(rules.map((r) => [r.name, r.owner_component_id, r.spec])).toEqual([
-      ['Sambar: base pairing', sambarId, { template: 'pairs_with', params: { match: is('id', sambarId), baseCategories: [riceId], strength: 'must' } }],
+      ['Sambar: base pairing', sambarId, { template: 'pairs_with', params: { match: is('id', sambarId), categories: [riceId], strength: 'must' } }],
       // An empty subzi list was never enforced, so Beans stays unrestricted.
-      ['Bhindi: base pairing', subziId, { template: 'pairs_with', params: { match: is('id', subziId), baseCategories: [riceId], strength: 'must' } }],
+      ['Bhindi: base pairing', subziId, { template: 'pairs_with', params: { match: is('id', subziId), categories: [riceId], strength: 'must' } }],
       // Unknown curry types are dropped.
       ['Papad: not with these curries', papadId, {
         template: 'avoid_with',
-        params: { match: is('id', papadId), with: all(is('componentType', 'curry'), oneOf('curry_category', ['soup'])), strength: 'must' },
+        params: { match: is('id', papadId), with: all(is('part', PART.curry), oneOf('category', [soupId!])), strength: 'must' },
       }],
       // v16: an empty curry pairing becomes "never planned automatically"; calendar tags become days.
       ['Rasam: never planned automatically', rasamId, { template: 'exclude', params: { match: is('id', rasamId), strength: 'must' } }],
@@ -301,27 +319,36 @@ describe('v14 rule migration', () => {
     expect(rules.some((r) => r.default_key === 'want-curry' || r.default_key === 'want-subzi')).toBe(false);
     expect(byId.get(5)).toMatchObject({ name: 'My curry wish', enabled: false });
     expect(byId.get(6)).toMatchObject({ name: 'A subzi in every meal', enabled: true });
-    for (const misfit of misfits) expect(byId.get(misfit.id)).toEqual(misfit);
+    // The misfits stay hand-written rules, which v24 then names by part and category.
+    const today = (when: unknown, components: number[], extra: object = {}) =>
+      ({ template: 'require_with', params: { when, components, categories: [], strength: 'prefer', cost: 6, ...extra } });
+    expect(misfits.map((m) => byId.get(m.id))).toEqual([
+      { ...misfits[0], spec: today(is('id', sambar), [chutney]) },
+      { ...misfits[1], spec: today(is('id', idli), [chutney], { categories: [1] }) },
+      { ...misfits[2], spec: today(all(is('part', PART.base), is('id', idli)), [chutney]) },
+      { ...misfits[3], spec: today(is('id', 99), [chutney]) },
+      { ...misfits[4], spec: today(is('category', 99), [chutney]) },
+    ]);
 
     const owned = (id: number) => rules.filter((r) => r.owner_component_id === id);
     for (const dish of [sambar, chutney]) {
       expect(owned(dish)).toHaveLength(1);
       expect(owned(dish)[0].enabled).toBe(true);
-      expect(readLink(owned(dish)[0])).toEqual({ mode: 'serve', target: 'base_dish', values: [idli, dosa], strength: 'moderately', scope: { meals: ['breakfast'] } });
+      expect(newReadLink(owned(dish)[0], TODAY_PARTS)).toEqual({ mode: 'serve', target: { part: PART.base, kind: 'dish' }, values: [idli, dosa], strength: 'moderately', scope: { meals: ['breakfast'] } });
     }
     expect(owned(papad)).toHaveLength(1);
     expect(owned(papad)[0].enabled).toBe(false);
-    expect(readLink(owned(papad)[0])).toMatchObject({ target: 'base_dish', values: [dosa] });
+    expect(newReadLink(owned(papad)[0], TODAY_PARTS)).toMatchObject({ target: { part: PART.base, kind: 'dish' }, values: [dosa] });
     expect(owned(rasam)).toHaveLength(1);
-    expect(readLink(owned(rasam)[0])).toMatchObject({ mode: 'serve', target: 'base_category', values: [breakfastCat] });
+    expect(newReadLink(owned(rasam)[0], TODAY_PARTS)).toMatchObject({ mode: 'serve', target: { part: PART.base, kind: 'category' }, values: [breakfastCat] });
     expect(owned(aloo).map((r) => r.id)).toEqual([13]);
-    expect(readLink(owned(aloo)[0])).toEqual({ mode: 'serve', target: 'base_dish', values: [dosa, idli], strength: 'always' });
-    expect(byId.get(14)?.spec).toEqual(pairing(is('id', idli), [aloo], { cost: 3 }));
-    expect(byId.get(16)).toMatchObject({ enabled: false, spec: pairing(is('id', dosa), [pickle]) });
-    expect(byId.get(17)?.spec).toEqual(pairing(is('id', dosa), [sambar]));
+    expect(newReadLink(owned(aloo)[0], TODAY_PARTS)).toEqual({ mode: 'serve', target: { part: PART.base, kind: 'dish' }, values: [dosa, idli], strength: 'always' });
+    expect(byId.get(14)?.spec).toEqual(today(is('id', idli), [aloo], { cost: 3 }));
+    expect(byId.get(16)).toMatchObject({ enabled: false, spec: today(is('id', dosa), [pickle]) });
+    expect(byId.get(17)?.spec).toEqual(today(is('id', dosa), [sambar]));
     expect(owned(pickle).map((r) => r.id)).toEqual([15]);
-    expect(readLink(owned(pickle)[0])).toMatchObject({ values: [idli, dosa], strength: 'moderately' });
-    for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success).toBe(true);
+    expect(newReadLink(owned(pickle)[0], TODAY_PARTS)).toMatchObject({ values: [idli, dosa], strength: 'moderately' });
+    for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success, r.name).toBe(true);
   });
 
   it('v20 merges a library seeded twice into one copy of each category and dish', async () => {
@@ -361,15 +388,15 @@ describe('v14 rule migration', () => {
     expect((await db.components.toArray()).map((c) => [c.id, c.base_category_id ?? c.extra_category_id ?? null])).toEqual([[1, 1], [2, null], [3, 2]]);
     const rules = await db.rules.toArray();
     // The kept Sambar keeps its own served-with link; the copy's identical one is dropped.
-    expect(rules.filter((r) => r.owner_component_id === 2).map((r) => readLink(r))).toEqual([{ mode: 'serve', target: 'base_dish', values: [1], strength: 'always' }]);
+    expect(rules.filter((r) => r.owner_component_id === 2).map((r) => newReadLink(r, TODAY_PARTS))).toEqual([{ mode: 'serve', target: { part: PART.base, kind: 'dish' }, values: [1], strength: 'always' }]);
     // The copy of Pickle had a link the kept one lacked: it moves over, pointing at the kept category.
     const pickle = rules.filter((r) => r.owner_component_id === 3);
-    expect(pickle.map((r) => readLink(r))).toEqual([{ mode: 'never', target: 'base_category', values: [1], strength: 'always' }]);
+    expect(pickle.map((r) => newReadLink(r, TODAY_PARTS))).toEqual([{ mode: 'never', target: { part: PART.base, kind: 'category' }, values: [1], strength: 'always' }]);
     expect(pickle[0].spec).toMatchObject({ params: { match: is('id', 3) } });
     expect(rules.filter((r) => r.owner_component_id === 5 || r.owner_component_id === 6)).toEqual([]);
     // Hand-written rules point at the kept ids, and the two that became identical are one.
     expect(rules.filter((r) => r.name === 'Rice at lunch')).toHaveLength(1);
-    expect(rules.find((r) => r.name === 'Condiment with rice')?.spec).toMatchObject({ params: { when: oneOf('id', [1]), extraCategories: [2] } });
+    expect(rules.find((r) => r.name === 'Condiment with rice')?.spec).toMatchObject({ params: { when: oneOf('id', [1]), categories: [2] } });
     expect((await db.active_plan.get('current'))?.plan.slots[0]).toMatchObject({ base_id: 1, curry_id: 2, extra_ids: [3] });
     expect(rules.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
   });
@@ -457,8 +484,9 @@ describe('v21 parts and tag groups', () => {
     expect(dishes[2].tags?.[protein.id]).toEqual([valueId(protein, 'dal')]);
     expect(dishes[4].tags?.[occasion.id]).toEqual([valueId(occasion, 'festive')]);
 
-    // v22 adds the curry and subzi caps after them (tested below).
-    expect((await db.rules.toArray()).slice(0, before.rules.length)).toEqual(before.rules);
+    // v22 adds the curry and subzi caps after them, and v24 names Sambar's link by part (both tested below).
+    const sambarLink = newLinkRule({ id: 3, name: 'Sambar', part_id: curry }, { mode: 'serve', target: { part: base, kind: 'dish' }, values: [1] }, TODAY_PARTS);
+    expect((await db.rules.toArray()).slice(0, before.rules.length)).toEqual([before.rules[0], { ...before.rules[1], spec: sambarLink.spec }]);
     expect(await db.active_plan.toArray()).toEqual(before.active);
     expect(await db.saved_plans.toArray()).toEqual(before.saved);
   });
@@ -527,9 +555,16 @@ describe('v22 one curry and one subzi per meal', () => {
     await db.open();
 
     const rules = await db.rules.orderBy('id').toArray();
-    expect(rules.slice(0, before.length)).toEqual(before);
+    // v22 leaves the stored rules alone; v24 then names their parts (the stock defaults become today's stock).
+    const defaults = newDefaultRules(TODAY_PARTS);
+    const sambarLink = newLinkRule({ id: 2, name: 'Sambar', part_id: PART.curry }, { mode: 'serve', target: { part: PART.base, kind: 'dish' }, values: [1] }, TODAY_PARTS);
+    expect(rules.slice(0, before.length)).toEqual([
+      ...defaults.map((d, i) => ({ ...before[i], spec: d.spec })),
+      { ...before[defaults.length], spec: sambarLink.spec },
+      before[defaults.length + 1],
+    ]);
     const added = rules.slice(before.length);
-    expect(added.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(capRules().map((r) => ({ ...r, enabled: true })));
+    expect(added.map(({ name, spec, enabled }) => ({ name, spec, enabled }))).toEqual(newCapRules(TODAY_PARTS).map((r) => ({ ...r, enabled: true })));
     expect(added.map((r) => r.name)).toEqual(['At most one Curry per meal', 'At most one Subzi per meal']);
     expect(added.every((r) => r.default_key === undefined && r.owner_component_id === undefined)).toBe(true);
     expect(added.every((r) => RuleSpecSchema.safeParse(r.spec).success)).toBe(true);
@@ -543,3 +578,250 @@ describe('v22 one curry and one subzi per meal', () => {
     expect(await db.rules.count()).toBe(0);
   });
 });
+
+const V22_STORES = V21_STORES;
+
+describe('v23 converted parts keep who they are', () => {
+  afterAll(() => db.close());
+  const now = '2026-01-01T00:00:00.000Z';
+
+  async function openV22(parts: object[], groups: object[]) {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v22 = new Dexie('FoodPlannerDB');
+    v22.version(22).stores(V22_STORES);
+    await v22.open();
+    await v22.table('parts').bulkAdd(parts);
+    await v22.table('tag_groups').bulkAdd(groups);
+    v22.close();
+  }
+
+  const group = (id: number, name: string, position: number, multiple: boolean) =>
+    ({ id, name, position, multiple, values: [{ id: 1, name: 'x' }], created_at: now });
+
+  it('marks the four parts and four tag groups by their converted names, leaving other fields alone', async () => {
+    await openV22(
+      [
+        { id: 1, name: 'Base', position: 0, varied: true, created_at: now },
+        { id: 2, name: 'Curry', position: 1, varied: true, created_at: now },
+        { id: 3, name: 'Subzi', position: 2, varied: true, created_at: now },
+        { id: 4, name: 'Extras', position: 3, varied: false, created_at: now },
+      ],
+      [group(1, 'Dietary', 0, true), group(2, 'Protein', 1, false), group(3, 'Region', 2, true), group(4, 'Occasion', 3, true)],
+    );
+
+    await db.open();
+
+    expect((await db.parts.toArray()).map((p) => [p.id, p.name, p.varied, p.legacy])).toEqual([
+      [1, 'Base', true, 'base'], [2, 'Curry', true, 'curry'], [3, 'Subzi', true, 'subzi'], [4, 'Extras', false, 'extra'],
+    ]);
+    expect((await db.tag_groups.toArray()).map((g) => [g.id, g.name, g.legacy])).toEqual([
+      [1, 'Dietary', 'dietary'], [2, 'Protein', 'protein'], [3, 'Region', 'regional'], [4, 'Occasion', 'occasion'],
+    ]);
+    expect(legacyPartIds(await db.parts.toArray())).toEqual({ base: 1, curry: 2, subzi: 3, extra: 4 });
+  });
+
+  it('a part renamed after the upgrade is still found, and the seed makes no fifth part', async () => {
+    await openV22(
+      [
+        { id: 1, name: 'Base', position: 0, varied: true, created_at: now },
+        { id: 2, name: 'Curry', position: 1, varied: true, created_at: now },
+        { id: 3, name: 'Subzi', position: 2, varied: true, created_at: now },
+        { id: 4, name: 'Extras', position: 3, varied: false, created_at: now },
+      ],
+      [group(1, 'Dietary', 0, true), group(2, 'Protein', 1, false), group(3, 'Region', 2, true), group(4, 'Occasion', 3, true)],
+    );
+    await db.open();
+    await db.parts.update(1, { name: 'Mains' });
+
+    expect(legacyPartIds(await db.parts.toArray()).base).toBe(1);
+    await runSeed();
+
+    expect(await db.parts.count()).toBe(4);
+    expect((await db.parts.get(1))?.name).toBe('Mains');
+  });
+
+  it('adds nothing to a library that was never seeded (the seed marks its own)', async () => {
+    await openV22([], []);
+
+    await db.open();
+
+    expect(await db.parts.count()).toBe(0);
+    expect(await db.tag_groups.count()).toBe(0);
+  });
+});
+
+const V23_STORES = V22_STORES;
+
+describe('v24 stored rules and links name parts', () => {
+  afterAll(() => db.close());
+  const now = '2026-01-01T00:00:00.000Z';
+  const PARTS = [
+    { id: 1, name: 'Base', position: 0, varied: true, legacy: 'base', created_at: now },
+    { id: 2, name: 'Curry', position: 1, varied: true, legacy: 'curry', created_at: now },
+    { id: 3, name: 'Subzi', position: 2, varied: true, legacy: 'subzi', created_at: now },
+    { id: 4, name: 'Extras', position: 3, varied: false, legacy: 'extra', created_at: now },
+  ];
+  const CATEGORIES = [
+    { id: 1, kind: 'base', name: 'rice-based', part_id: 1, created_at: now },
+    { id: 2, kind: 'base', name: 'bread-based', part_id: 1, created_at: now },
+    { id: 3, kind: 'extra', name: 'liquid', part_id: 4, created_at: now },
+    { id: 4, kind: 'curry', name: 'lentil', part_id: 2, created_at: now },
+  ];
+  const dish = (id: number, name: string, componentType: string, more: object) =>
+    ({ id, name, componentType, dietary_tags: [], regional_tags: [], occasion_tags: [], created_at: now, ...more });
+  const COMPONENTS = [
+    dish(10, 'Rice', 'base', { base_category_id: 1, part_id: 1, category_id: 1 }),
+    dish(11, 'Sambar', 'curry', { curry_category: 'lentil', part_id: 2, category_id: 4 }),
+    dish(13, 'Beans', 'subzi', { part_id: 3 }),
+    dish(14, 'Papad', 'extra', { extra_category_id: 3, part_id: 4, category_id: 3 }),
+    // Saved by a path that gave it no part (Review Focus 2): its type places it.
+    dish(15, 'Pickle', 'extra', {}),
+  ];
+  const rice = { id: 10, name: 'Rice' }, sambar = { id: 11, name: 'Sambar' }, papad = { id: 14, name: 'Papad' }, pickle = { id: 15, name: 'Pickle' };
+  const NEW_PARTS = PARTS.map(({ id, name, varied, legacy }) => ({ id, name, varied, legacy: legacy as 'base' }));
+  const cut = (id: number, name: string) => ({ id, name, part_id: (COMPONENTS.find((c) => c.id === id) as { part_id?: number }).part_id ?? 4 });
+
+  async function openV23(rules: object[]) {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v23 = new Dexie('FoodPlannerDB');
+    v23.version(23).stores(V23_STORES);
+    await v23.open();
+    await v23.table('parts').bulkAdd(PARTS);
+    await v23.table('categories').bulkAdd(CATEGORIES);
+    await v23.table('components').bulkAdd(COMPONENTS);
+    await v23.table('rules').bulkAdd(rules);
+    const before = await v23.table('rules').toArray() as RuleRecord[];
+    v23.close();
+    return before;
+  }
+
+  const stored = (r: object, enabled = true) => ({ enabled, created_at: now, ...r });
+  // Each old rule, what today's builders write for it, and how Stage 2 described it.
+  const ROWS: [object, unknown, string][] = [
+    ...defaultRules().map((r): [object, unknown, string] => [stored(r), newDefaultRules(NEW_PARTS).find((d) => d.default_key === r.default_key)!.spec, STAGE2_TEXT[r.default_key]]),
+    ...capRules().map((r, i): [object, unknown, string] => [stored(r), newCapRules(NEW_PARTS)[i].spec, ['Curries: at most 1 per meal', 'Subzis: at most 1 per meal'][i]]),
+    [stored({ name: 'No subzi with bread', spec: { template: 'skip_when', params: { when: is('base_category_id', 2), skip: ['subzi'], strength: 'prefer' } } }),
+      { template: 'skip_when', params: { when: is('category', 2), skip: [3], strength: 'prefer' } }, 'With dishes in the bread-based category, no subzis (preferred)'],
+    [stored({ name: 'No egg curries', spec: { template: 'only_allow', params: { match: not(oneOf('curry_category', ['egg'])), roles: ['curry'], strength: 'must' } } }, false),
+      { template: 'only_allow', params: { match: not(oneOf('category', [5])), parts: [2], strength: 'must' } }, 'Curries: only dishes that are not egg'],
+    [stored(linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [14], when: { curry: [11] } })),
+      newLinkRule(cut(10, 'Rice'), { mode: 'comes', target: { part: 4, kind: 'dish' }, values: [14], when: { 2: [11] } }, NEW_PARTS).spec, 'With Rice, also Papad when the curry is Sambar'],
+    [stored(linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [10] })),
+      newLinkRule(cut(11, 'Sambar'), { mode: 'serve', target: { part: 1, kind: 'dish' }, values: [10] }, NEW_PARTS).spec, 'With Rice, also include Sambar'],
+    [stored(pairingRule(sambar, [1])),
+      newPairingRule(cut(11, 'Sambar'), [1], NEW_PARTS).spec, 'Sambar only with rice-based bases'],
+    [stored(linkRule(rice, { mode: 'comes', target: 'extra_dish', values: [999] })),
+      newLinkRule(cut(10, 'Rice'), { mode: 'comes', target: { part: 4, kind: 'dish' }, values: [999] }, NEW_PARTS).spec, 'With Rice, also component #999'],
+    [stored({ name: 'Liquid with rice', spec: { template: 'require_with', params: { when: is('base_category_id', 1), components: [], extraCategories: [3], strength: 'must' } } }),
+      { template: 'require_with', params: { when: is('category', 1), components: [], categories: [3], strength: 'must' } }, 'With dishes in the rice-based category, also include an extra from liquid'],
+    // Upward "comes with" links: the extra is added when the curry is in the meal.
+    [stored(linkRule(papad, { mode: 'comes', target: 'curry_dish', values: [11] })),
+      newLinkRule(cut(14, 'Papad'), { mode: 'serve', target: { part: 2, kind: 'dish' }, values: [11] }, NEW_PARTS).spec, 'With Sambar, also include Papad'],
+    [stored(linkRule(pickle, { mode: 'comes', target: 'curry_dish', values: [11], strength: 'usually' })),
+      newLinkRule(cut(15, 'Pickle'), { mode: 'serve', target: { part: 2, kind: 'dish' }, values: [11], strength: 'usually' }, NEW_PARTS).spec, 'With Sambar, also include Pickle (preferred)'],
+  ];
+  const FLIPPED = 2;
+
+  it('converts every rule to the shape today\'s builders write, keeping its identity, and every rule reads', async () => {
+    const before = await openV23(ROWS.map(([row]) => row));
+
+    await db.open();
+
+    const rules = await db.rules.orderBy('id').toArray();
+    expect(rules.map(({ id, name, enabled, default_key, owner_component_id, created_at }) => ({ id, name, enabled, default_key, owner_component_id, created_at })))
+      .toEqual(before.map(({ id, name, enabled, default_key, owner_component_id, created_at }) => ({ id, name, enabled, default_key, owner_component_id, created_at })));
+    expect(rules.map((r) => r.spec)).toEqual(ROWS.map(([, spec]) => spec));
+    for (const r of rules) expect(RuleSpecSchema.safeParse(r.spec).success, r.name).toBe(true);
+  });
+
+  it('describes each rule as before, but for the flipped links, which read "added when … is in the meal"', async () => {
+    await openV23(ROWS.map(([row]) => row));
+    await db.open();
+
+    const rules = await db.rules.orderBy('id').toArray();
+    const names = libraryNames({ dishes: await db.components.toArray(), categories: await db.categories.toArray(), parts: NEW_PARTS });
+    for (const [i, r] of rules.slice(0, -FLIPPED).entries()) expect(describeSpec(parseSpecOrThrow(r.spec), names), r.name).toBe(ROWS[i][2]);
+    const flipped = rules.slice(-FLIPPED);
+    expect(flipped.map((r) => describeLink(names.component!(r.owner_component_id!)!, newReadLink(r, NEW_PARTS)!, names))).toEqual([
+      'Papad is always added when Sambar is in the meal',
+      'Pickle is usually added when Sambar is in the meal',
+    ]);
+    // Every owned link reads back as a link.
+    for (const r of rules.filter((x) => x.owner_component_id !== undefined)) expect(newReadLink(r, NEW_PARTS), r.name).toBeDefined();
+  });
+
+  it('gives a curry type a rule names but no dish uses its Curry category, as v21 named them', async () => {
+    await openV23(ROWS.map(([row]) => row));
+    await db.open();
+
+    expect((await db.categories.toArray()).filter((c) => c.id > 4)).toEqual([{ id: 5, kind: 'curry', name: 'egg', part_id: 2, created_at: expect.any(String) }]);
+  });
+
+  it('a link to a deleted dish is still skipped and named by compileRules', async () => {
+    await openV23(ROWS.map(([row]) => row));
+    await db.open();
+
+    const rules = await db.rules.toArray();
+    const known = {
+      components: new Set((await db.components.toArray()).map((c) => c.id)),
+      categories: new Set((await db.categories.toArray()).map((c) => c.id)),
+      parts: new Set(PARTS.map((p) => p.id)),
+      partOf: new Map<number, number>(),
+    };
+    const { issues } = compileRules(rules, known, { list: NEW_PARTS, legacy: legacyPartIds(NEW_PARTS) });
+    expect(issues.map((x) => x.message)).toEqual(['refers to component #999, which no longer exists']);
+  });
+
+  it('a link to a deleted category is kept and named by compileRules', async () => {
+    const old = linkRule(rice, { mode: 'comes', target: 'extra_category', values: [777] });
+    const link = stored(old);
+    await openV23([link]);
+    await db.open();
+
+    const rules = await db.rules.toArray();
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe(old.name);
+    const known = {
+      components: new Set((await db.components.toArray()).map((c) => c.id)),
+      categories: new Set((await db.categories.toArray()).map((c) => c.id)),
+      parts: new Set(PARTS.map((p) => p.id)),
+      partOf: new Map<number, number>(),
+    };
+    const { issues } = compileRules(rules, known, { list: NEW_PARTS, legacy: legacyPartIds(NEW_PARTS) });
+    expect(issues.map((x) => x.message)).toEqual(['refers to category #777, which no longer exists']);
+  });
+
+  it('leaves a library without its parts alone', async () => {
+    db.close();
+    await Dexie.delete('FoodPlannerDB');
+    const v23 = new Dexie('FoodPlannerDB');
+    v23.version(23).stores(V23_STORES);
+    await v23.open();
+    await v23.table('rules').bulkAdd(capRules().map((r) => stored(r)));
+    const before = await v23.table('rules').toArray();
+    v23.close();
+
+    await db.open();
+
+    expect(await db.rules.toArray()).toEqual(before);
+  });
+});
+
+const STAGE2_TEXT: Record<string, string> = {
+  'extras-limit-breakfast': 'Extras: at most 2 per meal at breakfast',
+  'extras-limit-lunch': 'Extras: at most 3 per meal at lunch',
+  'extras-limit-dinner': 'Extras: at most 2 per meal at dinner',
+  variety: 'Don\'t repeat bases, curries or subzis in the week (preferred)',
+  spacing: 'Don\'t repeat bases, curries or subzis within 2 days (preferred)',
+  'sides-only-when-asked': 'Avoid curries, subzis or extras (moderately)',
+  'prefer-frequent': 'Prefer dishes marked frequent (slightly)',
+  'avoid-rare': 'Avoid dishes marked rare (slightly)',
+};
+
+function parseSpecOrThrow(spec: unknown) {
+  const parsed = parseSpec(spec);
+  if (!parsed.ok) throw new Error(parsed.message);
+  return parsed.spec;
+}

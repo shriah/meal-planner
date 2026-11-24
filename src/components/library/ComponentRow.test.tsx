@@ -6,11 +6,20 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '@/db/client';
 import { addCategory, deleteCategory, renameCategory } from '@/services/category-db';
-import { dayRule, exclusionRule, linkRule, pairingRule } from '@/rules';
+import { dayRule, exclusionRule, linkRule as buildLink, pairingRule as buildPairing } from '@/rules';
 import * as foodDb from '@/services/food-db';
 import { saveComponent } from '@/services/food-db';
 import { ComponentRow } from './ComponentRow';
 import { ComponentTab } from './ComponentTab';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
+
+// The converted parts, ids 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+const linkRule = (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => buildLink(owner, link, TEST_RULE_PARTS.list);
+const pairingRule = (owner: { id: number; name: string }, categories: number[]) => buildPairing(owner, categories, TEST_RULE_PARTS.list);
 
 /** Compatible bases are stored as a pairing rule the curry owns. */
 const addPairing = (id: number, name: string, baseCategories: number[]) =>
@@ -189,7 +198,7 @@ describe('ComponentRow curry compatibility summary', () => {
       regional_tags: ['south-indian'],
       occasion_tags: [],
       created_at: new Date().toISOString(),
-    }, {}, [{ kind: 'add', link: { mode: 'with', target: 'base_category', values: [riceId], strength: 'always' } }]);
+    }, {}, [{ kind: 'add', link: { mode: 'with', target: LINK_TARGET.base_category, values: [riceId], strength: 'always' } }]);
 
     function LiveRow() {
       const component = useLiveQuery(() => db.components.get(curryId), [curryId], undefined);
@@ -249,7 +258,7 @@ describe('ComponentTab library lookup', () => {
     for (let i = 1; i <= 30; i++) {
       const id = (await db.components.add(dish(`Curry ${String(i).padStart(2, '0')}`, 'curry'))) as number;
       if (i === 1) {
-        await db.rules.add({ ...linkRule({ id, name: `Curry 01` }, { mode: 'with', target: 'base_dish', values: [idliId] }), enabled: true, created_at: '' });
+        await db.rules.add({ ...linkRule({ id, name: `Curry 01` }, { mode: 'with', target: LINK_TARGET.base_dish, values: [idliId] }), enabled: true, created_at: '' });
       }
     }
     const spy = vi.spyOn(foodDb, 'getAllComponents');

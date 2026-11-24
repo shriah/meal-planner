@@ -1,42 +1,43 @@
 // Rules a component owns: edited on the component's form, stored as ordinary rules. Days, meals and
 // "never auto-pick" are at most one rule each (matched by slot); links are matched by rule id, and a dish
-// may hold several links of the same kind. Any dish may own "goes with" / "never with" links to the
-// categories of another kind (base categories, extra categories, curry types): a goes-with link to base categories is a `pairs_with` rule,
-// every other link an `avoid_with` rule. A curry, subzi or extra may also be "served with" bases: when one
-// of them is the meal's base, the dish is added too (a `require_with` rule). A dish also owns the days it may be planned on (`allowed_days`),
-// the meals (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
+// may hold several links of the same kind. A link points at the dishes or categories of one part, and is modelled
+// top to bottom: a higher dish decides and a lower one follows. A link to a lower part is a "comes with" link (a
+// `comes_with` rule: the dish brings one of them); a link to a higher part is a "served with" link (a `require_with`
+// rule: the dish is added when one of them is in the meal). "Only with" the categories of the first part is a pairing
+// (`pairs_with`); every other "only with" or "never with" link is an `avoid_with` rule. A dish also owns the days it may
+// be planned on (`allowed_days`), the meals (`allowed_meals`) and whether it is planned automatically at all (`exclude`).
 import { STRENGTH_COST } from './levels';
 import { all, DAYS, MEALS, is, isLeaf, not, oneOf, type Day, type Matcher, type Meal } from '@/planner';
-import type { ComponentType, CurryCategory } from '@/types/component';
+import type { ComponentType } from '@/types/component';
+import { pluralNoun, singularNoun, whenParts } from './describe';
 import type { RuleRecord } from './record';
 
 export type OwnedRule = Omit<RuleRecord, 'id' | 'enabled' | 'created_at'> & { owner_component_id: number };
 
-// ─── Links: goes with / never with ────────────────────────────────────────────
+// ─── Links ────────────────────────────────────────────────────────────────────
 
-/** What a link points at: the categories of another kind of dish. */
-export const LINK_TARGETS = ['base_category', 'extra_category', 'curry_category', 'base_dish', 'curry_dish', 'subzi_dish', 'extra_dish'] as const;
-export type LinkTarget = (typeof LINK_TARGETS)[number];
-export type LinkValue = number | string;
-/** Bases a dish can be served with: whole base categories or specific bases. */
-export const SERVE_TARGETS = ['base_category', 'base_dish'] as const;
-export type ServeTarget = (typeof SERVE_TARGETS)[number];
-/** Targets a dish may bring along: every one but the bases (a base is not a side). */
-export type SideTarget = Exclude<LinkTarget, 'base_category' | 'base_dish'>;
-export const isSideTarget = (t: LinkTarget): t is SideTarget => t !== 'base_category' && t !== 'base_dish';
+/** Whether a link names dishes (by id) or categories (by id) of its part. */
+export type LinkKind = 'dish' | 'category';
+/** What a link points at: the dishes or the categories of one part. */
+export interface LinkTarget { part: number; kind: LinkKind }
+/** A dish id or a category id, as the target's kind says. */
+export type LinkValue = number;
 export type LinkMode = 'with' | 'never' | 'serve' | 'comes';
-export type LinkSlot = `${'with' | 'never'}:${LinkTarget}` | `serve:${ServeTarget}` | `comes:${SideTarget}`;
+export type LinkSlot = `${LinkMode}:${number}:${LinkKind}`;
 /** How firmly a link holds: always is a hard rule; the others are preferences the planner may give up. */
 export type LinkStrength = 'always' | 'usually' | 'moderately' | 'sometimes';
 export const LINK_STRENGTHS: LinkStrength[] = ['always', 'usually', 'moderately', 'sometimes'];
 /** The days and meals a link holds on; left out, it holds everywhere. */
 export interface LinkScope { days?: Day[]; meals?: Meal[] }
-export interface LinkWhen { curry?: number[]; subzi?: number[] }
-/** `with` limits the dish to the chosen values; `never` keeps it away from them; `serve` adds it to meals
- * whose base is one of them; `comes` brings one of the chosen side dishes (or a side from the chosen categories) along with it. */
+/** The dishes a comes link waits for, keyed by part id: every part named must hold one of its dishes. */
+export type LinkWhen = Record<number, number[]>;
+/** The parts links are made over, in meal order. */
+export type LinkParts = readonly { id: number; name: string }[];
+/** `with` limits the dish to the chosen values; `never` keeps it away from them; `serve` adds it to meals that hold
+ * one of them (a higher part); `comes` brings one of them (a lower part) along with it. */
 export interface DishLink {
   mode: LinkMode; target: LinkTarget; values: LinkValue[]; strength: LinkStrength; scope?: LinkScope
-  /** `comes` only: the curry and subzi the meal must hold (both parts, any dish of a part) for the side to come. */
+  /** `comes` only: the dishes the meal must hold, by part (any one dish of a part will do), for the dish to come. */
   when?: LinkWhen
   /** The stored rule this link was read from; absent on a link not yet saved. */
   ruleId?: number
@@ -62,38 +63,75 @@ const scopeParams = (scope: LinkScope | undefined): { scope?: LinkScope } => {
   return out.days || out.meals ? { scope: out } : {};
 };
 
-const LINK_FIELD = {
-  base_category: 'base_category_id', extra_category: 'extra_category_id', curry_category: 'curry_category',
-  base_dish: 'id', curry_dish: 'id', subzi_dish: 'id', extra_dish: 'id',
-} as const;
-const LINK_DISH_TYPE = {
-  base_category: 'base', extra_category: 'extra', curry_category: 'curry',
-  base_dish: 'base', curry_dish: 'curry', subzi_dish: 'subzi', extra_dish: 'extra',
-} as const;
-export const LINK_LABEL: Record<LinkTarget, string> = {
-  base_category: 'base categories', extra_category: 'extra categories', curry_category: 'curry types',
-  base_dish: 'specific bases', curry_dish: 'specific curries', subzi_dish: 'specific subzis', extra_dish: 'specific extras',
-};
-/** Targets that name individual dishes (by id) rather than a category. */
-export const isDishTarget = (t: LinkTarget): t is 'base_dish' | 'curry_dish' | 'subzi_dish' | 'extra_dish' => LINK_FIELD[t] === 'id';
-/** The kind of dish a dish target lists. */
-export const dishTypeOf = (t: LinkTarget): ComponentType => LINK_DISH_TYPE[t];
+const FIELD = { dish: 'id', category: 'category' } as const;
+const kindOfField = (field: string): LinkKind | undefined => (field === 'id' ? 'dish' : field === 'category' ? 'category' : undefined);
+/** Whether a target names individual dishes (by id) rather than categories. */
+export const isDishTarget = (t: LinkTarget): boolean => t.kind === 'dish';
+export const sameTarget = (a: LinkTarget, b: LinkTarget): boolean => a.part === b.part && a.kind === b.kind;
+const position = (parts: LinkParts, id: number) => parts.findIndex((p) => p.id === id);
+
+/**
+ * What "comes with" stores from a dish of `ownerPart` to `targetPart`: a lower part is brought (comes), a higher one
+ * brings the dish (serve). A dish of the same part brings its sibling (comes): the same part is neither above nor below,
+ * so a link pointing the wrong way (Task 7) is only ever one between different parts.
+ */
+export function bringMode(ownerPart: number, targetPart: number, parts: LinkParts): 'comes' | 'serve' {
+  return position(parts, targetPart) >= position(parts, ownerPart) ? 'comes' : 'serve';
+}
+
+/**
+ * Why a link of this mode from a dish of `ownerPart` to a dish of `targetPart` points the wrong way, or undefined when it
+ * does not: a comes link brings a part below its owner, a serve link waits for a part above it. Only a link between two
+ * parts can point the wrong way: a comes link to the owner's own part brings a sibling. Reordering the parts (Stage 4)
+ * can leave a stored link pointing the wrong way; `compileRules` skips it and names it with this text.
+ */
+export function wrongWay(mode: LinkMode, ownerPart: number, targetPart: number, parts: LinkParts): string | undefined {
+  const owner = position(parts, ownerPart);
+  const target = position(parts, targetPart);
+  if (owner < 0 || target < 0) return undefined;
+  if (mode === 'comes' && target < owner) return `points to ${parts[target].name}, which is no longer below ${parts[owner].name}`;
+  if (mode === 'serve' && target >= owner) return `points to ${parts[target].name}, which is no longer above ${parts[owner].name}`;
+  return undefined;
+}
+
+/**
+ * Whether a dish of `ownerPart` may hold a link of this mode to `target`. Another part: "never with" always, the others
+ * too. Its own part: "comes with" and "never with" only, and only where a meal may hold two of it: not the first part,
+ * nor a part `capped` at one per meal (see `cappedParts`).
+ */
+export function offersLink(ownerPart: number, target: LinkTarget, parts: LinkParts, mode: LinkMode = 'never', capped: ReadonlySet<number> = new Set()): boolean {
+  if (position(parts, target.part) < 0) return false;
+  if (target.part !== ownerPart) return true;
+  return (mode === 'comes' || mode === 'never') && target.part !== parts[0]?.id && !capped.has(target.part);
+}
+
+/**
+ * The modes the link editor offers from a dish of `ownerPart` to `target`, in button order: to the first part, the
+ * bring mode (served with), only with and never with; to any other part the bring mode (comes with, or served with
+ * above) and never with, as a link to a lower part brings its dish rather than limiting; to its own part comes with and
+ * never with where `offersLink` allows.
+ */
+export function linkModes(ownerPart: number, target: LinkTarget, parts: LinkParts, capped: ReadonlySet<number> = new Set()): LinkMode[] {
+  const bring = bringMode(ownerPart, target.part, parts);
+  const modes: LinkMode[] = target.part === parts[0]?.id ? [bring, 'with', 'never'] : [bring, 'never'];
+  return modes.filter((m) => offersLink(ownerPart, target, parts, m, capped));
+}
+
+/** Every target a link may name: each part's categories (where `hasCategories` says it has any), then each part's dishes. */
+export function linkTargets(parts: LinkParts, hasCategories: (part: number) => boolean): LinkTarget[] {
+  return [
+    ...parts.filter((p) => hasCategories(p.id)).map((p): LinkTarget => ({ part: p.id, kind: 'category' })),
+    ...parts.map((p): LinkTarget => ({ part: p.id, kind: 'dish' })),
+  ];
+}
 
 const PLAIN_SLOTS = ['allowed_days', 'allowed_meals', 'exclude'] as const;
-export const LINK_SLOTS: LinkSlot[] = [
-  ...LINK_TARGETS.flatMap((t) => [`with:${t}` as const, `never:${t}` as const]),
-  ...SERVE_TARGETS.map((t) => `serve:${t}` as const),
-  ...LINK_TARGETS.filter(isSideTarget).map((t) => `comes:${t}` as const),
-];
-/** Whether an owned slot holds a link (rather than days, meals or "never auto-pick"). */
-export const isLinkSlot = (slot: string): slot is LinkSlot => (LINK_SLOTS as readonly string[]).includes(slot);
-export const isServeTarget = (t: LinkTarget): t is ServeTarget => (SERVE_TARGETS as readonly string[]).includes(t);
-export const OWNED_SLOTS = [...PLAIN_SLOTS, ...LINK_SLOTS] as const;
-export type OwnedSlot = (typeof OWNED_SLOTS)[number];
-export const OWNED_TEMPLATES = OWNED_SLOTS;
-export type OwnedTemplate = OwnedSlot;
-
 type PlainSlot = (typeof PLAIN_SLOTS)[number];
+export type OwnedSlot = PlainSlot | LinkSlot;
+export type OwnedTemplate = OwnedSlot;
+/** Whether an owned slot holds a link (rather than days, meals or "never auto-pick"). */
+export const isLinkSlot = (slot: string): slot is LinkSlot => /^(with|never|serve|comes):\d+:(dish|category)$/.test(slot);
+
 /**
  * For days, meals and never-auto (one rule each): a builder that makes or updates the rule once the dish has an id,
  * or null to remove it. Links are changed by rule id instead (`LinkChange`).
@@ -107,154 +145,160 @@ export type LinkChange =
   | { kind: 'update'; ruleId: number; link: DishLink }
   | { kind: 'remove'; ruleId: number };
 
-const NAME_SUFFIX: Partial<Record<string, string>> = {
-  'with:base_category': 'base pairing',
-  'with:extra_category': 'only with these extras',
-  'with:curry_category': 'only with these curry types',
-  'never:base_category': 'not with these bases',
-  'never:extra_category': 'not with these extras',
-  'never:curry_category': 'not with these curries',
-  'serve:base_category': 'served with these bases',
-  'serve:base_dish': 'served with these bases',
-  'comes:extra_category': 'comes with',
-  'comes:curry_category': 'comes with',
-  'comes:curry_dish': 'comes with',
-  'comes:subzi_dish': 'comes with',
-  'comes:extra_dish': 'comes with',
+const NAME_SUFFIX: Record<PlainSlot, string> = {
   allowed_days: 'only on certain days',
   allowed_meals: 'only at certain meals',
   exclude: 'never planned automatically',
 };
 
-/** Name of a rule owned by `componentName`, kept in step when the component is renamed. `slot` is an owned slot or a template id. */
+/** Name of a rule owned by `componentName`, kept in step when the component is renamed. `slot` is a plain owned slot or a template id. */
 export const ownedRuleName = (slot: string, componentName: string): string =>
-  `${componentName}: ${NAME_SUFFIX[slot] ?? 'rule'}`;
+  `${componentName}: ${NAME_SUFFIX[slot as PlainSlot] ?? 'rule'}`;
 
-export function pairingRule(component: { id: number; name: string }, baseCategories: readonly number[], strength: LinkStrength = 'always', scope?: LinkScope): OwnedRule {
+/** What a link's rule is called after its dish's name: "base pairing", "served with these bases", "comes with". */
+function linkSuffix(link: Pick<DishLink, 'mode' | 'target'>, parts: LinkParts): string {
+  const part = parts.find((p) => p.id === link.target.part);
+  const plural = part ? pluralNoun(part.name) : `part #${link.target.part} dishes`;
+  switch (link.mode) {
+    case 'comes': return 'comes with';
+    case 'serve': return `served with these ${plural}`;
+    case 'with':
+      if (link.target.kind === 'dish') return 'rule';
+      return link.target.part === parts[0]?.id && part ? `${singularNoun(part.name)} pairing` : `only with these ${plural}`;
+    case 'never': return link.target.kind === 'dish' ? 'rule' : `not with these ${plural}`;
+  }
+}
+
+/** The name of a link rule owned by `componentName`. */
+export const linkRuleName = (link: Pick<DishLink, 'mode' | 'target'>, parts: LinkParts, componentName: string): string =>
+  `${componentName}: ${linkSuffix(link, parts)}`;
+
+/** The name an owned rule takes when its dish is called `componentName`. */
+export function ownedRuleNameOf(rule: Pick<RuleRecord, 'spec'>, parts: LinkParts, componentName: string): string {
+  const link = readLink(rule, parts);
+  return link ? linkRuleName(link, parts, componentName) : ownedRuleName(ownedSlot(rule, parts) ?? rule.spec.template, componentName);
+}
+
+/** "Only with" the given categories of the first part. */
+export function pairingRule(component: { id: number; name: string }, categories: readonly number[], parts: LinkParts, strength: LinkStrength = 'always', scope?: LinkScope): OwnedRule {
+  const target: LinkTarget = { part: parts[0].id, kind: 'category' };
   return {
-    name: ownedRuleName('with:base_category', component.name),
-    spec: { template: 'pairs_with', params: { match: is('id', component.id), baseCategories: [...baseCategories], ...scopeParams(scope), ...strengthParams(strength) } },
+    name: linkRuleName({ mode: 'with', target }, parts, component.name),
+    spec: { template: 'pairs_with', params: { match: is('id', component.id), categories: [...categories], ...scopeParams(scope), ...strengthParams(strength) } },
     owner_component_id: component.id,
   };
 }
 
-/** Base categories a pairing rule allows, or undefined when the rule is not a pairing. */
+/** First-part categories a pairing rule allows, or undefined when the rule is not a pairing. */
 export function pairingCategories(rule: Pick<RuleRecord, 'spec'>): number[] | undefined {
-  return rule.spec.template === 'pairs_with' ? [...(rule.spec.params.baseCategories ?? [])] : undefined;
+  return rule.spec.template === 'pairs_with' ? [...(rule.spec.params.categories ?? [])] : undefined;
 }
 
 /** The stored form of a condition: empty parts dropped, and nothing when nothing is left. */
-export function cleanWhen(when: LinkWhen | undefined): LinkWhen | undefined {
-  const out: LinkWhen = {};
-  if (when?.curry?.length) out.curry = [...when.curry];
-  if (when?.subzi?.length) out.subzi = [...when.subzi];
-  return out.curry || out.subzi ? out : undefined;
+export function cleanWhen(when: Readonly<Record<number, readonly number[]>> | undefined): LinkWhen | undefined {
+  const parts = whenParts(when);
+  return parts.length ? Object.fromEntries(parts) : undefined;
 }
 
-/** A link rule: the dish goes only with (or never with) the given categories of another kind of dish. */
-export function linkRule(component: { id: number; name: string }, link: LinkInput): OwnedRule {
+/**
+ * The rule a link makes for the dish `self`, over `parts` (in meal order). A comes link that waits for the part it
+ * brings into, or for the first part, is refused. Which way a link points is not checked here: `bringMode` is how the
+ * editor chooses, and `compileRules` names a link pointing the wrong way.
+ */
+export function linkRule(self: { id: number; name: string; part_id?: number }, link: LinkInput, parts: LinkParts): OwnedRule {
   const { mode, target, values, strength = 'always', scope } = link;
+  const name = linkRuleName(link, parts, self.name);
+  const set = oneOf(FIELD[target.kind], [...values]);
+  const inPart = (m: Matcher) => all(is('part', target.part), m);
   if (mode === 'serve') {
-    const when = all(is('componentType', 'base'), oneOf(LINK_FIELD[target], [...values] as never));
     return {
-      name: ownedRuleName(`serve:${target}`, component.name),
-      spec: { template: 'require_with', params: { when, components: [component.id], extraCategories: [], ...scopeParams(scope), ...strengthParams(strength) } },
-      owner_component_id: component.id,
+      name,
+      spec: { template: 'require_with', params: { when: inPart(set), components: [self.id], categories: [], ...scopeParams(scope), ...strengthParams(strength) } },
+      owner_component_id: self.id,
     };
   }
   if (mode === 'comes') {
-    if (!isSideTarget(target)) throw new Error(`a dish cannot come with ${target}`);
     const when = cleanWhen(link.when);
-    if (when && (target === 'curry_dish' || target === 'curry_category' || (target === 'subzi_dish' && when.subzi))) {
-      throw new Error('a link cannot bring a dish into a part it waits for');
+    if (when && (target.part in when || (parts.length > 0 && parts[0].id in when))) {
+      throw new Error('a link cannot wait for the part it brings into, or for the first part');
     }
-    const of = all(is('componentType', LINK_DISH_TYPE[target]), oneOf(LINK_FIELD[target], [...values] as never));
     return {
-      name: ownedRuleName(`comes:${target}`, component.name),
-      spec: { template: 'comes_with', params: { match: is('id', component.id), of, ...(when && { when }), ...scopeParams(scope), ...strengthParams(strength) } },
-      owner_component_id: component.id,
+      name,
+      spec: { template: 'comes_with', params: { match: is('id', self.id), of: inPart(set), ...(when && { when }), ...scopeParams(scope), ...strengthParams(strength) } },
+      owner_component_id: self.id,
     };
   }
-  if (mode === 'with' && target === 'base_category') return pairingRule(component, values as number[], strength, scope);
+  if (mode === 'with' && target.kind === 'category' && target.part === parts[0]?.id) return pairingRule(self, values, parts, strength, scope);
   // A dish is never kept away from itself, so "only with" lists it too (it is dropped again on reading).
-  const listed = mode === 'with' && isDishTarget(target) ? [...new Set([...values, component.id])] : [...values];
-  const set = oneOf(LINK_FIELD[target], listed as never);
-  const of = all(is('componentType', LINK_DISH_TYPE[target]), mode === 'never' ? set : not(set));
+  const listed = mode === 'with' && target.kind === 'dish' ? [...new Set([...values, self.id])] : [...values];
+  const listedSet = oneOf(FIELD[target.kind], listed);
   return {
-    name: ownedRuleName(`${mode}:${target}`, component.name),
-    spec: { template: 'avoid_with', params: { match: is('id', component.id), with: of, ...scopeParams(scope), ...strengthParams(strength) } },
-    owner_component_id: component.id,
+    name,
+    spec: { template: 'avoid_with', params: { match: is('id', self.id), with: inPart(mode === 'never' ? listedSet : not(listedSet)), ...scopeParams(scope), ...strengthParams(strength) } },
+    owner_component_id: self.id,
   };
 }
 
-/** The link a rule makes, or undefined when the rule is not a link. */
-export function readLink(rule: Pick<RuleRecord, 'spec'>): DishLink | undefined {
+/** A link's matcher read back: `all(part, set)` gives the target and its values. */
+function readTarget(m: Matcher): { target: LinkTarget; set: Matcher } | undefined {
+  if (!('all' in m) || m.all.length !== 2) return undefined;
+  const [part, set] = m.all;
+  if (!isLeaf(part) || part.field !== 'part' || part.op !== 'eq') return undefined;
+  const leaf = 'not' in set ? set.not : set;
+  if (!isLeaf(leaf)) return undefined;
+  const kind = kindOfField(leaf.field);
+  return kind && { target: { part: part.value as number, kind }, set };
+}
+const leafValues = (m: Matcher): LinkValue[] => (isLeaf(m) ? ([m.value].flat() as LinkValue[]) : []);
+
+/** The link a rule makes, or undefined when the rule is not a link. `parts` (in meal order) names the first part a pairing points at. */
+export function readLink(rule: Pick<RuleRecord, 'spec'>, parts: LinkParts): DishLink | undefined {
   const scoped = (link: DishLink): DishLink => {
     const { scope } = scopeParams((rule.spec.params as { scope?: LinkScope }).scope);
     return scope ? { ...link, scope } : link;
   };
-  if (rule.spec.template === 'pairs_with') return scoped({ mode: 'with', target: 'base_category', values: [...(rule.spec.params.baseCategories ?? [])], strength: strengthOf(rule.spec.params) });
-  if (rule.spec.template === 'require_with') {
-    const p = rule.spec.params;
-    if ((p.components ?? []).length !== 1 || (p.extraCategories ?? []).length > 0) return undefined;
-    const when = p.when as Matcher;
-    if (!('all' in when) || when.all.length !== 2) return undefined;
-    const [kind, set] = when.all;
-    if (!isLeaf(kind) || kind.field !== 'componentType' || kind.value !== 'base' || !isLeaf(set)) return undefined;
-    const target = SERVE_TARGETS.find((t) => LINK_FIELD[t] === set.field);
-    if (!target) return undefined;
-    return scoped({ mode: 'serve', target, values: [set.value].flat() as LinkValue[], strength: strengthOf(p) });
+  const spec = rule.spec;
+  if (spec.template === 'pairs_with') {
+    if (parts.length === 0) return undefined;
+    return scoped({ mode: 'with', target: { part: parts[0].id, kind: 'category' }, values: [...(spec.params.categories ?? [])], strength: strengthOf(spec.params) });
   }
-  if (rule.spec.template === 'comes_with') {
-    const p = rule.spec.params;
-    const of = p.of as Matcher;
-    if (!('all' in of) || of.all.length !== 2) return undefined;
-    const [kind, set] = of.all;
-    if (!isLeaf(kind) || kind.field !== 'componentType' || !isLeaf(set)) return undefined;
-    const target = LINK_TARGETS.find((t) => isSideTarget(t) && LINK_DISH_TYPE[t] === kind.value && LINK_FIELD[t] === set.field);
-    if (!target) return undefined;
-    const when = p.when && { ...(p.when.curry && { curry: [...p.when.curry] }), ...(p.when.subzi && { subzi: [...p.when.subzi] }) };
-    return scoped({ mode: 'comes', target, values: [set.value].flat() as LinkValue[], strength: strengthOf(p), ...(when && { when }) });
+  if (spec.template === 'require_with') {
+    const p = spec.params;
+    if ((p.components ?? []).length !== 1 || (p.categories ?? []).length > 0) return undefined;
+    const read = readTarget(p.when as Matcher);
+    if (!read || 'not' in read.set) return undefined;
+    return scoped({ mode: 'serve', target: read.target, values: leafValues(read.set), strength: strengthOf(p) });
   }
-  if (rule.spec.template !== 'avoid_with') return undefined;
-  const side = rule.spec.params.with as Matcher;
-  if (!('all' in side) || side.all.length !== 2) return undefined;
-  const [kind, set] = side.all;
-  if (!isLeaf(kind) || kind.field !== 'componentType') return undefined;
-  const negated = 'not' in set;
-  const leaf = negated ? set.not : set;
-  if (!isLeaf(leaf)) return undefined;
-  const target = LINK_TARGETS.find((t) => LINK_DISH_TYPE[t] === kind.value && LINK_FIELD[t] === leaf.field);
-  if (!target) return undefined;
-  let values = [leaf.value].flat() as LinkValue[];
-  if (negated && isDishTarget(target)) {
-    const owner = rule.spec.params.match as Matcher;
+  if (spec.template === 'comes_with') {
+    const p = spec.params;
+    const read = readTarget(p.of as Matcher);
+    if (!read || 'not' in read.set) return undefined;
+    const when = p.when && cleanWhen(Object.fromEntries(Object.entries(p.when).map(([k, v]) => [Number(k), v as number[]])));
+    return scoped({ mode: 'comes', target: read.target, values: leafValues(read.set), strength: strengthOf(p), ...(when && { when }) });
+  }
+  if (spec.template !== 'avoid_with') return undefined;
+  const read = readTarget(spec.params.with as Matcher);
+  if (!read) return undefined;
+  const negated = 'not' in read.set;
+  let values = leafValues(negated ? (read.set as { not: Matcher }).not : read.set);
+  if (negated && read.target.kind === 'dish') {
+    const owner = spec.params.match as Matcher;
     if (isLeaf(owner) && owner.field === 'id') values = values.filter((v) => v !== owner.value);
   }
-  return scoped({ mode: negated ? 'with' : 'never', target, values, strength: strengthOf(rule.spec.params) });
+  return scoped({ mode: negated ? 'with' : 'never', target: read.target, values, strength: strengthOf(spec.params) });
 }
 
 /** The owned slot a link fills. */
-export const linkSlotOf = (link: Pick<DishLink, 'mode' | 'target'>): LinkSlot => `${link.mode}:${link.target}` as LinkSlot;
+export const linkSlotOf = (link: Pick<DishLink, 'mode' | 'target'>): LinkSlot => `${link.mode}:${link.target.part}:${link.target.kind}`;
 
 /** Which owned slot a rule fills, or undefined when it is not one a dish form edits. */
-export function ownedSlot(rule: Pick<RuleRecord, 'spec'>): OwnedSlot | undefined {
+export function ownedSlot(rule: Pick<RuleRecord, 'spec'>, parts: LinkParts): OwnedSlot | undefined {
   const t = rule.spec.template;
   if (t === 'pairs_with' || t === 'avoid_with' || t === 'require_with' || t === 'comes_with') {
-    const link = readLink(rule);
+    const link = readLink(rule, parts);
     return link && linkSlotOf(link);
   }
   return (PLAIN_SLOTS as readonly string[]).includes(t) ? (t as OwnedSlot) : undefined;
-}
-
-/** Existing migrations: the curry types an extra never goes with. */
-export const curryClashRule = (component: { id: number; name: string }, curryCategories: readonly CurryCategory[]): OwnedRule =>
-  linkRule(component, { mode: 'never', target: 'curry_category', values: [...curryCategories] });
-
-/** Curry types a clash rule keeps away, or undefined when the rule is not a curry clash. */
-export function clashCurryCategories(rule: Pick<RuleRecord, 'spec'>): CurryCategory[] | undefined {
-  const link = readLink(rule);
-  return link?.mode === 'never' && link.target === 'curry_category' ? (link.values as CurryCategory[]) : undefined;
 }
 
 export function dayRule(component: { id: number; name: string }, days: readonly Day[]): OwnedRule {
@@ -304,17 +348,30 @@ export interface OwnedValues {
   neverAuto: boolean;
 }
 
-/** Read a dish's settings from the rules it owns. */
-export function readOwned(rules: readonly (Pick<RuleRecord, 'spec'> & { id?: number })[]): OwnedValues {
+/**
+ * Where a link sits in a dish's list: "only with" and "never with" first, then served with, then comes with; within
+ * each, categories before dishes, in part order, and "only with" before "never with".
+ */
+function linkOrder(l: DishLink, parts: LinkParts): number[] {
+  const group = l.mode === 'serve' ? 1 : l.mode === 'comes' ? 2 : 0;
+  return [group, l.target.kind === 'category' ? 0 : 1, position(parts, l.target.part), l.mode === 'never' ? 1 : 0];
+}
+
+/** Read a dish's settings from the rules it owns. `parts` are the parts in meal order. */
+export function readOwned(rules: readonly (Pick<RuleRecord, 'spec'> & { id?: number })[], parts: LinkParts): OwnedValues {
   const first = <T>(read: (r: Pick<RuleRecord, 'spec'>) => T | undefined): T | undefined =>
     rules.map(read).find((v) => v !== undefined);
   const found = rules.flatMap((r) => {
-    const link = readLink(r);
+    const link = readLink(r, parts);
     if (!link) return [];
     return [r.id === undefined ? link : { ...link, ruleId: r.id }];
   });
-  const order = (l: DishLink) => LINK_SLOTS.indexOf(linkSlotOf(l));
-  const links = found.sort((a, b) => order(a) - order(b) || (a.ruleId ?? 0) - (b.ruleId ?? 0));
+  const compare = (a: DishLink, b: DishLink) => {
+    const x = linkOrder(a, parts), y = linkOrder(b, parts);
+    const i = x.findIndex((v, k) => v !== y[k]);
+    return i >= 0 ? x[i] - y[i] : (a.ruleId ?? 0) - (b.ruleId ?? 0);
+  };
+  const links = found.sort(compare);
   return {
     links,
     days: first(ruleDays) ?? [],
@@ -323,37 +380,18 @@ export function readOwned(rules: readonly (Pick<RuleRecord, 'spec'> & { id?: num
   };
 }
 
-/** Whether a dish of this type can be served with bases: every dish but a base. */
-export const offersServe = (componentType: ComponentType): boolean => componentType !== 'base';
-
-/** Whether a dish of this type is offered "comes with" links to this target: sides only, and offered as the other links are. */
-export const offersComes = (componentType: ComponentType, target: LinkTarget): boolean =>
-  isSideTarget(target) && offersLink(componentType, target);
-
-/** Whether a dish of this type is offered links to this target: not to its own kind where a meal holds only one. */
-export const offersLink = (componentType: ComponentType, target: LinkTarget): boolean => {
-  if (componentType === 'base' && (target === 'base_category' || target === 'base_dish')) return false;
-  // A meal has one curry and one subzi, so those never need keeping apart from another of their own kind.
-  return !((componentType === 'curry' && target === 'curry_dish') || (componentType === 'subzi' && target === 'subzi_dish'));
-};
-
 /**
- * The link slots "Add link" may create for a dish: served with bases first, then "only with" for base targets and
- * "never with" for every offered target, specific dishes included. A link to sides is made as "comes with" instead
- * (see `offersComes`), so "only with" is not offered there. Slots the dish already fills are left out (a comes-with
- * slot never counts as filled).
+ * The link slots "Add link" may still fill for a dish of `ownerPart`, over `targets`: every mode `linkModes` offers. A
+ * slot the dish already fills is left out, except a bring slot below the first part: a dish may bring, or be added
+ * with, several dishes of one part.
  */
-export const addableSlots = (componentType: ComponentType, links: DishLink[]): LinkSlot[] => {
-  // A dish may come with several sides, so a comes-with slot is never taken.
-  const taken = links.filter((l) => l.mode !== 'comes').map(linkSlotOf);
-  const out: LinkSlot[] = [];
-  for (const target of LINK_TARGETS) {
-    if (isServeTarget(target) && offersServe(componentType)) out.push(linkSlotOf({ mode: 'serve', target }));
-    if (!offersLink(componentType, target)) continue;
-    if (!isSideTarget(target)) out.push(linkSlotOf({ mode: 'with', target }));
-    out.push(linkSlotOf({ mode: 'never', target }));
-  }
-  return out.filter((slot) => !taken.includes(slot));
+export const addableSlots = (ownerPart: number, links: readonly DishLink[], targets: readonly LinkTarget[], parts: LinkParts, capped: ReadonlySet<number> = new Set()): LinkSlot[] => {
+  const repeatable = (l: Pick<DishLink, 'mode' | 'target'>) => l.mode === 'comes' || (l.mode === 'serve' && l.target.part !== parts[0]?.id);
+  const taken = links.filter((l) => !repeatable(l)).map(linkSlotOf);
+  return targets
+    .flatMap((target) => linkModes(ownerPart, target, parts, capped).map((mode) => ({ mode, target })))
+    .filter((l) => repeatable(l) || !taken.includes(linkSlotOf(l)))
+    .map(linkSlotOf);
 };
 
 /**
@@ -377,9 +415,14 @@ const sameSet = <T>(a: readonly T[] = [], b: readonly T[] = []) => a.length === 
 /** Same link in meaning: order of values, days and meals does not matter, an empty scope is no scope, and the rule id is ignored. */
 export const sameLink = (a: DishLink | undefined, b: DishLink | undefined): boolean =>
   a === undefined || b === undefined ? a === b
-    : a.mode === b.mode && a.target === b.target && a.strength === b.strength && sameSet(a.values, b.values) &&
-      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals) &&
-      sameSet(a.when?.curry, b.when?.curry) && sameSet(a.when?.subzi, b.when?.subzi);
+    : a.mode === b.mode && sameTarget(a.target, b.target) && a.strength === b.strength && sameSet(a.values, b.values) &&
+      sameSet(a.scope?.days, b.scope?.days) && sameSet(a.scope?.meals, b.scope?.meals) && sameWhen(a.when, b.when);
+
+/** Same condition: every part either names holds the same dishes, an empty part counting as absent. */
+const sameWhen = (a: LinkWhen | undefined, b: LinkWhen | undefined): boolean => {
+  const x = whenParts(a), y = whenParts(b);
+  return x.length === y.length && x.every(([part, ids], i) => y[i][0] === part && sameSet(ids, y[i][1]));
+};
 
 /**
  * The link changes that turn `base` (the links as stored when editing began) into `next`, matched by rule id.

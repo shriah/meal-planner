@@ -1,0 +1,379 @@
+// FROZEN. The v14 upgrade's converter, with the copies of the rule schema, template labels and reference
+// lookup it needs, as they stood when v14 was written. Never change them to follow `src/rules`. Only
+// `src/db/client.ts` (upgrade v14) and tests under `src/db` import this file.
+//
+// One-time conversion of rules stored in the old target/scope/effects shape.
+// A converted rule means what the old rule form said, not what the old generator happened to do
+// (e.g. a day-scoped no-repeat now respects its days). Rules that cannot be converted faithfully
+// are dropped with a reason. The old schema is copied here so the converter outlives the old code.
+import { z } from 'zod';
+import { DAYS, MEALS, ROLES, MatcherSchema, all, is, isLeaf, type Matcher, type Role } from '@/planner';
+import { DIETARY_TAGS, OCCASION_TAGS, PROTEIN_TAGS, REGIONAL_TAGS, type OccasionTag } from '@/types/component';
+import { LEGACY_CALENDAR_TAGS } from './legacy-rules';
+
+// ─── Frozen copy of the rule schema as of v14 ─────────────────────────────────
+
+const ScopeSchema = z
+  .object({ days: z.array(z.enum(DAYS)).min(1).optional(), meals: z.array(z.enum(MEALS)).min(1).optional() })
+  .strict();
+type Scope = z.infer<typeof ScopeSchema>;
+
+/** `must` rules are hard; `prefer` rules are soft and may be broken when they conflict with others. */
+const StrengthSchema = z.enum(['must', 'prefer']).default('must');
+
+/** How much breaking a `prefer` rule costs per unit, 1–10. Ignored for `must`. */
+const CostSchema = z.number().int().min(1).max(10).optional();
+
+const count = z.number().int().min(0);
+const ids = z.array(z.number().int());
+const SKIPPABLE = ['curry', 'subzi', 'extra'] as const;
+const DEFAULT_REPEAT_ROLES: Role[] = ['base', 'curry', 'subzi'];
+
+// ─── Params per template ──────────────────────────────────────────────────────
+
+const ExcludeParams = z.object({ match: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema }).strict();
+
+const OnlyAllowParams = z
+  .object({ match: MatcherSchema, roles: z.array(z.enum(ROLES)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const RequireParams = z
+  .object({ match: MatcherSchema, min: z.number().int().min(1).default(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const LimitParams = z
+  .object({
+    match: MatcherSchema,
+    per: z.enum(['meal', 'day', 'week']),
+    min: count.optional(),
+    max: count.optional(),
+    scope: ScopeSchema.optional(),
+    strength: StrengthSchema, cost: CostSchema,
+  })
+  .strict()
+  .refine((p) => p.min !== undefined || p.max !== undefined, { message: 'set a minimum, a maximum, or both', path: ['max'] })
+  .refine((p) => p.min === undefined || p.max === undefined || p.min <= p.max, { message: 'minimum must not exceed maximum', path: ['min'] });
+
+const NoRepeatParams = z
+  .object({
+    match: MatcherSchema,
+    /** `week`: at most once in the week; a number k: not again within k consecutive days. */
+    within: z.union([z.literal('week'), z.number().int().min(2).max(DAYS.length - 1)]).default('week'),
+    roles: z.array(z.enum(ROLES)).min(1).default(DEFAULT_REPEAT_ROLES),
+    scope: ScopeSchema.optional(),
+    strength: StrengthSchema, cost: CostSchema,
+  })
+  .strict();
+
+const AllowedMealsParams = z
+  .object({ match: MatcherSchema, meals: z.array(z.enum(MEALS)).min(1), days: z.array(z.enum(DAYS)).min(1).optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const SkipWhenParams = z
+  .object({ when: MatcherSchema, skip: z.array(z.enum(SKIPPABLE)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const RequireWithParams = z
+  .object({
+    when: MatcherSchema,
+    components: ids.default([]),
+    extraCategories: ids.default([]),
+    scope: ScopeSchema.optional(),
+    strength: StrengthSchema, cost: CostSchema,
+  })
+  .strict()
+  .refine((p) => p.components.length + p.extraCategories.length > 0, { message: 'choose at least one component or extra category', path: ['components'] });
+
+const PairsWithParams = z
+  .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const ids1 = z.array(z.number().int()).min(1);
+/** The curry and subzi a "comes with" link waits for: both parts must hold, any one dish of a part will do. */
+const WhenSchema = z.object({ curry: ids1.optional(), subzi: ids1.optional() }).strict()
+  .refine((w) => w.curry !== undefined || w.subzi !== undefined, { message: 'name a curry or a subzi' });
+
+const ComesWithParams = z
+  .object({ match: MatcherSchema, of: MatcherSchema, when: WhenSchema.optional(), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict()
+  // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
+  .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
+    { message: 'name one kind of dish first, then the dishes', path: ['of'] })
+  .refine((p) => {
+    if (!p.when) return true;
+    const kind = 'all' in p.of && isLeaf(p.of.all[0]) ? p.of.all[0].value : undefined;
+    return kind !== 'curry' && !(kind === 'subzi' && p.when.subzi);
+  }, { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
+
+const AllowedDaysParams = z
+  .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const AvoidWithParams = z
+  .object({ match: MatcherSchema, with: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .strict();
+
+const PreferParams = z
+  .object({ match: MatcherSchema, direction: z.enum(['prefer', 'avoid']), weight: z.number().int().min(1).max(10).default(2) })
+  .strict();
+
+const RuleSpecSchema = z.discriminatedUnion('template', [
+  z.object({ template: z.literal('exclude'), params: ExcludeParams }).strict(),
+  z.object({ template: z.literal('only_allow'), params: OnlyAllowParams }).strict(),
+  z.object({ template: z.literal('require'), params: RequireParams }).strict(),
+  z.object({ template: z.literal('limit'), params: LimitParams }).strict(),
+  z.object({ template: z.literal('no_repeat'), params: NoRepeatParams }).strict(),
+  z.object({ template: z.literal('allowed_meals'), params: AllowedMealsParams }).strict(),
+  z.object({ template: z.literal('skip_when'), params: SkipWhenParams }).strict(),
+  z.object({ template: z.literal('require_with'), params: RequireWithParams }).strict(),
+  z.object({ template: z.literal('pairs_with'), params: PairsWithParams }).strict(),
+  z.object({ template: z.literal('comes_with'), params: ComesWithParams }).strict(),
+  z.object({ template: z.literal('avoid_with'), params: AvoidWithParams }).strict(),
+  z.object({ template: z.literal('allowed_days'), params: AllowedDaysParams }).strict(),
+  z.object({ template: z.literal('prefer'), params: PreferParams }).strict(),
+]);
+
+type RuleSpec = z.infer<typeof RuleSpecSchema>;
+type RuleSpecInput = z.input<typeof RuleSpecSchema>;
+
+/** The template labels used to name the rules an old rule splits into. */
+const TEMPLATE_LABELS: Record<RuleSpec['template'], string> = {
+  exclude: 'Never include',
+  only_allow: 'Only allow',
+  require: 'Always include',
+  limit: 'How often',
+  no_repeat: 'No repeats',
+  allowed_meals: 'Only at certain meals',
+  skip_when: 'Leave out when',
+  require_with: 'Also include when',
+  pairs_with: 'Only with these bases',
+  comes_with: 'Comes with',
+  avoid_with: 'Never together',
+  allowed_days: 'Only on certain days',
+  prefer: 'Prefer or avoid',
+};
+
+// ─── Frozen copy of the reference lookup ──────────────────────────────────────
+
+/** Ids that currently exist, so rules pointing at deleted components or categories are caught. */
+export interface KnownIds {
+  components: ReadonlySet<number>;
+  baseCategories: ReadonlySet<number>;
+  extraCategories: ReadonlySet<number>;
+}
+interface Refs { components: number[]; baseCategories: number[]; extraCategories: number[] }
+
+function matcherRefs(m: Matcher, out: Refs): Refs {
+  if (isLeaf(m)) {
+    const values = (Array.isArray(m.value) ? m.value : [m.value]) as number[];
+    if (m.field === 'id') out.components.push(...values);
+    else if (m.field === 'base_category_id') out.baseCategories.push(...values);
+    else if (m.field === 'extra_category_id') out.extraCategories.push(...values);
+  } else if ('all' in m) m.all.forEach((x) => matcherRefs(x, out));
+  else if ('any' in m) m.any.forEach((x) => matcherRefs(x, out));
+  else matcherRefs(m.not, out);
+  return out;
+}
+const refsOf = (...ms: Matcher[]): Refs => ms.reduce((acc, m) => matcherRefs(m, acc), { components: [], baseCategories: [], extraCategories: [] } as Refs);
+
+/** Only the templates the converter writes: exclude, only_allow, require, no_repeat, allowed_meals, skip_when, require_with. */
+function specReferences(spec: RuleSpec): Refs {
+  if (spec.template === 'skip_when') return refsOf(spec.params.when);
+  if (spec.template === 'require_with') {
+    const r = refsOf(spec.params.when);
+    r.components.push(...spec.params.components);
+    r.extraCategories.push(...spec.params.extraCategories);
+    return r;
+  }
+  if ('match' in spec.params) return refsOf(spec.params.match);
+  return { components: [], baseCategories: [], extraCategories: [] };
+}
+
+/** Names of references that no longer exist, e.g. ["component #12", "extra category #3"]. */
+function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
+  const refs = specReferences(spec);
+  return [
+    ...refs.components.filter((id) => !known.components.has(id)).map((id) => `component #${id}`),
+    ...refs.baseCategories.filter((id) => !known.baseCategories.has(id)).map((id) => `base category #${id}`),
+    ...refs.extraCategories.filter((id) => !known.extraCategories.has(id)).map((id) => `extra category #${id}`),
+  ];
+}
+
+// ─── The converter ────────────────────────────────────────────────────────────
+
+// Old rules could select dishes by a calendar occasion tag (`weekday`, `monday` …); which days a dish
+// suits is now a rule the dish owns, so there is no tag left to select by.
+const LEGACY_OCCASION_TAGS = [
+  ...OCCASION_TAGS, 'everyday', 'weekday', 'weekend', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+] as const;
+
+const LegacyTargetSchema = z.discriminatedUnion('mode', [
+  z.object({ mode: z.literal('component_type'), component_type: z.enum(['base', 'curry', 'subzi']) }),
+  z.object({
+    mode: z.literal('tag'),
+    filter: z.object({
+      dietary_tag: z.enum(DIETARY_TAGS).optional(),
+      protein_tag: z.enum(PROTEIN_TAGS).optional(),
+      regional_tag: z.enum(REGIONAL_TAGS).optional(),
+      occasion_tag: z.enum(LEGACY_OCCASION_TAGS).optional(),
+    }),
+  }),
+  z.object({ mode: z.literal('component'), component_id: z.number() }),
+  z.object({ mode: z.literal('base_category'), category_id: z.number() }),
+]);
+
+const LegacyEffectSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('filter_pool') }),
+  z.object({ kind: z.literal('require_one') }),
+  z.object({ kind: z.literal('exclude') }),
+  z.object({ kind: z.literal('no_repeat') }),
+  z.object({ kind: z.literal('allowed_slots'), slots: z.array(z.enum(MEALS)) }),
+  z.object({ kind: z.literal('skip_component'), component_types: z.array(z.enum(['curry', 'subzi', 'extra'])) }),
+  z.object({ kind: z.literal('require_component'), component_ids: z.array(z.number()) }),
+  z.object({ kind: z.literal('require_extra'), category_ids: z.array(z.number()) }),
+]);
+
+export const LegacyCompiledRuleSchema = z.object({
+  type: z.literal('rule'),
+  target: LegacyTargetSchema,
+  scope: z.object({ days: z.array(z.enum(DAYS)).nullable(), slots: z.array(z.enum(MEALS)).nullable() }),
+  effects: z.array(LegacyEffectSchema),
+});
+type LegacyTarget = z.infer<typeof LegacyTargetSchema>;
+
+export interface LegacyRuleRow {
+  id: number;
+  name: string;
+  enabled: boolean;
+  compiled_filter: unknown;
+  created_at: string;
+}
+
+export interface ConvertedRule {
+  name: string;
+  enabled: boolean;
+  spec: RuleSpecInput;
+  created_at: string;
+}
+
+export interface DroppedRule {
+  id: number;
+  name: string;
+  reason: string;
+}
+
+export interface ConversionContext {
+  known: KnownIds;
+  /** Component type by id, to decide which role an "only allow this component" rule restricts. */
+  componentTypes: ReadonlyMap<number, Role>;
+}
+
+export type ConversionResult = { ok: true; rules: ConvertedRule[] } | { ok: false; dropped: DroppedRule };
+
+function targetMatcher(t: LegacyTarget): Matcher | string {
+  switch (t.mode) {
+    case 'component_type':
+      return is('componentType', t.component_type);
+    case 'component':
+      return is('id', t.component_id);
+    case 'base_category':
+      return all(is('componentType', 'base'), is('base_category_id', t.category_id));
+    case 'tag': {
+      const f = t.filter;
+      const parts: Matcher[] = [];
+      if (f.dietary_tag) parts.push(is('dietary_tags', f.dietary_tag));
+      if (f.protein_tag) parts.push(is('protein_tag', f.protein_tag));
+      if (f.regional_tag) parts.push(is('regional_tags', f.regional_tag));
+      if (f.occasion_tag && LEGACY_CALENDAR_TAGS.includes(f.occasion_tag)) {
+        return 'it selects dishes by the days they suit, which are now set on each dish';
+      }
+      if (f.occasion_tag) parts.push(is('occasion_tags', f.occasion_tag as OccasionTag));
+      if (parts.length === 0) return 'its tag filter is empty, so it would match every component';
+      return parts.length === 1 ? parts[0] : all(...parts);
+    }
+  }
+}
+
+/** Roles an "only allow" rule restricted: the target's own type, or base/curry/subzi for tag filters. */
+function onlyAllowRoles(t: LegacyTarget, ctx: ConversionContext): Role[] | string {
+  switch (t.mode) {
+    case 'component_type': return [t.component_type];
+    case 'base_category': return ['base'];
+    case 'tag': return ['base', 'curry', 'subzi'];
+    case 'component': {
+      const role = ctx.componentTypes.get(t.component_id);
+      return role ? [role] : `component #${t.component_id} no longer exists`;
+    }
+  }
+}
+
+export function convertLegacyRule(row: LegacyRuleRow, ctx: ConversionContext): ConversionResult {
+  const drop = (reason: string): ConversionResult => ({ ok: false, dropped: { id: row.id, name: row.name, reason } });
+
+  const parsed = LegacyCompiledRuleSchema.safeParse(row.compiled_filter);
+  if (!parsed.success) return drop('it could not be read');
+  const { target, scope: oldScope, effects } = parsed.data;
+  if (effects.length === 0) return drop('it has no effect');
+  if (oldScope.days?.length === 0 || oldScope.slots?.length === 0) return drop('its days or meals select nothing');
+
+  const match = targetMatcher(target);
+  if (typeof match === 'string') return drop(match);
+  const scope: Scope | undefined = oldScope.days || oldScope.slots
+    ? { ...(oldScope.days && { days: oldScope.days }), ...(oldScope.slots && { meals: oldScope.slots }) }
+    : undefined;
+
+  const specs: RuleSpecInput[] = [];
+  const requireWith = { components: [] as number[], extraCategories: [] as number[] };
+  for (const e of effects) {
+    switch (e.kind) {
+      case 'exclude': specs.push({ template: 'exclude', params: { match, scope } }); break;
+      case 'require_one': specs.push({ template: 'require', params: { match, scope } }); break;
+      case 'no_repeat': specs.push({ template: 'no_repeat', params: { match, scope } }); break;
+      case 'filter_pool': {
+        const roles = onlyAllowRoles(target, ctx);
+        if (typeof roles === 'string') return drop(roles);
+        specs.push({ template: 'only_allow', params: { match, roles, scope } });
+        break;
+      }
+      // The old form's meal scope did not apply to allowed meals; only its days did.
+      case 'allowed_slots':
+        if (e.slots.length === 0) return drop('it allows no meals');
+        specs.push({ template: 'allowed_meals', params: { match, meals: e.slots, days: oldScope.days ?? undefined } });
+        break;
+      case 'skip_component':
+        if (e.component_types.length) specs.push({ template: 'skip_when', params: { when: match, skip: e.component_types, scope } });
+        break;
+      case 'require_component': requireWith.components.push(...e.component_ids); break;
+      case 'require_extra': requireWith.extraCategories.push(...e.category_ids); break;
+    }
+  }
+  if (requireWith.components.length || requireWith.extraCategories.length) {
+    specs.push({ template: 'require_with', params: { when: match, ...requireWith, scope } });
+  }
+  if (specs.length === 0) return drop('it has no effect');
+
+  const validated: RuleSpec[] = [];
+  for (const spec of specs) {
+    const v = RuleSpecSchema.safeParse(stripUndefined(spec));
+    if (!v.success) return drop(`it could not be converted (${v.error.issues[0].message})`);
+    const missing = missingReferences(v.data, ctx.known);
+    if (missing.length) return drop(`it refers to ${missing.join(', ')}, which no longer exists`);
+    validated.push(v.data);
+  }
+
+  const split = validated.length > 1;
+  return {
+    ok: true,
+    rules: validated.map((spec) => ({
+      name: split ? `${row.name} — ${TEMPLATE_LABELS[spec.template]}` : row.name,
+      enabled: row.enabled,
+      spec,
+      created_at: row.created_at,
+    })),
+  };
+}
+
+/** Optional keys must be absent rather than undefined for strict schemas and clean storage. */
+function stripUndefined<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}

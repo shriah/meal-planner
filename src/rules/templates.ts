@@ -2,10 +2,10 @@
 // itself, and lists the ids it references. Adding a rule type means adding a template here.
 import { z } from 'zod';
 import {
-  DAYS, MEALS, ROLES, MatcherSchema, all, is, isLeaf, not, oneOf,
-  type Bounds, type Constraint, type GroupBy, type Matcher, type Role,
+  DAYS, MEALS, MatcherSchema, all, is, isLeaf, not, oneOf,
+  type Bounds, type Constraint, type GroupBy, type Matcher,
 } from '@/planner';
-import { describeMatcher, describeScope, describeWhen, type Names } from './describe';
+import { describeMatcher, describeScope, describeWhen, partNames, singularNoun, pluralNoun, whenParts, type Names } from './describe';
 import { nearestLevel } from './levels';
 
 // ─── Shared params ────────────────────────────────────────────────────────────
@@ -30,15 +30,15 @@ const CostSchema = z.number().int().min(1).max(10).optional();
 
 const count = z.number().int().min(0);
 const ids = z.array(z.number().int());
-const SKIPPABLE = ['curry', 'subzi', 'extra'] as const;
-const DEFAULT_REPEAT_ROLES: Role[] = ['base', 'curry', 'subzi'];
+/** Part ids, at least one. */
+const partIds = z.array(z.number().int()).min(1);
 
 // ─── Params per template ──────────────────────────────────────────────────────
 
 const ExcludeParams = z.object({ match: MatcherSchema, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema }).strict();
 
 const OnlyAllowParams = z
-  .object({ match: MatcherSchema, roles: z.array(z.enum(ROLES)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  .object({ match: MatcherSchema, parts: partIds, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const RequireParams = z
@@ -63,7 +63,8 @@ const NoRepeatParams = z
     match: MatcherSchema,
     /** `week`: at most once in the week; a number k: not again within k consecutive days. */
     within: z.union([z.literal('week'), z.number().int().min(2).max(DAYS.length - 1)]).default('week'),
-    roles: z.array(z.enum(ROLES)).min(1).default(DEFAULT_REPEAT_ROLES),
+    /** The parts counted; every part when left out. */
+    parts: partIds.optional(),
     scope: ScopeSchema.optional(),
     strength: StrengthSchema, cost: CostSchema,
   })
@@ -74,40 +75,47 @@ const AllowedMealsParams = z
   .strict();
 
 const SkipWhenParams = z
-  .object({ when: MatcherSchema, skip: z.array(z.enum(SKIPPABLE)).min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  // The parts left out; never the first part, which `compileRules` checks against the parts.
+  .object({ when: MatcherSchema, skip: partIds, scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const RequireWithParams = z
   .object({
     when: MatcherSchema,
     components: ids.default([]),
-    extraCategories: ids.default([]),
+    /** Categories one dish of which is added too; each category belongs to one part. */
+    categories: ids.default([]),
     scope: ScopeSchema.optional(),
     strength: StrengthSchema, cost: CostSchema,
   })
   .strict()
-  .refine((p) => p.components.length + p.extraCategories.length > 0, { message: 'choose at least one component or extra category', path: ['components'] });
+  .refine((p) => p.components.length + p.categories.length > 0, { message: 'choose at least one component or category', path: ['components'] });
 
 const PairsWithParams = z
-  .object({ match: MatcherSchema, baseCategories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
+  // Categories of the first part.
+  .object({ match: MatcherSchema, categories: ids.min(1), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict();
 
 const ids1 = z.array(z.number().int()).min(1);
-/** The curry and subzi a "comes with" link waits for: both parts must hold, any one dish of a part will do. */
-const WhenSchema = z.object({ curry: ids1.optional(), subzi: ids1.optional() }).strict()
-  .refine((w) => w.curry !== undefined || w.subzi !== undefined, { message: 'name a curry or a subzi' });
+/**
+ * The dishes a "comes with" link waits for, keyed by part id: every part named must hold one of its dishes. Never the
+ * part it brings into (checked here) or the first part (checked by `compileRules` against the parts).
+ */
+const WhenSchema = z.record(z.string().regex(/^\d+$/, 'a part id'), ids1)
+  .refine((w) => Object.keys(w).length > 0, { message: 'name a part to wait for' });
+
+/** The part a link's `of` brings into: its first leaf, `part` eq. */
+export function ofPart(of: Matcher): number | undefined {
+  const first = 'all' in of ? of.all[0] : undefined;
+  return first && isLeaf(first) && first.field === 'part' && first.op === 'eq' ? (first.value as number) : undefined;
+}
 
 const ComesWithParams = z
   .object({ match: MatcherSchema, of: MatcherSchema, when: WhenSchema.optional(), scope: ScopeSchema.optional(), strength: StrengthSchema, cost: CostSchema })
   .strict()
-  // The scorer takes the pair's role from the first candidate, so `of` must pin one kind of dish.
-  .refine((p) => 'all' in p.of && p.of.all.length >= 1 && isLeaf(p.of.all[0]) && p.of.all[0].field === 'componentType' && p.of.all[0].op === 'eq',
-    { message: 'name one kind of dish first, then the dishes', path: ['of'] })
-  .refine((p) => {
-    if (!p.when) return true;
-    const kind = 'all' in p.of && isLeaf(p.of.all[0]) ? p.of.all[0].value : undefined;
-    return kind !== 'curry' && !(kind === 'subzi' && p.when.subzi);
-  }, { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
+  // The scorer takes the pair's part from the first candidate, so `of` must pin one part.
+  .refine((p) => ofPart(p.of) !== undefined, { message: 'name one part first, then the dishes', path: ['of'] })
+  .refine((p) => !p.when || !(String(ofPart(p.of)) in p.when), { message: 'a link cannot bring a dish into a part it waits for', path: ['when'] });
 
 const AllowedDaysParams = z
   .object({ match: MatcherSchema, days: z.array(z.enum(DAYS)).min(1), strength: StrengthSchema, cost: CostSchema })
@@ -166,30 +174,53 @@ const slotCount = (select: Matcher, scope: Scope | undefined, strength: Strength
   kind: 'count', select, groupBy: 'slot', ...(scope && { scope }), ...(when && { when: { exists: when } }), ...bounds(strength, min, max),
 });
 
-export interface Refs { components: number[]; baseCategories: number[]; extraCategories: number[] }
+/** The dishes, categories and parts a rule names by id. */
+export interface Refs { components: number[]; categories: number[]; parts: number[] }
 
 function matcherRefs(m: Matcher, out: Refs): Refs {
   if (isLeaf(m)) {
     const values = (Array.isArray(m.value) ? m.value : [m.value]) as number[];
     if (m.field === 'id') out.components.push(...values);
-    else if (m.field === 'base_category_id') out.baseCategories.push(...values);
-    else if (m.field === 'extra_category_id') out.extraCategories.push(...values);
+    else if (m.field === 'category' || m.field === 'base_category_id' || m.field === 'extra_category_id') out.categories.push(...values);
+    else if (m.field === 'part') out.parts.push(...values);
   } else if ('all' in m) m.all.forEach((x) => matcherRefs(x, out));
   else if ('any' in m) m.any.forEach((x) => matcherRefs(x, out));
   else matcherRefs(m.not, out);
   return out;
 }
-const refsOf = (...ms: Matcher[]): Refs => ms.reduce((acc, m) => matcherRefs(m, acc), { components: [], baseCategories: [], extraCategories: [] } as Refs);
+const refsOf = (...ms: Matcher[]): Refs => ms.reduce((acc, m) => matcherRefs(m, acc), { components: [], categories: [], parts: [] } as Refs);
+/** The refs of `ms` with `parts` added. */
+const withParts = (parts: readonly number[] | undefined, ...ms: Matcher[]): Refs => {
+  const r = refsOf(...ms);
+  r.parts.push(...(parts ?? []));
+  return r;
+};
 
-/** One matcher per part of a link's condition, curry first. */
-const whenMatchers = (when: { curry?: number[]; subzi?: number[] }): Matcher[] =>
-  (['curry', 'subzi'] as const).filter((part) => when[part]).map((part) => all(is('role', part), oneOf('id', when[part]!)));
+/** One matcher per part of a link's condition, in part id order. */
+const whenMatchers = (when: Record<string, number[]>): Matcher[] =>
+  whenParts(when).map(([part, dishes]) => all(is('part', part), oneOf('id', dishes)));
+
+/** What compiling needs beyond a rule's own params: the first part, which a pairing's categories belong to. */
+export interface CompileContext { firstPart?: number }
+
+/** The first part's plural noun ("bases"), or "dishes" when it cannot be named. */
+const firstPartNoun = (n: Names) => {
+  const name = n.firstPart === undefined ? undefined : n.part?.(n.firstPart);
+  return name === undefined ? 'dishes' : pluralNoun(name);
+};
+/** "an extra from Liquid", or "a dish from Liquid" when the category's part cannot be named. */
+const fromCategory = (id: number, n: Names) => {
+  const part = n.categoryPart?.(id);
+  const partName = part === undefined ? undefined : n.part?.(part);
+  const noun = partName === undefined ? 'dish' : singularNoun(partName);
+  return `${/^[aeiou]/.test(noun) ? 'an' : 'a'} ${noun} from ${n.category?.(id) ?? `category #${id}`}`;
+};
 
 const strengthWord = (s: Strength) => (s === 'must' ? '' : ' (preferred)');
 const sentence = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const ROLE_PLURAL: Record<string, string> = { base: 'bases', curry: 'curries', subzi: 'subzis', extra: 'extras' };
-const roleList = (roles: readonly string[]) => {
-  const words = roles.map((r) => ROLE_PLURAL[r] ?? r);
+/** "curries, subzis and extras". */
+const partList = (parts: readonly number[], names: Names) => {
+  const words = partNames(parts, names);
   return words.length <= 1 ? words.join('') : `${words.slice(0, -1).join(', ')} and ${words[words.length - 1]}`;
 };
 
@@ -198,7 +229,7 @@ const roleList = (roles: readonly string[]) => {
 export interface RuleTemplate<P> {
   label: string;
   summary: string;
-  compile(params: P): ConstraintBody[];
+  compile(params: P, ctx: CompileContext): ConstraintBody[];
   describe(params: P, names: Names): string;
   references(params: P): Refs;
 }
@@ -214,9 +245,9 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
   only_allow: {
     label: 'Only allow',
     summary: 'In the chosen days and meals, the chosen roles may only hold matching components.',
-    compile: (p) => p.roles.map((role) => slotCount(all(is('role', role), not(p.match)), p.scope, p.strength, undefined, 0)),
-    describe: (p, n) => `${sentence(roleList(p.roles))}${describeScope(p.scope)}: only ${describeMatcher(p.match, n)}${strengthWord(p.strength)}`,
-    references: (p) => refsOf(p.match),
+    compile: (p) => p.parts.map((part) => slotCount(all(is('part', part), not(p.match)), p.scope, p.strength, undefined, 0)),
+    describe: (p, n) => `${sentence(partList(p.parts, n))}${describeScope(p.scope)}: only ${describeMatcher(p.match, n)}${strengthWord(p.strength)}`,
+    references: (p) => withParts(p.parts, p.match),
   },
   require: {
     label: 'Always include',
@@ -250,13 +281,13 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     summary: 'The same matching component is not used twice in the week, or within a number of days.',
     compile: (p) => [{
       kind: 'count',
-      select: all(p.match, oneOf('role', p.roles), ...scopeConditions(p.scope)),
+      select: all(p.match, ...(p.parts ? [oneOf('part', p.parts)] : []), ...scopeConditions(p.scope)),
       groupBy: p.within === 'week' ? 'component' : ['component', { days: p.within }],
       ...bounds(p.strength, undefined, 1),
       level: 'frequency',
     }],
     describe: (p, n) => `Don't repeat ${describeMatcher(p.match, n)} ${p.within === 'week' ? 'in the week' : `within ${p.within} days`}${describeScope(p.scope)}${strengthWord(p.strength)}`,
-    references: (p) => refsOf(p.match),
+    references: (p) => withParts(p.parts, p.match),
   },
   allowed_meals: {
     label: 'Only at certain meals',
@@ -273,9 +304,9 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
   skip_when: {
     label: 'Leave out when',
     summary: 'When a meal contains a matching component, leave out the chosen roles.',
-    compile: (p) => p.skip.map((role) => slotCount(is('role', role), p.scope, p.strength, undefined, 0, p.when)),
-    describe: (p, n) => `With ${describeMatcher(p.when, n)}, no ${roleList(p.skip)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
-    references: (p) => refsOf(p.when),
+    compile: (p) => p.skip.map((part) => slotCount(is('part', part), p.scope, p.strength, undefined, 0, p.when)),
+    describe: (p, n) => `With ${describeMatcher(p.when, n)}, no ${partList(p.skip, n)}${describeScope(p.scope)}${strengthWord(p.strength)}`,
+    references: (p) => withParts(p.skip, p.when),
   },
   require_with: {
     label: 'Also include when',
@@ -286,19 +317,20 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
         kind: 'pair', when: p.when, of: is('id', component), ...(p.scope && { scope: p.scope }), strength: p.strength,
         ...(p.strength === 'prefer' && { cost: p.cost ?? PREFER_COST }),
       })),
-      ...p.extraCategories.map((cat) => slotCount(all(is('role', 'extra'), is('extra_category_id', cat)), p.scope, p.strength, 1, undefined, p.when)),
+      // A category belongs to one part, so naming it names the part too.
+      ...p.categories.map((cat) => slotCount(is('category', cat), p.scope, p.strength, 1, undefined, p.when)),
     ],
     describe: (p, n) => {
       const wanted = [
         ...p.components.map((id) => n.component?.(id) ?? `component #${id}`),
-        ...p.extraCategories.map((id) => `an extra from ${n.extraCategory?.(id) ?? `category #${id}`}`),
+        ...p.categories.map((id) => fromCategory(id, n)),
       ];
       return `With ${describeMatcher(p.when, n)}, also include ${wanted.join(' and ')}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => {
       const r = refsOf(p.when);
       r.components.push(...p.components);
-      r.extraCategories.push(...p.extraCategories);
+      r.categories.push(...p.categories);
       return r;
     },
   },
@@ -311,26 +343,26 @@ export const TEMPLATES: { [T in TemplateId]: RuleTemplate<ParamsOf<T>> } = {
     }],
     describe: (p, n) => {
       const several = 'all' in p.of && p.of.all.some((m) => isLeaf(m) && m.field === 'id' && Array.isArray(m.value) && m.value.length > 1);
-      const when = p.when ? ` when ${describeWhen(p.when, (id) => n.component?.(id) ?? `component #${id}`)}` : '';
+      const when = p.when ? ` when ${describeWhen(p.when, (id) => n.component?.(id) ?? `component #${id}`, n)}` : '';
       return `With ${describeMatcher(p.match, n)}, also ${several ? 'one of ' : ''}${describeMatcher(p.of, n)}${when}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => refsOf(p.match, p.of, ...(p.when ? whenMatchers(p.when) : [])),
   },
   pairs_with: {
     label: 'Only with these bases',
-    summary: 'Matching dishes only share a meal with a base from the chosen categories.',
-    // A base without a category is outside every list.
-    compile: (p) => [slotCount(
-      all(p.match, not(is('role', 'base'))), p.scope, p.strength, undefined, 0,
-      all(is('role', 'base'), not(oneOf('base_category_id', p.baseCategories))),
-    )],
+    summary: 'Matching dishes only share a meal with a main dish from the chosen categories.',
+    // A main dish without a category is outside every list. With no first part known (a rule's level only), nothing is a main dish.
+    compile: (p, ctx) => {
+      const first = is('part', ctx.firstPart ?? -1);
+      return [slotCount(all(p.match, not(first)), p.scope, p.strength, undefined, 0, all(first, not(oneOf('category', p.categories))))];
+    },
     describe: (p, n) => {
-      const bases = p.baseCategories.map((id) => n.baseCategory?.(id) ?? `base category #${id}`);
-      return `${sentence(describeMatcher(p.match, n))} only with ${bases.join(' or ')} bases${describeScope(p.scope)}${strengthWord(p.strength)}`;
+      const cats = p.categories.map((id) => n.category?.(id) ?? `category #${id}`);
+      return `${sentence(describeMatcher(p.match, n))} only with ${cats.join(' or ')} ${firstPartNoun(n)}${describeScope(p.scope)}${strengthWord(p.strength)}`;
     },
     references: (p) => {
       const r = refsOf(p.match);
-      r.baseCategories.push(...p.baseCategories);
+      r.categories.push(...p.categories);
       return r;
     },
   },
@@ -374,8 +406,8 @@ export const TEMPLATE_GROUPS: { label: string; templates: TemplateId[] }[] = [
   { label: 'Preference', templates: ['prefer'] },
 ];
 
-export function compileSpec(spec: RuleSpec): ConstraintBody[] {
-  const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params);
+export function compileSpec(spec: RuleSpec, ctx: CompileContext = {}): ConstraintBody[] {
+  const bodies = (TEMPLATES[spec.template] as RuleTemplate<RuleSpec['params']>).compile(spec.params, ctx);
   const cost = 'cost' in spec.params ? spec.params.cost : undefined;
   if (cost === undefined) return bodies;
   return bodies.map((b) => (b.kind === 'count' && b.costs ? { ...b, costs: { min: cost, max: cost } } : b));

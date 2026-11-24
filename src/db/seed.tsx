@@ -6,7 +6,7 @@ import { is, type Matcher, type Meal } from '@/planner';
 import { capRules, dayRule, defaultRules, exclusionRule, pairingRule } from '@/rules';
 import type { ComponentRecord } from '@/types/component';
 import type { CategoryKind } from '@/types/category';
-import { convertDish, convertLibrary, CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, type ConvertLookup } from '@/db/parts';
+import { convertDish, convertLibrary, CONVERTED_TAG_GROUP_KEYS, legacyPartIds } from '@/db/parts';
 import { ensurePartsAndTagGroups, loadConvertLookup } from '@/db/parts-store';
 
 type SeedData = typeof import('@/db/seed-data');
@@ -52,9 +52,8 @@ async function seed(data: SeedData): Promise<void> {
     seededDays,
   } = data;
   const { parts: storedParts, tagGroups: storedGroups } = await ensurePartsAndTagGroups();
-  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
-  const parts = Object.fromEntries(partTypes.map((t) => [t, storedParts.find((p) => p.name === CONVERTED_PARTS[t].name)!.id])) as ConvertLookup['parts'];
-  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => storedGroups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name)!;
+  const parts = legacyPartIds(storedParts);
+  const groupOf = (k: (typeof CONVERTED_TAG_GROUP_KEYS)[number]) => storedGroups.find((g) => g.legacy === k)!;
   const tagGroupIds = Object.fromEntries(CONVERTED_TAG_GROUP_KEYS.map((k) => [k, groupOf(k).id])) as Record<(typeof CONVERTED_TAG_GROUP_KEYS)[number], number>;
 
   const categoryLookup = await ensureSeedCategories(data, { base: parts.base, extra: parts.extra });
@@ -80,7 +79,7 @@ async function seed(data: SeedData): Promise<void> {
   const restIds = await db.components.bulkAdd(rest, { allKeys: true });
 
   const now = new Date().toISOString();
-  await db.rules.bulkAdd([...defaultRules({ breakfast: 2, lunch: 3, dinner: 3 }), ...capRules()].map((r) => ({ ...r, enabled: true, created_at: now })));
+  await db.rules.bulkAdd([...defaultRules(storedParts, { breakfast: 2, lunch: 3, dinner: 3 }), ...capRules(storedParts)].map((r) => ({ ...r, enabled: true, created_at: now })));
 
   // Default rules: which meals each kind of base suits.
   const onlyAt = (name: string, match: Matcher, meals: Meal[]): Omit<RuleRecord, 'id'> => ({
@@ -90,9 +89,9 @@ async function seed(data: SeedData): Promise<void> {
     created_at: now,
   });
   await db.rules.bulkAdd([
-    onlyAt('Other: breakfast and dinner', is('base_category_id', categoryLookup.base.other), ['breakfast', 'dinner']),
-    onlyAt('Rice-based: lunch only', is('base_category_id', categoryLookup.base['rice-based']), ['lunch']),
-    onlyAt('Bread-based: dinner only', is('base_category_id', categoryLookup.base['bread-based']), ['dinner']),
+    onlyAt('Other: breakfast and dinner', is('category', categoryLookup.base.other), ['breakfast', 'dinner']),
+    onlyAt('Rice-based: lunch only', is('category', categoryLookup.base['rice-based']), ['lunch']),
+    onlyAt('Bread-based: dinner only', is('category', categoryLookup.base['bread-based']), ['dinner']),
     onlyAt('Poori: breakfast only', is('id', pooriId), ['breakfast']),
   ]);
 
@@ -104,7 +103,7 @@ async function seed(data: SeedData): Promise<void> {
     const bases = c.componentType === 'curry' ? resolveSeededCurryCompatibilityIds(c.name, categoryLookup) : undefined;
     const days = seededDays(c.name);
     return [
-      ...(bases ? [bases.length ? pairingRule(dish, bases) : exclusionRule(dish)] : []),
+      ...(bases ? [bases.length ? pairingRule(dish, bases, storedParts) : exclusionRule(dish)] : []),
       ...(days ? [dayRule(dish, days)] : []),
     ];
   });

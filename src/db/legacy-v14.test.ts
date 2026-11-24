@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { all, is } from '@/planner';
-import { convertLegacyRule, type ConversionContext, type LegacyRuleRow } from './legacy';
-import { describeSpec, RuleSpecSchema } from './templates';
+import { convertLegacyRule, type ConversionContext, type LegacyRuleRow } from './legacy-v14';
+import { describeSpec, RuleSpecSchema } from '@/rules';
 
 const ctx: ConversionContext = {
   known: { components: new Set([1, 5, 31]), baseCategories: new Set([10]), extraCategories: new Set([30]) },

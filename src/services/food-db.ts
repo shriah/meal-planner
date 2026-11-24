@@ -1,11 +1,15 @@
 import { db } from '@/db/client';
 import type { RuleRecord } from '@/db/client';
-import { defaultRules, isDishTarget, linkRule, ownedRuleName, PLAIN_OWNED_SLOTS, readLink, ownedSlot, type LinkChange, type OwnedRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import { cleanWhen, defaultRules, linkRule, ownedRuleNameOf, PLAIN_OWNED_SLOTS, readLink, ownedSlot, whenParts, type LinkChange, type OwnedRule, type OwnedRuleChanges, type OwnedTemplate } from '@/rules';
+import type { PartRecord } from '@/types/part';
 import { changesDerivationSources, derivedChanges } from '@/services/parts-db';
 import type { ComponentRecord, ComponentType } from '@/types/component';
 import type { MealRecord } from '@/types/meal';
 
 // ─── Component CRUD ───────────────────────────────────────────────────────────
+
+/** The stored parts in meal order; inside a transaction, `db.parts` must be one of its tables. */
+const partsInOrder = async (): Promise<PartRecord[]> => (await db.parts.toArray()).sort((a, b) => a.position - b.position);
 
 export async function getAllComponents(): Promise<ComponentRecord[]> {
   return db.components.toArray();
@@ -33,31 +37,34 @@ export async function updateComponent(id: number, changes: Partial<ComponentReco
     await db.components.update(id, { ...changes, ...derived });
     if (changes.name !== undefined) {
       const name = changes.name;
+      const parts = await partsInOrder();
       await db.rules.where('owner_component_id').equals(id).modify((rule) => {
-        rule.name = ownedRuleName(ownedSlot(rule) ?? rule.spec.template, name);
+        rule.name = ownedRuleNameOf(rule, parts, name);
       });
     }
   });
 }
 
-const WHEN_PARTS = ['curry', 'subzi'] as const;
-
 /** Deleting a component also deletes the rules it owns. */
 export async function deleteComponent(id: number): Promise<void> {
-  await db.transaction('rw', db.components, db.rules, async () => {
+  await db.transaction('rw', db.components, db.rules, db.parts, async () => {
     await db.rules.where('owner_component_id').equals(id).delete();
+    const parts = await partsInOrder();
     // Other dishes' links to this one lose it; a link left with no dish is removed. A link waiting for this dish loses
     // it from that part of its condition, and is removed when the part is left empty, so its condition never widens.
     await db.rules.where('owner_component_id').above(0).modify((rule, ref) => {
-      const link = readLink(rule);
+      const link = readLink(rule, parts);
       if (!link) return;
-      const named = isDishTarget(link.target) && link.values.includes(id);
-      const waits = WHEN_PARTS.some((part) => link.when?.[part]?.includes(id));
+      const named = link.target.kind === 'dish' && link.values.includes(id);
+      const waits = whenParts(link.when).some(([, ids]) => ids.includes(id));
       if (!named && !waits) return;
       const rest = link.values.filter((v) => !named || v !== id);
-      const when = link.when && Object.fromEntries(WHEN_PARTS.filter((part) => link.when![part]).map((part) => [part, link.when![part]!.filter((v) => v !== id)]));
-      if (rest.length === 0 || (when && Object.values(when).some((ids) => ids.length === 0))) delete (ref as { value?: unknown }).value;
-      else rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest, ...(when && { when }) }).spec;
+      const when = whenParts(link.when).map(([part, ids]): [number, number[]] => [part, ids.filter((v) => v !== id)]);
+      if (rest.length === 0 || when.some(([, ids]) => ids.length === 0)) delete (ref as { value?: unknown }).value;
+      else {
+        const kept = cleanWhen(Object.fromEntries(when));
+        rule.spec = linkRule({ id: rule.owner_component_id as number, name: '' }, { ...link, values: rest, ...(kept && { when: kept }) }, parts).spec;
+      }
     });
     await db.components.delete(id);
   });
@@ -74,7 +81,8 @@ export async function getOwnedRules(componentId?: number): Promise<RuleRecord[]>
 
 /** The rule a component owns in one slot; with several links in a slot, the oldest (lowest id). */
 export async function getOwnedRule(componentId: number, template: OwnedTemplate): Promise<RuleRecord | undefined> {
-  return (await getOwnedRules(componentId)).filter((r) => ownedSlot(r) === template).sort((a, b) => a.id - b.id)[0];
+  const parts = await partsInOrder();
+  return (await getOwnedRules(componentId)).filter((r) => ownedSlot(r, parts) === template).sort((a, b) => a.id - b.id)[0];
 }
 
 /**
@@ -95,11 +103,12 @@ export async function saveComponent(
     const componentId = id ?? ((await db.components.add(written as ComponentRecord)) as number);
     if (id !== undefined) await db.components.update(id, written);
     const existing = await getOwnedRules(componentId);
+    const parts = await partsInOrder();
     const self = { id: componentId, name: component.name };
     const add = (rule: OwnedRule) => db.rules.add({ ...rule, enabled: true, created_at: new Date().toISOString() } as RuleRecord);
     for (const [template, build] of Object.entries(owned) as [keyof OwnedRuleChanges, OwnedRuleChanges[keyof OwnedRuleChanges]][]) {
       if (build === undefined || !PLAIN_OWNED_SLOTS.includes(template)) continue;
-      const current = existing.find((r) => ownedSlot(r) === template);
+      const current = existing.find((r) => ownedSlot(r, parts) === template);
       if (build === null) {
         if (current) await db.rules.delete(current.id);
         continue;
@@ -110,14 +119,14 @@ export async function saveComponent(
     }
     for (const change of links) {
       if (change.kind === 'add') {
-        await add(linkRule(self, change.link));
+        await add(linkRule(self, change.link, parts));
         continue;
       }
       // Only this dish's own rules are changed by id.
       if (!existing.some((r) => r.id === change.ruleId)) continue;
       if (change.kind === 'remove') await db.rules.delete(change.ruleId);
       // A link that is written is meant to be in force, so one that was switched off is switched on again.
-      else await db.rules.update(change.ruleId, { ...linkRule(self, change.link), enabled: true });
+      else await db.rules.update(change.ruleId, { ...linkRule(self, change.link, parts), enabled: true });
     }
     return componentId;
   });
@@ -186,9 +195,11 @@ export async function deleteRule(id: number): Promise<void> {
  * switched off, are left as they are. Returns how many were added.
  */
 export async function restoreDefaultRules(): Promise<number> {
-  return db.transaction('rw', db.rules, async () => {
+  return db.transaction('rw', db.rules, db.parts, async () => {
     const have = new Set((await db.rules.toArray()).map((r) => r.default_key).filter(Boolean));
-    const missing = defaultRules().filter((r) => !have.has(r.default_key));
+    // The defaults are about the stored parts, in meal order.
+    const parts = (await db.parts.toArray()).sort((a, b) => a.position - b.position);
+    const missing = defaultRules(parts).filter((r) => !have.has(r.default_key));
     const created_at = new Date().toISOString();
     await db.rules.bulkAdd(missing.map((r) => ({ ...r, enabled: true, created_at })) as RuleRecord[]);
     return missing.length;

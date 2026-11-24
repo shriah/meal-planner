@@ -1,6 +1,6 @@
-import { exclusionRule, linkRule } from '@/rules';
+import { exclusionRule } from '@/rules';
 import { everyOtherMealWith, lockedMealKept } from '../expect';
-import { TEST_LIBRARY } from '../library';
+import { caseLink, TEST_LIBRARY } from '../library';
 import type { RuleCase } from '../types';
 
 export const LOCK_CASES: RuleCase[] = [
@@ -10,7 +10,7 @@ export const LOCK_CASES: RuleCase[] = [
     group: 'Locks and picks',
     name: 'A lock beats a pairing',
     why: 'A meal the user locked keeps its own curry even when an Always pairing would put a different one there.',
-    rules: (lib) => [linkRule(lib.dish('Sambar'), { mode: 'serve', target: 'base_dish', values: [lib.dish('Pongal').id] })],
+    rules: (lib) => [caseLink(lib.dish('Sambar'), { mode: 'serve', to: 'base', values: [lib.dish('Pongal').id] })],
     pins: { 'monday-breakfast': { base_id: TEST_LIBRARY.dish('Pongal').id, curry_id: TEST_LIBRARY.dish('Dal').id } },
     expect: [lockedMealKept('monday-breakfast', 'curry', 'Dal'), everyOtherMealWith('Pongal', ['Sambar'], 'monday-breakfast')],
   },

@@ -10,6 +10,8 @@ export interface TagGroupRecord {
   position: number;
   multiple: boolean;
   values: TagValue[];
+  /** Set on the four converted groups; how code finds them once they can be renamed. */
+  legacy?: ConvertedTagGroupKey;
   created_at: string;
 }
 

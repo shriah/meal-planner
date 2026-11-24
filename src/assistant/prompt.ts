@@ -1,6 +1,6 @@
 // The system prompt (a constant, never built from user text), the injection-safe data wrapper,
 // and a cheap off-topic shortcut.
-import { CONDITION_FIELDS, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
+import { TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES } from '@/rules';
 import { TOOL_DECLARATIONS } from './tools';
 import type { Slice } from './retrieve';
 
@@ -13,6 +13,13 @@ const templateLines = TEMPLATE_GROUPS.map((g) => {
   });
   return `${g.label}:\n${lines.join('\n')}`;
 }).join('\n');
+
+// The match fields the assistant drafts with: dish types and the old category fields, which still compile. It learns to
+// name parts and categories by id in Stage 3b.
+const MATCH_FIELDS = [
+  'componentType', 'id', 'base_category_id', 'extra_category_id', 'curry_category',
+  'dietary_tags', 'protein_tag', 'regional_tags', 'occasion_tags', 'frequency',
+];
 
 const toolLines = TOOL_DECLARATIONS.map((t) => `- ${t.name}: ${t.description}`).join('\n');
 
@@ -58,7 +65,7 @@ ${toolLines}
 Rule drafts use only these templates. In propose_rule and simulate_with_rule, spec is JSON text of { template, params }, like the examples below. A "?" marks an optional param.
 ${templateLines}
 
-A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${CONDITION_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them.
+A match (or when/with) param is a matcher: a leaf { field, op, value } (ops eq, neq, in for single values; has, hasAny, hasAll for tag lists) or { all: [...] }, { any: [...] }, { not: matcher }. Match fields: ${MATCH_FIELDS.join(', ')}. Never put day or meal in a match; use scope for days and meals. Use dish ids from search_dishes, never guess them.
 EXAMPLE: ${EXAMPLE}
 
 scope is optional and strict: { days?: [...], meals?: [...] } with lowercase values (monday..sunday; breakfast, lunch, dinner) and no other keys. Leave it out for every day and meal.

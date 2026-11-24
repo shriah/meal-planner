@@ -5,29 +5,38 @@ import { all, any, FIELDS, isLeaf, not, oneOf, is, TRUE, type FieldKey, type Lea
 
 /** Fields offered in the rule editor. Day and meal are chosen through a rule's scope instead. */
 export const CONDITION_FIELDS = [
-  'componentType', 'id', 'base_category_id', 'extra_category_id', 'curry_category',
+  'part', 'id', 'category',
   'dietary_tags', 'protein_tag', 'regional_tags', 'occasion_tags', 'frequency',
 ] as const satisfies readonly FieldKey[];
 export type ConditionField = (typeof CONDITION_FIELDS)[number];
 
+/**
+ * Fields of rules stored before rules named parts and categories. They are still read, so such a rule describes and
+ * edits as before, but the editor does not offer them for a new condition.
+ */
+const OLD_CONDITION_FIELDS = ['componentType', 'base_category_id', 'extra_category_id', 'curry_category'] as const satisfies readonly FieldKey[];
+/** Every field a flat condition may hold. */
+export type ReadableField = ConditionField | (typeof OLD_CONDITION_FIELDS)[number];
+
 export type ConditionValue = string | number;
 
-export interface Condition {
-  field: ConditionField;
+export interface Condition<F extends ReadableField = ReadableField> {
+  field: F;
   /** "is not" instead of "is". */
   negate: boolean;
   /** Matches when the field has any of these values. */
   values: ConditionValue[];
 }
 
-export interface ConditionGroup {
+export interface ConditionGroup<F extends ReadableField = ReadableField> {
   join: 'all' | 'any';
-  conditions: Condition[];
+  conditions: Condition<F>[];
 }
 
-export const emptyGroup = (): ConditionGroup => ({ join: 'all', conditions: [] });
+export const emptyGroup = (): ConditionGroup<ConditionField> => ({ join: 'all', conditions: [] });
 
-const isConditionField = (f: FieldKey): f is ConditionField => (CONDITION_FIELDS as readonly string[]).includes(f);
+const READABLE_FIELDS: readonly string[] = [...CONDITION_FIELDS, ...OLD_CONDITION_FIELDS];
+const isReadableField = (f: FieldKey): f is ReadableField => READABLE_FIELDS.includes(f);
 
 function conditionToMatcher(c: Condition): Matcher {
   const field = c.field as FieldKey;
@@ -46,7 +55,7 @@ export function toMatcher(group: ConditionGroup): Matcher {
 }
 
 function leafToCondition(l: Leaf, negate: boolean): Condition | null {
-  if (!isConditionField(l.field)) return null;
+  if (!isReadableField(l.field)) return null;
   const kind = FIELDS[l.field].kind;
   const values = Array.isArray(l.value) ? (l.value as ConditionValue[]) : [l.value as ConditionValue];
   switch (l.op) {

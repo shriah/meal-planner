@@ -8,11 +8,14 @@ import type { WeeklyPlan } from '@/types/plan';
 import type { PartRecord } from '@/types/part';
 import type { TagGroupRecord } from '@/types/tags';
 import { CONVERTED_PARTS, CONVERTED_TAG_GROUPS, CONVERTED_TAG_GROUP_KEYS, convertDish, convertLibrary, convertedValueIds, type ConvertLookup } from './parts';
-import { duplicateIds, remapSlots, remapSpec, type IdMaps } from './dedupe';
+import { duplicateIds, remapSlots } from './dedupe';
 import { is, isLeaf, type Matcher } from '@/planner';
+import type { RuleRecord } from '@/rules';
+import { convertLegacyRule, type ConvertedRule, type DroppedRule } from './legacy-v14';
+import { convertRuleSpec, curryTypesNamed } from './rules-over-parts';
 import {
-  capRules, convertLegacyRule, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
-  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type ConvertedRule, type DroppedRule, type RuleRecord } from '@/rules';
+  capRules, curryClashRule, dayRule, defaultKeyForName, defaultRules, exclusionRule, legacyOccasionDays, linkRule, ownedSlot, pairingCategories, pairingRule,
+  readLink, strengthOf, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, remapSpec, type IdMaps, type LegacyRuleRecord } from './legacy-rules';
 
 export type { RuleRecord };
 
@@ -811,7 +814,7 @@ db.version(15).stores({
     (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
   );
   const now = new Date().toISOString();
-  const pairings: Omit<RuleRecord, 'id'>[] = [];
+  const pairings: Omit<LegacyRuleRecord, 'id'>[] = [];
   const isCurryCategory = (c: string): c is CurryCategory => (CURRY_CATEGORIES as readonly string[]).includes(c);
   await tx.table('components').toCollection().modify((component: LegacyComponent & { id: number }) => {
     const ids = component.compatible_base_category_ids?.filter((id) => baseCategories.has(id));
@@ -848,8 +851,8 @@ db.version(16).stores({
 }).upgrade(async (tx) => {
   const now = new Date().toISOString();
   const rulesTable = tx.table('rules');
-  const added: Omit<RuleRecord, 'id'>[] = [];
-  const add = (r: Omit<RuleRecord, 'id' | 'enabled' | 'created_at'>) => added.push({ ...r, enabled: true, created_at: now });
+  const added: Omit<LegacyRuleRecord, 'id'>[] = [];
+  const add = (r: Omit<LegacyRuleRecord, 'id' | 'enabled' | 'created_at'>) => added.push({ ...r, enabled: true, created_at: now });
 
   // A library that was never seeded gets the defaults from runSeed instead.
   if ((await tx.table('components').count()) > 0) {
@@ -858,7 +861,7 @@ db.version(16).stores({
   }
   await tx.table('preferences').clear();
 
-  const rules: RuleRecord[] = await rulesTable.toArray();
+  const rules: LegacyRuleRecord[] = await rulesTable.toArray();
   const names = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c.name]));
   const owns = (id: number, template: string) => rules.some((r) => r.owner_component_id === id && r.spec.template === template);
 
@@ -908,7 +911,7 @@ db.version(17).stores({
   active_plan: 'id',
   notices: 'id',
 }).upgrade((tx) =>
-  tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+  tx.table('rules').toCollection().modify((rule: LegacyRuleRecord) => {
     if (rule.default_key !== undefined || rule.owner_component_id !== undefined) return;
     const key = defaultKeyForName(rule.name);
     if (key) rule.default_key = key;
@@ -930,7 +933,7 @@ db.version(18).stores({
   notices: 'id',
 }).upgrade((tx) => {
   const sides = defaultRules().find((r) => r.default_key === 'sides-only-when-asked')!;
-  return tx.table('rules').toCollection().modify((rule: RuleRecord) => {
+  return tx.table('rules').toCollection().modify((rule: LegacyRuleRecord) => {
     if (rule.owner_component_id !== undefined) return;
     if (rule.default_key === 'want-curry' || rule.default_key === 'want-subzi') rule.enabled = false;
     if (rule.default_key === 'extras-only-when-asked') {
@@ -969,14 +972,14 @@ db.version(19).stores({
   notices: 'id',
 }).upgrade(async (tx) => {
   const rulesTable = tx.table('rules');
-  const rules = (await rulesTable.toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const rules = (await rulesTable.toArray() as LegacyRuleRecord[]).sort((a, b) => a.id - b.id);
   const components = new Map((await tx.table('components').toArray() as ComponentRecord[]).map((c) => [c.id, c]));
   const baseCategories = new Set(
     (await tx.table('categories').toArray() as CategoryRecord[]).filter((c) => c.kind === 'base').map((c) => c.id),
   );
   const removed = new Set<number>();
-  const changed = new Map<number, RuleRecord>();
-  const added: Omit<RuleRecord, 'id'>[] = [];
+  const changed = new Map<number, LegacyRuleRecord>();
+  const added: Omit<LegacyRuleRecord, 'id'>[] = [];
   const now = new Date().toISOString();
   const unowned = () => rules.filter((r) => r.owner_component_id === undefined && !removed.has(r.id));
 
@@ -999,7 +1002,7 @@ db.version(19).stores({
   }
 
   // Served-with links by owner and slot; a dish owns at most one per slot, so new values merge into it.
-  const links = new Map<string, RuleRecord | Omit<RuleRecord, 'id'>>();
+  const links = new Map<string, LegacyRuleRecord | Omit<LegacyRuleRecord, 'id'>>();
   for (const rule of rules) {
     const slot = rule.owner_component_id === undefined ? undefined : ownedSlot(rule);
     if (slot?.startsWith('serve:')) links.set(`${rule.owner_component_id}:${slot}`, rule);
@@ -1008,7 +1011,7 @@ db.version(19).stores({
   for (const rule of unowned()) {
     if (rule.spec.template !== 'require_with') continue;
     const p = rule.spec.params;
-    const dishes = [...new Set(p.components ?? [])];
+    const dishes = [...new Set<number>(p.components ?? [])];
     if ((p.extraCategories ?? []).length > 0 || dishes.length === 0 || !dishes.every(isSide)) continue;
     const when = p.when as Matcher;
     if (!isLeaf(when) || (when.op !== 'eq' && when.op !== 'in')) continue;
@@ -1086,7 +1089,7 @@ db.version(20).stores({
   await tx.table('components').bulkDelete([...maps.component.keys()]);
   await tx.table('categories').bulkDelete([...categoryMap.keys()]);
 
-  const rules = (await tx.table('rules').toArray() as RuleRecord[]).sort((a, b) => a.id - b.id);
+  const rules = (await tx.table('rules').toArray() as LegacyRuleRecord[]).sort((a, b) => a.id - b.id);
   const removed = new Set<number>();
   const slotsOf = new Map<number, Set<string>>();
   for (const rule of rules) {
@@ -1203,6 +1206,93 @@ db.version(22).stores({
   if ((await tx.table('components').count()) === 0) return;
   const created_at = new Date().toISOString();
   await tx.table('rules').bulkAdd(capRules().map((r) => ({ ...r, enabled: true, created_at })));
+});
+
+// v23: the four converted parts and tag groups are found by `legacy`, so they can be renamed. Only the rows that
+// still carry a converted name get it; a library with no parts yet (never seeded) gets nothing.
+db.version(23).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  const partTypes = Object.keys(CONVERTED_PARTS) as (keyof typeof CONVERTED_PARTS)[];
+  const parts = await tx.table('parts').toArray() as PartRecord[];
+  for (const t of partTypes) {
+    const part = parts.find((p) => p.name === CONVERTED_PARTS[t].name);
+    if (part) await tx.table('parts').update(part.id, { legacy: t });
+  }
+  const groups = await tx.table('tag_groups').toArray() as TagGroupRecord[];
+  for (const k of CONVERTED_TAG_GROUP_KEYS) {
+    const group = groups.find((g) => g.name === CONVERTED_TAG_GROUPS[k].name);
+    if (group) await tx.table('tag_groups').update(group.id, { legacy: k });
+  }
+});
+
+// v24: stored rules and links name parts and categories by id (see `convertRuleSpec`). Links run top to bottom: a dish
+// that "comes with" a dish of a higher part is now added when that dish is in the meal. A curry type a rule names gets
+// its Curry category first, as v21 made them, when no dish used it then. Only the spec changes, and only where it
+// converts; a spec that cannot be converted stays as it was, for `compileRules` to name. A library without the
+// converted parts (never seeded) is left alone.
+db.version(24).stores({
+  categories: '++id, kind, name, part_id',
+  components: '++id, componentType, base_type, base_category_id, extra_category, extra_category_id, part_id, category_id, *dietary_tags, *regional_tags, *occasion_tags',
+  meals: '++id, base_id, curry_id, subzi_id',
+  meal_extras: '[meal_id+component_id], meal_id, component_id',
+  rules: '++id, owner_component_id',
+  saved_plans: '++id, week_start',
+  preferences: 'id',
+  active_plan: 'id',
+  notices: 'id',
+  parts: '++id',
+  tag_groups: '++id',
+}).upgrade(async (tx) => {
+  const rules = await tx.table('rules').toArray() as RuleRecord[];
+  const parts = (await tx.table('parts').toArray() as PartRecord[]).sort((a, b) => a.position - b.position);
+  const legacyId = (t: keyof typeof CONVERTED_PARTS) => parts.find((p) => p.legacy === t)?.id;
+  const [base, curry, subzi, extra] = (['base', 'curry', 'subzi', 'extra'] as const).map(legacyId);
+  if (rules.length === 0 || base === undefined || curry === undefined || subzi === undefined || extra === undefined) return;
+  const legacy = { base, curry, subzi, extra };
+
+  const components = await tx.table('components').toArray() as ComponentRecord[];
+  const categories = await tx.table('categories').toArray() as CategoryRecord[];
+  const curryCategories = new Map(categories.filter((c) => c.part_id === curry).map((c) => [c.id, c]));
+  // A curry type's category: the one its curries were given (it may since have been renamed), else the one of its name.
+  const curryCategory = new Map<CurryCategory, number>();
+  for (const c of components) {
+    if (c.componentType === 'curry' && c.curry_category && c.category_id != null && curryCategories.has(c.category_id) && !curryCategory.has(c.curry_category)) {
+      curryCategory.set(c.curry_category, c.category_id);
+    }
+  }
+  for (const c of curryCategories.values()) {
+    if (c.kind === 'curry' && (CURRY_CATEGORIES as readonly string[]).includes(c.name) && !curryCategory.has(c.name as CurryCategory)) curryCategory.set(c.name as CurryCategory, c.id);
+  }
+  const named = new Set(rules.flatMap((r) => curryTypesNamed(r.spec)));
+  const missing = CURRY_CATEGORIES.filter((t) => named.has(t) && !curryCategory.has(t));
+  if (missing.length) {
+    const created_at = new Date().toISOString();
+    const ids = await tx.table('categories').bulkAdd(missing.map((name) => ({ kind: 'curry', name, part_id: curry, created_at })), { allKeys: true }) as number[];
+    missing.forEach((t, i) => curryCategory.set(t, ids[i]));
+  }
+
+  const ctx = {
+    legacy,
+    parts: parts.map(({ id, name, varied, legacy: l }) => ({ id, name, varied, ...(l && { legacy: l }) })),
+    curryCategory,
+    partOf: new Map(components.map((c) => [c.id, c.part_id ?? legacy[c.componentType]])),
+  };
+  const changed = rules.flatMap((rule) => {
+    const out = convertRuleSpec(rule.spec, ctx, rule.default_key);
+    return 'spec' in out && !sameValue(out.spec, rule.spec) ? [{ ...rule, spec: out.spec }] : [];
+  });
+  await tx.table('rules').bulkPut(changed);
 });
 
 export { db, normalizeComponentCategoryRefs };

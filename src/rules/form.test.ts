@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { all, is, TRUE } from '@/planner';
-import { newSpec, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
+import { newSpec, type FormContext, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
 import { RuleSpecSchema, TEMPLATE_IDS } from './templates';
 
 describe('rule forms', () => {
@@ -19,9 +19,23 @@ describe('rule forms', () => {
       const spec = newSpec(id) as { template: string; params: Record<string, unknown> };
       for (const key of ['match', 'when']) if (key in spec.params) spec.params[key] = is('protein_tag', 'fish');
       if (id === 'require_with') spec.params.components = [1];
-      if (id === 'pairs_with') spec.params.baseCategories = [1];
+      if (id === 'pairs_with') spec.params.categories = [1];
+      if (id === 'only_allow') spec.params.parts = [2];
+      if (id === 'skip_when') spec.params.skip = [3];
+      if (id === 'comes_with') spec.params.of = all(is('part', 2), is('id', 1));
       expect(RuleSpecSchema.safeParse(spec).success, id).toBe(true);
     }
+  });
+
+  it('chooses parts by id: which an only-allow covers, which a leave-out drops, which a no-repeat counts', () => {
+    const kinds = (id: 'only_allow' | 'skip_when' | 'no_repeat') => TEMPLATE_FORMS[id].fields.map((f) => [f.key, f.kind]);
+    expect(kinds('only_allow')).toContainEqual(['parts', 'parts']);
+    expect(kinds('skip_when')).toContainEqual(['skip', 'skip']);
+    expect(kinds('no_repeat')).toContainEqual(['parts', 'parts']);
+    expect(TEMPLATE_FORMS.no_repeat.fields.find((f) => f.key === 'parts')?.optional).toBe(true);
+    expect(newSpec('only_allow').params).toMatchObject({ parts: [] });
+    expect(newSpec('skip_when').params).toMatchObject({ skip: [] });
+    expect(newSpec('no_repeat').params).not.toHaveProperty('parts');
   });
 
   it('reports errors against the field they belong to', () => {
@@ -44,8 +58,8 @@ describe('rule forms', () => {
     expect(keys).toContain('scope');
     expect(keys.indexOf('scope')).toBe(keys.indexOf('strength') - 1);
     const scope = { days: ['monday' as const], meals: ['lunch' as const] };
-    const r = validateDraft({ name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
-    expect(r).toEqual({ ok: true, name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), baseCategories: [1], scope, strength: 'prefer', cost: 6 } } });
+    const r = validateDraft({ name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), categories: [1], scope, strength: 'prefer', cost: 6 } } });
+    expect(r).toEqual({ ok: true, name: 'Sambar with rice', spec: { template: 'pairs_with', params: { match: is('id', 12), categories: [1], scope, strength: 'prefer', cost: 6 } } });
   });
 
   it('previews which components a condition matches', () => {
@@ -56,5 +70,37 @@ describe('rule forms', () => {
     ] satisfies StoredDish[];
     expect(previewMatches(all(is('componentType', 'curry'), is('protein_tag', 'fish')), lib).map((c) => c.name)).toEqual(['Fish Curry']);
     expect(previewMatches(is('role', 'extra'), lib).map((c) => c.name)).toEqual(['Fish Fry']);
+  });
+
+  describe('a new rule on the converted parts', () => {
+    // Base, Curry, Subzi, Extras in meal order; Curry and Subzi capped at one per meal; Extras not varied.
+    const ctx: FormContext = {
+      parts: [{ id: 1, varied: true }, { id: 2, varied: true }, { id: 3, varied: true }, { id: 4, varied: false }],
+      capped: new Set([2, 3]),
+    };
+
+    it("counts the varied parts for a don't-repeat rule", () => {
+      expect(newSpec('no_repeat', ctx).params).toMatchObject({ parts: [1, 2, 3] });
+    });
+
+    it('limits an only-allow rule to the first capped part after the first (Curry)', () => {
+      expect(newSpec('only_allow', ctx).params).toMatchObject({ parts: [2] });
+    });
+
+    it('leaves out the last capped part after the first (Subzi)', () => {
+      expect(newSpec('skip_when', ctx).params).toMatchObject({ skip: [3] });
+    });
+
+    it('starts the part lists empty when the parts are not known', () => {
+      expect(newSpec('no_repeat').params).not.toHaveProperty('parts');
+      expect(newSpec('only_allow').params).toMatchObject({ parts: [] });
+      expect(newSpec('skip_when').params).toMatchObject({ skip: [] });
+    });
+
+    it('never preselects a part the rules do not cap', () => {
+      const none = { ...ctx, capped: new Set<number>() };
+      expect(newSpec('only_allow', none).params).toMatchObject({ parts: [] });
+      expect(newSpec('skip_when', none).params).toMatchObject({ skip: [] });
+    });
   });
 });

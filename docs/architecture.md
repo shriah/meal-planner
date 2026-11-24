@@ -126,13 +126,9 @@ visible changed except the two cap rules on the Rules page, and a converted libr
 - **Single and many.** A part is single (one dish) when the first part, or when a hard per-meal cap of 1 selects it (`cappedPart`, `capped` in
   `builtinConstraints`); otherwise it holds many. Only many parts get the "no dish twice" built-in, and the pick, swap and descent moves change
   single parts while add/remove moves change many parts.
-- **Rules reach the planner as rules about parts.** `src/rules/legacy-parts.ts` rewrites every `role` and `componentType` leaf of a compiled
-  constraint to a `part` leaf (`constraintOverParts`); stored rules are not changed. The variety, spacing and sides-only defaults are the exception:
-  when the stored row still equals the stock `defaultRules()` spec they are compiled over the parts' `varied` flag (variety, spacing) or every part
-  after the first (sides only), so they follow the parts. An edited default gets the plain rewrite. This code and `src/db/parts.ts`,
-  `src/db/seed.tsx`, `src/services/legacy-slots.ts`, `src/services/plan-generation.ts` (`pinnedRole`, `'extras'`, `legacy.base`),
-  `src/services/pins.ts`, `src/rules/defaults.ts` (`capRules`), `src/rule-cases/run.ts` (`suppressedAs`, `CAP_KEYS`) and the v22 upgrade are the
-  only places that name base, curry, subzi or extras.
+- **Rules reach the planner as rules about parts.** Stage 2 rewrote every `role` and `componentType` leaf of a compiled constraint to a `part` leaf
+  (`src/rules/legacy-parts.ts`, `constraintOverParts`). Stage 3a stores rules over parts, so that rewrite now only serves rules still holding the
+  old leaves. The files that still name base, curry, subzi or extras are listed under Stage 3a.
 - **Cap rules.** "At most one Curry per meal" and "At most one Subzi per meal" (`capRules` in `src/rules/defaults.ts`) replace the built-in one curry
   and one subzi. They are Always `limit` rules with no default key, added by the v22 upgrade (only when the library has dishes), the seed and the
   rule-case runner, and the user can edit, disable or delete them. Having no default key, "restore defaults" cannot bring a deleted cap back.
@@ -146,22 +142,69 @@ visible changed except the two cap rules on the Rules page, and a converted libr
   `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out, and the repair sweep skips it, as the curry
   did before. Both keep today's weeks. Stage 3 makes the sweep a rule case.
 
+### Meal parts (Stage 3a)
+
+Design: `docs/superpowers/specs`, plan `docs/superpowers/plans/2026-11-22-meal-parts-rules-a.md`. Stored rules and links now name parts. Weeks do not
+change except where an upward link flips (below); `repair.snapshot.test.ts` is untouched.
+
+- **Part identity.** A part and a tag group carry `legacy` (the converted name it began as: Base, Curry, Subzi, Extras; Dietary, Protein, Region,
+  Occasion), written by v23 and by the seed (`ensurePartsAndTagGroups`). Renaming a part keeps `legacy`. Code that needs "the curry part" (presets, caps,
+  the conversion) finds it by `legacy` through `legacyPartIds`, never by name.
+- **Rule shapes.** Leaves are `part` and `category` (a category id), not `role`, `componentType`, `base_category_id`, `extra_category_id` or
+  `curry_category`. `only_allow`, `skip_when` and `no_repeat` take part ids (`no_repeat` without parts means every part; v24 writes them explicitly).
+  Descriptions and the editor read part names from the stored parts. A rule naming a deleted category reads "category #n".
+- **Every rule is planned as stored.** The Stage 2 stock-default substitution (`partsSpec`: a default equal to the stock spec followed `varied`) is
+  gone. A default plans over the parts it lists. Stage 4 must rewrite never-edited stock defaults when parts are added, removed or `varied` is toggled.
+- **Link shapes.** `LinkTarget` is `{ part, kind }` (kind: category or dish; `src/rules/owned.ts`). Any part may link to any part in the UI;
+  the rule is always modelled top to bottom, a higher dish decides and a lower one follows:
+  - **comes** (`comes:<target>`, `comes_with`): the owner brings a dish of a lower part.
+  - **serve** (`serve:<target>`, `require_with`): the owner is added when a dish of a higher part is in the meal. Today's "served with bases" is the serve
+    link to the first part. "Papad comes with Sambar" (Extras over Curry) is stored as "when Sambar is in a meal, Papad is added".
+  - A comes link into the owner's own part (a sibling) exists only for a part that is not the first and is not capped at one per meal (today, extras).
+    It is never wrong-way, and a comes link may name a `when` for any part except the part it brings into and the first part (the model allows this; the link editor offers a
+    wait only to a first-part owner's link, on the capped parts after the first that sit above the target's part: extras wait on curry and subzi, subzi on
+    curry, curry on nothing, and a stored wait stays editable).
+  - `offersLink` and `addableSlots` take the parts and the capped parts (read from the cap rules), so a dish is offered only links that mean something.
+- **v24.** Converts stored rules and links to these shapes in one transaction (`src/db/rules-over-parts.ts`, `convertRuleSpec`), keeping every rule. A stock
+  default becomes `defaultRules(parts)`'s spec for its key; an edited one gets the plain leaf conversion. Existing upward links flip: a subzi or extra that
+  "comes with" a curry becomes "added when that curry is in the meal". An upward comes link with a `when` stays comes (flipping would lose its condition;
+  today's UI cannot make one) and the wrong-way check names it. Flipped links keep their old rule names until renamed.
+- **Frozen builders.** v14 to v22 keep writing the shapes of their own time: `src/db/legacy-rules.ts` (v15 to v22 builders, a copy of the id remapping v20 used)
+  and `src/db/legacy-v14.ts` (the v14 converter and its dependencies). Only `src/db/client.ts` and db tests may import them (an isolation test enforces it).
+  Each upgrade test now ends at v24, and asserts v24 output.
+- **Wrong-way links.** After a reorder (Stage 4) a comes link whose target is not below its owner, or a serve link whose target is not above it, is skipped by
+  `compileRules` and named as a rule issue; the link list shows the same notice. Nothing is deleted.
+- **Solver.** A dish placed in any part brings its pairings: a base brings Sambar, Sambar's serve link brings Papad (chained, up to `BRING_ROUNDS`). Adding or
+  removing a dish in a many-dish part brings or takes its pairings in other parts. A link within one part keeps the old add-and-remove-alone path, and a dish
+  that brings nothing across parts takes the old path.
+- **Rule-case runner.** A case may carry its own parts (`PlanCase.library`, `CaseWeeks.parts`), so cases run on any parts (Main, Side, Dessert); the default rules
+  are built over the parts the library has, but a custom library gets no default cap rules (they exist only for the converted Curry and Subzi), so a case that
+  needs a cap writes it as a rule. A case may declare `issues` it expects (rule issues such as a wrong-way link); unexpected issues still fail it. Helpers that read the
+  legacy weeks throw on a custom library.
+- **Files that still name base, curry, subzi or extras** (the legacy list): `src/db/parts.ts`, `src/db/seed.tsx`, `src/db/seed-data.ts`,
+  `src/db/legacy-rules.ts`, `src/db/legacy-v14.ts`, `src/db/rules-over-parts.ts`, `src/rules/legacy-parts.ts`, `src/rules/defaults.ts`, `src/rule-cases/run.ts`,
+  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), the upgrades,
+  and Stage 3b's `link-warnings.ts` and `src/assistant`.
+- **Stage 3b owns:** link warnings over cap rules (`link-warnings.ts` still reasons about one curry and one subzi); the assistant (it drafts old fields, and
+  an upward comes becomes a serve link); condition editor fields and presets over parts; the planner's joint part; a flipped subzi to curry link bringing its
+  subzi when another subzi holds the one place; the picker bringing for a hand-picked curry (it lists the conflict, as today). Removal does not cascade
+  to an orphaned side until polish, as before.
+
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
 
 A rule may be owned by a component (`owner_component_id`, at most one per template), edited on that
 component's form (`comes_with` is owned-only: `OWNED_ONLY_TEMPLATES`, hidden from the Rules page and the assistant's rule templates, and its `of` must pin one kind of dish); the Rules page does not list owned rules, and a link to one goes to its dish. Any dish can own a list of **goes with / never with**
 links (`DishLink` in `src/rules/owned.ts`). A link has a mode, a target, values, a strength and an optional scope. The target is
-the categories of another kind of dish (base categories, extra categories, curry types) or specific dishes (bases, curries,
-subzis, extras); a dish is never offered its own kind where a meal holds only one, and a base is not offered base categories or
-bases. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
+a part and a kind (`LinkTarget`): the categories of another part (base categories, extra categories, curry types today) or specific dishes (bases, curries,
+subzis, extras); a dish is never offered its own kind where a meal holds only one, and a dish is offered its own part only where a meal may hold two. "Only with" limits the dish to the chosen values, "never with" keeps it away from them; none chosen is no rule. Both modes
 of one target may be set at once, each as its own rule (`with:<target>`, `never:<target>`). A dish may also **come with** sides
 (`comes:<target>`, a `comes_with` rule): a base, curry, subzi or extra brings one of the chosen side dishes (or a side of the chosen
 categories) into its meal, so Idiyappam can come with Kerala Stew. A dish may hold several comes links of one kind, each its own
 rule. An old "only with" link to side targets still compiles as the limit it was and is listed with a note; editing it stores it as
 comes. A curry, subzi or extra may also be
-**served with** specific bases or base categories (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
-is the meal's base, the dish is added. Served with is the way to add a side to a base. The planner plans a base together with
+**served with** specific dishes or categories of a higher part (`serve:<target>`, a `require_with` rule the dish owns): whenever one of them
+is in the meal, the dish is added. Served with the first part is how a side is added to a base (see Stage 3a for the part-based shapes). The planner plans a base together with
 its served-with dishes (see **Pairings as units** below); picking a base by hand on the plan re-plans only that meal through the
 planner: `pinsForMeal` in `src/services/pins.ts` pins every other meal exactly (and holds a part empty with `null` in
 `SlotPins`), so the meal's sides follow every rule and locked parts stay. The re-plan is applied only if the meal is still as
@@ -175,7 +218,7 @@ side is the dish type plus the (negated) categories; a comes link is a `comes_wi
 
 On the dish form, "Goes with" is a list of sentences (`describeLink`, with `shortLink` for the row badges in
 `src/rules/link-text.ts`), each with Edit and Remove, and an "Add link" flow (`src/components/library/links`) with a searchable
-option picker and optional day and meal limits. `addableSlots(componentType, links)` in `src/rules/owned.ts` lists the slots Add may still fill (served with for every dish but a base; "with" for base targets and "never" for every target `offersLink` allows, specific dishes included; never "with" for a side target, which is made as "comes with"; comes links never count as taken). `LinkEditor` then offers "Comes with" and "Never with" for side targets and "Served with", "Only with" and "Never with" for base targets, and "Comes with" wherever `offersComes` allows, as often as wanted, so a dish may hold several. Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
+option picker and optional day and meal limits. `addableSlots(ownerPart, links, targets, parts, capped)` in `src/rules/owned.ts` lists the slots Add may still fill: every mode `linkModes` offers from the owner's part to each target (`linkTargets` lists them), except a slot the dish already fills. A bring slot below the first part ("comes with", or "served with" a higher part) may be repeated, so a dish may hold several. `LinkEditor` offers, per target, the modes `linkModes` returns: to the first part the bring mode ("Served with" or "Comes with"), "Only with" and "Never with"; to any other part the bring mode and "Never with"; to the owner's own part "Comes with" and "Never with", only where `offersLink` allows (not the first part, not a part capped at one per meal). Existing links always stay listed and editable. A stored link that is switched off (as the v19 upgrade may leave a hand-written pairing) is
 marked "(off)" and stays off until it is changed and saved, which switches it on; `propose_pairing` treats it as not in force. Links are tracked by rule id (`DishLink.ruleId`; `readOwned` keeps every link, `linkChanges` diffs the form's links against the stored ones, and `saveComponent(..., links)` and `pendingRules(..., links)` take them), so links left untouched are never rewritten on save. `link-warnings.ts` shows
 warnings: a contradiction between modes, nothing plannable to pair with, and a link hidden by another dish's meal or
 day limits. Warnings block Save when a meal could not hold both, since it holds one curry and one subzi: a second curry (or subzi)
@@ -191,7 +234,7 @@ a "Preview on this week" button that compares the current plan with and without 
 library lookup (`LibraryLookup.tsx`: dishes, categories and all rules, provided by `ComponentTab`; outside it, the hook runs its
 own queries).
 
-Served with is edited on the side dish; comes with on the dish that brings the sides (a base included); Manage Categories has
+Served with is edited on the lower dish; comes with on the dish that brings the lower one (a base included); Manage Categories has
 no pairing editor. A dish's specific days
 are an `only on certain days` (`allowed_days`) rule (any day, weekdays, weekends or specific days);
 "never plan automatically" is an `exclude` rule. Occasion tags are only descriptive (`fasting`,
@@ -282,7 +325,7 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free parts only and
-  never over a pin, then their own pairings (up to `BRING_ROUNDS`). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
+  never over a pin, then their own pairings (up to `BRING_ROUNDS`). This holds in every part: a dish served with a curry follows that curry whether a base brought it or the search placed it, and adding or removing a dish of a many-dish part (a curry, where curries have no cap) brings or takes its pairings when one of them is in another part (a link within the part, such as an extra that comes with another extra, leaves the dish added and removed alone). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
   the candidate's own `dish` limits it overrides (`ownRulesOverridden`: its days, meals and never-auto, which give way to a unit member),
   then the `frequency` limits it breaks as a freed pick, then soft score. `broughtScore` returns these as separate components
   (`BroughtScore { hard, overrides, limits, soft }`), compared in that order by `compareBrought`, not folded into one weighted sum; ties go to the lowest weighted use `(times planned + o) × 2^w`, where `w` is the weight of the prefer rules that

@@ -1,6 +1,6 @@
 // Plans the week with two rule sets (same seed and pins) and reports which meals change.
 import type { LegacyPins } from './pins';
-import { linkRule, ownedSlot, PLAIN_OWNED_SLOTS, type LinkChange, type OwnedRule, type OwnedRuleChanges, type RuleRecord } from '@/rules';
+import { linkRule, ownedSlot, PLAIN_OWNED_SLOTS, type LinkChange, type LinkParts, type OwnedRule, type OwnedRuleChanges, type RuleRecord } from '@/rules';
 import type { Comparison } from '@/assistant/types';
 import { diffPlans, type PlanningInput, type PlanProblem } from './plan-generation';
 import { runPlanning } from './planning';
@@ -34,13 +34,14 @@ export async function compareRuleSets(
   };
 }
 
-/** The rules as they would be once the dish form is saved, applied the way saveComponent applies them. */
+/** The rules as they would be once the dish form is saved, applied the way saveComponent applies them. `parts` are the stored parts in meal order. */
 export function pendingRules(
   rules: RuleRecord[],
   dishId: number,
   changes: OwnedRuleChanges,
   dishName: string,
   links: readonly LinkChange[] = [],
+  parts: LinkParts = [],
 ): RuleRecord[] {
   let out = [...rules];
   let nextId = -1;
@@ -49,7 +50,7 @@ export function pendingRules(
   for (const slot of PLAIN_OWNED_SLOTS) {
     const build = changes[slot];
     if (build === undefined) continue;
-    const current = out.find((r) => r.owner_component_id === dishId && ownedSlot(r) === slot);
+    const current = out.find((r) => r.owner_component_id === dishId && ownedSlot(r, parts) === slot);
     if (build === null) {
       if (current) out = out.filter((r) => r !== current);
       continue;
@@ -61,14 +62,14 @@ export function pendingRules(
   }
   for (const change of links) {
     if (change.kind === 'add') {
-      add(linkRule(self, change.link));
+      add(linkRule(self, change.link, parts));
       continue;
     }
     const current = out.find((r) => r.id === change.ruleId && r.owner_component_id === dishId);
     if (!current) continue;
     if (change.kind === 'remove') out = out.filter((r) => r !== current);
     // A written link keeps its id and date and is switched on.
-    else out = out.map((r) => (r === current ? { ...current, ...linkRule(self, change.link), enabled: true } : r));
+    else out = out.map((r) => (r === current ? { ...current, ...linkRule(self, change.link, parts), enabled: true } : r));
   }
   return out;
 }

@@ -1,18 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { is, matcherFields, type Constraint, type Matcher } from '@/planner';
-import { compileRules, ruleLevel, type RuleRecord } from './record';
-import { defaultRules } from './defaults';
+import { all, is, matcherFields, not, oneOf, type Constraint, type Matcher } from '@/planner';
+import { cappedParts, compileRules, missingReferences, ruleLevel, type KnownIds, type RuleRecord } from './record';
+import { RuleSpecSchema } from './templates';
+import { capRules, defaultRules } from './defaults';
 import { linkRule } from './owned';
 import { TEST_RULE_PARTS } from './test-parts';
 
-const known = { components: new Set([1, 2]), baseCategories: new Set([10]), extraCategories: new Set([30]) };
+const known = { components: new Set([1, 2]), categories: new Set([10, 30]), parts: new Set([1, 2, 3, 4]), partOf: new Map<number, number>() };
 const rule = (id: number, spec: unknown, enabled = true): RuleRecord =>
   ({ id, name: `Rule ${id}`, enabled, spec: spec as RuleRecord['spec'], created_at: '' });
 
 describe('compileRules', () => {
   it('compiles enabled rules with stable ids, the rule name as label and the rule id for explanations', () => {
     const { constraints, issues } = compileRules([
-      rule(7, { template: 'skip_when', params: { when: is('id', 1), skip: ['curry', 'subzi'] } }),
+      rule(7, { template: 'skip_when', params: { when: is('id', 1), skip: [2, 3] } }),
       rule(8, { template: 'exclude', params: { match: is('id', 2) } }, false),
     ], known, TEST_RULE_PARTS);
     expect(issues).toEqual([]);
@@ -30,10 +31,43 @@ describe('compileRules', () => {
 
   it('skips and reports rules that refer to deleted components or categories', () => {
     const { constraints, issues } = compileRules([
-      rule(1, { template: 'require_with', params: { when: is('base_category_id', 99), components: [3], extraCategories: [30] } }),
+      rule(1, { template: 'require_with', params: { when: is('base_category_id', 99), components: [3], categories: [30] } }),
     ], known, TEST_RULE_PARTS);
     expect(constraints).toEqual([]);
-    expect(issues[0].message).toBe('refers to component #3, base category #99, which no longer exists');
+    expect(issues[0].message).toBe('refers to component #3, category #99, which no longer exists');
+  });
+
+  it('names a deleted part or category held in a part or category leaf', () => {
+    const { constraints, issues } = compileRules([
+      rule(1, { template: 'exclude', params: { match: all(is('part', 9), is('category', 99)) } }),
+      rule(2, { template: 'only_allow', params: { match: is('category', 10), parts: [2, 8] } }),
+      rule(3, { template: 'exclude', params: { match: is('category', 30) } }),
+    ], known, TEST_RULE_PARTS);
+    expect(constraints.map((c) => c.ruleId)).toEqual([3]);
+    expect(issues.map((i) => i.message)).toEqual([
+      'refers to part #9, category #99, which no longer exists',
+      'refers to part #8, which no longer exists',
+    ]);
+    expect(missingReferences(RuleSpecSchema.parse({ template: 'skip_when', params: { when: is('id', 1), skip: [7] } }), known)).toEqual(['part #7']);
+  });
+
+  it('skips and names a rule that would leave out the first part', () => {
+    const { constraints, issues } = compileRules([
+      rule(1, { template: 'skip_when', params: { when: is('id', 1), skip: [1, 3] } }),
+      rule(2, { template: 'skip_when', params: { when: is('id', 1), skip: [3] } }),
+    ], known, TEST_RULE_PARTS);
+    expect(issues).toEqual([{ ruleId: 1, name: 'Rule 1', message: expect.stringContaining('Base') }]);
+    expect(constraints.map((c) => c.ruleId)).toEqual([2]);
+  });
+
+  it('no longer reads the old roles and skip names, and says so', () => {
+    const { constraints, issues } = compileRules([
+      rule(1, { template: 'only_allow', params: { match: is('id', 1), roles: ['curry'] } }),
+      rule(2, { template: 'skip_when', params: { when: is('id', 1), skip: ['subzi'] } }),
+      rule(3, { template: 'no_repeat', params: { match: is('id', 1), roles: ['curry'] } }),
+    ], known, TEST_RULE_PARTS);
+    expect(constraints).toEqual([]);
+    expect(issues.map((i) => [i.ruleId, i.message.startsWith('invalid rule')])).toEqual([[1, true], [2, true], [3, true]]);
   });
 
   it('skips and reports a rule naming slot_part, which the planner cannot match, and still compiles the others', () => {
@@ -46,7 +80,7 @@ describe('compileRules', () => {
   });
 
   describe('what gives way to a unit', () => {
-    const skip = { template: 'skip_when', params: { when: is('id', 1), skip: ['curry', 'subzi'] } };
+    const skip = { template: 'skip_when', params: { when: is('id', 1), skip: [2, 3] } };
     const withKey = (r: RuleRecord, extra: Partial<RuleRecord>): RuleRecord => ({ ...r, ...extra });
     const compile = (r: RuleRecord) => compileRules([r], { ...known, components: new Set([1, 2, 3, 7]) }, TEST_RULE_PARTS).constraints;
 
@@ -154,7 +188,7 @@ describe('the level each compiled rule sits on', () => {
 
   it('default rules sit where the design puts them', () => {
     const level = (key: string) => {
-      const d = defaultRules().find((r) => r.default_key === key)!;
+      const d = defaultRules(TEST_RULE_PARTS.list).find((r) => r.default_key === key)!;
       const [c] = compile({ ...d, id: 1, enabled: true, created_at: '' });
       return 'level' in c ? c.level : undefined;
     };
@@ -165,7 +199,7 @@ describe('the level each compiled rule sits on', () => {
   });
 
   it('pairs carry no level', () => {
-    const [c] = compile(rule(1, { template: 'comes_with', params: { match: is('id', 1), of: { all: [is('componentType', 'curry'), is('id', 2)] } } }));
+    const [c] = compile(rule(1, { template: 'comes_with', params: { match: is('id', 1), of: { all: [is('part', 2), is('id', 2)] } } }));
     expect(c.kind).toBe('pair');
     expect(c).not.toHaveProperty('level');
     const [d] = compile(rule(2, { template: 'require_with', params: { when: is('id', 1), components: [2] } }));
@@ -178,7 +212,7 @@ describe('ruleLevel', () => {
     expect(ruleLevel(rule(1, { template: 'exclude', params: { match: is('id', 1), strength: 'must' } }))).toBe('rule');
     expect(ruleLevel(rule(2, { template: 'limit', params: { match: is('id', 1), per: 'week', min: 1, max: 3 } }))).toBe('frequency');
     expect(ruleLevel(rule(3, { template: 'require_with', params: { when: is('id', 1), components: [2] } }))).toBe('bring');
-    const d = defaultRules().find((r) => r.default_key === 'extras-limit-lunch')!;
+    const d = defaultRules(TEST_RULE_PARTS.list).find((r) => r.default_key === 'extras-limit-lunch')!;
     expect(ruleLevel({ ...d, id: 4, enabled: true, created_at: '' })).toBe('dish');
     expect(ruleLevel(rule(5, { template: 'nope' }))).toBeUndefined();
   });
@@ -198,9 +232,9 @@ describe('compiled rules are about parts', () => {
   const records = (...specs: RuleRecord[]) => specs.map((r, i) => ({ ...r, id: i + 1 }));
   const stored = (name: string, r: { name: string; spec: RuleRecord['spec']; default_key?: string; owner_component_id?: number }): RuleRecord =>
     ({ ...r, id: 0, enabled: true, created_at: '', name });
-  const defaults = defaultRules().map((r) => stored(r.name, r as never));
-  const lib = { components: new Set([1, 2, 3]), baseCategories: new Set<number>(), extraCategories: new Set<number>() };
-  const link = linkRule({ id: 1, name: 'Plain Rice' }, { mode: 'comes', target: 'extra_dish', values: [3], when: { curry: [2] } });
+  const defaults = defaultRules(TEST_RULE_PARTS.list).map((r) => stored(r.name, r as never));
+  const lib = { components: new Set([1, 2, 3]), categories: new Set<number>(), parts: new Set([1, 2, 3, 4]), partOf: new Map<number, number>() };
+  const link = linkRule({ id: 1, name: 'Plain Rice' }, { mode: 'comes', target: { part: 4, kind: 'dish' }, values: [3], when: { 2: [2] } }, TEST_RULE_PARTS.list);
 
   it('leaves no role or componentType leaf in the defaults and a conditional link', () => {
     const { constraints, issues } = compileRules(records(stored('Plain Rice link', link), ...defaults), lib, TEST_RULE_PARTS);
@@ -220,8 +254,8 @@ describe('compiled rules are about parts', () => {
     return constraints.map((c) => (c.kind === 'pair' ? undefined : c.select));
   };
 
-  // A no-repeat select is the match, then the roles it covers (every part here).
-  const repeated = (ids: number[]) => ({ all: [{ field: 'part', op: 'in', value: ids }, { field: 'part', op: 'in', value: [1, 2, 3, 4] }] });
+  // A no-repeat select is the match, counted in every part.
+  const repeated = (ids: number[]) => ({ all: [{ field: 'part', op: 'in', value: ids }] });
 
   it('variety and spacing name the varied parts, and sides-only names every part after the first', () => {
     expect(selectOf('variety')).toEqual([repeated([1, 2, 3])]);
@@ -229,15 +263,18 @@ describe('compiled rules are about parts', () => {
     expect(selectOf('sides-only-when-asked')).toEqual([{ field: 'part', op: 'in', value: [2, 3, 4] }]);
   });
 
-  it('a part that is not varied is left out of variety and spacing', () => {
+  it('a part that is not varied is left out of the variety and spacing defaults built over it', () => {
     const parts = { ...TEST_RULE_PARTS, list: TEST_RULE_PARTS.list.map((p) => (p.name === 'Subzi' ? { ...p, varied: false } : p)) };
-    expect(selectOf('variety', parts)).toEqual([repeated([1, 2])]);
-    expect(selectOf('spacing', parts)).toEqual([repeated([1, 2])]);
+    const over = defaultRules(parts.list).map((r) => stored(r.name, r as never));
+    for (const key of ['variety', 'spacing']) {
+      const { constraints } = compileRules(records(over.find((r) => r.default_key === key)!), lib, parts);
+      expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([repeated([1, 2])]);
+    }
   });
 
   it('plans an edited default as stored: only its component types become parts', () => {
     const rule = defaults.find((r) => r.default_key === 'variety')!;
-    const edited = { ...rule, spec: { template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', strength: 'prefer', cost: 5, roles: ['curry'] } } } as RuleRecord;
+    const edited = { ...rule, spec: { template: 'no_repeat', params: { match: is('componentType', 'curry'), within: 'week', strength: 'prefer', cost: 5, parts: [2] } } } as RuleRecord;
     const { constraints } = compileRules(records(edited), lib, TEST_RULE_PARTS);
     expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([
       { all: [{ field: 'part', op: 'eq', value: 2 }, { field: 'part', op: 'in', value: [2] }] },
@@ -248,10 +285,144 @@ describe('compiled rules are about parts', () => {
       .toEqual([{ field: 'part', op: 'eq', value: 4 }]);
   });
 
+  it('keeps an edited part list: the planner varies only the parts the default lists', () => {
+    const variety = defaults.find((r) => r.default_key === 'variety')!;
+    const edited = { ...variety, spec: { ...variety.spec, params: { ...variety.spec.params, match: oneOf('part', [1, 2]) } } } as RuleRecord;
+    const { constraints } = compileRules(records(edited), lib, TEST_RULE_PARTS);
+    expect(constraints.map((c) => (c.kind === 'pair' ? undefined : c.select))).toEqual([repeated([1, 2])]);
+  });
+
+  it('plans a stored default as stored when the parts have changed since', () => {
+    // Stage 4's part editing rewrites the unedited defaults when parts change; until then they keep what they name.
+    const parts = { ...TEST_RULE_PARTS, list: [...TEST_RULE_PARTS.list, { id: 5, name: 'Dessert', varied: true }] };
+    expect(selectOf('variety', parts)).toEqual([repeated([1, 2, 3])]);
+    expect(selectOf('sides-only-when-asked', parts)).toEqual([{ field: 'part', op: 'in', value: [2, 3, 4] }]);
+  });
+
   it('does not change the stored rule', () => {
     const rule = defaults.find((r) => r.default_key === 'variety')!;
     const before = JSON.stringify(rule);
     compileRules(records(rule), lib, TEST_RULE_PARTS);
     expect(JSON.stringify(rule)).toBe(before);
+  });
+
+  it('skips and names a rule over a component type when there are no legacy part ids to read it by', () => {
+    const noLegacy = { list: TEST_RULE_PARTS.list };
+    const old = rule(1, { template: 'limit', params: { match: is('componentType', 'base'), per: 'meal', max: 1, strength: 'must' } });
+    const byPart = rule(2, { template: 'limit', params: { match: is('part', 1), per: 'meal', max: 1, strength: 'must' } });
+    const { constraints, issues } = compileRules([old, byPart], known, noLegacy);
+    expect(issues).toEqual([expect.objectContaining({ ruleId: 1, message: expect.stringContaining('"componentType"') })]);
+    expect(constraints.map((c) => c.ruleId)).toEqual([2]);
+    const category = rule(3, { template: 'limit', params: { match: is('base_category_id', 10), per: 'meal', max: 1, strength: 'must' } });
+    expect(compileRules([category], known, noLegacy).issues).toHaveLength(1);
+    expect(compileRules([old], known, TEST_RULE_PARTS).issues).toEqual([]);
+  });
+});
+
+describe('links over parts', () => {
+  const PARTS = TEST_RULE_PARTS.list;
+  const known: KnownIds = {
+    components: new Set([1, 2, 3, 12]), categories: new Set([10, 11, 30]), parts: new Set([1, 2, 3, 4]),
+    partOf: new Map<number, number>(),
+    // 10 and 11 are base categories, 30 an extra one.
+    categoryPart: new Map([[10, 1], [11, 1], [30, 4]]),
+  };
+  const at = (id: number, spec: RuleRecord['spec']): RuleRecord => ({ ...rule(id, spec), owner_component_id: 12 });
+
+  it('a pairing compiles against the first part: a dish of it outside the categories keeps the dish out', () => {
+    const { constraints, issues } = compileRules([at(1, linkRule({ id: 12, name: 'Sambar' }, { mode: 'with', target: { part: 1, kind: 'category' }, values: [10] }, PARTS).spec)], known, TEST_RULE_PARTS);
+    expect(issues).toEqual([]);
+    expect(constraints).toMatchObject([{
+      kind: 'count', select: all(is('id', 12), not(is('part', 1))), when: { exists: all(is('part', 1), not(oneOf('category', [10]))) }, bounds: { hardMax: 0 },
+    }]);
+  });
+
+  it('skips a comes link that waits for the first part, which every meal holds', () => {
+    const spec = { template: 'comes_with' as const, params: { match: is('id', 12), of: all(is('part', 4), oneOf('id', [3])), when: { 1: [1] } } };
+    const { constraints, issues } = compileRules([at(1, spec)], known, TEST_RULE_PARTS);
+    expect(constraints).toEqual([]);
+    expect(issues).toEqual([{ ruleId: 1, name: 'Rule 1', message: 'waits for Base, which every meal holds' }]);
+  });
+
+  it('skips a link naming a category of another part than the one it points at', () => {
+    const pairing = { template: 'pairs_with' as const, params: { match: is('id', 12), categories: [10, 30] } };
+    const comes = linkRule({ id: 12, name: 'Sambar' }, { mode: 'comes', target: { part: 4, kind: 'category' }, values: [11] }, PARTS).spec;
+    const { constraints, issues } = compileRules([at(1, pairing), at(2, comes)], known, TEST_RULE_PARTS);
+    expect(constraints).toEqual([]);
+    expect(issues.map((i) => i.message)).toEqual([
+      'refers to category #30, which is not a category of Base',
+      'refers to category #11, which is not a category of Extras',
+    ]);
+    // Without the categories' parts, nothing is checked.
+    expect(compileRules([at(1, pairing)], { ...known, categoryPart: undefined }, TEST_RULE_PARTS).issues).toEqual([]);
+  });
+});
+
+describe('links that point the wrong way', () => {
+  const PARTS = TEST_RULE_PARTS.list;
+  // Dish 12 is a subzi (part 3): the curry (2) is above it and the extras (4) below.
+  const known: KnownIds = { components: new Set([1, 2, 3, 12]), categories: new Set<number>(), parts: new Set([1, 2, 3, 4]), partOf: new Map([[12, 3]]) };
+  const link = (id: number, mode: 'comes' | 'serve', part: number, owner = 12): RuleRecord =>
+    ({ ...rule(id, linkRule({ id: owner, name: 'Beans' }, { mode, target: { part, kind: 'dish' }, values: [3] }, PARTS).spec), owner_component_id: owner });
+  const compile = (r: RuleRecord, k = known) => compileRules([r], k, TEST_RULE_PARTS);
+
+  it('plans a comes link to a lower part and a serve link to a higher one', () => {
+    expect(compile(link(1, 'comes', 4)).issues).toEqual([]);
+    expect(compile(link(2, 'serve', 2)).issues).toEqual([]);
+    expect(compile(link(2, 'serve', 2)).constraints).toHaveLength(1);
+  });
+
+  it('skips and names a comes link to a higher part', () => {
+    const { constraints, issues } = compile(link(1, 'comes', 2));
+    expect(constraints).toEqual([]);
+    expect(issues).toEqual([{ ruleId: 1, name: 'Rule 1', message: 'points to Curry, which is no longer below Subzi' }]);
+  });
+
+  it('skips and names a serve link to a lower part, or to the owner\'s own part', () => {
+    expect(compile(link(1, 'serve', 4)).issues.map((i) => i.message)).toEqual(['points to Extras, which is no longer above Subzi']);
+    expect(compile(link(2, 'serve', 3)).issues.map((i) => i.message)).toEqual(['points to Subzi, which is no longer above Subzi']);
+  });
+
+  it('skips and names an upward comes link that waits for another part, the shape the upgrade leaves as comes', () => {
+    // A "comes with" link to a higher part that waits for a dish of another part cannot become a serve link
+    // without losing its condition, so the upgrade keeps it as comes; it is named here instead of planned.
+    const waiting: RuleRecord = {
+      ...rule(1, linkRule({ id: 12, name: 'Beans' }, { mode: 'comes', target: { part: 2, kind: 'dish' }, values: [3], when: { 4: [2] } }, PARTS).spec),
+      owner_component_id: 12,
+    };
+    expect(waiting.spec.template).toBe('comes_with');
+    expect('when' in waiting.spec.params && waiting.spec.params.when).toBeTruthy();
+    const { constraints, issues } = compile(waiting);
+    expect(constraints).toEqual([]);
+    expect(issues.map((i) => i.message)).toEqual(['points to Curry, which is no longer below Subzi']);
+  });
+
+  it('plans a comes link to the owner\'s own part: it brings a sibling, which is not the wrong way', () => {
+    const { constraints, issues } = compile(link(1, 'comes', 3));
+    expect(issues).toEqual([]);
+    expect(constraints).toHaveLength(1);
+  });
+
+  it('keeps a link whose owner has no known part, and a rule that is not the dish\'s own link', () => {
+    expect(compile(link(1, 'comes', 2), { ...known, partOf: new Map() }).issues).toEqual([]);
+    const notOwned = { ...link(1, 'comes', 2), owner_component_id: undefined };
+    expect(compile(notOwned).issues).toEqual([]);
+  });
+});
+
+describe('cappedParts', () => {
+  const stored = (r: { name: string; spec: RuleRecord['spec'] }, id: number, enabled = true): RuleRecord => ({ ...r, id, enabled, created_at: '' });
+
+  it('reads the parts capped at one per meal as the planner does: enabled, hard, unscoped', () => {
+    const caps = capRules(TEST_RULE_PARTS.list).map((r, i) => stored(r, i + 1));
+    expect([...cappedParts(caps, TEST_RULE_PARTS)].sort()).toEqual([2, 3]);
+    expect([...cappedParts([{ ...caps[0], enabled: false }, caps[1]], TEST_RULE_PARTS)]).toEqual([3]);
+    const soft = stored({ name: 'soft', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 1, strength: 'prefer' } } }, 9);
+    const two = stored({ name: 'two', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 2 } } }, 10);
+    const lunch = stored({ name: 'lunch', spec: { template: 'limit', params: { match: is('part', 4), per: 'meal', max: 1, scope: { meals: ['lunch'] } } } }, 11);
+    expect([...cappedParts([soft, two, lunch], TEST_RULE_PARTS)]).toEqual([]);
+    // An old rule over a component type is read through the converted parts.
+    const old = stored({ name: 'old', spec: { template: 'limit', params: { match: is('componentType', 'extra'), per: 'meal', max: 1 } } }, 12);
+    expect([...cappedParts([old], TEST_RULE_PARTS)]).toEqual([4]);
   });
 });

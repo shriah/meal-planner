@@ -8,7 +8,8 @@ import { checkDraftRule, type DraftCheck } from '@/services/planning';
 import { RuleEditor } from './RuleEditor';
 
 vi.mock('@/services/planning', () => ({ checkDraftRule: vi.fn() }));
-vi.mock('dexie-react-hooks', () => ({ useLiveQuery: (_q: unknown, _d: unknown, initial: unknown) => initial }));
+// Every query has loaded and is empty (a query without a starting value, such as the parts, too).
+vi.mock('dexie-react-hooks', () => ({ useLiveQuery: (_q: unknown, _d: unknown, initial: unknown) => initial ?? [] }));
 
 const check = vi.mocked(checkDraftRule);
 const issue = (draftIssue: string): DraftCheck => ({ draftProblems: [], otherProblems: [], draftIssue });

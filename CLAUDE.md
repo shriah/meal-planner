@@ -18,7 +18,8 @@ route is `src/app/api/export-plan`. Read `docs/architecture.md` before changing 
 - A **meal** is a **base** plus optional **curry**, **subzi** and **extras**. "Dish" = any component.
   Underneath, a meal is one dish of the first **part** plus dishes in each lower part; the converted parts Base, Curry, Subzi, Extras
   are today's base, curry, subzi and extras. Two cap rules ("At most one Curry/Subzi per meal") replace the built-in one-curry/one-subzi.
-- **Served with**: a link a dish owns that adds it whenever one of its bases is the meal's base. This is how a side is added to a base.
+- **Served with**: a link a dish owns that adds it whenever a dish of a higher part is in the meal. Served with the first part is how a side is added to a base.
+- **Comes with**: a link a dish owns that brings a dish of a lower part into its meal. Links are always modelled top to bottom.
 - **Owned rule**: a rule belonging to a dish, edited on that dish's form, not listed on the Rules page.
 - **Strength** words come only from `STRENGTH_WORDS` in `src/rules/levels.ts`: Always (`must`), Usually, Often, Sometimes.
   Prefer/avoid weights use `LEVELS`: Slightly, Moderately, Strongly. Don't invent other wording.

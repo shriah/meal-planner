@@ -6,11 +6,19 @@ import { MAX_LIST_ITEMS } from './limits';
 import type { AssistantData } from './retrieve';
 import { TOOL_DECLARATIONS, problemsForSlot, runTool } from './tools';
 import type { PlanProblem } from '@/services/plan-generation';
-import { dayRule, linkRule, HAND_TEMPLATE_IDS } from '@/rules';
+import { dayRule, linkRule as buildLink, HAND_TEMPLATE_IDS } from '@/rules';
 import { ALL_DAYS, type WeeklyPlan } from '@/types/plan';
 import { MEALS } from '@/planner';
 import type { ToolContext } from './types';
 import { withParts } from '@/services/test-input';
+import { TEST_RULE_PARTS } from '@/rules/test-parts';
+
+// The converted parts, ids 1 to 4 (Base, Curry, Subzi, Extras), as link targets.
+const LINK_TARGET = {
+  base_dish: { part: 1, kind: 'dish' }, curry_dish: { part: 2, kind: 'dish' }, subzi_dish: { part: 3, kind: 'dish' }, extra_dish: { part: 4, kind: 'dish' },
+  base_category: { part: 1, kind: 'category' }, extra_category: { part: 4, kind: 'category' }, curry_category: { part: 2, kind: 'category' },
+} as const;
+const linkRule = (owner: { id: number; name: string }, link: Parameters<typeof buildLink>[1]) => buildLink(owner, link, TEST_RULE_PARTS.list);
 
 const dish = (id: number, name: string, extra: Partial<ComponentRecord> = {}): ComponentRecord =>
   ({ id, name, componentType: 'curry', dietary_tags: ['veg'], regional_tags: [], occasion_tags: [], notes: 'secret notes', created_at: '', ...extra } as ComponentRecord);
@@ -278,7 +286,7 @@ describe('explain_plan_slot: dishes and why not', () => {
   it('lists the dishes a pairing brought into the slot', async () => {
     const pongal = dish(10, 'Pongal', { componentType: 'base' });
     const sambar = dish(11, 'Sambar');
-    const owned = linkRule(sambar, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const owned = linkRule(sambar, { mode: 'serve', target: LINK_TARGET.base_dish, values: [10], strength: 'always' });
     const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 11 } as RuleRecord;
     const lib = [pongal, sambar, ...library];
     const r = await runTool('explain_plan_slot', { day: 'wednesday', meal: 'breakfast' }, ctxOf({
@@ -444,7 +452,7 @@ describe('simulate_with_rule', () => {
 
   it('refuses a comes_with spec, which only a dish form or propose_pairing makes, without comparing', async () => {
     const calls: unknown[] = [];
-    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2] }).spec;
     const r = await runTool('simulate_with_rule', { name: 'x', spec: comes }, withCompare(1, calls));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toMatch(/comes_with/);
@@ -478,7 +486,7 @@ describe('propose_rule', () => {
 
   it('refuses a comes_with spec and points at propose_pairing', async () => {
     const lib = [dish(1, 'Idiyappam', { componentType: 'base' }), dish(2, 'Kerala Stew')];
-    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [2] }).spec;
+    const comes = linkRule({ id: 1, name: 'Idiyappam' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2] }).spec;
     const r = await runTool('propose_rule', { name: 'x', spec: comes }, ctxOf({ library: lib }));
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toMatch(/propose_pairing/);
@@ -533,8 +541,8 @@ describe('propose_dish', () => {
     const r = await runTool('propose_dish', { name: 'Coconut Chutney', componentType: 'extra', served_with_bases: ['idli'], served_with_base_categories: ['Rice-Based'], served_with_strength: 'Often' }, ctxOf({ library: lib, categories }));
     expect(r.ok).toBe(true);
     expect((r as { effect: { links: unknown } }).effect.links).toEqual([
-      { mode: 'serve', target: 'base_dish', values: [3], strength: 'moderately' },
-      { mode: 'serve', target: 'base_category', values: [1], strength: 'moderately' },
+      { mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'moderately' },
+      { mode: 'serve', target: LINK_TARGET.base_category, values: [1], strength: 'moderately' },
     ]);
     expect((r as { data: { servedWith: string[] } }).data.servedWith).toEqual(['idli', 'Rice-Based']);
   });
@@ -619,27 +627,27 @@ describe('propose_pairing', () => {
       dishId: 1,
       dishName: 'Sambar',
       links: [
-        { mode: 'serve', target: 'base_dish', values: [3, 4], strength: 'usually' },
-        { mode: 'serve', target: 'base_category', values: [1], strength: 'usually' },
+        { mode: 'serve', target: LINK_TARGET.base_dish, values: [3, 4], strength: 'usually' },
+        { mode: 'serve', target: LINK_TARGET.base_category, values: [1], strength: 'usually' },
       ],
     });
     const byId = await runTool('propose_pairing', { dish: 1, served_with_bases: ['Idli'] }, ctx());
-    expect((byId as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }]);
+    expect((byId as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }]);
   });
 
   it('keeps the bases the dish is already served with', async () => {
-    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
+    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
     const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
     expect((r as { effect: { links: unknown } }).effect.links).toEqual([
-      { mode: 'serve', target: 'base_dish', values: [4, 3], strength: 'sometimes', scope: { meals: ['breakfast'] } },
+      { mode: 'serve', target: LINK_TARGET.base_dish, values: [4, 3], strength: 'sometimes', scope: { meals: ['breakfast'] } },
     ]);
     expect((r as { data: { alreadyServedWith: string[] } }).data.alreadyServedWith).toEqual(['Dosa']);
   });
 
   it('replaces a switched-off link instead of keeping its bases', async () => {
-    const stored = { id: 9, enabled: false, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
+    const stored = { id: 9, enabled: false, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [4], strength: 'sometimes', scope: { meals: ['breakfast'] } }) };
     const r = await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, ctx({ rules: [stored] }));
-    expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }]);
+    expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }]);
     const data = (r as { data: Record<string, unknown> }).data;
     expect(data.alreadyServedWith).toBeUndefined();
     expect(data.replacesSwitchedOffLink).toBe(true);
@@ -647,7 +655,7 @@ describe('propose_pairing', () => {
 
   it('refuses a second curry always served with the same base, but accepts a softer one', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
-    const sambarIdli = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: 'base_dish', values: [3], strength: 'always' }) };
+    const sambarIdli = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Sambar' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [3], strength: 'always' }) };
     const message = 'Sambar is already always served with Idli, and a meal holds one curry.';
     const c = () => ctxOf({ library: lib, categories, rules: [sambarIdli] });
     expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toEqual({ ok: false, error: message });
@@ -659,7 +667,7 @@ describe('propose_pairing', () => {
 
   it('propose_pairing refuses a pairing clashing with a comes-with link', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' })];
-    const comes = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 3, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [1], strength: 'always' }) };
+    const comes = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 3, name: 'Idli' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [1], strength: 'always' }) };
     const c = () => ctxOf({ library: lib, categories, rules: [comes] });
     expect(await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).toMatchObject({ ok: false, error: expect.stringContaining('Idli always comes with Sambar') });
     expect((await runTool('propose_pairing', { dish: 'Sambar', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
@@ -668,7 +676,7 @@ describe('propose_pairing', () => {
   it('checks every base a firmer strength applies to, not only the bases asked for', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Pongal', { componentType: 'base' })];
     const link = (id: number, owner: number, name: string, values: number[], strength: 'always' | 'usually') =>
-      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: 'base_dish', values, strength }) });
+      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: LINK_TARGET.base_dish, values, strength }) });
     const c = () => ctxOf({ library: lib, categories, rules: [link(9, 1, 'Sambar', [3], 'always'), link(10, 5, 'Rasam', [3, 4], 'usually')] });
     // Rasam always with Pongal would also make Rasam always served with Idli, beside Sambar.
     const r = await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Pongal'], served_with_strength: 'always' }, c());
@@ -680,7 +688,7 @@ describe('propose_pairing', () => {
   it('does not refuse a conflict that is already stored, only what the proposal adds', async () => {
     const lib = [dish(1, 'Sambar'), dish(5, 'Rasam'), dish(3, 'Idli', { componentType: 'base' }), dish(4, 'Dosa', { componentType: 'base' })];
     const rule = (id: number, owner: number, name: string, values: number[]) =>
-      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: 'base_dish', values, strength: 'always' }) });
+      ({ id, enabled: true, created_at: '', ...linkRule({ id: owner, name }, { mode: 'serve', target: LINK_TARGET.base_dish, values, strength: 'always' }) });
     const rules = [rule(9, 1, 'Sambar', [3]), rule(10, 5, 'Rasam', [3])];
     const c = () => ctxOf({ library: lib, categories, rules });
     expect((await runTool('propose_pairing', { dish: 'Rasam', served_with_bases: ['Idli'] }, c())).ok).toBe(true);
@@ -710,7 +718,8 @@ describe('propose_pairing', () => {
 });
 
 describe('comes-with drafts', () => {
-  const categories = [{ id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' }];
+  // The curry type soup is a category of the Curry part (2).
+  const categories = [{ id: 2, kind: 'extra' as const, name: 'crunchy', created_at: '' }, { id: 7, kind: 'curry' as const, name: 'soup', part_id: 2, created_at: '' }];
   const library = [
     dish(1, 'Idli', { componentType: 'base' }),
     dish(2, 'Sambar'),
@@ -731,8 +740,8 @@ describe('comes-with drafts', () => {
     expect(effectOf(r)).toEqual({
       kind: 'dish-links', dishId: 1, dishName: 'Idli',
       links: [
-        { mode: 'comes', target: 'curry_dish', values: [2], strength: 'usually' },
-        { mode: 'comes', target: 'extra_category', values: [2], strength: 'always' },
+        { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2], strength: 'usually' },
+        { mode: 'comes', target: LINK_TARGET.extra_category, values: [2], strength: 'always' },
       ],
     });
   });
@@ -740,7 +749,7 @@ describe('comes-with drafts', () => {
   it('propose_dish drafts Mutton Curry coming with Rasam', async () => {
     const r = await runTool('propose_dish', { name: 'Mutton Kuzhambu', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
     expect(r.ok).toBe(true);
-    expect((effectOf(r) as { links: unknown }).links).toEqual([{ mode: 'comes', target: 'extra_dish', values: [3], strength: 'always' }]);
+    expect((effectOf(r) as { links: unknown }).links).toEqual([{ mode: 'comes', target: LINK_TARGET.extra_dish, values: [3], strength: 'always' }]);
     const named = await runTool('propose_dish', { name: 'Mutton Curry 2', componentType: 'curry', comes_with: [{ dishes: ['Rasam'] }] }, ctx());
     expect(named.ok).toBe(true);
   });
@@ -748,8 +757,8 @@ describe('comes-with drafts', () => {
   it('draws the dish type of each entry from the dishes named, and curry types from their own list', async () => {
     const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Beans Poriyal'] }, { curry_types: ['soup'] }] }, ctx());
     expect((effectOf(r) as { links: unknown }).links).toEqual([
-      { mode: 'comes', target: 'subzi_dish', values: [5], strength: 'always' },
-      { mode: 'comes', target: 'curry_category', values: ['soup'], strength: 'always' },
+      { mode: 'comes', target: LINK_TARGET.subzi_dish, values: [5], strength: 'always' },
+      { mode: 'comes', target: LINK_TARGET.curry_category, values: [7], strength: 'always' },
     ]);
   });
 
@@ -772,7 +781,7 @@ describe('comes-with drafts', () => {
   });
 
   it('refuses a comes-with draft that cannot hold with what is stored', async () => {
-    const serve = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 4, name: 'Mutton Curry' }, { mode: 'serve', target: 'base_dish', values: [1] }) } as RuleRecord;
+    const serve = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 4, name: 'Mutton Curry' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [1] }) } as RuleRecord;
     const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Sambar'] }] }, ctx({ rules: [serve] }));
     // Idli would bring Sambar and Mutton Curry, two curries in one meal
     expect(r.ok).toBe(false);
@@ -784,8 +793,8 @@ describe('comes-with drafts', () => {
       ({ id, enabled: true, created_at: '', ...linkRule(owner, link) }) as RuleRecord;
     const idli = { id: 1, name: 'Idli' };
     const rules = [
-      owned(20, idli, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }),
-      owned(21, { id: 2, name: 'Sambar' }, { mode: 'comes', target: 'subzi_dish', values: [5], strength: 'always' }),
+      owned(20, idli, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2], strength: 'always' }),
+      owned(21, { id: 2, name: 'Sambar' }, { mode: 'comes', target: LINK_TARGET.subzi_dish, values: [5], strength: 'always' }),
     ];
     // Idli always brings Sambar, which always brings Beans Poriyal: no room for Cabbage Thoran.
     const subzi = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Cabbage Thoran'] }] }, ctx({ rules }));
@@ -802,13 +811,13 @@ describe('comes-with drafts', () => {
     const lib = [
       dish(10, 'Rice', { componentType: 'base' }), dish(11, 'Sambar'), dish(12, 'Papad', { componentType: 'extra' }), dish(13, 'Beans Poriyal', { componentType: 'subzi' }),
     ];
-    const conditional = linkRule({ id: 10, name: 'Rice' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always', when: { curry: [11] } });
+    const conditional = linkRule({ id: 10, name: 'Rice' }, { mode: 'comes', target: LINK_TARGET.extra_dish, values: [12], strength: 'always', when: { 2: [11] } });
     const stored = { id: 5, name: conditional.name, spec: conditional.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
 
     it('propose_pairing drafts only the new link and leaves the stored conditional one alone', async () => {
       const r = await runTool('propose_pairing', { dish: 'Rice', comes_with: [{ dishes: ['Beans Poriyal'] }] }, ctxOf({ library: lib, rules: [stored] }));
       expect(r.ok).toBe(true);
-      expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'comes', target: 'subzi_dish', values: [13], strength: 'always' }]);
+      expect((r as { effect: { links: unknown } }).effect.links).toEqual([{ mode: 'comes', target: LINK_TARGET.subzi_dish, values: [13], strength: 'always' }]);
       expect(stored.spec).toEqual(conditional.spec);
     });
 
@@ -830,7 +839,7 @@ describe('comes-with drafts', () => {
 
   it('explain_plan_slot says Idiyappam comes with Kerala Stew (Veg)', async () => {
     const lib = [dish(10, 'Idiyappam', { componentType: 'base' }), dish(11, 'Kerala Stew (Veg)')];
-    const owned = linkRule({ id: 10, name: 'Idiyappam' }, { mode: 'comes', target: 'curry_dish', values: [11], strength: 'always' });
+    const owned = linkRule({ id: 10, name: 'Idiyappam' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [11], strength: 'always' });
     const link = { id: 5, name: owned.name, spec: owned.spec, enabled: true, created_at: '', owner_component_id: 10 } as RuleRecord;
     const r = await runTool('explain_plan_slot', { day: 'monday', meal: 'lunch' }, ctxOf({
       library: lib, rules: [link],
@@ -854,8 +863,8 @@ describe('comes-with drafts', () => {
 
   it('says in each meal which link brought a side that has both a comes link and a serve link', async () => {
     const lib = [dish(10, 'Rice', { componentType: 'base' }), dish(11, 'Mutton Curry'), dish(12, 'Rasam', { componentType: 'extra' }), dish(13, 'Appam', { componentType: 'base' })];
-    const comes = linkRule({ id: 11, name: 'Mutton Curry' }, { mode: 'comes', target: 'extra_dish', values: [12], strength: 'always' });
-    const serve = linkRule({ id: 12, name: 'Rasam' }, { mode: 'serve', target: 'base_dish', values: [10], strength: 'always' });
+    const comes = linkRule({ id: 11, name: 'Mutton Curry' }, { mode: 'comes', target: LINK_TARGET.extra_dish, values: [12], strength: 'always' });
+    const serve = linkRule({ id: 12, name: 'Rasam' }, { mode: 'serve', target: LINK_TARGET.base_dish, values: [10], strength: 'always' });
     const rules = [
       { id: 5, name: comes.name, spec: comes.spec, enabled: true, created_at: '', owner_component_id: 11 },
       { id: 6, name: serve.name, spec: serve.spec, enabled: true, created_at: '', owner_component_id: 12 },
@@ -871,11 +880,11 @@ describe('comes-with drafts', () => {
 
   it('propose_pairing appends a comes link beside a stored one instead of merging into it', async () => {
     const lib = [dish(1, 'Idli', { componentType: 'base' }), dish(2, 'Sambar'), dish(3, 'Rasam', { componentType: 'extra' })];
-    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Idli' }, { mode: 'comes', target: 'curry_dish', values: [2], strength: 'always' }) } as RuleRecord;
+    const stored = { id: 9, enabled: true, created_at: '', ...linkRule({ id: 1, name: 'Idli' }, { mode: 'comes', target: LINK_TARGET.curry_dish, values: [2], strength: 'always' }) } as RuleRecord;
     const r = await runTool('propose_pairing', { dish: 'Idli', comes_with: [{ dishes: ['Rasam'] }] }, ctxOf({ library: lib, categories, rules: [stored] }));
     expect(effectOf(r)).toEqual({
       kind: 'dish-links', dishId: 1, dishName: 'Idli',
-      links: [{ mode: 'comes', target: 'extra_dish', values: [3], strength: 'always' }],
+      links: [{ mode: 'comes', target: LINK_TARGET.extra_dish, values: [3], strength: 'always' }],
     });
   });
 });

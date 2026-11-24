@@ -1,7 +1,7 @@
 // Stored rules and their compilation into planner constraints.
-import { matcherFields, ROLES, type Bounds, type Constraint, type RuleLevel } from '@/planner';
-import { constraintOverParts, sidePartsMatcher, variedPartsMatcher, type RuleParts } from './legacy-parts';
-import { defaultRules } from './defaults';
+import { cappedPart, isLeaf, matcherFields, type Bounds, type Constraint, type CountConstraint, type Matcher, type RuleLevel } from '@/planner';
+import { constraintOverParts, type RuleParts } from './legacy-parts';
+import { readLink, wrongWay } from './owned';
 import { compileSpec, RuleSpecSchema, specReferences, type ConstraintBody, type RuleSpec, type RuleSpecInput } from './templates';
 
 /** A rule as stored. `spec` is validated on read; anything invalid is reported, never applied. */
@@ -17,12 +17,20 @@ export interface RuleRecord {
   owner_component_id?: number;
 }
 
-/** Ids that currently exist, so rules pointing at deleted components or categories are caught. */
+/** Ids that currently exist, so rules pointing at deleted components, categories or parts are caught. */
 export interface KnownIds {
   components: ReadonlySet<number>;
-  baseCategories: ReadonlySet<number>;
-  extraCategories: ReadonlySet<number>;
+  categories: ReadonlySet<number>;
+  parts: ReadonlySet<number>;
+  /** The part each category belongs to; when given, a link naming a category of another part is caught. */
+  categoryPart?: ReadonlyMap<number, number>;
+  /** The part each dish belongs to, so a dish's link can be checked against the order of the parts. */
+  partOf: ReadonlyMap<number, number>;
 }
+
+/** The part of each dish that has one: what `KnownIds.partOf` holds. */
+export const partsOfDishes = (dishes: readonly { id: number; part_id?: number }[]): Map<number, number> =>
+  new Map(dishes.flatMap((d) => (d.part_id === undefined ? [] : [[d.id, d.part_id] as const])));
 
 export interface RuleIssue {
   ruleId: number;
@@ -37,13 +45,13 @@ export function parseSpec(spec: unknown): { ok: true; spec: RuleSpec } | { ok: f
   return { ok: false, message: `${issue.path.join('.') || 'rule'}: ${issue.message}` };
 }
 
-/** Names of references that no longer exist, e.g. ["component #12", "extra category #3"]. */
+/** Names of references that no longer exist, e.g. ["component #12", "category #3", "part #5"]. */
 export function missingReferences(spec: RuleSpec, known: KnownIds): string[] {
   const refs = specReferences(spec);
   return [
     ...refs.components.filter((id) => !known.components.has(id)).map((id) => `component #${id}`),
-    ...refs.baseCategories.filter((id) => !known.baseCategories.has(id)).map((id) => `base category #${id}`),
-    ...refs.extraCategories.filter((id) => !known.extraCategories.has(id)).map((id) => `extra category #${id}`),
+    ...refs.parts.filter((id) => !known.parts.has(id)).map((id) => `part #${id}`),
+    ...refs.categories.filter((id) => !known.categories.has(id)).map((id) => `category #${id}`),
   ];
 }
 
@@ -94,39 +102,80 @@ const STRENGTH: Record<RuleLevel, number> = { rule: 0, dish: 1, frequency: 2 };
 export function ruleLevel(rule: RuleRecord): RuleLevel | 'bring' | undefined {
   const parsed = parseSpec(rule.spec);
   if (!parsed.ok) return undefined;
+  // A level does not depend on what the bodies match, so no parts are needed.
   const levels = compileSpec(parsed.spec).flatMap((b) => bodyLevels(rule, b)).map((p) => p.level);
   if (levels.includes(undefined)) return 'bring';
   return levels.reduce<RuleLevel | undefined>((best, l) => (best === undefined || STRENGTH[l!] > STRENGTH[best] ? l : best), undefined);
 }
 
-const sameData = (a: unknown, b: unknown): boolean => {
-  if (a === b) return true;
-  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
-  const ka = Object.keys(a);
-  return Array.isArray(a) === Array.isArray(b) && ka.length === Object.keys(b).length
-    && ka.every((k) => sameData((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k]));
-};
+/** Whether a leave-out rule names the first part, which holds every meal's one main dish and is never left out. */
+function leavesOutFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
+  return spec.template === 'skip_when' && parts.list.length > 0 && spec.params.skip.includes(parts.list[0].id);
+}
 
 /**
- * The spec with a stock default's match replaced by the parts it is about. A default the user has edited, and any
- * other rule, is left as stored (its component types are rewritten to parts afterwards, like any rule).
+ * The parts the stored rules cap at one dish per meal, read as the planner reads them (`cappedPart`: an enabled hard
+ * per-meal maximum of 1 over one part, unscoped). On the converted parts these are the Curry and Subzi caps.
  */
-function partsSpec(rule: RuleRecord, spec: RuleSpec, parts: RuleParts): RuleSpec {
-  const key = rule.default_key;
-  const match = key === 'variety' || key === 'spacing' ? variedPartsMatcher(parts)
-    : key === 'sides-only-when-asked' ? sidePartsMatcher(parts)
-    : undefined;
-  if (match === undefined) return spec;
-  const stock = defaultRules().find((d) => d.default_key === key)?.spec;
-  const stockParsed = stock && parseSpec(stock);
-  if (!stockParsed?.ok || !sameData(spec, stockParsed.spec) || !('match' in spec.params)) return spec;
-  // `roles` restricts a no-repeat rule to types; the match now names the parts, so every role is let through.
-  const roles = 'roles' in spec.params ? { roles: [...ROLES] } : {};
-  return { ...spec, params: { ...spec.params, match, ...roles } } as RuleSpec;
+export function cappedParts(rules: readonly RuleRecord[], parts: RuleParts): Set<number> {
+  const out = new Set<number>();
+  for (const rule of rules) {
+    if (!rule.enabled) continue;
+    const parsed = parseSpec(rule.spec);
+    if (!parsed.ok) continue;
+    for (const body of compileSpec(parsed.spec, { firstPart: parts.list[0]?.id })) {
+      if (body.kind !== 'count') continue;
+      const c = (parts.legacy ? constraintOverParts(body as Constraint, parts.legacy) : body) as CountConstraint;
+      const part = cappedPart(c);
+      if (part !== undefined) out.add(part);
+    }
+  }
+  return out;
+}
+
+/** Whether a comes link waits for the first part, which every meal holds, so the wait means nothing. */
+function waitsForFirstPart(spec: RuleSpec, parts: RuleParts): boolean {
+  return spec.template === 'comes_with' && spec.params.when !== undefined && parts.list.length > 0 && String(parts.list[0].id) in spec.params.when;
+}
+
+/** The wrong-way text of a dish's own link (`wrongWay`), or undefined for a rule that is not one or a dish with no known part. */
+function wrongWayLink(rule: RuleRecord, known: KnownIds, parts: RuleParts): string | undefined {
+  if (rule.owner_component_id === undefined) return undefined;
+  const link = readLink(rule, parts.list);
+  const ownerPart = known.partOf.get(rule.owner_component_id);
+  return link && ownerPart !== undefined ? wrongWay(link.mode, ownerPart, link.target.part, parts.list) : undefined;
+}
+
+/** The categories a link-shaped matcher (`all(part, category set)`, the set maybe negated) names outside its part. */
+function outsidePart(m: Matcher, categoryPart: ReadonlyMap<number, number>): { part: number; ids: number[] } | undefined {
+  if (!('all' in m) || m.all.length !== 2) return undefined;
+  const [part, set] = m.all;
+  const leaf = 'not' in set ? set.not : set;
+  if (!isLeaf(part) || part.field !== 'part' || part.op !== 'eq' || !isLeaf(leaf) || leaf.field !== 'category') return undefined;
+  const ids = ([leaf.value].flat() as number[]).filter((id) => categoryPart.has(id) && categoryPart.get(id) !== part.value);
+  return ids.length ? { part: part.value as number, ids } : undefined;
+}
+
+/** Categories a link names that belong to another part than the one it points at: a pairing's must be the first part's. */
+export function misplacedCategories(spec: RuleSpec, categoryPart: ReadonlyMap<number, number>, firstPart: number | undefined): { part: number; ids: number[] } | undefined {
+  switch (spec.template) {
+    case 'pairs_with': {
+      if (firstPart === undefined) return undefined;
+      const ids = spec.params.categories.filter((id) => categoryPart.has(id) && categoryPart.get(id) !== firstPart);
+      return ids.length ? { part: firstPart, ids } : undefined;
+    }
+    case 'comes_with': return outsidePart(spec.params.of, categoryPart);
+    case 'avoid_with': return outsidePart(spec.params.with, categoryPart);
+    case 'require_with': return outsidePart(spec.params.when, categoryPart);
+    default: return undefined;
+  }
 }
 
 /** Fields a stored rule may name but the planner cannot match on once rules are about parts. */
 const UNPLANNED_FIELDS = ['role', 'slot_part'] as const;
+
+/** Fields that only mean something through a dish's type: with no type-to-part ids to read them against, they match nothing. */
+const TYPE_FIELDS = ['role', 'componentType', 'base_category_id', 'extra_category_id', 'curry_category'] as const;
 
 const constraintFields = (c: Constraint): Set<string> => {
   const matchers = c.kind === 'pair' ? [c.when, c.of, ...(c.inMeal ?? [])] : c.kind === 'count' && c.when ? [c.select, c.when.exists] : [c.select];
@@ -136,8 +185,9 @@ const constraintFields = (c: Constraint): Set<string> => {
 /**
  * Compile enabled rules. Rules that are invalid or reference something that no longer exists
  * are skipped and reported, so the planner never runs a rule whose meaning has changed. Constraints are about
- * parts: the stored component-type matchers are rewritten, and the variety, spacing and sides-only defaults
- * name the parts they apply to (the stored rows are not changed).
+ * parts: every rule, a default too, is planned as stored, and component-type matchers left in older rules are
+ * rewritten to parts (the stored rows are not changed). The defaults name the parts they were built over; editing
+ * the parts (Stage 4) is what rewrites them.
  */
 export function compileRules(rules: readonly RuleRecord[], known: KnownIds, parts: RuleParts): { constraints: Constraint[]; issues: RuleIssue[] } {
   const constraints: Constraint[] = [];
@@ -155,18 +205,40 @@ export function compileRules(rules: readonly RuleRecord[], known: KnownIds, part
       issues.push({ ruleId: rule.id, name: rule.name, message: `refers to ${missing.join(', ')}, which no longer exists` });
       continue;
     }
+    if (leavesOutFirstPart(parsed.spec, parts)) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `leaves out ${parts.list[0].name}, which every meal holds` });
+      continue;
+    }
+    if (waitsForFirstPart(parsed.spec, parts)) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: `waits for ${parts.list[0].name}, which every meal holds` });
+      continue;
+    }
+    const wrong = wrongWayLink(rule, known, parts);
+    if (wrong) {
+      issues.push({ ruleId: rule.id, name: rule.name, message: wrong });
+      continue;
+    }
+    const misplaced = known.categoryPart && misplacedCategories(parsed.spec, known.categoryPart, parts.list[0]?.id);
+    if (misplaced) {
+      const part = parts.list.find((p) => p.id === misplaced.part)?.name ?? `part #${misplaced.part}`;
+      const cats = misplaced.ids.map((id) => `category #${id}`).join(', ');
+      issues.push({ ruleId: rule.id, name: rule.name, message: `refers to ${cats}, which ${misplaced.ids.length > 1 ? 'are not categories' : 'is not a category'} of ${part}` });
+      continue;
+    }
     const owner = rule.owner_component_id !== undefined ? { owner: rule.owner_component_id } : {};
     const compiledRule: Constraint[] = [];
-    compileSpec(partsSpec(rule, parsed.spec, parts)).forEach((spec, i) => {
+    compileSpec(parsed.spec, { firstPart: parts.list[0]?.id }).forEach((spec, i) => {
       for (const { body, level, suffix } of bodyLevels(rule, spec)) {
         // Pairs are what the others give way to, so they carry no level and no owner.
         const marks = level === undefined ? {} : { ...owner, level };
         const compiled = { ...body, ...marks, id: `rule:${rule.id}:${i}${suffix}`, label: rule.name, origin: 'rule', ruleId: rule.id } as Constraint;
-        compiledRule.push(constraintOverParts(compiled, parts.legacy));
+        compiledRule.push(parts.legacy ? constraintOverParts(compiled, parts.legacy) : compiled);
       }
     });
     // The rewrite turns role and componentType into parts; a field it leaves behind cannot be planned.
-    const unplanned = UNPLANNED_FIELDS.find((f) => compiledRule.some((c) => constraintFields(c).has(f)));
+    // With no legacy ids to rewrite by, every field named after a dish's type is left behind too.
+    const unplannedFields: readonly string[] = parts.legacy ? UNPLANNED_FIELDS : [...UNPLANNED_FIELDS, ...TYPE_FIELDS];
+    const unplanned = unplannedFields.find((f) => compiledRule.some((c) => (constraintFields(c) as Set<string>).has(f)));
     if (unplanned) {
       issues.push({ ruleId: rule.id, name: rule.name, message: `names the field "${unplanned}", which the planner does not use; name the part with "part"` });
       continue;
