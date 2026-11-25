@@ -250,7 +250,7 @@ describe('RuleEditor', () => {
       return (await screen.findAllByRole('option')).map((o) => o.textContent);
     };
 
-    it('on the converted parts, offers the base categories for a pairing and the the extras categories for a requirement', async () => {
+    it('on the converted parts, offers the base categories for a pairing and the extras categories for a requirement', async () => {
       const { parts } = await ensurePartsAndTagGroups();
       const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
       await db.categories.bulkAdd([
@@ -287,6 +287,19 @@ describe('RuleEditor', () => {
       const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
       await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
       expect(await optionsOf('Add and an extra from')).toEqual(['Crunchy (Side)', 'Sweet (Dessert)']);
+    });
+
+    it('never offers a curry category for a requirement, with the curry cap rule deleted or the rules not loaded', async () => {
+      const { parts } = await ensurePartsAndTagGroups();
+      const partOf = (legacy: string) => parts.find((p) => p.legacy === legacy)!.id;
+      await db.categories.bulkAdd([
+        { kind: 'curry', name: 'Gravy', part_id: partOf('curry'), created_at: '' },
+        { kind: 'extra', name: 'Liquid', part_id: partOf('extra'), created_at: '' },
+      ] as never);
+      await db.rules.clear();
+      const requirement: RuleSpecInput = { template: 'require_with', params: { when: is('id', 1), components: [], categories: [], strength: 'must' } };
+      await renderLoaded(<RuleEditor initial={{ name: 'R', spec: requirement }} onSaved={vi.fn()} />);
+      expect(await optionsOf('Add and an extra from')).toEqual(['Liquid']);
     });
 
     it('saves a stored requirement unchanged when nothing was edited', async () => {

@@ -906,6 +906,32 @@ const PART_ORDER_CASES: RuleCase[] = [
       },
     ],
   },
+  {
+    kind: 'plan',
+    id: 'locked-lower-subzi-meets-a-conditional-higher-link',
+    group: 'Locks and picks',
+    name: "A locked subzi served with the curry only dents the base's conditional Always subzi",
+    why: 'Idli always comes with Avial when the curry is Sambar; Beans Poriyal is served with Sambar; Sambar is served with Idli; Monday lunch is locked to Idli, Sambar and Beans Poriyal. The higher-part rule that makes a missing Avial hard where a lower part\'s dish holds the subzi covers only unconditional links: a link waiting on the curry is never hard, so the lock keeps Beans Poriyal and Idli\'s link to Avial is a soft problem in that meal, in every week. The bug it guards: making the higher-part check hard for a conditional link as well, which would break a hard rule over a link that only applies sometimes.',
+    dishes: [AVIAL],
+    rules: (lib) => [caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id], when: { curry: [dishId(lib, 'Sambar')] } })],
+    given: (lib) => [
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+      caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] }),
+    ],
+    pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Idli').id, curry_id: TEST_LIBRARY.dish('Sambar').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
+    expect: [
+      mondayLunchHas('Beans Poriyal', true),
+      {
+        says: "Every week has a soft problem at Monday lunch naming Idli's link to Avial, and no hard problem",
+        check: (w) => {
+          const at = (j: { ruleId?: unknown; group: { componentId?: number; day?: string; meal?: string } }) => j.ruleId === OWN_RULE_ID && j.group.componentId === AVIAL.id && j.group.day === 'monday' && j.group.meal === 'lunch';
+          const k = w.soft.filter((ss, i) => ss.some(at) && !w.hard[i].length).length;
+          return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
+        },
+        highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
+      },
+    ],
+  },
 ];
 
 export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES, ...PART_ORDER_CASES];

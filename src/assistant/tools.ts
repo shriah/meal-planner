@@ -591,7 +591,7 @@ const HANDLERS: Record<string, Handler> = {
     if (!draft.ok) return { ok: false, error: `invalid rule: ${Object.values(draft.errors).join('; ')}` };
     const missing = missingReferences(draft.spec, knownIds(data));
     if (missing.length) {
-      return { ok: false, error: `the rule refers to ${missing.join(', ')}, which no longer exists. Use search_dishes for dish ids, and summary.parts in the context for part and category ids.` };
+      return { ok: false, error: `the rule refers to things that do not exist: ${missing.join(', ')}. Use search_dishes for dish ids, and summary.parts in the context for part and category ids.` };
     }
     return { ok: true, data: { name: draft.name, description: describeSpec(draft.spec, namesFor(data)) }, effect: { kind: 'rule-draft', draft: { name: draft.name, spec: draft.spec } } };
   },

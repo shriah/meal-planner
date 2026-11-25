@@ -7,7 +7,7 @@ import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import { db } from '@/db/client'
 import type { Matcher } from '@/planner'
 import {
-  categoryChoices, describeSpec, libraryNames, newSpec, previewMatches, RuleSpecSchema, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES, validateDraft,
+  categoryChoices, describeSpec, libraryNames, newSpec, previewMatches, RuleSpecSchema, singleParts, TEMPLATE_FORMS, TEMPLATE_GROUPS, TEMPLATES, validateDraft,
   type Draft, type FormField, type RuleSpecInput, type Scope, type TemplateId,
 } from '@/rules'
 import { addRule, updateRule } from '@/services/food-db'
@@ -222,7 +222,7 @@ export function RuleEditor({ initial, ruleId, onSaved, onCancel }: RuleEditorPro
       case 'categories':
         return (
           <MultiPicker label={field.label} value={(v as number[]) ?? []} onChange={(x) => setParam(field.key, x)}
-            options={categoryChoices(field.part ?? 'uncapped', data.parts, data.categories, cappedOf({ parts: data.parts, rules })).map((c) => ({ value: c.id, label: c.label }))} />
+            options={categoryChoices(field.part ?? 'uncapped', data.parts, data.categories, singleParts(data.parts, rules)).map((c) => ({ value: c.id, label: c.label }))} />
         )
     }
   }

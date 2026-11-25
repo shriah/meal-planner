@@ -183,9 +183,8 @@ change except where an upward link flips (below); `repair.snapshot.test.ts` is u
   legacy weeks throw on a custom library.
 - **Files that still name base, curry, subzi or extras** (the legacy list): `src/db/parts.ts`, `src/db/seed.tsx`, `src/db/seed-data.ts`,
   `src/db/legacy-rules.ts`, `src/db/legacy-v14.ts`, `src/db/rules-over-parts.ts`, `src/rules/legacy-parts.ts`, `src/rules/defaults.ts`, `src/rule-cases/run.ts`,
-  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), the upgrades,
-  `src/rules/legacy-parts.ts` also holds `appSingleParts` and `convertedPartIds` (until Stage 5). `src/assistant` is no longer a legacy file: it works over parts, and only its
-  dish drafts keep the old fields (until Stage 4).
+  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), `src/stores/plan-store.ts` (its `held` lock keys), `src/assistant` (`PART_OF`, `resolveCategory('base'|'extra')`, the `legacy === componentType` lookup, and prompt wording), the upgrades,
+  `src/rules/legacy-parts.ts` also holds `appSingleParts` and `convertedPartIds` (until Stage 5). The assistant's rule and link drafts work over parts; its dish drafts keep the old fields (until Stage 4).
 - **Stage 3b** closed the list that Stage 3a left open (next section). Removal does not cascade to an orphaned side until polish, as before.
 
 ### Meal parts (Stage 3b)
@@ -195,8 +194,8 @@ picker now read parts. Unlike Stage 3a, two planner fixes move weeks, only where
 
 - **Warnings over capped parts.** `link-warnings.ts` reasons about `singleParts(parts, rules)`: the parts a cap rule holds to one dish per meal, plus the
   legacy single parts (the converted Curry and Subzi, `appSingleParts` in `src/rules/legacy-parts.ts`) until Stage 5. The assistant uses the same
-  function. Messages use part names. A side that links to the first part is a serve link (it used to be an error). A dish without `part_id` gets no link warnings.
-- **Rule form categories.** The category field of a rule offers categories by kind: `pairs_with` takes the first part's categories; `require_with`
+  function. Messages use part names. A dish without `part_id` gets no link warnings.
+- **Rule form categories.** The category field of a rule offers categories by part: `pairs_with` takes the first part's categories; `require_with`
   takes the uncapped parts after the first (converted libraries: Extras only), labelled with the part only when more than one part offers categories.
   A stored category outside that set still round-trips.
 - **Assistant over parts.**
@@ -206,6 +205,7 @@ picker now read parts. Unlike Stage 3a, two planner fixes move weeks, only where
   - `propose_dish` and `propose_pairing` take one `links` argument, by part. A part above the dish means served with it (the dish is added when one of
     them is in the meal); a part below means the dish brings it (`bringMode`); a dish's own part only where `offersLink` allows. The draft reports the
     dishes it linked.
+  - A side that links to the first part is a serve link (it used to be an error).
   - Link targets match by exact name or id only, never by a single fuzzy search hit ("Rice" does not become "Lemon Rice").
   - Dish drafts (`componentType`, `base_category`, `extra_category`, `curry_category`, the tag arrays) stay on the old fields until Stage 4.
 - **Picker.** A dish picked by hand re-plans its meal (`replanMeal` in `plan-store.ts`). A base pick frees the meal's other parts, as before. Any other
@@ -216,12 +216,11 @@ picker now read parts. Unlike Stage 3a, two planner fixes move weeks, only where
   - The repair sweep's curry exemption is gone: a curry that only a waiting link brought can be swept when it breaks a hard rule
     (`sweep-takes-out-a-brought-curry`).
   - A higher part's Always link wins a one-dish part over the sides of lower parts. The solver (`fits`) lets it take the part from a dish held only by
-    lower sides; the scorer charges the missing Always pairing as a hard problem, no longer suppressed, including against a pinned or hand-picked lower dish
-    (`two-links-bring-a-subzi` and the locked-subzi case).
+    lower sides; the scorer charges the missing Always pairing as a hard problem, no longer suppressed, including a pinned or hand-picked lower dish brought by a lower part's link
+    (`two-links-bring-a-subzi` and the locked-subzi case). A conditional Always link is never hard, so against a locked lower dish it stays a soft problem (`locked-lower-subzi-meets-a-conditional-higher-link`).
   - `pivotPart` keeps the joint move and `lockNudge`. `repair.snapshot.test.ts` is untouched.
 - **What stays.** No removal cascade (removing a dish leaves a side it brought). An extras pick pins the extras list to that dish, as a swap does today.
-- **Closed from the Stage 3a list:** link warnings over cap rules, the assistant, condition fields and presets over parts, the joint part, a flipped
-  subzi to curry link bringing its subzi, and the picker bringing for a hand-picked dish.
+- **Closed from the Stage 3a list:** link warnings over cap rules, the assistant, the joint part, a flipped subzi to curry link where the higher part's link wins and the lower one is reported, and the picker bringing for a hand-picked dish. Condition editor fields and presets over parts were already done before this branch.
 
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.

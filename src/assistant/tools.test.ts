@@ -539,14 +539,14 @@ describe('propose_rule', () => {
     expect((r as { data: { description: string } }).data.description).toContain('rice-based');
   });
 
-  it('refuses a draft naming a deleted category or part, saying it no longer exists', async () => {
+  it('refuses a draft naming a deleted category or part, saying they do not exist', async () => {
     const byCategory = { template: 'exclude', params: { match: is('category', 77), strength: 'must' } };
     const r = await runTool('propose_rule', { name: 'x', spec: byCategory }, ctxOf({ library }));
     expect(r.ok).toBe(false);
-    expect((r as { error: string }).error).toMatch(/refers to category #77, which no longer exists/);
+    expect((r as { error: string }).error).toMatch(/refers to things that do not exist: category #77/);
     const byPart = { template: 'no_repeat', params: { match: is('id', 1), parts: [9], strength: 'must' } };
     const p = await runTool('propose_rule', { name: 'x', spec: byPart }, ctxOf({ library }));
-    expect((p as { error: string }).error).toMatch(/refers to part #9, which no longer exists/);
+    expect((p as { error: string }).error).toMatch(/refers to things that do not exist: part #9/);
   });
 });
 
