@@ -881,6 +881,31 @@ const PART_ORDER_CASES: RuleCase[] = [
       noHardProblems(),
     ],
   },
+  {
+    kind: 'plan',
+    id: 'locked-lower-subzi-breaks-the-higher-link',
+    group: 'Locks and picks',
+    name: "A locked subzi served with the curry breaks the base's Always subzi",
+    why: 'Idli always comes with Avial; Beans Poriyal is served with Sambar; Sambar is served with Idli; Monday lunch is locked to Idli, Sambar and Beans Poriyal. The lock keeps Beans Poriyal, and since a higher part decides, Idli\'s Always link to Avial does not give way to the Beans Poriyal its curry brought: every week has a hard problem in that meal naming Idli\'s link, where the scorer used to report it as merely left out.',
+    dishes: [AVIAL],
+    rules: (lib) => [caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id] })],
+    given: (lib) => [
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+      caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] }),
+    ],
+    pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Idli').id, curry_id: TEST_LIBRARY.dish('Sambar').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
+    expect: [
+      mondayLunchHas('Beans Poriyal', true),
+      {
+        says: "Every week has a hard problem at Monday lunch naming Idli's Always link to Avial",
+        check: (w) => {
+          const k = w.hard.filter((hs) => hs.some((j) => j.ruleId === OWN_RULE_ID && j.group.componentId === AVIAL.id && j.group.day === 'monday' && j.group.meal === 'lunch')).length;
+          return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
+        },
+        highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
+      },
+    ],
+  },
 ];
 
 export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES, ...PART_ORDER_CASES];

@@ -385,8 +385,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
       if (cur === c || !isFree(i, k)) return false;
       if (cur === undefined) return true;
       if (!unit) return false;
-      if (prev.includes(cur) && !isUnit(s, i, cur)) return true;
-      return isUnit(s, i, cur) && !someDish(s, (d, j) => j <= from && d !== cur && broughtBy(s, d, j, i, true).includes(cur));
+      const curIsUnit = isUnit(s, i, cur);
+      if (prev.includes(cur) && !curIsUnit) return true;
+      return curIsUnit && !someDish(s, (d, j) => j <= from && d !== cur && broughtBy(s, d, j, i, true).includes(cur));
     };
     const place = (c: number, unit: boolean, from: number) => {
       if (!fits(c, unit, from)) return;

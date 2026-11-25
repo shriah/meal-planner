@@ -727,8 +727,9 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
         if (v > pairState[pk]) pairState[pk] = v;
       }
     }
-    // Unit members first: the capped part a unit member holds is taken, so a missing pair (of any
-    // strength, from any dish in the meal) for that part is suppressed rather than charged.
+    // Unit members first: the capped part a unit member holds is taken, so a missing pair for that part is
+    // suppressed rather than charged, except a missing `must` pair of a dish in a higher part than the one
+    // that brought the unit member (see `yieldsToUnit`).
     for (let q = 0; q < np; q++) {
       const pk = bufPairs[q];
       const p = pairs[pk];
