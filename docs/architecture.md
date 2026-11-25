@@ -139,8 +139,8 @@ visible changed except the two cap rules on the Rules page, and a converted libr
 - **Guards.** `buildModel` throws `InvalidConstraintError` for any `role` leaf (a rule the rewrite missed would silently match nothing) and for
   `slot_part` in a constraint that is not a built-in; `slot_part` is planner-internal and names where a dish is placed.
 - **Joint part and locks.** The joint part is the first single part after the first (the curry): the base+curry move changes it with the first part.
-  `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out, and the repair sweep skips it, as the curry
-  did before. Both keep today's weeks. Stage 3 makes the sweep a rule case.
+  `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out (`pivotPart` in `solver.ts`). The repair
+  sweep no longer skips it: a curry only a conditional link brought leaves where it breaks a hard rule (rule case `sweep-takes-out-a-brought-curry`).
 
 ### Meal parts (Stage 3a)
 
@@ -322,7 +322,10 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   an asked-for side is not counted by `frequency` ones, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
   `rule`-level constraints and built-ins never give way. Where one capped part (curry or subzi) is wanted by several pairs of a base, the first
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
-  (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
+  (reported as a conflict, not charged). Between dishes of different parts a higher part decides: a missing Always pairing gives way to a
+  unit member holding its part only when a dish of the same or a higher part brought it, and `bring` lets an Always pairing take a one-dish
+  part from a unit member only lower parts bring (Idli's Avial over the Beans Poriyal served with Sambar; rule case `two-links-bring-a-subzi`).
+  Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free parts only and
   never over a pin, then their own pairings (up to `BRING_ROUNDS`). This holds in every part: a dish served with a curry follows that curry whether a base brought it or the search placed it, and adding or removing a dish of a many-dish part (a curry, where curries have no cap) brings or takes its pairings when one of them is in another part (a link within the part, such as an extra that comes with another extra, leaves the dish added and removed alone). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
