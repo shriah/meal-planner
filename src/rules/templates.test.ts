@@ -200,6 +200,15 @@ describe('require_with compilation', () => {
     expect(bodies[1]).toMatchObject({ kind: 'count', groupBy: 'slot', costs: { min: 6, max: 6 } });
   });
 
+  it('takes a category of any part, naming that part when described', () => {
+    const spec = RuleSpecSchema.parse({ template: 'require_with', params: { when: is('id', 12), categories: [BREAD] } });
+    const [body] = compileSpec(spec);
+    expect(body).toMatchObject({ kind: 'count', groupBy: 'slot' });
+    expect(JSON.stringify(body)).toContain(JSON.stringify(is('category', BREAD)));
+    const names = { category: () => 'Bread-based', categoryPart: () => 2, part: () => 'Side', component: () => 'Sambar' };
+    expect(describeSpec(spec, names)).toBe('With Sambar, also include a side from Bread-based');
+  });
+
   it('gives a prefer pairing without a cost the default cost, and a must pairing none', () => {
     const [soft] = compileSpec(RuleSpecSchema.parse({ template: 'require_with', params: { when: is('id', 12), components: [31], strength: 'prefer' } }));
     expect(soft).toMatchObject({ kind: 'pair', cost: PREFER_COST });

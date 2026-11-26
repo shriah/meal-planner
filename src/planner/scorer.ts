@@ -168,6 +168,8 @@ interface ScoringState {
   memo: (Memo | undefined)[];
   bufCi: Int32Array;
   bufSlot: Int32Array;
+  /** Per assignment: the position of the part it is in. */
+  bufPart: Int32Array;
   bufMemo: Memo[];
   bufFlag: Uint8Array;
   /** Per pair, while one slot is scored: 0 untouched, 1 only suppressed, 2 enforced. */
@@ -175,6 +177,8 @@ interface ScoringState {
   bufPairs: Int32Array;
   /** Per pair, while one slot is scored: library index of the first dish that triggered it. */
   pairBy: Int32Array;
+  /** Per pair, while one slot is scored: the part position of the first dish that triggered it (the highest part, as a meal's dishes are read in part order). */
+  pairPart: Int32Array;
   /** Per pair, while one slot is scored: 1 if a candidate of this enforced `must` pair is in the meal (it holds a unit member). */
   pairUnit: Uint8Array;
   /** Every matcher index used by a pair's meal-level condition. */
@@ -318,11 +322,13 @@ export function compileModel(library: readonly ComponentLike[], constraints: rea
       memo: new Array(N * parts.length * SLOT_COUNT),
       bufCi: new Int32Array(MAX_ASSIGNMENTS),
       bufSlot: new Int32Array(MAX_ASSIGNMENTS),
+      bufPart: new Int32Array(MAX_ASSIGNMENTS),
       bufMemo: new Array(MAX_ASSIGNMENTS),
       bufFlag: new Uint8Array(MAX_ASSIGNMENTS),
       pairState: new Uint8Array(pairs.length),
       bufPairs: new Int32Array(pairs.length),
       pairBy: new Int32Array(pairs.length),
+      pairPart: new Int32Array(pairs.length),
       pairUnit: new Uint8Array(pairs.length),
       condMatchers: Int32Array.from(new Set(pairs.flatMap((p) => Array.from(p.inMeal)))),
       condCount: new Int32Array(matchers.length),
@@ -663,7 +669,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
   const freeCi = opts.freePick ? (m.state.idIndex.get(opts.freePick.id) ?? -1) : -1;
   const ignoreCond = !!opts.ignoreConditional;
   const st = m.state;
-  const { bufCi, bufSlot, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairUnit } = st;
+  const { bufCi, bufSlot, bufPart, bufMemo, bufFlag, counts, pairs, pairState, bufPairs, pairBy, pairPart, pairUnit } = st;
   const just: Justification[] = [];
   let hard = 0;
   let soft = 0;
@@ -685,6 +691,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
     if (n >= MAX_ASSIGNMENTS) throw new Error(`plan has more than ${MAX_ASSIGNMENTS} assignments`);
     bufCi[n] = ci;
     bufSlot[n] = slot;
+    bufPart[n] = k;
     bufMemo[n] = memoFor(m, ci, k, slot);
     bufFlag[n] = 0;
     n++;
@@ -714,13 +721,15 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
         if (!pairState[pk]) {
           bufPairs[np++] = pk;
           pairBy[pk] = bufCi[i];
+          pairPart[pk] = bufPart[i];
         }
         const v = code & 1 ? 1 : 2;
         if (v > pairState[pk]) pairState[pk] = v;
       }
     }
-    // Unit members first: the capped part a unit member holds is taken, so a missing pair (of any
-    // strength, from any dish in the meal) for that part is suppressed rather than charged.
+    // Unit members first: the capped part a unit member holds is taken, so a missing pair for that part is
+    // suppressed rather than charged, except a missing `must` pair of a dish in a higher part than the one
+    // that brought the unit member (see `yieldsToUnit`).
     for (let q = 0; q < np; q++) {
       const pk = bufPairs[q];
       const p = pairs[pk];
@@ -737,14 +746,19 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       return false;
     };
     // A missing pair gives way to a unit member holding its part only when no unit pair for that part
-    // shares a candidate with it: a shared candidate would meet both, so the gap is charged.
-    const yieldsToUnit = (p: CompiledPair): boolean => {
+    // shares a candidate with it: a shared candidate would meet both, so the gap is charged. A higher part
+    // decides: a missing `must` pair does not give way to a unit member that a dish of a lower part brought
+    // (Idli's Avial does not give way to the Beans Poriyal served with Sambar), so the gap is charged.
+    const yieldsToUnit = (pk: number): boolean => {
+      const p = pairs[pk];
       if (p.claim < 0) return false;
       let held = false;
       for (let q = 0; q < np; q++) {
-        const u = pairs[bufPairs[q]];
-        if (!pairUnit[bufPairs[q]] || u.claim !== p.claim) continue;
+        const uk = bufPairs[q];
+        const u = pairs[uk];
+        if (!pairUnit[uk] || u.claim !== p.claim) continue;
         if (sharesCandidate(u, p)) return false;
+        if (p.must && pairPart[uk] > pairPart[pk]) continue;
         held = true;
       }
       return held;
@@ -776,7 +790,7 @@ export function score(m: CompiledModel, plan: PlanState, justify = false, opts: 
       // A missing conditional pair is never hard: it gives way to whatever kept its dish out of the meal.
       // Blind to conditional pairs, it costs nothing.
       if (ignoreCond && p.inMeal.length) continue;
-      if (yieldsToUnit(p)) enforced = false;
+      if (yieldsToUnit(pk)) enforced = false;
       const isHard = enforced && p.must && !p.inMeal.length;
       if (isHard) hard += 1;
       else if (enforced) soft += p.cost;

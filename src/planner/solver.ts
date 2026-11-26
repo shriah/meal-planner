@@ -185,6 +185,18 @@ const sameDishes = (a: Readonly<SlotState>, b: Readonly<SlotState>) =>
 /** A one-dish part's new array: `[id]`, or empty. */
 const one = (id: number | undefined): number[] => (id === undefined ? [] : [id]);
 
+/**
+ * The pivot part: the first part after the first that holds one dish (on a converted library, the Curry), or
+ * undefined when there is none. The planner treats it apart in two places, kept as they were so no week moves:
+ * - the joint move changes it together with the first part, so pairings that depend on the base stay reachable;
+ * - a dish the user locked in it never nudges its meal toward what a conditional link waits for (`lockNudge`).
+ * Uses no randomness.
+ */
+function pivotPart(single: readonly boolean[]): number | undefined {
+  const k = single.findIndex((holdsOne, i) => i > 0 && holdsOne);
+  return k < 0 ? undefined : k;
+}
+
 export const clonePlan = (p: PlanState): PlanState => p.map((s) => ({ parts: s.parts.map((d) => [...d]) }));
 
 export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
@@ -221,8 +233,8 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const many = range(P).filter((k) => !single[k]);
   /** Parts the pick and swap moves change. */
   const pickParts = [FIRST, ...singles];
-  /** The part the joint move changes with the first: the first single part after it (the curry), if any. */
-  const jointPart: number | undefined = singles[0];
+  /** The part the joint move changes with the first, which lock nudges also pass over (`pivotPart`). */
+  const jointPart = pivotPart(single);
   /** Position of each dish's own part, or -1 for a part the meal does not have. */
   const partOfDish = new Map(m.library.map((c) => [c.id, partPosition(m, c.part_id)]));
   const ownPart = (id: number): number => partOfDish.get(id) ?? -1;
@@ -241,9 +253,9 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
   const pinOf = (i: number, k: number): readonly number[] | undefined => pins[i][m.parts[k].id];
   /** Whether the part at position `k` of meal `i` is not pinned. */
   const isFree = (i: number, k: number) => pinOf(i, k) === undefined;
-  // Meals where the user locked a part after the first, other than the joint part (the curry), with the locked
-  // dishes: there a link waiting for a curry or subzi that brings a locked dish pulls the meal toward that curry
-  // or subzi (`lockNudge`). A locked curry has never pulled; on a converted library these are the subzi and extras.
+  // Meals where the user locked a part after the first, other than the pivot part (`pivotPart`, the curry), with
+  // the locked dishes: there a link waiting for a curry or subzi that brings a locked dish pulls the meal toward
+  // that curry or subzi (`lockNudge`). A locked curry has never pulled; on a converted library these are the subzi and extras.
   const locks: { slot: number; ids: readonly number[] }[] = [];
   if (hasConditional) {
     pins.forEach((_, slot) => {
@@ -360,17 +372,25 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     let changed = false;
     /** The plan's hard score with meal `i` as these fields hold, for `addsNoHard`. */
     let hardBefore: (Snapshot & { hard: number }) | undefined;
-    /** Whether `place(c, unit)` would put `c` in the meal. The first part is never brought. */
-    const fits = (c: number, unit: boolean): boolean => {
+    /**
+     * Whether `place(c, unit, from)` would put `c` in the meal, for a want of a dish in part `from`. The first
+     * part is never brought. A higher part decides: a unit want takes a one-dish part from a unit member that
+     * only dishes of lower parts bring (Idli's Avial takes the subzi from the Beans Poriyal served with Sambar).
+     */
+    const fits = (c: number, unit: boolean, from: number): boolean => {
       const k = ownPart(c);
       if (k <= FIRST) return false;
       if (!single[k]) return isFree(i, k) && !s.parts[k].includes(c);
       const cur = s.parts[k][0];
       if (cur === c || !isFree(i, k)) return false;
-      return cur === undefined || (unit && prev.includes(cur) && !isUnit(s, i, cur));
+      if (cur === undefined) return true;
+      if (!unit) return false;
+      const curIsUnit = isUnit(s, i, cur);
+      if (prev.includes(cur) && !curIsUnit) return true;
+      return curIsUnit && !someDish(s, (d, j) => j <= from && d !== cur && broughtBy(s, d, j, i, true).includes(cur));
     };
-    const place = (c: number, unit: boolean) => {
-      if (!fits(c, unit)) return;
+    const place = (c: number, unit: boolean, from: number) => {
+      if (!fits(c, unit, from)) return;
       const k = ownPart(c);
       withDish(s, k, c, single[k]);
       changed = true;
@@ -378,10 +398,10 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     // A candidate is judged with what it brings in turn (each want's first candidate that fits), so its
     // own pairings do not count against it. With `blind`, it is judged as the search judges a curry: blind
     // to what pairs waiting for a curry or subzi bring or miss.
-    const scoreWith = (unit: boolean, blind: boolean) => (c: number): BroughtScore => {
+    const scoreWith = (unit: boolean, from: number, blind: boolean) => (c: number): BroughtScore => {
       const before = snapshot(s);
       const was = changed;
-      place(c, unit);
+      place(c, unit, from);
       fill(false);
       const result = broughtScore(m, plan, i, c, blind);
       restore(s, before);
@@ -392,14 +412,14 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
      * Whether placing `c` adds no hard violation to the normal score: a side brought by a pair waiting for a
      * curry or subzi comes only then, and is otherwise left out (the final score reports the missing pair).
      */
-    const addsNoHard = (c: number, unit: boolean): boolean => {
+    const addsNoHard = (c: number, unit: boolean, from: number): boolean => {
       const before = snapshot(s);
       const was = changed;
       // Only this meal changes during a bring, so the meal's dishes name the plan's state: the hard score
       // before placing is reused while they hold.
       if (!hardBefore || !sameDishes(hardBefore, s)) hardBefore = { ...before, hard: score(m, plan).hard };
       const hard = hardBefore.hard;
-      place(c, unit);
+      place(c, unit, from);
       const after = score(m, plan).hard;
       restore(s, before);
       changed = was;
@@ -409,16 +429,16 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     const visit = (id: number, k: number, choose: boolean) => {
       for (const w of mealBringsAt(m, s, i, id, k).wants) {
         if (w.of.some(inMeal)) continue;
-        const allowed = (c: number) => fits(c, w.unit) && (!w.cond || addsNoHard(c, w.unit));
+        const allowed = (c: number) => fits(c, w.unit, k) && (!w.cond || addsNoHard(c, w.unit, k));
         if (w.of.length === 1) {
-          if (!w.cond || allowed(w.of[0])) place(w.of[0], w.unit);
+          if (!w.cond || allowed(w.of[0])) place(w.of[0], w.unit, k);
           continue;
         }
         const options = w.of.filter(allowed);
         if (!options.length) continue;
         // A plain link's pick (Sambar or Rasam) must not see what a conditional link would bring with it;
         // a conditional link's own candidates (Papad or Murukku) are ranked on the whole meal.
-        place(choose ? chooseCandidate(options, i, scoreWith(w.unit, hasConditional && !w.cond), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf, compareBrought) : options[0], w.unit);
+        place(choose ? chooseCandidate(options, i, scoreWith(w.unit, k, hasConditional && !w.cond), timesPlanned, sampleSize, candidateWeight(m, i), offsetOf, compareBrought) : options[0], w.unit, k);
       }
     };
     /** Brings each meal dish's missing wants, `BRING_ROUNDS` times at most; `choose` picks among candidates. */
@@ -786,11 +806,10 @@ export function solve(m: CompiledModel, opts: SolveOptions = {}): SolveResult {
     runMeal(i) {
       const s = plan[i];
       let kept = false;
-      // Every part but the first, except the curry: sweep has never removed a curry, even one a pair waiting
-      // for a subzi brought. Kept (as the first one-dish part after the first part) so this refactor changes no
-      // week; the meal-parts project decides.
+      // Every part but the first, the curry included: a curry only a pair waiting for a subzi brought leaves
+      // like any other side where it breaks a hard rule (rule case `sweep-takes-out-a-brought-curry`).
       for (const [c, k] of dishesOf(s)) {
-        if (k === FIRST || k === jointPart || !condOnly(s, i, c)) continue;
+        if (k === FIRST || !condOnly(s, i, c)) continue;
         if (!isFree(i, k)) continue;
         const before = snapshot(s);
         const hard = score(m, plan).hard;

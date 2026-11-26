@@ -7,7 +7,7 @@ export {
 export { groupRules, type RuleGroups } from './groups';
 export { LEVELS, nearestLevel, STRENGTH_COST, STRENGTH_WORDS, type Level } from './levels';
 export { describeLink, shortLink } from './link-text';
-export { linkWarnings, type LinkWarning } from './link-warnings';
+export { linkWarnings, singleParts, type LinkWarning } from './link-warnings';
 export { describeMatcher, describeScope, describeWhen, pluralNoun, singularNoun, whenParts, type Names } from './describe';
 export { capRules, defaultRules, defaultKeyForName, legacyOccasionDays, DEFAULT_EXTRA_LIMITS, LEGACY_CALENDAR_TAGS, type DefaultRule } from './defaults';
 export {
@@ -15,14 +15,14 @@ export {
   readOwned, ownedChanges, linkChanges, sameLink, PLAIN_OWNED_SLOTS, dayModeOf, daysOfMode, describeDays, describeMeals,
   type OwnedRule, type OwnedTemplate, type OwnedSlot, type LinkTarget, type LinkKind, type LinkParts, type LinkMode, type LinkValue, type LinkSlot, type DishLink, type LinkScope, type LinkWhen, type LinkStrength, type OwnedRuleChanges, type OwnedValues, type LinkChange, type DayMode,
 } from './owned';
-export { compileRules, cappedParts, partsOfDishes, ruleLevel, parseSpec, missingReferences, type RuleRecord, type KnownIds, type RuleIssue } from './record';
+export { compileRules, cappedParts, partsOfDishes, ruleLevel, parseSpec, missingReferences, TYPE_FIELDS, type RuleRecord, type KnownIds, type RuleIssue } from './record';
 export { toPartMatcher, constraintOverParts, libraryNames, type RuleParts } from './legacy-parts';
 export {
   CONDITION_FIELDS, toMatcher, fromMatcher, groupProblems, emptyGroup,
   type Condition, type ConditionGroup, type ConditionField, type ConditionValue, type ReadableField,
 } from './conditions';
 export {
-  TEMPLATE_FORMS, newSpec, validateDraft, previewMatches, matchesDish, type StoredDish,
-  type FormContext, type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
+  TEMPLATE_FORMS, categoryChoices, newSpec, validateDraft, previewMatches, matchesDish, type StoredDish,
+  type CategoryPart, type FormContext, type FormField, type FormFieldKind, type TemplateForm, type Draft, type DraftErrors, type DraftResult,
 } from './form';
 export { allowedMealsOf } from './meals';

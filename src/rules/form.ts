@@ -19,8 +19,7 @@ export type FormFieldKind =
   | 'strength'         // must / prefer
   | 'cost'             // 1–10, for prefer rules
   | 'components'       // component ids
-  | 'baseCategories'   // category ids of the first part
-  | 'extraCategories'; // extra category ids
+  | 'categories';      // category ids, of the first part or of any part (`part`)
 
 export interface FormField {
   key: string;
@@ -28,6 +27,32 @@ export interface FormField {
   label: string;
   help?: string;
   optional?: boolean;
+  /** For 'categories': offer the first part's categories, or those of the uncapped parts after it. */
+  part?: CategoryPart;
+}
+
+export type CategoryPart = 'first' | 'uncapped';
+
+/**
+ * The categories a 'categories' field offers, in meal order: the first part's by name, or those of the parts after
+ * the first that are not capped at one dish per meal (the parts that hold extras). A single offering part shows
+ * plain names; several show "Crunchy (Side)".
+ */
+export function categoryChoices(
+  part: CategoryPart,
+  parts: readonly { id: number; name: string }[],
+  categories: readonly { id: number; name: string; part_id?: number }[],
+  capped: ReadonlySet<number>,
+): { id: number; label: string }[] {
+  if (part === 'first') {
+    const first = parts[0];
+    return first ? categories.filter((c) => c.part_id === first.id).map((c) => ({ id: c.id, label: c.name })) : [];
+  }
+  const offered = parts.slice(1).filter((p) => !capped.has(p.id))
+    .map((p) => ({ part: p, categories: categories.filter((c) => c.part_id === p.id) }))
+    .filter((o) => o.categories.length > 0);
+  const named = offered.length > 1;
+  return offered.flatMap((o) => o.categories.map((c) => ({ id: c.id, label: named ? `${c.name} (${o.part.name})` : c.name })));
 }
 
 type ParamsInput<T extends TemplateId> = Extract<RuleSpecInput, { template: T }>['params'];
@@ -123,7 +148,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
     fields: [
       { key: 'when', kind: 'match', label: 'When a meal contains' },
       { key: 'components', kind: 'components', label: 'Also include these dishes', optional: true },
-      { key: 'categories', kind: 'extraCategories', label: 'And an extra from', optional: true },
+      { key: 'categories', kind: 'categories', part: 'uncapped', label: 'And an extra from', optional: true },
       scope, strength, cost,
     ],
     defaults: () => ({ when: TRUE, components: [], categories: [], strength: 'must' }),
@@ -131,7 +156,7 @@ export const TEMPLATE_FORMS: { [T in TemplateId]: TemplateForm<T> } = {
   pairs_with: {
     fields: [
       { key: 'match', kind: 'match', label: 'Dishes' },
-      { key: 'categories', kind: 'baseCategories', label: 'Only with a base from' },
+      { key: 'categories', kind: 'categories', part: 'first', label: 'Only with a base from' },
       scope, strength, cost,
     ],
     defaults: () => ({ match: TRUE, categories: [], strength: 'must' }),

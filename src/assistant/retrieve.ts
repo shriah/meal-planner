@@ -14,7 +14,14 @@ export interface AssistantData extends PlanningInput {
 export interface Slice {
   dishes: { id: number; name: string; type: string }[];
   rules: { id: number; name: string; description: string; enabled: boolean; ownerComponentId?: number }[];
-  summary: { categories: string[]; dishCount: number; ruleCount: number; templates: TemplateId[] };
+  summary: {
+    categories: string[];
+    /** Every part in meal order, with its categories (a Curry part's are its curry types): the ids rules name. */
+    parts: { id: number; name: string; categories: { id: number; name: string }[] }[];
+    dishCount: number;
+    ruleCount: number;
+    templates: TemplateId[];
+  };
   mentionsAnything: boolean;
 }
 
@@ -49,8 +56,8 @@ function matchLibrary(message: string, data: AssistantData) {
     if (words(name).some((w) => messageWords.has(w))) return 2;
     const own = [...c.dietary_tags, c.protein_tag, c.curry_category, ...c.regional_tags, ...c.occasion_tags];
     if (tags.some((t) => own.includes(t as never))) return 1;
-    const cat = c.base_category_id ?? c.extra_category_id;
-    return cat != null && categoryIds.has(cat) ? 1 : 0;
+    const cats = [c.category_id, c.base_category_id, c.extra_category_id];
+    return cats.some((cat) => cat != null && categoryIds.has(cat)) ? 1 : 0;
   };
   const matched = data.library
     .map((c) => ({ c, s: score(c) }))
@@ -67,6 +74,16 @@ export function searchLibrary(message: string, data: AssistantData): ComponentRe
 
 export function namesFor(data: AssistantData): Names {
   return libraryNames({ dishes: data.library, categories: data.categories, parts: data.parts });
+}
+
+function partsSummary(data: AssistantData): Slice['summary']['parts'] {
+  return [...data.parts]
+    .sort((a, b) => a.position - b.position)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      categories: data.categories.filter((c) => c.part_id === p.id).map((c) => ({ id: c.id, name: c.name })),
+    }));
 }
 
 export function buildSlice(message: string, data: AssistantData): Slice {
@@ -106,6 +123,7 @@ export function buildSlice(message: string, data: AssistantData): Slice {
     rules,
     summary: {
       categories: userCategories(data).map((c) => c.name),
+      parts: partsSummary(data),
       dishCount: data.library.length,
       ruleCount: data.rules.length,
       templates: HAND_TEMPLATE_IDS,

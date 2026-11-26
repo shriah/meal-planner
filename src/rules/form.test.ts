@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { all, is, TRUE } from '@/planner';
-import { newSpec, type FormContext, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
+import { categoryChoices, newSpec, type FormContext, previewMatches, TEMPLATE_FORMS, validateDraft, type StoredDish } from './form';
 import { RuleSpecSchema, TEMPLATE_IDS } from './templates';
 
 describe('rule forms', () => {
@@ -101,6 +101,43 @@ describe('rule forms', () => {
       const none = { ...ctx, capped: new Set<number>() };
       expect(newSpec('only_allow', none).params).toMatchObject({ parts: [] });
       expect(newSpec('skip_when', none).params).toMatchObject({ skip: [] });
+    });
+  });
+
+  describe('category fields', () => {
+    const parts = [
+      { id: 7, name: 'Main' },
+      { id: 8, name: 'Side' },
+      { id: 9, name: 'Dessert' },
+    ];
+    const categories = [
+      { id: 1, name: 'Rice-based', part_id: 7 },
+      { id: 2, name: 'Crunchy', part_id: 8 },
+      { id: 3, name: 'Bread-based', part_id: 7 },
+      { id: 4, name: 'Sweet', part_id: 9 },
+    ];
+
+    it('has the pairing and requirement fields choose categories by part', () => {
+      expect(TEMPLATE_FORMS.pairs_with.fields.find((f) => f.key === 'categories')).toMatchObject({ kind: 'categories', part: 'first', label: 'Only with a base from' });
+      expect(TEMPLATE_FORMS.require_with.fields.find((f) => f.key === 'categories')).toMatchObject({ kind: 'categories', part: 'uncapped', label: 'And an extra from' });
+    });
+
+    it('offers the first part\'s categories as they are named', () => {
+      expect(categoryChoices('first', parts, categories, new Set())).toEqual([{ id: 1, label: 'Rice-based' }, { id: 3, label: 'Bread-based' }]);
+    });
+
+    it('offers the uncapped later parts\' categories, labelled by part when several offer them', () => {
+      expect(categoryChoices('uncapped', parts, categories, new Set())).toEqual([{ id: 2, label: 'Crunchy (Side)' }, { id: 4, label: 'Sweet (Dessert)' }]);
+    });
+
+    it('shows plain names when one part offers categories, and never offers a capped part or the first', () => {
+      expect(categoryChoices('uncapped', parts, categories, new Set([9]))).toEqual([{ id: 2, label: 'Crunchy' }]);
+      expect(categoryChoices('uncapped', parts, categories, new Set([8, 9]))).toEqual([]);
+    });
+
+    it('offers nothing before the parts are known', () => {
+      expect(categoryChoices('first', [], categories, new Set())).toEqual([]);
+      expect(categoryChoices('uncapped', [], categories, new Set())).toEqual([]);
     });
   });
 });

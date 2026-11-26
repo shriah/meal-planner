@@ -817,4 +817,121 @@ const PART_LINK_CASES: RuleCase[] = [
   },
 ];
 
-export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES];
+// ─── Which part decides ──────────────────────────────────────────────────────────
+
+/** A subzi for the case where two links each bring one (id 908, case-only). */
+const AVIAL: ComponentRecord = { ...fields(), id: 908, name: 'Avial', componentType: 'subzi' };
+const CASE_BASE = CASE_PARTS.find((p) => p.legacy === 'base')!.id;
+const CASE_SUBZI = CASE_PARTS.find((p) => p.legacy === 'subzi')!.id;
+
+/** Every meal `where` picks names, among the pairings left out of it, the one that would have brought `dish`. */
+function leftOutIn(says: string, where: Pick, dish: (s: PlanSlot, lib: CaseLibrary) => number): PlanExpectation {
+  return {
+    says,
+    check: (w) => {
+      let n = 0;
+      let reported = 0;
+      w.weeks.forEach((wk, k) => {
+        for (const s of wk) {
+          if (!where(s, w.lib)) continue;
+          n++;
+          const id = dish(s, w.lib);
+          if (w.suppressed[k].some((j) => j.group.componentId === id && j.group.day === s.day && j.group.meal === s.meal_slot)) reported++;
+        }
+      });
+      return { pass: n > 0 && reported === n, got: `${reported} of ${n} meals report it` };
+    },
+    highlights: (slot, lib) => where(slot, lib),
+  };
+}
+
+const PART_ORDER_CASES: RuleCase[] = [
+  {
+    kind: 'plan',
+    id: 'sweep-takes-out-a-brought-curry',
+    group: 'Pairings',
+    name: 'The clean-up takes out a curry a conditional link brought where it breaks a hard rule',
+    why: 'Rice comes with Sambar when the subzi is Beans Poriyal, Sambar always comes with Papad, and no meal with Sambar may hold an extra. The search is blind to a dish only a conditional link brought, so it can leave Sambar where the Papad it brings breaks the hard rule; the clean-up after the search ("sweep") takes such a dish out. The bug: the clean-up never took out a curry, so the Sambar and its hard problem stayed in the week (in 3 of 8 seeds). No week has a hard problem, and every Rice and Beans Poriyal meal without Sambar reports the link as a soft problem.',
+    rules: (lib) => [caseLink(lib.dish('Rice'), { mode: 'comes', to: 'curry', values: [dishId(lib, 'Sambar')], when: { subzi: [dishId(lib, 'Beans Poriyal')] } })],
+    given: (lib) => [
+      SUBZI_AT_EVERY_MEAL,
+      caseLink(lib.dish('Sambar'), { mode: 'comes', to: 'extra', values: [dishId(lib, 'Papad')] }),
+      { name: 'No extras with Sambar', spec: { template: 'skip_when', params: { when: is('id', dishId(lib, 'Sambar')), skip: [CASE_EXTRA], strength: 'must' } } },
+    ],
+    expect: [
+      noHardProblems(),
+      reportedWhereMissing('Every Rice and Beans Poriyal meal without Sambar has a soft problem naming the link, and some has one', allOf(baseIs('Rice'), subziIs('Beans Poriyal')), 'Sambar'),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'two-links-bring-a-subzi',
+    group: 'Pairings',
+    name: "A base's subzi wins over the subzi its curry is served with",
+    why: 'Idli always comes with Avial; Beans Poriyal is served with Sambar (stored on Beans Poriyal as "when Sambar is in the meal, Beans Poriyal is added"); Sambar is served with Idli. A meal holds one subzi and a higher part decides: every Idli meal has Sambar and Avial, and Beans Poriyal\'s link is reported as left out because Avial holds the subzi, never a hard problem. The bug: when the search picked Beans Poriyal for the subzi first, Idli\'s Avial could not take a part another Always link held, and the scorer let Avial\'s link give way to it, so Beans Poriyal held the subzi in 8 of 27 Idli meals.',
+    dishes: [AVIAL],
+    rules: (lib) => [
+      caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id] }),
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+    ],
+    given: (lib) => [caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] })],
+    expect: [
+      everyPicked('Every Idli meal has Sambar and Avial', baseIs('Idli'), allOf(curryIs('Sambar'), subziIs('Avial'))),
+      leftOutIn('Every Idli meal reports Beans Poriyal\'s link as left out', baseIs('Idli'), (_s, lib) => dishId(lib, 'Beans Poriyal')),
+      noHardProblems(),
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'locked-lower-subzi-breaks-the-higher-link',
+    group: 'Locks and picks',
+    name: "A locked subzi served with the curry breaks the base's Always subzi",
+    why: 'Idli always comes with Avial; Beans Poriyal is served with Sambar; Sambar is served with Idli; Monday lunch is locked to Idli, Sambar and Beans Poriyal. The lock keeps Beans Poriyal, and since a higher part decides, Idli\'s Always link to Avial does not give way to the Beans Poriyal its curry brought: every week has a hard problem in that meal naming Idli\'s link, where the scorer used to report it as merely left out.',
+    dishes: [AVIAL],
+    rules: (lib) => [caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id] })],
+    given: (lib) => [
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+      caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] }),
+    ],
+    pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Idli').id, curry_id: TEST_LIBRARY.dish('Sambar').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
+    expect: [
+      mondayLunchHas('Beans Poriyal', true),
+      {
+        says: "Every week has a hard problem at Monday lunch naming Idli's Always link to Avial",
+        check: (w) => {
+          const k = w.hard.filter((hs) => hs.some((j) => j.ruleId === OWN_RULE_ID && j.group.componentId === AVIAL.id && j.group.day === 'monday' && j.group.meal === 'lunch')).length;
+          return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
+        },
+        highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
+      },
+    ],
+  },
+  {
+    kind: 'plan',
+    id: 'locked-lower-subzi-meets-a-conditional-higher-link',
+    group: 'Locks and picks',
+    name: "A locked subzi served with the curry only dents the base's conditional Always subzi",
+    why: 'Idli always comes with Avial when the curry is Sambar; Beans Poriyal is served with Sambar; Sambar is served with Idli; Monday lunch is locked to Idli, Sambar and Beans Poriyal. The higher-part rule that makes a missing Avial hard where a lower part\'s dish holds the subzi covers only unconditional links: a link waiting on the curry is never hard, so the lock keeps Beans Poriyal and Idli\'s link to Avial is a soft problem in that meal, in every week. The bug it guards: making the higher-part check hard for a conditional link as well, which would break a hard rule over a link that only applies sometimes.',
+    dishes: [AVIAL],
+    rules: (lib) => [caseLink(lib.dish('Idli'), { mode: 'comes', to: 'subzi', values: [AVIAL.id], when: { curry: [dishId(lib, 'Sambar')] } })],
+    given: (lib) => [
+      caseLink(lib.dish('Beans Poriyal'), { mode: bringMode(CASE_SUBZI, CASE_CURRY, CASE_PARTS), to: 'curry', values: [dishId(lib, 'Sambar')] }),
+      caseLink(lib.dish('Sambar'), { mode: bringMode(CASE_CURRY, CASE_BASE, CASE_PARTS), to: 'base', values: [dishId(lib, 'Idli')] }),
+    ],
+    pins: { 'monday-lunch': { base_id: TEST_LIBRARY.dish('Idli').id, curry_id: TEST_LIBRARY.dish('Sambar').id, subzi_id: TEST_LIBRARY.dish('Beans Poriyal').id } },
+    expect: [
+      mondayLunchHas('Beans Poriyal', true),
+      {
+        says: "Every week has a soft problem at Monday lunch naming Idli's link to Avial, and no hard problem",
+        check: (w) => {
+          const at = (j: { ruleId?: unknown; group: { componentId?: number; day?: string; meal?: string } }) => j.ruleId === OWN_RULE_ID && j.group.componentId === AVIAL.id && j.group.day === 'monday' && j.group.meal === 'lunch';
+          const k = w.soft.filter((ss, i) => ss.some(at) && !w.hard[i].length).length;
+          return { pass: k === w.weeks.length, got: `${k} of ${w.weeks.length} weeks` };
+        },
+        highlights: (slot) => slot.day === 'monday' && slot.meal_slot === 'lunch',
+      },
+    ],
+  },
+];
+
+export const COMES_WITH_CASES: RuleCase[] = [...PAIRING_CASES, ...conditionalCases(), ...PART_LINK_CASES, ...PART_ORDER_CASES];

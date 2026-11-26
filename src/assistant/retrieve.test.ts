@@ -85,7 +85,13 @@ describe('buildSlice', () => {
     expect(slice.summary.templates).not.toContain('comes_with');
     expect(slice).toEqual({
       dishes: [], rules: [],
-      summary: { categories: [], dishCount: 0, ruleCount: 0, templates: HAND_TEMPLATE_IDS },
+      summary: {
+        categories: [], dishCount: 0, ruleCount: 0, templates: HAND_TEMPLATE_IDS,
+        parts: [
+          { id: 1, name: 'Base', categories: [] }, { id: 2, name: 'Curry', categories: [] },
+          { id: 3, name: 'Subzi', categories: [] }, { id: 4, name: 'Extras', categories: [] },
+        ],
+      },
       mentionsAnything: false,
     });
   });
@@ -99,5 +105,42 @@ describe('buildSlice', () => {
     expect(slice.dishes).toEqual([]);
     expect(slice.summary).toMatchObject({ categories: ['rice-based'], dishCount: 2, ruleCount: 1 });
     expect(slice.mentionsAnything).toBe(false);
+  });
+
+  it('lists the converted parts in order, with their categories and the curry types', () => {
+    const categories: CategoryRecord[] = [
+      { id: 5, kind: 'base', name: 'rice-based', part_id: 1, created_at: '' },
+      { id: 6, kind: 'extra', name: 'liquid', part_id: 4, created_at: '' },
+      { id: 7, kind: 'curry', name: 'lentil', part_id: 2, created_at: '' },
+    ];
+    const reordered = { ...data({ categories }) };
+    reordered.parts = [...reordered.parts].reverse();
+    expect(buildSlice('hello', reordered).summary.parts).toEqual([
+      { id: 1, name: 'Base', categories: [{ id: 5, name: 'rice-based' }] },
+      { id: 2, name: 'Curry', categories: [{ id: 7, name: 'lentil' }] },
+      { id: 3, name: 'Subzi', categories: [] },
+      { id: 4, name: 'Extras', categories: [{ id: 6, name: 'liquid' }] },
+    ]);
+  });
+
+  it('lists parts that are not the converted four (Main, Side, Dessert) with their categories', () => {
+    const parts = [
+      { id: 12, name: 'Dessert', position: 2, varied: true, created_at: '' },
+      { id: 10, name: 'Main', position: 0, varied: true, created_at: '' },
+      { id: 11, name: 'Side', position: 1, varied: true, created_at: '' },
+    ];
+    const categories: CategoryRecord[] = [
+      { id: 20, kind: 'base', name: 'grains', part_id: 10, created_at: '' },
+      { id: 21, kind: 'extra', name: 'frozen', part_id: 12, created_at: '' },
+    ];
+    const library = [dish(1, 'Kulfi', { part_id: 12, category_id: 21 })];
+    const slice = buildSlice('any frozen dishes', { library, categories, rules: [], parts });
+    expect(slice.summary.parts).toEqual([
+      { id: 10, name: 'Main', categories: [{ id: 20, name: 'grains' }] },
+      { id: 11, name: 'Side', categories: [] },
+      { id: 12, name: 'Dessert', categories: [{ id: 21, name: 'frozen' }] },
+    ]);
+    // A dish is matched through its stored category too.
+    expect(slice.dishes.map((d) => d.id)).toEqual([1]);
   });
 });

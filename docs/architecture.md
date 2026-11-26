@@ -139,8 +139,8 @@ visible changed except the two cap rules on the Rules page, and a converted libr
 - **Guards.** `buildModel` throws `InvalidConstraintError` for any `role` leaf (a rule the rewrite missed would silently match nothing) and for
   `slot_part` in a constraint that is not a built-in; `slot_part` is planner-internal and names where a dish is placed.
 - **Joint part and locks.** The joint part is the first single part after the first (the curry): the base+curry move changes it with the first part.
-  `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out, and the repair sweep skips it, as the curry
-  did before. Both keep today's weeks. Stage 3 makes the sweep a rule case.
+  `lockNudge` counts locked dishes of every other part after the first, leaving the joint part out (`pivotPart` in `solver.ts`). The repair
+  sweep no longer skips it: a curry only a conditional link brought leaves where it breaks a hard rule (rule case `sweep-takes-out-a-brought-curry`).
 
 ### Meal parts (Stage 3a)
 
@@ -183,12 +183,44 @@ change except where an upward link flips (below); `repair.snapshot.test.ts` is u
   legacy weeks throw on a custom library.
 - **Files that still name base, curry, subzi or extras** (the legacy list): `src/db/parts.ts`, `src/db/seed.tsx`, `src/db/seed-data.ts`,
   `src/db/legacy-rules.ts`, `src/db/legacy-v14.ts`, `src/db/rules-over-parts.ts`, `src/rules/legacy-parts.ts`, `src/rules/defaults.ts`, `src/rule-cases/run.ts`,
-  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), the upgrades,
-  and Stage 3b's `link-warnings.ts` and `src/assistant`.
-- **Stage 3b owns:** link warnings over cap rules (`link-warnings.ts` still reasons about one curry and one subzi); the assistant (it drafts old fields, and
-  an upward comes becomes a serve link); condition editor fields and presets over parts; the planner's joint part; a flipped subzi to curry link bringing its
-  subzi when another subzi holds the one place; the picker bringing for a hand-picked curry (it lists the conflict, as today). Removal does not cascade
-  to an orphaned side until polish, as before.
+  `src/components/rules/presets.ts` (finds Subzi and Curry by `legacy`), `src/services/legacy-slots.ts`, `src/services/pins.ts`, `src/services/plan-generation.ts` (until Stage 5), `src/stores/plan-store.ts` (its `held` lock keys), `src/assistant` (`PART_OF`, `resolveCategory('base'|'extra')`, the `legacy === componentType` lookup, and prompt wording), the upgrades,
+  `src/rules/legacy-parts.ts` also holds `appSingleParts` and `convertedPartIds` (until Stage 5). The assistant's rule and link drafts work over parts; its dish drafts keep the old fields (until Stage 4).
+- **Stage 3b** closed the list that Stage 3a left open (next section). Removal does not cascade to an orphaned side until polish, as before.
+
+### Meal parts (Stage 3b)
+
+Design: `docs/superpowers/specs`, plan `docs/superpowers/plans/2026-11-24-meal-parts-rules-b.md`. Link warnings, the rule form, the assistant and the
+picker now read parts. Unlike Stage 3a, two planner fixes move weeks, only where the conflicts below occur (decided 2026-11-25).
+
+- **Warnings over capped parts.** `link-warnings.ts` reasons about `singleParts(parts, rules)`: the parts a cap rule holds to one dish per meal, plus the
+  legacy single parts (the converted Curry and Subzi, `appSingleParts` in `src/rules/legacy-parts.ts`) until Stage 5. The assistant uses the same
+  function. Messages use part names. A dish without `part_id` gets no link warnings.
+- **Rule form categories.** The category field of a rule offers categories by part: `pairs_with` takes the first part's categories; `require_with`
+  takes the uncapped parts after the first (converted libraries: Extras only), labelled with the part only when more than one part offers categories.
+  A stored category outside that set still round-trips.
+- **Assistant over parts.**
+  - The slice (`summary.parts`) lists each part with its id and categories. `propose_rule` matches `part`, `category` and the other `CONDITION_FIELDS`
+    (the four tag arrays, not `tags`). A draft using an old field (`componentType`, `role`, `base_category_id`, `extra_category_id`, `curry_category`)
+    is refused.
+  - `propose_dish` and `propose_pairing` take one `links` argument, by part. A part above the dish means served with it (the dish is added when one of
+    them is in the meal); a part below means the dish brings it (`bringMode`); a dish's own part only where `offersLink` allows. The draft reports the
+    dishes it linked.
+  - A side that links to the first part is a serve link (it used to be an error).
+  - Link targets match by exact name or id only, never by a single fuzzy search hit ("Rice" does not become "Lemon Rice").
+  - Dish drafts (`componentType`, `base_category`, `extra_category`, `curry_category`, the tag arrays) stay on the old fields until Stage 4.
+- **Picker.** A dish picked by hand re-plans its meal (`replanMeal` in `plan-store.ts`). A base pick frees the meal's other parts, as before. Any other
+  pick runs two passes: the first plans the meal with the pick pinned and the other parts free, to find what the pick brings; `settleMeal`
+  (`src/services/pins.ts`) keeps the meal as picked plus only the sides the pick brings, chaining through `PairedSide.by` (not sides the base brought);
+  the second pass pins that meal, so every rule is checked on it.
+- **Planner fixes** (rule cases pin the fixed behaviour):
+  - The repair sweep's curry exemption is gone: a curry that only a waiting link brought can be swept when it breaks a hard rule
+    (`sweep-takes-out-a-brought-curry`).
+  - A higher part's Always link wins a one-dish part over the sides of lower parts. The solver (`fits`) lets it take the part from a dish held only by
+    lower sides; the scorer charges the missing Always pairing as a hard problem, no longer suppressed, including a pinned or hand-picked lower dish brought by a lower part's link
+    (`two-links-bring-a-subzi` and the locked-subzi case). A conditional Always link is never hard, so against a locked lower dish it stays a soft problem (`locked-lower-subzi-meets-a-conditional-higher-link`).
+  - `pivotPart` keeps the joint move and `lockNudge`. `repair.snapshot.test.ts` is untouched.
+- **What stays.** No removal cascade (removing a dish leaves a side it brought). An extras pick pins the extras list to that dish, as a swap does today.
+- **Closed from the Stage 3a list:** link warnings over cap rules, the assistant, the joint part, a flipped subzi to curry link where the higher part's link wins and the lower one is reported, and the picker bringing for a hand-picked dish. Condition editor fields and presets over parts were already done before this branch.
 
 Rules that are invalid or refer to deleted components or categories are skipped and named, never
 applied with a changed meaning.
@@ -322,7 +354,10 @@ side along when it fits and give way otherwise. Either way, a pairing never make
   an asked-for side is not counted by `frequency` ones, so every frequency rule yields to asked-for sides too. A unit member does not trigger rules owned by its meal's base.
   `rule`-level constraints and built-ins never give way. Where one capped part (curry or subzi) is wanted by several pairs of a base, the first
   (Always before softer, then lowest rule id) is charged; a later one that shares a candidate with it is charged too (one dish can meet both), and a disjoint one is suppressed
-  (reported as a conflict, not charged). Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
+  (reported as a conflict, not charged). Between dishes of different parts a higher part decides: a missing Always pairing gives way to a
+  unit member holding its part only when a dish of the same or a higher part brought it, and `bring` lets an Always pairing take a one-dish
+  part from a unit member only lower parts bring (Idli's Avial over the Beans Poriyal served with Sambar; rule case `two-links-bring-a-subzi`).
+  Nothing is stored: plans, `explainPlan`, `slotConflicts` and draft checks
   all see the same result as the solver.
 - **Solving.** Placing a dish (construction and every move) brings its pairings in the same step, into free parts only and
   never over a pin, then their own pairings (up to `BRING_ROUNDS`). This holds in every part: a dish served with a curry follows that curry whether a base brought it or the search placed it, and adding or removing a dish of a many-dish part (a curry, where curries have no cap) brings or takes its pairings when one of them is in another part (a link within the part, such as an extra that comes with another extra, leaves the dish added and removed alone). Among a pairing's several dishes `chooseCandidate` ranks each candidate, scored with its own sides brought, by hard score, then
@@ -379,10 +414,9 @@ a compact library summary, the discussed plan and its problems). Step 2 sends th
 Gemini, which may call read-only tools (`search_dishes`, `get_rule`, `list_rules`, `get_plan` for the
 week's dish names, `explain_rule` for whether a rule is active and where the plan breaks it, `explain_plan_slot` for one slot's dishes and problems, optionally checking which rules a
 named dish would break there, and `simulate_with_rule` for the comparison below) and two draft tools
-(`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text; `propose_rule` and `simulate_with_rule` refuse an owned-only template (`comes_with`) and point the model at `comes_with` on `propose_pairing` or `propose_dish`. `propose_dish` can
-include the bases a new curry, subzi or extra is served with (by name), so the dish and its pairing are drafted and saved together. `propose_pairing` drafts served-with links for a dish that
-already exists; "Review pairing" opens that dish's form in edit mode with the draft merged over its stored links, and saving
-writes only the new link. Both draft tools also take `comes_with` (sides the dish brings along, one link per entry, appended as new links and never merged); `propose_pairing` then accepts a base too.
+(`propose_rule`, `propose_dish`, `propose_pairing`; ten tools in all) that only validate and return a draft. A rule spec travels as JSON text; `propose_rule` and `simulate_with_rule` refuse an owned-only template (`comes_with`) and point the model at `links` on `propose_pairing` or `propose_dish`. `propose_dish` and `propose_pairing` take one `links` argument, by part (see Stage 3b): the links a new dish is saved with, or new links for a dish that
+already exists. "Review pairing" opens that dish's form in edit mode with the draft merged over its stored links, and saving
+writes only the new link. Rule and link drafts name parts and categories by id; dish drafts keep the old fields until Stage 4.
 Each question makes at most 5 requests to Gemini (the last one without tools, so it must answer); the prompt
 tells the model to answer from the slice when it can and to batch its tool calls into one step.
 If the plan store has not loaded yet (the Rules page opened directly), the panel loads the stored plan first. A rule draft opens in

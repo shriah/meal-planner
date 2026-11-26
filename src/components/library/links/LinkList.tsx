@@ -22,7 +22,7 @@ interface LinkListProps {
 }
 
 /** The problems with a dish's links; empty until the library has loaded, as nothing is known about it before. */
-export function useLinkWarnings(self: { id?: number; name: string; componentType: ComponentType; base_category_id?: number }, links: DishLink[]): LinkWarning[] {
+export function useLinkWarnings(self: { id?: number; name: string; part_id?: number; category_id?: number }, links: DishLink[]): LinkWarning[] {
   const lookup = useLibraryLookup()
   return lookup.loaded ? linkWarnings(self, links, lookup, linkNames(lookup)) : []
 }
@@ -45,7 +45,7 @@ export function LinkList({ dishName, componentType, selfId, baseCategoryId, link
   }, [open, onEditingChange])
   const names = linkNames(lookup)
   // Nothing is known about the library until it has loaded, so every link would look unpairable.
-  const warnings = useLinkWarnings({ id: selfId, name: dishName, componentType, base_category_id: baseCategoryId }, links)
+  const warnings = useLinkWarnings({ id: selfId, name: dishName, part_id: ownerPartOf(lookup, componentType, selfId), category_id: baseCategoryId }, links)
   // The part the dish's links are made from; unknown until the parts have loaded.
   const ownerPart = ownerPartOf(lookup, componentType, selfId)
   // Editing before the stored links have loaded would start from an empty list and drop them on save.
